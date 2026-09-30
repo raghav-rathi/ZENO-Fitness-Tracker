@@ -62,11 +62,15 @@ struct XiaomiBandView: View {
         f.dateFormat = "yyyy-MM-dd"
         return f
     }()
+    // Both format day keys parsed by the UTC `dayParser`, so they format in UTC too; in the device zone
+    // the dates slipped to the previous day west of UTC.
     private static let spanFormatter: DateFormatter = {
-        let f = DateFormatter(); f.locale = Locale(identifier: "en_US_POSIX"); f.dateFormat = "d MMM yyyy"; return f
+        let f = DateFormatter(); f.locale = Locale(identifier: "en_US_POSIX"); f.dateFormat = "d MMM yyyy"
+        f.timeZone = TimeZone(identifier: "UTC"); return f
     }()
     private static let asOfFormatter: DateFormatter = {
-        let f = DateFormatter(); f.locale = Locale(identifier: "en_US_POSIX"); f.dateFormat = "d MMM"; return f
+        let f = DateFormatter(); f.locale = Locale(identifier: "en_US_POSIX"); f.dateFormat = "d MMM"
+        f.timeZone = TimeZone(identifier: "UTC"); return f
     }()
     private static let groupedIntFmt: NumberFormatter = {
         let f = NumberFormatter(); f.numberStyle = .decimal; f.maximumFractionDigits = 0; return f

@@ -182,6 +182,9 @@ struct SleepModel {
         let f = DateFormatter()
         f.locale = AppLanguage.activeLocale
         f.setLocalizedDateFormatFromTemplate("dMMM")
+        // Same zone as `dayKeyParser`, which anchors a day key at UTC midnight. Formatting that instant in
+        // the device zone printed the PREVIOUS day anywhere west of UTC ("Carried · 10 Aug" for the 11th).
+        f.timeZone = TimeZone(identifier: "UTC")
         return f
     }()
 

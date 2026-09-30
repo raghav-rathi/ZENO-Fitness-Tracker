@@ -1096,6 +1096,9 @@ private struct MultiTooltip: View {
         // as the Android twin so both localize consistently.
         f.locale = Locale.autoupdatingCurrent
         f.dateFormat = "EEE d MMM yyyy"
+        // The hovered day arrives as `compareDayParser`'s UTC midnight, so it is labelled in UTC; the
+        // device zone named the previous day (and weekday) anywhere west of UTC.
+        f.timeZone = TimeZone(identifier: "UTC")
         return f
     }()
 

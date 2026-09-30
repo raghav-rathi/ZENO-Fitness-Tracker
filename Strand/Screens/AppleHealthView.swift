@@ -112,10 +112,13 @@ struct AppleHealthView: View {
         return f
     }()
 
+    // Both format day keys parsed by the UTC `dayParser`, so they format in UTC too; in the device zone
+    // the dates slipped to the previous day west of UTC.
     private static let spanFormatter: DateFormatter = {
         let f = DateFormatter()
         f.locale = Locale(identifier: "en_US_POSIX")
         f.dateFormat = "d MMM yyyy"
+        f.timeZone = TimeZone(identifier: "UTC")
         return f
     }()
 
@@ -123,6 +126,7 @@ struct AppleHealthView: View {
         let f = DateFormatter()
         f.locale = Locale(identifier: "en_US_POSIX")
         f.dateFormat = "d MMM"
+        f.timeZone = TimeZone(identifier: "UTC")
         return f
     }()
 
