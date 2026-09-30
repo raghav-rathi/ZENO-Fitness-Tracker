@@ -1,0 +1,69 @@
+import Foundation
+import StrandAnalytics
+
+/// Storage keys and fixed ids for the Steps feature.
+enum StepsPrefs {
+    /// The daily goal, `@AppStorage`-backed. Default `StepGoal.defaultGoal`; always read through `goal`
+    /// (or `StepGoal.clamp`) because a hand-edited default can hold anything.
+    static let goalKey = "steps.goal"
+    /// The goal-reached notification switch. Default OFF.
+    static let goalNotificationKey = "steps.goalNotification"
+    /// The day the goal notification last posted for (the once-a-day dedupe).
+    static let goalNotifiedDayKey = "steps.goalNotifiedDay"
+    /// Unix second up to which the iPhone's hourly buckets are banked as final. The next backfill starts a
+    /// little before it rather than re-reading the whole seven days CoreMotion keeps.
+    static let phoneWatermarkKey = "steps.phone.backfilledThrough"
+
+    /// The deviceId the iPhone pedometer's own readings are banked under: daily totals in `metricSeries`
+    /// (the generic per-device daily scalar store) and hour buckets in `appleStepHour` (the per-device
+    /// hourly step table Apple Health already uses). Distinct from "apple-health" on purpose: Health's
+    /// figure already includes these steps, and keeping the two apart is what lets the resolver choose
+    /// between them instead of adding them up.
+    static let phoneDeviceId = "iphone-pedometer"
+    static let phoneStepsKey = "steps"
+    static let phoneDistanceKey = "distance_m"
+    static let phoneFloorsKey = "floors_up"
+
+    /// How many days of history the Steps surfaces keep resolved in memory: a year and a day, enough for
+    /// the 30-day chart, a long streak and a meaningful best day, and cheap to re-read.
+    static let historyDays = 366
+
+    /// The stored goal, clamped. `@AppStorage` returns its declared default for a missing key; a bare
+    /// `UserDefaults.integer` returns 0, hence the explicit fallback.
+    static var goal: Int {
+        let stored = UserDefaults.standard.integer(forKey: goalKey)
+        return stored == 0 ? StepGoal.defaultGoal : StepGoal.clamp(stored)
+    }
+}
+
+extension StepSource {
+    /// The short name a source badge shows.
+    var displayName: String {
+        switch self {
+        case .healthKit: return "Apple Health"
+        case .phonePedometer: return "iPhone"
+        case .strapCounter: return String(localized: "Strap")
+        case .strapEstimate: return String(localized: "Strap estimate")
+        }
+    }
+
+    /// A longer phrase for VoiceOver and the screen's source line.
+    var explanation: String {
+        switch self {
+        case .healthKit: return String(localized: "From Apple Health, which merges your iPhone and Apple Watch without counting a step twice.")
+        case .phonePedometer: return String(localized: "Counted by this iPhone while you carried it.")
+        case .strapCounter: return String(localized: "Counted by your strap's step counter.")
+        case .strapEstimate: return String(localized: "Estimated from your strap's motion. Approximate.")
+        }
+    }
+
+    /// SF Symbol for the badge.
+    var symbol: String {
+        switch self {
+        case .healthKit: return "heart.text.square.fill"
+        case .phonePedometer: return "iphone"
+        case .strapCounter: return "shoeprints.fill"
+        case .strapEstimate: return "figure.walk.motion"
+        }
+    }
+}
