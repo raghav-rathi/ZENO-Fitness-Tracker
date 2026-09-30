@@ -34,6 +34,8 @@ struct PulsePrefs: Equatable {
     var stressPersonalBaseline = false
     /// Tomorrow's wake time from the wind-down reminder when it is on, minutes after midnight.
     var alarmWakeMinute: Int?
+    /// The journal prompt's switch (Settings, shared with the classic Today).
+    var journalReminder = true
 }
 
 /// The profile values scoring needs.
@@ -93,10 +95,22 @@ actor PulseSnapshotBuilder {
     private var cacheSeq = Int.min
     private var cache = Cache()
 
+    /// Point the cache at `seq`, dropping everything read for an earlier refresh.
+    ///
+    /// The actor interleaves builds at every await, so a build begun for an older refresh can resume
+    /// after a newer one has reset the cache. Every write below therefore checks the seq it read under
+    /// against `cacheSeq`, and `isCurrent` lets a superseded build stop rather than publish: without
+    /// that, a launch-time build over the still-empty day list wrote "no stress score" into the fresh
+    /// refresh's cache, and Home showed a dash for the rest of that refresh.
     private func begin(_ seq: Int) {
-        guard seq != cacheSeq else { return }
+        guard seq > cacheSeq else { return }
         cacheSeq = seq
         cache = Cache()
+    }
+
+    /// False once a newer refresh has begun: the build's data is stale and it should stop.
+    private func isCurrent(_ r: PulseRequest) -> Bool {
+        r.seq == cacheSeq && !Task.isCancelled
     }
 
     private func restSeries() async -> [(day: String, value: Double)] {
@@ -174,10 +188,11 @@ actor PulseSnapshotBuilder {
 
     private func napMinutesByDay(_ r: PulseRequest) async -> [String: Double] {
         if let v = cache.napMinByDay { return v }
+        let seq = cacheSeq
         let groups = await nightGroups(r)
         let habitual = await habitualMidsleep()
         let v = SleepModel.napSleepMinutesByDay(navDays: groups, habitualMidsleepSec: habitual)
-        cache.napMinByDay = v
+        if seq == cacheSeq { cache.napMinByDay = v }
         return v
     }
 
@@ -312,7 +327,8 @@ actor PulseSnapshotBuilder {
 
     /// The recommended range for the day from the recovery the dial shows, through CoupledView's
     /// approved recovery-to-strain bands. Judged on the whole percent the dial prints.
-    private func strainTarget(_ display: LiquidTodayView.ChargeDisplay, strain: Double?) -> PulseStrainTarget? {
+    private func strainTarget(_ display: LiquidTodayView.ChargeDisplay, strain: Double?,
+                              isToday: Bool) -> PulseStrainTarget? {
         guard let pct = display.pct else { return nil }
         let shown = Double(PulseDisplay.displayedPercent(pct))
         guard let band = CoupledView.optimalStrainRange(recovery: shown) else { return nil }
@@ -321,7 +337,7 @@ actor PulseSnapshotBuilder {
         return PulseStrainTarget(range: Double(band.lowerBound)...Double(band.upperBound),
                                  intent: PulseDisplay.strainIntent(recoveryPercent: shown),
                                  band: PulseDisplay.recoveryBand(percent: shown),
-                                 current: strain, fromCarriedRecovery: carried)
+                                 current: strain, fromCarriedRecovery: carried, isToday: isToday)
     }
 
     private func workoutItems(_ rows: [WorkoutRow], window: (from: Int, to: Int)) -> [PulseWorkoutItem] {
@@ -370,14 +386,14 @@ actor PulseSnapshotBuilder {
         begin(r.seq)
         let row = displayRow(r)
         let rest = await restSeries()
-        guard !Task.isCancelled else { return nil }
+        guard isCurrent(r) else { return nil }
 
         let (charge, _) = chargeDisplay(r, row: row)
         let window = await dayWindow(r)
         let hr: [HRSample]? = r.day.isToday
             ? await heartRate(dayKey: r.day.key, from: window.from, to: window.to)
             : nil
-        guard !Task.isCancelled else { return nil }
+        guard isCurrent(r) else { return nil }
         let strain = strainValue(r, row: row, hr: hr)
         let sleep = sleepDial(r, rest: rest)
 
@@ -385,7 +401,7 @@ actor PulseSnapshotBuilder {
         let groups = await nightGroups(r)
         let habitual = await habitualMidsleep()
         let rows = await workoutRows()
-        guard !Task.isCancelled else { return nil }
+        guard isCurrent(r) else { return nil }
         var lastNight: PulseNightSummary?
         var napList: [PulseNap] = []
         if let g = group(endingOn: r.day.key, in: groups) {
@@ -403,7 +419,8 @@ actor PulseSnapshotBuilder {
         let tonight = r.day.isToday ? await tonightPlan(r, groups: groups, habitual: habitual) : nil
         let stats = await keyStats(r, row: row)
         let stress = await stressSummary(r)
-        guard !Task.isCancelled else { return nil }
+        let journal = r.day.isToday && r.prefs.journalReminder ? await journalStrip(now: r.now) : nil
+        guard isCurrent(r) else { return nil }
 
         return HomeSnapshot(
             seq: r.seq,
@@ -411,13 +428,28 @@ actor PulseSnapshotBuilder {
             sleep: sleep,
             recovery: recoveryDial(charge),
             strain: strainDial(strain),
-            target: strainTarget(charge, strain: strain),
+            target: strainTarget(charge, strain: strain, isToday: r.day.isToday),
             lastNight: lastNight,
             naps: napList,
             workouts: workoutItems(rows, window: window),
             tonight: tonight,
             stats: stats,
-            stress: stress)
+            stress: stress,
+            journal: journal)
+    }
+
+    /// The last seven LOCAL calendar days (as the classic journal strip keys them) and which have a
+    /// native journal entry. Not cached: logging an entry does not bump `refreshSeq`, and the read is
+    /// one small indexed query.
+    private func journalStrip(now: Date) async -> PulseJournalStrip {
+        let cal = Calendar.current
+        let days = (0..<7).reversed().map { n -> (key: String, offset: Int) in
+            (Repository.localDayKey(cal.date(byAdding: .day, value: -n, to: now) ?? now), n)
+        }
+        let logged = await repo.nativeJournalDays(from: days.first?.key ?? "", to: days.last?.key ?? "")
+        return PulseJournalStrip(days: days.map {
+            PulseJournalStrip.Day(key: $0.key, offset: $0.offset, logged: logged.contains($0.key))
+        })
     }
 
     /// Tonight's need and bedtime from the existing personalized need and the debt ledger.
@@ -654,12 +686,12 @@ actor PulseSnapshotBuilder {
         let stored = await stressStoredSeries()
         if r.day.isToday {
             let score: Double?
-            if let cached = cache.todayStressScore {
+            if r.seq == cacheSeq, let cached = cache.todayStressScore {
                 score = cached
             } else {
                 // StressModel folds the full history for its baseline; it is built here, off the main actor.
                 score = StressModel(days: r.days, stored: stored)?.score
-                cache.todayStressScore = .some(score)
+                if r.seq == cacheSeq { cache.todayStressScore = .some(score) }
             }
             let curve = await StressDayCurve.today(repo: repo, now: r.now,
                                                    personalBaseline: r.prefs.stressPersonalBaseline)
@@ -679,7 +711,7 @@ actor PulseSnapshotBuilder {
         begin(r.seq)
         let row = displayRow(r)
         let rest = await restSeries()
-        guard !Task.isCancelled else { return nil }
+        guard isCurrent(r) else { return nil }
         let (charge, source) = chargeDisplay(r, row: row)
         let dial = recoveryDial(charge)
         let days = r.days
@@ -697,7 +729,7 @@ actor PulseSnapshotBuilder {
                 id: id, title: title,
                 value: value.map(text) ?? "–",
                 unit: value == nil ? "" : unit,
-                averageText: c.map { String(localized: "30-day avg \(text($0.average)) \(unit)") },
+                averageText: c.map { String(localized: "30-day avg \(PulseFormat.withUnit(text($0.average), unit))") },
                 comparison: c.map { PulseStatText.comparison($0, unit: unit, absoluteText: text) },
                 route: route)
         }
@@ -752,13 +784,10 @@ actor PulseSnapshotBuilder {
             return PulseDayBar(id: k, value: v, label: PulseFormat.dayLabel(k),
                                band: PulseDisplay.recoveryBand(percent: v))
         }
-        guard !Task.isCancelled else { return nil }
+        guard isCurrent(r) else { return nil }
         return RecoverySnapshot(seq: r.seq, day: r.day, dial: dial, sourceDayKey: sourceDay,
                                 contributors: contributors, context: context,
                                 drivers: breakdown?.drivers ?? [], confidence: breakdown?.confidence,
-                                skinTempRel: RecoveryScorer.skinTempRelative(
-                                    deviationC: r0?.skinTempDevC.flatMap {
-                                        SkinTempDisplay.kind(of: $0) == .deviation ? $0 : nil }),
                                 history: history)
     }
 
@@ -770,7 +799,7 @@ actor PulseSnapshotBuilder {
         let (charge, _) = chargeDisplay(r, row: row)
         let window = await dayWindow(r)
         let hr = await heartRate(dayKey: r.day.key, from: window.from, to: window.to)
-        guard !Task.isCancelled else { return nil }
+        guard isCurrent(r) else { return nil }
         let strain = strainValue(r, row: row, hr: hr)
 
         // Accumulation through the day, through the same scorer as the headline.
@@ -780,7 +809,7 @@ actor PulseSnapshotBuilder {
                                                   method: r.prefs.effortMethod, sex: r.profile.sex)
             .map { PulseTimePoint(date: Date(timeIntervalSince1970: TimeInterval($0.ts)),
                                   value: UnitFormatter.effortValue($0.effort, scale: .whoop)) }
-        guard !Task.isCancelled else { return nil }
+        guard isCurrent(r) else { return nil }
 
         // The chart: 5-minute means with gap-aware segments, like the Today HR card.
         let buckets = await repo.hrBuckets(from: window.from, to: window.to, bucketSeconds: 300)
@@ -797,12 +826,12 @@ actor PulseSnapshotBuilder {
 
         let apple = await appleRows()
         let rows = await workoutRows()
-        guard !Task.isCancelled else { return nil }
+        guard isCurrent(r) else { return nil }
         let imported = apple.filter { $0.day == r.day.key }.compactMap(\.activeKcal).max()
         let start = Date(timeIntervalSince1970: TimeInterval(window.from))
         let end = Date(timeIntervalSince1970: TimeInterval(max(window.to, window.from + 60)))
         return StrainSnapshot(seq: r.seq, day: r.day, dial: strainDial(strain),
-                              target: strainTarget(charge, strain: strain),
+                              target: strainTarget(charge, strain: strain, isToday: r.day.isToday),
                               curve: curve, hr: points, window: start...end, zones: zones,
                               zoneMinutes: tiz.seconds.map { $0 / 60 },
                               calories: imported ?? row?.activeKcalEst,
@@ -827,7 +856,7 @@ actor PulseSnapshotBuilder {
         let groups = await nightGroups(r)
         let habitual = await habitualMidsleep()
         let rest = await restSeries()
-        guard !Task.isCancelled else { return nil }
+        guard isCurrent(r) else { return nil }
         let count = groups.count
         guard count > 0 else {
             return SleepSnapshot(seq: r.seq, nightIndex: 0, nightCount: 0, wakeDayKey: nil, onset: nil,
@@ -890,7 +919,7 @@ actor PulseSnapshotBuilder {
         if let night {
             let buckets = await repo.hrBuckets(from: night.session.effectiveStartTs, to: night.session.endTs,
                                                bucketSeconds: 60)
-            guard !Task.isCancelled else { return nil }
+            guard isCurrent(r) else { return nil }
             let bpm = buckets.map(\.bpm)
             if !bpm.isEmpty {
                 sleepingHR = Int((bpm.reduce(0, +) / Double(bpm.count)).rounded())
@@ -925,7 +954,7 @@ actor PulseSnapshotBuilder {
         // StepsView once the steps branch lands; until then it resolves steps like the Home tile.
         let apple = await appleRows()
         let estimate = await stepsEstSeries()
-        guard !Task.isCancelled else { return nil }
+        guard isCurrent(r) else { return nil }
         let steps = stepsResolution(r, apple: apple, estimate: estimate)
         return HealthSnapshot(seq: r.seq, vitals: vitals, stress: stress, fitnessAge: weekly.fitnessAge,
                               bodyAge: weekly.bodyAge, vitality: weekly.vitality, vo2max: weekly.vo2max,
@@ -1002,7 +1031,10 @@ actor PulseSnapshotBuilder {
         func frac(_ x: Double) -> Double { (x - barLo) / (barHi - barLo) }
 
         let format = reading.format
-        let rangeText = "\(format(typical.lowerBound))–\(format(typical.upperBound))"
+        // A signed range reads badly with a dash between the signs ("-0.7–+0.8"), so it says "to".
+        let rangeText = typical.lowerBound < 0
+            ? String(localized: "\(format(typical.lowerBound)) to \(format(typical.upperBound))")
+            : "\(format(typical.lowerBound))–\(format(typical.upperBound))"
         return PulseVital(
             id: reading.key,
             title: reading.label,

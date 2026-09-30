@@ -25,25 +25,31 @@ struct PulseHealthView: View {
                         .accessibilityAddTraits(.isHeader)
                     if let health = model.health {
                         PulseHealthMonitor(vitals: health.vitals)
+                            .id("pulse.monitor")
                         if let stress = health.stress {
                             PulseStressSection(stress: stress, onBreathe: { onAction(.breathe) })
+                                .id("pulse.stress")
                         }
                         PulseHealthspanSection(health: health)
+                            .id("pulse.healthspan")
                         MenstrualCycleHomeCard()
                         PulseHealthLinks(health: health)
+                            .id("pulse.records")
                     } else {
                         ProgressView()
                             .tint(PulseTheme.textSecondary)
                             .frame(maxWidth: .infinity, minHeight: 200)
                     }
-                    Color.clear.frame(height: 76)
+                    Color.clear.frame(height: 76).id("pulse.bottom")
                 }
                 .padding(.horizontal, PulseTheme.pagePadding)
             }
+            .pulseStatusBarBackdrop()
             .refreshable { await model.pullToRefresh() }
             .onChange(of: scrollToTopSignal) { _, _ in
                 withAnimation(.easeOut(duration: 0.3)) { proxy.scrollTo(Self.topID, anchor: .top) }
             }
+            .pulseDebugScroll(proxy, ready: model.health != nil)
         }
         .task(id: model.healthKey) { await model.loadHealth() }
         .overlay(alignment: .bottom) {

@@ -8,16 +8,22 @@ import StrandAnalytics
 struct PulseDetailScaffold<Content: View>: View {
     let title: String
     var subtitle: String?
+    /// The snapshot has landed (drives the DEBUG screenshot scroll).
+    var ready = true
     @ViewBuilder var content: () -> Content
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: PulseTheme.sectionSpacing) {
-                content()
+        ScrollViewReader { proxy in
+            ScrollView {
+                VStack(alignment: .leading, spacing: PulseTheme.sectionSpacing) {
+                    content()
+                    Color.clear.frame(height: 1).id("pulse.bottom")
+                }
+                .padding(.horizontal, PulseTheme.pagePadding)
+                .padding(.top, 8)
+                .padding(.bottom, 40)
             }
-            .padding(.horizontal, PulseTheme.pagePadding)
-            .padding(.top, 8)
-            .padding(.bottom, 40)
+            .pulseDebugScroll(proxy, ready: ready)
         }
         .pulsePage()
         .navigationTitle(title)
@@ -52,7 +58,7 @@ struct PulseDetailLoading: View {
 extension PulseModel {
     /// "Today, Wed 30 Sep" for the dive subtitle.
     var dayCaption: String {
-        "\(PulseFormat.dayTitle(offset: dayOffset, date: selectedLogicalDate)), \(PulseFormat.daySubtitle(selectedLogicalDate))"
+        "\(PulseFormat.dayTitle(offset: dayOffset, date: selectedLogicalDate)), \(PulseFormat.daySubtitle(offset: dayOffset, date: selectedLogicalDate))"
     }
 }
 
@@ -63,7 +69,8 @@ struct PulseRecoveryView: View {
     @State private var range = 30
 
     var body: some View {
-        PulseDetailScaffold(title: PulseScore.recovery.displayName, subtitle: model.dayCaption) {
+        PulseDetailScaffold(title: PulseScore.recovery.displayName, subtitle: model.dayCaption,
+                            ready: model.recovery != nil) {
             if let s = model.recovery, s.day.offset == model.dayOffset {
                 content(s)
             } else {
@@ -85,18 +92,23 @@ struct PulseRecoveryView: View {
             PulseContributorsCard(title: String(localized: "Contributors"),
                                   trailing: s.sourceDayKey.map { PulseFormat.dayLabel($0) },
                                   rows: s.contributors)
+                .id("pulse.contributors")
             if !s.context.isEmpty {
                 PulseContributorsCard(title: String(localized: "Context"), trailing: nil, rows: s.context)
             }
         }
 
         if !s.drivers.isEmpty, let confidence = s.confidence {
+            // The relative skin-temperature marker is left off: the Context card above already states
+            // the same night's deviation, and a third copy on one screen is noise.
             PulseCard {
-                ChargeBreakdownSection(drivers: s.drivers, confidence: confidence, skinTempRel: s.skinTempRel)
+                ChargeBreakdownSection(drivers: s.drivers, confidence: confidence, skinTempRel: nil)
             }
+            .id("pulse.shaped")
         }
 
         PulseRecoveryHistory(bars: s.history, range: $range)
+            .id("pulse.history")
     }
 }
 
@@ -343,14 +355,16 @@ struct PulseRecoveryHistory: View {
         }
     }
 
-    /// Up to four evenly spaced day keys to label, always including the newest.
+    /// Day keys to label: every other day on a week, four evenly spaced interior days otherwise. The
+    /// last bar sits against the value axis, where a label would be clipped, so it is never chosen.
     private func axisKeys(_ data: [PulseDayBar]) -> [String] {
         let count = data.count
         guard count > 1 else { return data.map(\.id) }
-        let step = max(1, count / 4)
-        var idx = Array(stride(from: count - 1, through: 0, by: -step)).reversed().map { $0 }
-        if idx.count > 4 { idx.removeFirst(idx.count - 4) }
-        return idx.map { data[$0].id }
+        if count <= 8 {
+            return stride(from: 0, to: count - 1, by: 2).map { data[$0].id }
+        }
+        let fractions = [0.1, 0.35, 0.6, 0.85]
+        return fractions.map { data[min(count - 2, Int((Double(count - 1) * $0).rounded()))].id }
     }
 
     private func legend(_ band: PulseDisplay.RecoveryBand, _ text: String) -> some View {

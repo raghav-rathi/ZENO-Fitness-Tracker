@@ -13,7 +13,8 @@ struct PulseSleepView: View {
     @State private var opened = false
 
     var body: some View {
-        PulseDetailScaffold(title: PulseScore.sleep.displayName, subtitle: nightCaption) {
+        PulseDetailScaffold(title: PulseScore.sleep.displayName, subtitle: nightCaption,
+                            ready: model.sleep != nil) {
             if let s = model.sleep {
                 content(s)
             } else {
@@ -68,6 +69,7 @@ struct PulseSleepView: View {
                     }
                 }
             }
+            .id("pulse.stages")
         } else if !s.stages.isEmpty {
             VStack(alignment: .leading, spacing: 10) {
                 PulseSectionHeader(title: String(localized: "Stages"))

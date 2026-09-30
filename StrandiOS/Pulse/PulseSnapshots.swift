@@ -83,6 +83,15 @@ struct PulseDialData: Equatable {
         return score == .strain ? nil : "%"
     }
 
+    /// The state line under the dial's name: whose night a carried value is, or "Calibrating".
+    var caption: String? {
+        switch state {
+        case .carried(let caption): return caption
+        case .calibrating: return String(localized: "Calibrating")
+        case .noData, .scored: return nil
+        }
+    }
+
     /// The arc colour.
     var color: Color {
         if case .calibrating = state { return PulseTheme.textTertiary }
@@ -123,6 +132,15 @@ struct PulseStrainTarget: Equatable {
     let current: Double?
     /// True when the recovery behind the target was carried from an earlier night.
     let fromCarriedRecovery: Bool
+    /// The target is for today (still accruing), not a finished past day.
+    let isToday: Bool
+
+    /// "Today 7.0" while the day is live, "Strain 4.9" for a finished day.
+    var currentLabel: String? {
+        guard let current else { return nil }
+        let value = PulseFormat.oneDecimal(current)
+        return isToday ? String(localized: "Today \(value)") : "\(PulseScore.strain.displayName) \(value)"
+    }
 
     var intentTitle: String {
         switch intent {
@@ -257,6 +275,27 @@ struct PulseStressSummary: Equatable {
     var hasCurve: Bool { hours.contains { $0.level != nil } }
 }
 
+/// The journal prompt: the last seven local days, oldest first, and which carry an entry.
+///
+/// The same data and taps as the classic `JournalReminderCard`, read by the builder instead of by the
+/// card itself. That card loads in a `.task` attached to a `Group` that is empty until the load lands,
+/// and SwiftUI never starts a task on an empty `Group`, so it can never appear (verified in the
+/// simulator); Pulse does not depend on it.
+struct PulseJournalStrip: Equatable {
+    struct Day: Equatable, Identifiable {
+        let key: String
+        /// Days back from today (0 = today), the offset `NavRouter.openJournal(day:)` takes.
+        let offset: Int
+        let logged: Bool
+        var id: String { key }
+    }
+
+    let days: [Day]
+
+    var todayLogged: Bool { days.last?.logged ?? false }
+    var hasMissed: Bool { days.dropLast().contains { !$0.logged } }
+}
+
 /// Everything Home draws for one day.
 struct HomeSnapshot: Equatable {
     let seq: Int
@@ -271,6 +310,8 @@ struct HomeSnapshot: Equatable {
     let tonight: PulseTonight?
     let stats: [PulseKeyStat]
     let stress: PulseStressSummary?
+    /// Today only, and only while the journal reminder is switched on.
+    let journal: PulseJournalStrip?
 
     var dials: [PulseDialData] { [sleep, recovery, strain] }
 }
@@ -309,7 +350,6 @@ struct RecoverySnapshot: Equatable {
     let context: [PulseContributor]
     let drivers: [ChargeDriver]
     let confidence: ScoreConfidence?
-    let skinTempRel: SkinTempRelative?
     /// Up to 90 days ending on the selected day, oldest first.
     let history: [PulseDayBar]
 }
@@ -448,6 +488,12 @@ enum PulseFormat {
 
     static func whole(_ v: Double) -> String { "\(Int(v.rounded()))" }
 
+    /// A number with its unit: "%" binds tight ("94%"), every other unit takes a space ("81 ms").
+    static func withUnit(_ number: String, _ unit: String) -> String {
+        guard !unit.isEmpty else { return number }
+        return unit == "%" ? number + unit : "\(number) \(unit)"
+    }
+
     static func grouped(_ v: Double) -> String {
         groupedFormatter.string(from: NSNumber(value: Int(v.rounded()))) ?? whole(v)
     }
@@ -509,10 +555,19 @@ enum PulseFormat {
         }
     }
 
-    /// "Wed, 30 Sep" for a Home day, device zone (see `dayTitle`).
-    static func daySubtitle(_ date: Date) -> String {
-        date.formatted(.dateTime.weekday(.abbreviated).day().month(.abbreviated)
-            .locale(AppLanguage.activeLocale))
+    /// The line under the day title, device zone (see `dayTitle`): "Wed, 30 Sep" under Today and
+    /// Yesterday; just "28 Sep" under a weekday title, which already names the day; the year once it
+    /// is not this year's.
+    static func daySubtitle(offset: Int, date: Date) -> String {
+        let locale = AppLanguage.activeLocale
+        let sameYear = Calendar.current.isDate(date, equalTo: Date(), toGranularity: .year)
+        if !sameYear {
+            return date.formatted(.dateTime.day().month(.abbreviated).year().locale(locale))
+        }
+        if offset >= 2 {
+            return date.formatted(.dateTime.day().month(.abbreviated).locale(locale))
+        }
+        return date.formatted(.dateTime.weekday(.abbreviated).day().month(.abbreviated).locale(locale))
     }
 }
 #endif

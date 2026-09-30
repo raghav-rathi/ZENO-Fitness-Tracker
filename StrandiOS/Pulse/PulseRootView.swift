@@ -145,7 +145,9 @@ struct PulseRootView: View {
         .background(PulseAttacher(model: model))
         .background(PulseCoachProbe(configured: $coachConfigured))
         .modifier(PulseLiftSessionChrome())
-        .sheet(item: $sheet) { sheetContent($0) }
+        // A closed sheet may have changed what Home shows without a refresh (a journal entry, a logged
+        // workout), so Home rebuilds on the way back.
+        .sheet(item: $sheet, onDismiss: { model.homeMayHaveChanged() }) { sheetContent($0) }
         .fullScreenCover(isPresented: $showLiveSession) {
             LiveSessionView(onClose: { showLiveSession = false })
         }
@@ -162,7 +164,10 @@ struct PulseRootView: View {
         }
         // A cold-launch Home Screen action is already pending when the shell appears; a warm one arrives
         // through the change callback. Both open the same screens as the ＋ menu.
-        .onAppear { presentPendingHomeScreenQuickActionIfPossible() }
+        .onAppear {
+            presentPendingHomeScreenQuickActionIfPossible()
+            applyDebugLaunchState()
+        }
         .onChange(of: homeScreenQuickActions.pendingAction) { _, _ in
             presentPendingHomeScreenQuickActionIfPossible()
         }
@@ -327,6 +332,15 @@ struct PulseRootView: View {
         }
     }
 
+    /// DEBUG `--pulse-tab` / `--pulse-push` / `--pulse-sheet` (see `PulseDebugLaunch`). No-op in Release.
+    private func applyDebugLaunchState() {
+        #if DEBUG
+        if let tab = PulseDebugLaunch.tab { selectedTab = tab }
+        if let route = PulseDebugLaunch.push { homePath.append(route) }
+        if PulseDebugLaunch.showsActions { sheet = .quick(.menu) }
+        #endif
+    }
+
     // MARK: Home Screen quick actions
 
     private func presentPendingHomeScreenQuickActionIfPossible() {
@@ -359,6 +373,7 @@ struct PulseAttacher: View {
     @AppStorage(DayCycleMode.storageKey) private var dayCycleModeRaw = DayCycleMode.sleepOnset.rawValue
     @AppStorage(PuffinExperiment.banisterEffortKey) private var banisterEffort = false
     @AppStorage(PuffinExperiment.stressPersonalBaselineKey) private var stressPersonalBaseline = false
+    @AppStorage(PuffinExperiment.journalReminderKey) private var journalReminder = true
     // The wind-down reminder's own keys (WindDownNudge). The two wake keys are never read here: they
     // are declared so that editing a wake time invalidates this view and Tonight is rebuilt.
     @AppStorage("windDown.enabled") private var windDownEnabled = false
@@ -373,6 +388,7 @@ struct PulseAttacher: View {
         p.sleepOnsetDayCycle = DayCycleMode.persisted(dayCycleModeRaw) == .sleepOnset
         p.effortMethod = banisterEffort ? .banister : .edwards
         p.stressPersonalBaseline = stressPersonalBaseline
+        p.journalReminder = journalReminder
         if windDownEnabled {
             let tomorrow = Calendar.current.date(byAdding: .day, value: 1, to: Date()) ?? Date()
             p.alarmWakeMinute = WindDownNudge.wakeMinutes(

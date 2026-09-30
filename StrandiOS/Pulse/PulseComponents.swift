@@ -17,6 +17,9 @@ struct PulseDial: View {
     var lineWidth: CGFloat = 9
     /// Show the score name and state caption under the dial.
     var showsLabel = true
+    /// Keep room for a two-line caption even when this dial has none, so a row of dials whose
+    /// neighbour carries a caption stays aligned. Off when no dial in the row has one.
+    var reservesCaption = true
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @ScaledMetric(relativeTo: .largeTitle) private var numeralBase: CGFloat = 34
@@ -44,14 +47,16 @@ struct PulseDial: View {
             if showsLabel {
                 VStack(spacing: 3) {
                     PulseLabel(data.score.displayName, color: PulseTheme.textSecondary)
-                    Text(caption ?? " ")
-                        .font(.caption2)
-                        .foregroundStyle(PulseTheme.textTertiary)
-                        .lineLimit(2)
-                        .multilineTextAlignment(.center)
-                        .minimumScaleFactor(0.85)
-                        .frame(minHeight: 28, alignment: .top)
-                        .opacity(caption == nil ? 0 : 1)
+                    if caption != nil || reservesCaption {
+                        Text(caption ?? " ")
+                            .font(.caption2)
+                            .foregroundStyle(PulseTheme.textTertiary)
+                            .lineLimit(2)
+                            .multilineTextAlignment(.center)
+                            .minimumScaleFactor(0.85)
+                            .frame(minHeight: 28, alignment: .top)
+                            .opacity(caption == nil ? 0 : 1)
+                    }
                 }
             }
         }
@@ -94,13 +99,7 @@ struct PulseDial: View {
         }
     }
 
-    private var caption: String? {
-        switch data.state {
-        case .carried(let caption): return caption
-        case .calibrating: return String(localized: "Calibrating")
-        case .noData, .scored: return nil
-        }
-    }
+    private var caption: String? { data.caption }
 
     private func fill(to target: Double, duration: Double) {
         guard !reduceMotion else {
@@ -164,8 +163,8 @@ struct PulseStrainTargetContent: View {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 PulseLabel(String(localized: "Strain target"), color: PulseTheme.textSecondary)
                 Spacer(minLength: 8)
-                if let current = target.current {
-                    Text(String(localized: "Today \(PulseFormat.oneDecimal(current))"))
+                if let label = target.currentLabel {
+                    Text(label)
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(PulseTheme.textSecondary)
                 }
@@ -200,8 +199,8 @@ struct PulseStrainTargetContent: View {
 
     private var accessibility: String {
         let base = String(localized: "Strain target: \(target.intentTitle), \(target.rangeText) out of 21.")
-        guard let current = target.current else { return base + " " + target.progressText }
-        return base + " " + String(localized: "Today \(PulseFormat.oneDecimal(current)). \(target.progressText).")
+        guard let label = target.currentLabel else { return base + " " + target.progressText }
+        return base + " " + "\(label). \(target.progressText)."
     }
 }
 
@@ -300,7 +299,8 @@ struct PulseRow<Icon: View>: View {
                     Text(subtitle)
                         .font(.caption)
                         .foregroundStyle(PulseTheme.textTertiary)
-                        .lineLimit(2)
+                        .lineLimit(3)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
             Spacer(minLength: 8)

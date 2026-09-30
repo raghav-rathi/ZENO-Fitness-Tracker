@@ -35,8 +35,8 @@ enum PulseDemo {
         }
     }
 
-    /// One reading every 10 s: asleep overnight, an ordinary day, a morning walk, and a hard session
-    /// late afternoon (today's only if the clock has passed it).
+    /// One reading every 10 s: asleep overnight, a morning tempo run, an ordinary day with a lunchtime
+    /// walk, and a hard session late afternoon (today's only if the clock has passed it).
     private static func synthesize(from: Int, to: Int, todayStart: Int) -> [HRSample] {
         var rng: UInt64 = 0x5EED_1234
         func noise() -> Double {
@@ -53,12 +53,13 @@ enum PulseDemo {
             drift = max(-6, min(6, drift + noise() * 0.8))
             let base: Double
             switch hour {
-            case ..<6.75: base = 54 + 3 * sin(hour)                        // asleep
-            case ..<7.5: base = 64                                         // waking
-            case 7.5..<8.25: base = 102                                    // walk
-            case 17.5..<18.33: base = 118 + 50 * sin((hour - 17.5) / 0.83 * .pi)   // hard session
-            case 23...: base = 58                                          // falling asleep
-            default: base = 74 + 6 * sin(hour / 3)                         // the day
+            case ..<6.75: base = 54 + 3 * sin(hour)                                  // asleep
+            case ..<7.25: base = 64                                                  // waking
+            case 7.25..<8.0: base = 126 + 34 * sin((hour - 7.25) / 0.75 * .pi)      // tempo run
+            case 12.5..<12.9: base = 104                                             // lunchtime walk
+            case 17.5..<18.33: base = 118 + 50 * sin((hour - 17.5) / 0.83 * .pi)    // hard session
+            case 23...: base = 58                                                    // falling asleep
+            default: base = 74 + 6 * sin(hour / 3)                                   // the day
             }
             let bpm = Int((base + drift + noise() * 6).rounded())
             out.append(HRSample(ts: t, bpm: max(40, min(195, bpm))))
@@ -66,6 +67,47 @@ enum PulseDemo {
         }
         return out
     }
+}
+
+/// DEBUG launch arguments that put the shell in a given state at launch, so every Pulse state can be
+/// captured by `simctl` (which cannot tap or swipe):
+///   `--pulse-tab home|health|more`     the selected tab
+///   `--pulse-day N`                    Home N days back
+///   `--pulse-push recovery|strain|sleep`  push a deep dive onto Home
+///   `--pulse-sheet actions`            present the ＋ menu
+///   `--pulse-scroll <anchor>`          scroll to a section id ("myday", "stats", "stress", "bottom", …)
+enum PulseDebugLaunch {
+    private static func value(_ flag: String) -> String? {
+        let args = CommandLine.arguments
+        guard let i = args.firstIndex(of: flag), i + 1 < args.count else { return nil }
+        return args[i + 1]
+    }
+
+    static var tab: PulseTab? {
+        switch value("--pulse-tab") {
+        case "home": return .home
+        case "health": return .health
+        case "coach": return .coach
+        case "more": return .more
+        default: return nil
+        }
+    }
+
+    static var dayOffset: Int? { value("--pulse-day").flatMap(Int.init) }
+
+    static var push: PulseRoute? {
+        switch value("--pulse-push") {
+        case "recovery": return .score(.recovery)
+        case "strain": return .score(.strain)
+        case "sleep": return .score(.sleep)
+        default: return nil
+        }
+    }
+
+    static var showsActions: Bool { value("--pulse-sheet") == "actions" }
+
+    /// The section id to scroll to, prefixed as the views tag them.
+    static var scrollAnchor: String? { value("--pulse-scroll").map { "pulse.\($0)" } }
 }
 
 /// `--demo-screen pulse…` renders one Pulse screen full-bleed over the seeded store.

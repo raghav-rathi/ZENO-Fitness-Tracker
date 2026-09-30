@@ -24,16 +24,18 @@ struct PulseHomeView: View {
                     PulseHomeHeader(onSettings: onSettings, onPlus: { onAction(.menu) })
                     PulseHomeContent(onAction: onAction)
                     // Room for the floating ＋ so the last card is never under it.
-                    Color.clear.frame(height: 76)
+                    Color.clear.frame(height: 76).id("pulse.bottom")
                 }
                 .padding(.horizontal, PulseTheme.pagePadding)
             }
             .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
+            .pulseStatusBarBackdrop()
             .refreshable { await model.pullToRefresh() }
             .simultaneousGesture(daySwipe)
             .onChange(of: scrollToTopSignal) { _, _ in
                 withAnimation(.easeOut(duration: 0.3)) { proxy.scrollTo(Self.topID, anchor: .top) }
             }
+            .pulseDebugScroll(proxy, ready: model.home != nil)
         }
         .overlay(alignment: .bottom) {
             PulseFloatingPlus { onAction(.menu) }
@@ -111,7 +113,7 @@ struct PulseHomeHeader: View {
                         Text(PulseFormat.dayTitle(offset: model.dayOffset, date: model.selectedLogicalDate))
                             .font(.title3.weight(.bold))
                             .foregroundStyle(PulseTheme.textPrimary)
-                        Text(PulseFormat.daySubtitle(model.selectedLogicalDate))
+                        Text(PulseFormat.daySubtitle(offset: model.dayOffset, date: model.selectedLogicalDate))
                             .font(.caption.weight(.medium))
                             .foregroundStyle(PulseTheme.textTertiary)
                     }
@@ -120,7 +122,7 @@ struct PulseHomeHeader: View {
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(PulsePressStyle())
-                .accessibilityLabel(String(localized: "\(PulseFormat.dayTitle(offset: model.dayOffset, date: model.selectedLogicalDate)), \(PulseFormat.daySubtitle(model.selectedLogicalDate))"))
+                .accessibilityLabel(String(localized: "\(PulseFormat.dayTitle(offset: model.dayOffset, date: model.selectedLogicalDate)), \(PulseFormat.daySubtitle(offset: model.dayOffset, date: model.selectedLogicalDate))"))
                 .accessibilityHint(String(localized: "Opens a calendar. Swipe sideways to change the day."))
 
                 Button { model.stepDay(-1) } label: {
@@ -237,12 +239,16 @@ struct PulseHomeContent: View {
                     PulseCard { PulseStrainTargetContent(target: target) }
                 }
                 PulseMyDaySection(home: home, onAction: onAction)
+                    .id("pulse.myday")
                 PulseKeyStatsSection(stats: home.stats)
+                    .id("pulse.stats")
                 if let stress = home.stress {
                     PulseStressSection(stress: stress, onBreathe: { onAction(.breathe) })
+                        .id("pulse.stress")
                 }
-                if home.day.isToday {
-                    JournalReminderCard()
+                if let journal = home.journal {
+                    PulseJournalCard(strip: journal)
+                        .id("pulse.journal")
                 }
             }
             // While a newly selected day builds, the previous day's numbers dim rather than pass for it.
@@ -266,10 +272,11 @@ struct PulseDialsRow: View {
     let dials: [PulseDialData]
 
     var body: some View {
+        let reserves = dials.contains { $0.caption != nil }
         HStack(alignment: .top, spacing: 4) {
             ForEach(dials, id: \.score) { dial in
                 NavigationLink(value: PulseRoute.score(dial.score)) {
-                    PulseDial(data: dial, diameter: 102)
+                    PulseDial(data: dial, diameter: 102, reservesCaption: reserves)
                         .frame(maxWidth: .infinity)
                         .contentShape(Rectangle())
                 }
@@ -387,7 +394,7 @@ struct PulseMyDaySection: View {
     }
 
     private func tonightSubtitle(_ t: PulseTonight) -> String {
-        let line = String(localized: "In bed by \(PulseFormat.clock(t.bedtime)) to wake at \(PulseFormat.clock(t.wake))")
+        let line = String(localized: "Asleep by \(PulseFormat.clock(t.bedtime)) · wake \(PulseFormat.clock(t.wake))")
         guard t.debtMin >= 5 else { return line }
         return line + "\n" + String(localized: "Includes \(PulseFormat.duration(minutes: t.debtMin)) of sleep debt")
     }
@@ -401,16 +408,24 @@ struct PulseKeyStatsSection: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             PulseSectionHeader(title: String(localized: "Key stats"), trailing: String(localized: "vs 30-day avg"))
-            LazyVGrid(columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)],
-                      spacing: 12) {
-                ForEach(stats) { stat in
-                    NavigationLink(value: stat.route) {
-                        PulseStatTile(stat: stat)
+            // Two per row; an odd last tile takes the full width rather than leaving a hole.
+            VStack(spacing: 12) {
+                ForEach(rows, id: \.first?.id) { row in
+                    HStack(alignment: .top, spacing: 12) {
+                        ForEach(row) { stat in
+                            NavigationLink(value: stat.route) {
+                                PulseStatTile(stat: stat)
+                            }
+                            .buttonStyle(PulsePressStyle())
+                        }
                     }
-                    .buttonStyle(PulsePressStyle())
                 }
             }
         }
+    }
+
+    private var rows: [[PulseKeyStat]] {
+        stride(from: 0, to: stats.count, by: 2).map { Array(stats[$0..<min($0 + 2, stats.count)]) }
     }
 }
 
@@ -472,6 +487,81 @@ struct PulseStatTile: View {
         if let c = stat.comparison { parts.append(c.accessibility) }
         if let caption = stat.caption { parts.append(caption) }
         return parts.joined(separator: ". ")
+    }
+}
+
+// MARK: - Journal
+
+/// The journal prompt: the last seven days with each logged one filled, today ringed until it is
+/// logged. The header opens today's journal; a day's bar opens that day's (the classic card's taps).
+struct PulseJournalCard: View {
+    let strip: PulseJournalStrip
+    @EnvironmentObject private var router: NavRouter
+
+    private var subtitle: String {
+        if !strip.todayLogged { return String(localized: "Log today's journal") }
+        if strip.hasMissed { return String(localized: "Tap a day to catch up") }
+        return String(localized: "Logged today")
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            PulseSectionHeader(title: String(localized: "Journal"))
+            PulseCard {
+                VStack(alignment: .leading, spacing: 12) {
+                    Button { router.openJournal() } label: {
+                        HStack(spacing: 10) {
+                            Image(systemName: "book.closed.fill")
+                                .font(.body)
+                                .foregroundStyle(PulseTheme.accent)
+                                .accessibilityHidden(true)
+                            Text(subtitle)
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundStyle(PulseTheme.textPrimary)
+                            Spacer(minLength: 8)
+                            PulseChevron()
+                        }
+                        .frame(minHeight: PulseTheme.minTapTarget)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(PulsePressStyle())
+                    .accessibilityHint(String(localized: "Opens the journal"))
+
+                    HStack(spacing: 6) {
+                        ForEach(strip.days) { day in
+                            Button { router.openJournal(day: day.offset) } label: {
+                                VStack(spacing: 6) {
+                                    RoundedRectangle(cornerRadius: 3, style: .continuous)
+                                        .fill(day.logged ? PulseTheme.accent : PulseTheme.track)
+                                        .overlay(
+                                            RoundedRectangle(cornerRadius: 3, style: .continuous)
+                                                .strokeBorder(day.offset == 0 && !day.logged
+                                                              ? PulseTheme.accent : Color.clear, lineWidth: 1)
+                                        )
+                                        .frame(height: 10)
+                                    Text(PulseFormat.dayLabel(day.key, template: "EEEEE"))
+                                        .font(.caption2)
+                                        .foregroundStyle(day.offset == 0 ? PulseTheme.textPrimary : PulseTheme.textTertiary)
+                                }
+                                .frame(maxWidth: .infinity, minHeight: PulseTheme.minTapTarget)
+                                .contentShape(Rectangle())
+                            }
+                            .buttonStyle(PulsePressStyle())
+                            .accessibilityLabel(dayName(day))
+                            .accessibilityValue(day.logged ? String(localized: "Logged") : String(localized: "Not logged"))
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private func dayName(_ day: PulseJournalStrip.Day) -> String {
+        switch day.offset {
+        case 0: return String(localized: "Today")
+        case 1: return String(localized: "Yesterday")
+        default: return String(localized: "\(day.offset) days ago")
+        }
     }
 }
 

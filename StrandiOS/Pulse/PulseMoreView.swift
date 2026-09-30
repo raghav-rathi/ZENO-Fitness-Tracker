@@ -119,6 +119,7 @@ struct PulseMoreView: View {
 
                 Section {
                     row(String(localized: "Test Centre"), "stethoscope", .testCentre)
+                        .id("pulse.advanced")
                     row(String(localized: "NOOP Limitations"), "list.bullet.rectangle", .limitations)
                     row(String(localized: "Mi Band"), "figure.walk.motion", .miBand)
                     row(String(localized: "Rhythm"), "waveform.path", .rhythm)
@@ -136,6 +137,7 @@ struct PulseMoreView: View {
                     }
                     .tint(PulseTheme.accent)
                     .listRowBackground(PulseTheme.card)
+                    .id("pulse.bottom")
                 } header: {
                     header(String(localized: "Interface"))
                 } footer: {
@@ -151,6 +153,7 @@ struct PulseMoreView: View {
             .onChange(of: scrollToTopSignal) { _, _ in
                 withAnimation(.easeOut(duration: 0.3)) { proxy.scrollTo(Self.topID, anchor: .top) }
             }
+            .pulseDebugScroll(proxy, ready: true)
         }
         .navigationDestination(for: PulseMoreDestination.self) { route in
             route.destination
@@ -170,6 +173,7 @@ struct PulseMoreView: View {
             Text(String(localized: "Your data and settings stay as they are. You can switch back from Settings."))
         }
         .background(PulseBackground())
+        .toolbarBackground(PulseTheme.backgroundTop, for: .navigationBar)
         .environment(\.colorScheme, .dark)
     }
 
@@ -199,7 +203,8 @@ struct PulseMoreView: View {
                 PulseChevron()
             }
         }
-        .frame(minHeight: PulseTheme.minTapTarget)
+        // A list row is already at least 44 pt tall; padding it further made each row read oversized.
+        .padding(.vertical, 2)
     }
 }
 #endif

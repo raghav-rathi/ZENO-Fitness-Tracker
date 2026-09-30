@@ -10,7 +10,8 @@ struct PulseStrainView: View {
     @Environment(PulseModel.self) private var model
 
     var body: some View {
-        PulseDetailScaffold(title: PulseScore.strain.displayName, subtitle: model.dayCaption) {
+        PulseDetailScaffold(title: PulseScore.strain.displayName, subtitle: model.dayCaption,
+                            ready: model.strain != nil) {
             if let s = model.strain, s.day.offset == model.dayOffset {
                 content(s)
             } else {
@@ -36,8 +37,11 @@ struct PulseStrainView: View {
         }
 
         PulseStrainBuildCard(snapshot: s)
+            .id("pulse.build")
         PulseHeartRateZonesCard(snapshot: s)
+            .id("pulse.hr")
         PulseZoneTimeCard(snapshot: s)
+            .id("pulse.zones")
         PulseStrainStatsRow(snapshot: s)
 
         VStack(alignment: .leading, spacing: 10) {
@@ -76,45 +80,30 @@ struct PulseStrainView: View {
 struct PulseStrainBuildCard: View {
     let snapshot: StrainSnapshot
 
+    /// The day's strain when it runs ahead of the curve's end. The dial floors today's live score at the
+    /// stored day row (`StrainScorer.effectiveEffort`), and that row can carry load the heart-rate
+    /// stream here does not show, such as a logged workout. Drawn so the chart cannot quietly disagree
+    /// with the dial above it.
+    private var dayTotalAhead: Double? {
+        guard let total = snapshot.dial.value else { return nil }
+        let end = snapshot.curve.last?.value ?? 0
+        return total - end > 0.3 ? total : nil
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             PulseSectionHeader(title: String(localized: "Through the day"))
             PulseCard {
                 if snapshot.curve.count >= 2 {
-                    Chart {
-                        if let target = snapshot.target {
-                            RectangleMark(xStart: .value("Start", snapshot.window.lowerBound),
-                                          xEnd: .value("End", snapshot.window.upperBound),
-                                          yStart: .value("Low", target.range.lowerBound),
-                                          yEnd: .value("High", target.range.upperBound))
-                                .foregroundStyle(PulseTheme.strain.opacity(0.14))
-                        }
-                        ForEach(snapshot.curve) { p in
-                            AreaMark(x: .value("Time", p.date), y: .value("Strain", p.value))
-                                .foregroundStyle(LinearGradient(colors: [PulseTheme.strain.opacity(0.35),
-                                                                         PulseTheme.strain.opacity(0.02)],
-                                                                startPoint: .top, endPoint: .bottom))
-                                .interpolationMethod(.monotone)
-                            LineMark(x: .value("Time", p.date), y: .value("Strain", p.value))
-                                .foregroundStyle(PulseTheme.strain)
-                                .lineStyle(StrokeStyle(lineWidth: 2.5, lineCap: .round))
-                                .interpolationMethod(.monotone)
+                    VStack(alignment: .leading, spacing: 10) {
+                        chart
+                        if let total = dayTotalAhead {
+                            Text(String(localized: "Dashed: the day's strain of \(PulseFormat.oneDecimal(total)), which can include load this heart-rate trace does not show, such as a logged workout."))
+                                .font(.caption)
+                                .foregroundStyle(PulseTheme.textTertiary)
+                                .fixedSize(horizontal: false, vertical: true)
                         }
                     }
-                    .chartXScale(domain: snapshot.window.lowerBound...snapshot.window.upperBound)
-                    .chartYScale(domain: 0...21)
-                    .chartYAxis {
-                        AxisMarks(position: .trailing, values: [0, 7, 14, 21]) { _ in
-                            AxisGridLine().foregroundStyle(PulseTheme.hairline)
-                            AxisValueLabel().foregroundStyle(PulseTheme.textTertiary)
-                        }
-                    }
-                    .chartXAxis { PulseTimeAxis.marks() }
-                    .frame(height: 170)
-                    .accessibilityLabel(String(localized: "Strain through the day"))
-                    .accessibilityValue(snapshot.curve.last.map {
-                        String(localized: "\(PulseFormat.oneDecimal($0.value)) at \(PulseFormat.clock($0.date))")
-                    } ?? "")
                 } else {
                     Text(String(localized: "Strain builds here as your strap records heart rate through the day."))
                         .font(.subheadline)
@@ -124,12 +113,54 @@ struct PulseStrainBuildCard: View {
             }
         }
     }
+
+    private var chart: some View {
+        Chart {
+            if let total = dayTotalAhead {
+                RuleMark(y: .value("Day strain", total))
+                    .foregroundStyle(PulseTheme.strain.opacity(0.9))
+                    .lineStyle(StrokeStyle(lineWidth: 1.2, dash: [4, 3]))
+            }
+            if let target = snapshot.target {
+                RectangleMark(xStart: .value("Start", snapshot.window.lowerBound),
+                              xEnd: .value("End", snapshot.window.upperBound),
+                              yStart: .value("Low", target.range.lowerBound),
+                              yEnd: .value("High", target.range.upperBound))
+                    .foregroundStyle(PulseTheme.strain.opacity(0.14))
+            }
+            ForEach(snapshot.curve) { p in
+                AreaMark(x: .value("Time", p.date), y: .value("Strain", p.value))
+                    .foregroundStyle(LinearGradient(colors: [PulseTheme.strain.opacity(0.35),
+                                                             PulseTheme.strain.opacity(0.02)],
+                                                    startPoint: .top, endPoint: .bottom))
+                    .interpolationMethod(.monotone)
+                LineMark(x: .value("Time", p.date), y: .value("Strain", p.value))
+                    .foregroundStyle(PulseTheme.strain)
+                    .lineStyle(StrokeStyle(lineWidth: 2.5, lineCap: .round))
+                    .interpolationMethod(.monotone)
+            }
+        }
+        .chartXScale(domain: snapshot.window.lowerBound...snapshot.window.upperBound)
+        .chartYScale(domain: 0...21)
+        .chartYAxis {
+            AxisMarks(position: .trailing, values: [0, 7, 14, 21]) { _ in
+                AxisGridLine().foregroundStyle(PulseTheme.hairline)
+                AxisValueLabel().foregroundStyle(PulseTheme.textTertiary)
+            }
+        }
+        .chartXAxis { PulseTimeAxis.marks(for: snapshot.window) }
+        .frame(height: 170)
+        .accessibilityLabel(String(localized: "Strain through the day"))
+        .accessibilityValue(snapshot.curve.last.map {
+            String(localized: "\(PulseFormat.oneDecimal($0.value)) at \(PulseFormat.clock($0.date))")
+        } ?? "")
+    }
 }
 
-/// Hour labels on a time axis. Real instants, so the chart's device-zone calendar is the right one.
+/// Hour labels on a time axis. The values are real instants, so they are formatted in the device zone.
 enum PulseTimeAxis {
-    static func marks() -> some AxisContent {
-        AxisMarks(values: .automatic(desiredCount: 5)) { value in
+    static func marks(for domain: ClosedRange<Date>) -> some AxisContent {
+        AxisMarks(values: hours(in: domain)) { value in
             AxisGridLine().foregroundStyle(PulseTheme.hairline)
             AxisValueLabel {
                 if let date = value.as(Date.self) {
@@ -138,6 +169,26 @@ enum PulseTimeAxis {
             }
             .foregroundStyle(PulseTheme.textTertiary)
         }
+    }
+
+    /// Whole hours every 3 h (every 6 h past a 13-hour span), leaving out any in the last eighth of the
+    /// span, where its label would run into the value axis and be clipped.
+    static func hours(in domain: ClosedRange<Date>) -> [Date] {
+        let span = domain.upperBound.timeIntervalSince(domain.lowerBound)
+        guard span > 0 else { return [] }
+        let step = span > 13 * 3600 ? 6 : 3
+        let cal = Calendar.current
+        guard var t = cal.dateInterval(of: .hour, for: domain.lowerBound)?.start else { return [] }
+        if t < domain.lowerBound { t = t.addingTimeInterval(3600) }
+        var out: [Date] = []
+        while t <= domain.upperBound {
+            if cal.component(.hour, from: t) % step == 0,
+               t.timeIntervalSince(domain.lowerBound) <= span * 0.875 {
+                out.append(t)
+            }
+            t = t.addingTimeInterval(3600)
+        }
+        return out
     }
 }
 
@@ -186,7 +237,7 @@ struct PulseHeartRateZonesCard: View {
                             .foregroundStyle(PulseTheme.textTertiary)
                         }
                     }
-                    .chartXAxis { PulseTimeAxis.marks() }
+                    .chartXAxis { PulseTimeAxis.marks(for: snapshot.window) }
                     .frame(height: 190)
                     .accessibilityLabel(String(localized: "Heart rate through the day, shaded by zone"))
                     .accessibilityValue(accessibility)

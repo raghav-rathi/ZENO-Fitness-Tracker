@@ -51,6 +51,8 @@ final class PulseModel {
     @ObservationIgnored private var cancellables = Set<AnyCancellable>()
     @ObservationIgnored private var homeTask: Task<Void, Never>?
     @ObservationIgnored private var sleepTask: Task<Void, Never>?
+    /// A day to open on once the history's extent is known (DEBUG `--pulse-day`).
+    @ObservationIgnored private var pendingDayOffset: Int?
 
     var isAttached: Bool { repo != nil }
 
@@ -61,6 +63,9 @@ final class PulseModel {
         self.profile = profile
         self.ble = ble
         builder = PulseSnapshotBuilder(repo: repo)
+        #if DEBUG
+        pendingDayOffset = PulseDebugLaunch.dayOffset
+        #endif
         // `@Published` emits in willSet, before `refreshSeq` itself changes (every cache is already
         // assigned by then, see `Repository.refresh`). Rebuild on the next turn so the request reads a
         // settled repository.
@@ -91,6 +96,10 @@ final class PulseModel {
     private func refreshChanged(to value: Int) {
         seq = value
         updateMaxOffset()
+        if let pending = pendingDayOffset, maxDayOffset >= pending {
+            dayOffset = pending
+            pendingDayOffset = nil
+        }
         rebuildHome()
     }
 
@@ -104,6 +113,12 @@ final class PulseModel {
     /// moved, even when no refresh has landed yet.
     func sceneBecameActive() {
         updateMaxOffset()
+        rebuildHome()
+    }
+
+    /// Something outside a repository refresh may have changed what Home shows (a sheet closed after a
+    /// journal entry or a logged workout, neither of which bumps `refreshSeq`): rebuild Home.
+    func homeMayHaveChanged() {
         rebuildHome()
     }
 

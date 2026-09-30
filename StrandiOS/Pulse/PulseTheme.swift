@@ -274,12 +274,39 @@ struct PulseChip: View {
 }
 
 extension View {
-    /// The standard Pulse page: gradient background, forced dark, no system nav-bar fill.
+    /// DEBUG `--pulse-scroll <anchor>`: once `ready`, scroll to the tagged section so a screenshot can
+    /// capture it (simctl cannot swipe). Compiles to nothing in Release.
+    @ViewBuilder
+    func pulseDebugScroll(_ proxy: ScrollViewProxy, ready: Bool) -> some View {
+        #if DEBUG
+        self.task(id: ready) {
+            guard ready, let anchor = PulseDebugLaunch.scrollAnchor else { return }
+            try? await Task.sleep(nanoseconds: 900_000_000)
+            proxy.scrollTo(anchor, anchor: .top)
+        }
+        #else
+        self
+        #endif
+    }
+
+    /// A near-black band behind the status bar on the tab roots (which hide the navigation bar), so
+    /// content scrolled up under the clock does not collide with it.
+    func pulseStatusBarBackdrop() -> some View {
+        safeAreaInset(edge: .top, spacing: 0) {
+            Color.clear
+                .frame(height: 0)
+                .background(PulseTheme.backgroundTop.ignoresSafeArea(edges: .top))
+        }
+    }
+
+    /// The standard Pulse page: gradient background, forced dark. The navigation bar stays clear at
+    /// rest and takes the page's top colour once content scrolls under it, so a pushed page's title and
+    /// back button never sit on top of scrolled cards.
     func pulsePage() -> some View {
         self
             .scrollContentBackground(.hidden)
             .background(PulseBackground())
-            .toolbarBackground(.hidden, for: .navigationBar)
+            .toolbarBackground(PulseTheme.backgroundTop, for: .navigationBar)
             .environment(\.colorScheme, .dark)
     }
 }
