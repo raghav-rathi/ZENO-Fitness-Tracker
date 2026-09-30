@@ -42,6 +42,9 @@ final class StepsService: ObservableObject {
         var todayHours: [StepSource: [Int]] = [:]
         /// False until the first load lands, so views can tell "no steps" from "not read yet".
         var loaded = false
+        /// Bumped by every reload (not by live publishes), so a view holding data read on the side (a past
+        /// day's hours) knows to read it again.
+        var revision = 0
 
         var todayResolved: ResolvedStepDay? { days[today] }
     }
@@ -169,10 +172,14 @@ final class StepsService: ObservableObject {
         await reload(from: nil)
     }
 
-    /// Make sure the window reaches back to `day` (a focus day more than a year old).
+    /// Make sure the window reaches back to `day` (a focus day more than a year old), with a month before
+    /// it for the charts. Works before the first load too: the pending reload then reads the wider window.
     func ensureCovers(_ day: String) {
-        guard snapshot.loaded, day < snapshot.windowStart else { return }
-        coverFrom = StepsDayKeys.adding(-30, to: day) ?? day
+        let today = Repository.localDayKey(Date())
+        guard let from = StepsDayKeys.adding(-30, to: day),
+              let defaultStart = StepsDayKeys.adding(-(StepsPrefs.historyDays - 1), to: today),
+              from < min(defaultStart, coverFrom ?? defaultStart) else { return }
+        coverFrom = from
         scheduleReload(from: nil)
     }
 
@@ -242,7 +249,7 @@ final class StepsService: ObservableObject {
         var days: [String: ResolvedStepDay] = [:]
         for day in inputs.resolved(inProgressDay: today) { days[day.day] = day }
         snapshot = Snapshot(today: today, windowStart: windowStart, inputs: inputs, days: days,
-                            todayHours: hours, loaded: true)
+                            todayHours: hours, loaded: true, revision: snapshot.revision &+ 1)
         lastPublish = Date()
         evaluateGoal()
     }

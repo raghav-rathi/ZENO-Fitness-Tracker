@@ -23,19 +23,31 @@ enum StepGoalNotifier {
         UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { _, _ in }
     }
 
+    /// The day a post is already on its way for. The persisted marker is written from the settings
+    /// callback, so without this two evaluations inside that round trip (a reload and a live publish landing
+    /// together) would both pass the policy and post twice.
+    @MainActor private static var postingDay: String?
+
     /// Run the policy for the in-progress day and post at most one notification for it. Safe to call on
     /// every refresh; every path that fails the policy is a no-op.
+    @MainActor
     static func evaluate(day: String, steps: Int?, goal: Int) {
         let defaults = UserDefaults.standard
-        guard StepGoal.shouldNotify(enabled: defaults.bool(forKey: StepsPrefs.goalNotificationKey),
+        guard postingDay != day,
+              StepGoal.shouldNotify(enabled: defaults.bool(forKey: StepsPrefs.goalNotificationKey),
                                     steps: steps, goal: goal,
                                     lastNotifiedDay: defaults.string(forKey: StepsPrefs.goalNotifiedDayKey),
                                     today: day),
               let steps else { return }
+        postingDay = day
         let target = StepGoal.clamp(goal)
         let center = UNUserNotificationCenter.current()
         center.getNotificationSettings { settings in
-            guard settings.authorizationStatus == .authorized else { return }
+            guard settings.authorizationStatus == .authorized else {
+                // Not posted, so not spent: a later evaluation may try again once notifications are allowed.
+                Task { @MainActor in if postingDay == day { postingDay = nil } }
+                return
+            }
             let content = UNMutableNotificationContent()
             content.title = String(localized: "Step goal reached")
             content.body = String(localized: "\(StepsFormat.count(steps)) steps today, past your goal of \(StepsFormat.count(target)).")

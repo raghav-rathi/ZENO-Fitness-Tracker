@@ -62,7 +62,8 @@ struct StepsView: View {
                 howCountedCard
             }
         }
-        .task(id: day) {
+        // Keyed on the snapshot's revision too: a reload (a Health sync, a backfill) can move a past day's hours.
+        .task(id: "\(day)|\(snapshot.revision)") {
             service.activate(repo: repo)
             service.ensureCovers(day)
             if !isToday { pastDayHours = await service.hours(for: day) }
