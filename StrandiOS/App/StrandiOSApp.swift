@@ -44,6 +44,13 @@ struct StrandiOSApp: App {
     /// Chrome accent colour (mint / WHOOP blue / custom). Chrome only — never the data colour worlds.
     @AppStorage(AccentColor.storageKey) private var accentRaw = AccentColor.mint.rawValue
     @AppStorage(AccentColor.customHexKey) private var accentCustomHex = AccentColor.defaultCustomHex
+    /// ZENO's WHOOP-style interface (`PulseRootView`) instead of the classic tabs. Default ON. Pulse is
+    /// always dark, so while it is on it overrides the Appearance choice for the whole window, sheets and
+    /// system bars included, which a colour scheme set lower in the tree cannot reach.
+    @AppStorage("pulse.enabled") private var pulseEnabled = true
+    private var windowColorScheme: ColorScheme? {
+        pulseEnabled ? .dark : AppearanceMode.resolve(appearanceRaw).colorScheme
+    }
     /// Effort's display scale is also embedded in the shared widget snapshot. Observe it here so a
     /// Settings change gets one accurate full rebuild instead of waiting for an unrelated repo refresh.
     @AppStorage(UnitPrefs.effortScaleKey) private var effortScaleRaw = EffortScale.hundred.rawValue
@@ -234,7 +241,7 @@ struct StrandiOSApp: App {
                 // v5 L3: the shared stress check-in nudge surface, so the Breathe screen's passive
                 // card observes the SAME instance the central detector (AppModel.evaluateStress) posts to.
                 .environment(\.stressNudgeCenter, model.stressNudgeCenter)
-                .preferredColorScheme(AppearanceMode.resolve(appearanceRaw).colorScheme)
+                .preferredColorScheme(windowColorScheme)
                 // Match SwiftUI format styles to the localization selected by the app's bundles. Language
                 // changes are process-wide on Apple and are applied after the documented reopen.
                 .environment(\.locale, AppLanguage.activeLocale)
@@ -463,6 +470,9 @@ private struct iOSRootView: View {
     @AppStorage("noop.onboarded") private var onboarded = false
     @AppStorage("noop.lastSeenChangelogVersion") private var lastSeenChangelog = ""
     @AppStorage("noop.acceptedTermsVersion") private var acceptedTerms = ""
+    /// ZENO's WHOOP-style shell (`PulseRootView`) or the classic tabs; default ON. Settings and Pulse's
+    /// More tab both carry the switch.
+    @AppStorage("pulse.enabled") private var pulseEnabled = true
     @State private var showWhatsNew = false
     /// Starts false so a cold-launch external action can't race this view's onAppear decision about the
     /// automatic What's New sheet. It becomes true only when no sheet is due or its dismissal completes.
@@ -490,9 +500,11 @@ private struct iOSRootView: View {
 
     private var shell: some View {
         ZStack {
-            RootTabView(homeScreenQuickActionsEnabled:
-                demoBypass || (onboarded && acceptedTerms == Terms.currentVersion
-                    && automaticLaunchSheetResolved))
+            if pulseEnabled {
+                PulseRootView(homeScreenQuickActionsEnabled: gatesCleared)
+            } else {
+                RootTabView(homeScreenQuickActionsEnabled: gatesCleared)
+            }
             if !onboarded && !demoBypass {
                 OnboardingWizard(onFinished: {
                     onboarded = true
@@ -544,6 +556,11 @@ private struct iOSRootView: View {
             }
         }
         .onChange(of: acceptedTerms) { _, _ in showWhatsNewIfDue() }
+    }
+
+    /// Whether an external entry point may open a screen: every mandatory first-run gate has cleared.
+    private var gatesCleared: Bool {
+        demoBypass || (onboarded && acceptedTerms == Terms.currentVersion && automaticLaunchSheetResolved)
     }
 
     /// DEBUG: launched with --demo-seed, skip the first-run gates (onboarding / terms / What's New) so the
@@ -622,6 +639,13 @@ enum DemoScreens {
         // + self-service pairing guidance, screenshot-able WITHOUT reproducing the bond refusal on real
         // hardware.
         case "bondrefused": return AnyView(BondRefusedDemoScreen())
+        // ZENO's WHOOP-style interface, one screen at a time over the seeded store.
+        case "pulsehome": return AnyView(PulseDemoScreen(kind: .home))
+        case "pulserecovery": return AnyView(PulseDemoScreen(kind: .recovery))
+        case "pulsestrain": return AnyView(PulseDemoScreen(kind: .strain))
+        case "pulsesleep": return AnyView(PulseDemoScreen(kind: .sleep))
+        case "pulsehealth": return AnyView(PulseDemoScreen(kind: .health))
+        case "pulsemore": return AnyView(PulseDemoScreen(kind: .more))
         default:         return nil
         }
     }

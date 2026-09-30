@@ -264,6 +264,10 @@ struct SettingsView: View {
                 profileCard.staggeredAppear(index: 0)
                 unitsCard.staggeredAppear(index: 1)
                 appearanceCard.staggeredAppear(index: 2)
+                #if os(iOS)
+                // ZENO: switch between the WHOOP-style interface and these classic tabs (StrandiOS/Pulse).
+                PulseInterfaceSettingsCard().staggeredAppear(index: 2)
+                #endif
                 strapCard.staggeredAppear(index: 3)
                 #if os(iOS)
                 liveNotificationsCard.staggeredAppear(index: 3)

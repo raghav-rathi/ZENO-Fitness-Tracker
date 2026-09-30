@@ -1,0 +1,373 @@
+#if os(iOS)
+import SwiftUI
+import Charts
+import StrandDesign
+import StrandAnalytics
+
+/// The shared frame of a deep dive: an inline title with the day under it, the Pulse page behind.
+struct PulseDetailScaffold<Content: View>: View {
+    let title: String
+    var subtitle: String?
+    @ViewBuilder var content: () -> Content
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: PulseTheme.sectionSpacing) {
+                content()
+            }
+            .padding(.horizontal, PulseTheme.pagePadding)
+            .padding(.top, 8)
+            .padding(.bottom, 40)
+        }
+        .pulsePage()
+        .navigationTitle(title)
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .principal) {
+                VStack(spacing: 0) {
+                    Text(title)
+                        .font(.headline)
+                        .foregroundStyle(PulseTheme.textPrimary)
+                    if let subtitle {
+                        Text(subtitle)
+                            .font(.caption2)
+                            .foregroundStyle(PulseTheme.textTertiary)
+                    }
+                }
+                .accessibilityElement(children: .combine)
+            }
+        }
+    }
+}
+
+/// A loading placeholder for a dive whose snapshot is still building.
+struct PulseDetailLoading: View {
+    var body: some View {
+        ProgressView()
+            .tint(PulseTheme.textSecondary)
+            .frame(maxWidth: .infinity, minHeight: 240)
+    }
+}
+
+extension PulseModel {
+    /// "Today, Wed 30 Sep" for the dive subtitle.
+    var dayCaption: String {
+        "\(PulseFormat.dayTitle(offset: dayOffset, date: selectedLogicalDate)), \(PulseFormat.daySubtitle(selectedLogicalDate))"
+    }
+}
+
+// MARK: - Recovery
+
+struct PulseRecoveryView: View {
+    @Environment(PulseModel.self) private var model
+    @State private var range = 30
+
+    var body: some View {
+        PulseDetailScaffold(title: PulseScore.recovery.displayName, subtitle: model.dayCaption) {
+            if let s = model.recovery, s.day.offset == model.dayOffset {
+                content(s)
+            } else {
+                PulseDetailLoading()
+            }
+        }
+        .task(id: model.detailKey) { await model.loadRecovery() }
+    }
+
+    @ViewBuilder
+    private func content(_ s: RecoverySnapshot) -> some View {
+        PulseRecoveryHero(dial: s.dial)
+
+        if case .calibrating(let nights, let of) = s.dial.state {
+            PulseCalibrationCard(nights: nights, of: of)
+        }
+
+        if s.dial.value != nil {
+            PulseContributorsCard(title: String(localized: "Contributors"),
+                                  trailing: s.sourceDayKey.map { PulseFormat.dayLabel($0) },
+                                  rows: s.contributors)
+            if !s.context.isEmpty {
+                PulseContributorsCard(title: String(localized: "Context"), trailing: nil, rows: s.context)
+            }
+        }
+
+        if !s.drivers.isEmpty, let confidence = s.confidence {
+            PulseCard {
+                ChargeBreakdownSection(drivers: s.drivers, confidence: confidence, skinTempRel: s.skinTempRel)
+            }
+        }
+
+        PulseRecoveryHistory(bars: s.history, range: $range)
+    }
+}
+
+/// The big dial with the band word and, for a carried score, whose night it is.
+struct PulseRecoveryHero: View {
+    let dial: PulseDialData
+
+    var body: some View {
+        VStack(spacing: 12) {
+            PulseDial(data: dial, diameter: 196, lineWidth: 14, showsLabel: false)
+            if let band = dial.band {
+                HStack(spacing: 8) {
+                    PulseChip(text: bandName(band), tint: PulseTheme.recoveryText(band))
+                    Text(bandLine(band))
+                        .font(.subheadline)
+                        .foregroundStyle(PulseTheme.textSecondary)
+                }
+            }
+            if case .carried(let caption) = dial.state {
+                Text(String(localized: "No score for this day yet. Showing \(caption)."))
+                    .font(.caption)
+                    .foregroundStyle(PulseTheme.textTertiary)
+                    .multilineTextAlignment(.center)
+            }
+            if case .noData = dial.state {
+                Text(String(localized: "No Recovery for this day. It scores from a night of overnight HRV."))
+                    .font(.caption)
+                    .foregroundStyle(PulseTheme.textTertiary)
+                    .multilineTextAlignment(.center)
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.top, 8)
+    }
+
+    private func bandName(_ band: PulseDisplay.RecoveryBand) -> String {
+        switch band {
+        case .green: return String(localized: "Green")
+        case .yellow: return String(localized: "Yellow")
+        case .red: return String(localized: "Red")
+        }
+    }
+
+    private func bandLine(_ band: PulseDisplay.RecoveryBand) -> String {
+        switch band {
+        case .green: return String(localized: "Ready to push")
+        case .yellow: return String(localized: "Maintain today")
+        case .red: return String(localized: "Prioritise recovery")
+        }
+    }
+}
+
+/// What calibration means and how far along it is.
+struct PulseCalibrationCard: View {
+    let nights: Int
+    let of: Int
+
+    var body: some View {
+        PulseCard {
+            VStack(alignment: .leading, spacing: 10) {
+                PulseLabel(String(localized: "Calibrating"), color: PulseTheme.textSecondary)
+                Text(ChargeBreakdownFormat.calibrationProgress(banked: nights, seed: of))
+                    .font(.headline)
+                    .foregroundStyle(PulseTheme.textPrimary)
+                PulseSegmentBar(filled: nights, total: of, tint: PulseTheme.recoveryGreen)
+                    .frame(height: 6)
+                Text(String(localized: "Recovery compares each night's heart rate variability, resting heart rate and breathing with your own baseline. That baseline needs \(of) nights of overnight wear before the first score, so the dial fills in once the strap has seen enough nights."))
+                    .font(.subheadline)
+                    .foregroundStyle(PulseTheme.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                if let restart = ChargeBreakdownFormat.currentCalibrationRestartCause() {
+                    Text(restart)
+                        .font(.caption)
+                        .foregroundStyle(PulseTheme.textTertiary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+    }
+}
+
+/// `total` segments with the first `filled` lit.
+struct PulseSegmentBar: View {
+    let filled: Int
+    let total: Int
+    let tint: Color
+
+    var body: some View {
+        HStack(spacing: 4) {
+            ForEach(0..<max(1, total), id: \.self) { i in
+                Capsule().fill(i < filled ? tint : PulseTheme.track)
+            }
+        }
+        .accessibilityHidden(true)
+    }
+}
+
+/// Rows of contributors, each against its 30-day average.
+struct PulseContributorsCard: View {
+    let title: String
+    let trailing: String?
+    let rows: [PulseContributor]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            PulseSectionHeader(title: title, trailing: trailing)
+            PulseCard(padding: 0) {
+                VStack(spacing: 0) {
+                    ForEach(Array(rows.enumerated()), id: \.element.id) { index, row in
+                        if let route = row.route {
+                            NavigationLink(value: route) { PulseContributorRow(row: row, linked: true) }
+                                .buttonStyle(PulsePressStyle())
+                        } else {
+                            PulseContributorRow(row: row, linked: false)
+                        }
+                        if index < rows.count - 1 {
+                            Rectangle().fill(PulseTheme.hairline).frame(height: 1).padding(.leading, 14)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+struct PulseContributorRow: View {
+    let row: PulseContributor
+    let linked: Bool
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 10) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(row.title)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(PulseTheme.textPrimary)
+                if let average = row.averageText {
+                    Text(average)
+                        .font(.caption)
+                        .foregroundStyle(PulseTheme.textTertiary)
+                }
+            }
+            Spacer(minLength: 8)
+            VStack(alignment: .trailing, spacing: 4) {
+                HStack(alignment: .firstTextBaseline, spacing: 3) {
+                    Text(row.value)
+                        .font(PulseTheme.numeral(22))
+                        .foregroundStyle(PulseTheme.textPrimary)
+                    if !row.unit.isEmpty {
+                        Text(row.unit)
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(PulseTheme.textTertiary)
+                    }
+                }
+                if let c = row.comparison {
+                    PulseComparisonLine(comparison: c, showsCaption: false)
+                }
+            }
+            if linked { PulseChevron() }
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
+        .frame(minHeight: 60)
+        .contentShape(Rectangle())
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(accessibility)
+    }
+
+    private var accessibility: String {
+        var parts = ["\(row.title), \(row.value) \(row.unit)"]
+        if let c = row.comparison { parts.append(c.accessibility) }
+        return parts.joined(separator: ", ")
+    }
+}
+
+/// 7 / 30 / 90 days of Recovery, each bar in its band colour.
+struct PulseRecoveryHistory: View {
+    let bars: [PulseDayBar]
+    @Binding var range: Int
+
+    private var shown: [PulseDayBar] { Array(bars.suffix(range)) }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            PulseSectionHeader(title: String(localized: "History"))
+            PulseCard {
+                VStack(alignment: .leading, spacing: 14) {
+                    Picker(String(localized: "Range"), selection: $range) {
+                        Text(String(localized: "7 days")).tag(7)
+                        Text(String(localized: "30 days")).tag(30)
+                        Text(String(localized: "90 days")).tag(90)
+                    }
+                    .pickerStyle(.segmented)
+
+                    if shown.count >= 2 {
+                        let data = shown
+                        Chart(Array(data.enumerated()), id: \.element.id) { index, bar in
+                            BarMark(x: .value("Day", index), y: .value("Recovery", bar.value), width: .ratio(0.7))
+                                .foregroundStyle(PulseTheme.recovery(bar.band ?? .yellow))
+                                .cornerRadius(2)
+                        }
+                        .chartYScale(domain: 0...100)
+                        .chartXScale(domain: -0.5...(Double(data.count) - 0.5))
+                        .chartYAxis {
+                            AxisMarks(position: .trailing, values: [0, 33, 67, 100]) { _ in
+                                AxisGridLine().foregroundStyle(PulseTheme.hairline)
+                                AxisValueLabel().foregroundStyle(PulseTheme.textTertiary)
+                            }
+                        }
+                        .chartXAxis {
+                            AxisMarks(values: axisIndices(count: data.count)) { value in
+                                AxisValueLabel {
+                                    if let i = value.as(Int.self), data.indices.contains(i) {
+                                        Text(data[i].label)
+                                    }
+                                }
+                                .foregroundStyle(PulseTheme.textTertiary)
+                            }
+                        }
+                        .frame(height: 170)
+                        .accessibilityLabel(String(localized: "Recovery, last \(range) days"))
+                        .accessibilityValue(accessibilitySummary(data))
+
+                        HStack(spacing: 14) {
+                            legend(.green, "67–100")
+                            legend(.yellow, "34–66")
+                            legend(.red, "0–33")
+                            Spacer()
+                            if let avg = average(data) {
+                                Text(String(localized: "Avg \(PulseFormat.whole(avg))%"))
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(PulseTheme.textSecondary)
+                            }
+                        }
+                    } else {
+                        Text(String(localized: "Not enough scored days yet."))
+                            .font(.subheadline)
+                            .foregroundStyle(PulseTheme.textTertiary)
+                            .frame(maxWidth: .infinity, minHeight: 80)
+                    }
+                }
+            }
+        }
+    }
+
+    private func axisIndices(count: Int) -> [Int] {
+        guard count > 1 else { return [0] }
+        let step = max(1, count / 4)
+        var out = Array(stride(from: 0, to: count, by: step))
+        if out.last != count - 1 { out.append(count - 1) }
+        if out.count >= 2, out[out.count - 1] - out[out.count - 2] < step / 2 { out.remove(at: out.count - 2) }
+        return out
+    }
+
+    private func legend(_ band: PulseDisplay.RecoveryBand, _ text: String) -> some View {
+        HStack(spacing: 4) {
+            Circle().fill(PulseTheme.recovery(band)).frame(width: 7, height: 7)
+            Text(text).font(.caption2.monospacedDigit()).foregroundStyle(PulseTheme.textTertiary)
+        }
+        .accessibilityHidden(true)
+    }
+
+    private func average(_ data: [PulseDayBar]) -> Double? {
+        guard !data.isEmpty else { return nil }
+        return data.map(\.value).reduce(0, +) / Double(data.count)
+    }
+
+    private func accessibilitySummary(_ data: [PulseDayBar]) -> String {
+        let greens = data.filter { $0.band == .green }.count
+        let yellows = data.filter { $0.band == .yellow }.count
+        let reds = data.filter { $0.band == .red }.count
+        return String(localized: "\(greens) green, \(yellows) yellow, \(reds) red days")
+    }
+}
+#endif

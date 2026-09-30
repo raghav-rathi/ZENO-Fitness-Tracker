@@ -1,0 +1,518 @@
+#if os(iOS)
+import SwiftUI
+import StrandDesign
+import StrandAnalytics
+import WhoopStore
+
+// MARK: - Snapshots
+//
+// Immutable values a Pulse screen renders from. `PulseSnapshotBuilder` builds them off the main actor
+// from one `PulseRequest`; `PulseModel` publishes them. A view holding a snapshot has everything it
+// draws, already resolved and formatted, so a body pass does no store reads and no history scans.
+//
+// Dates come in two kinds and the types keep them apart. A DAY KEY ("yyyy-MM-dd") names a calendar day
+// and is only ever turned into text through `PulseFormat.dayLabel`, which formats at UTC midnight the
+// way the key was parsed. A real INSTANT (sleep onset, a workout start, an HR sample) is a `Date` and is
+// shown in the device zone. Mixing the two is how a label reads the previous day west of UTC.
+
+/// The day Home is showing.
+struct PulseDay: Equatable, Hashable {
+    /// Days back from today's logical day (0 = today).
+    let offset: Int
+    /// The day's key, as `DailyMetric.day` stores it.
+    let key: String
+    /// A real instant on that logical day (the logical "now" shifted back `offset` days), for titles.
+    let date: Date
+
+    var isToday: Bool { offset == 0 }
+
+    /// A day is its offset and key. `date` is only the instant a title is formatted from and moves with
+    /// the clock between builds, so it must not make two builds of the same day compare unequal.
+    static func == (lhs: PulseDay, rhs: PulseDay) -> Bool {
+        lhs.offset == rhs.offset && lhs.key == rhs.key
+    }
+
+    func hash(into hasher: inout Hasher) {
+        hasher.combine(offset)
+        hasher.combine(key)
+    }
+}
+
+/// A score dial's content, fully resolved.
+struct PulseDialData: Equatable {
+    enum State: Equatable {
+        /// The day scored its own value.
+        case scored
+        /// No score for the day; showing a real earlier value, stamped with whose it is.
+        case carried(caption: String)
+        /// Recovery's baseline is still learning: `nights` of `of` banked.
+        case calibrating(nights: Int, of: Int)
+        /// Nothing honest to show.
+        case noData
+    }
+
+    let score: PulseScore
+    /// On the dial's own axis: percent for Sleep and Recovery, 0-21 for Strain. nil = no value.
+    let value: Double?
+    let state: State
+    /// Recovery only: the discrete band the value falls in.
+    var band: PulseDisplay.RecoveryBand? = nil
+
+    /// Arc fill, 0...1.
+    var progress: Double {
+        switch state {
+        case .calibrating(let nights, let of): return of > 0 ? Double(nights) / Double(of) : 0
+        default:
+            guard let value else { return 0 }
+            let span = score == .strain ? 21.0 : 100.0
+            return max(0, min(1, value / span))
+        }
+    }
+
+    /// The centred number.
+    var valueText: String {
+        guard let value else { return "–" }
+        return score == .strain
+            ? PulseFormat.oneDecimal(value)
+            : "\(PulseDisplay.displayedPercent(value))"
+    }
+
+    /// The unit printed small beside the number.
+    var unitText: String? {
+        guard value != nil else { return nil }
+        return score == .strain ? nil : "%"
+    }
+
+    /// The arc colour.
+    var color: Color {
+        if case .calibrating = state { return PulseTheme.textTertiary }
+        if score == .recovery, let band { return PulseTheme.recovery(band) }
+        return score.tint
+    }
+
+    /// VoiceOver phrasing: the score, its value and its state in one sentence.
+    var accessibilityLabel: String {
+        let name = score.displayName
+        switch state {
+        case .noData:
+            return String(localized: "\(name), no data")
+        case .calibrating(let nights, let of):
+            return String(localized: "\(name), calibrating, \(nights) of \(of) nights")
+        case .scored, .carried:
+            let spoken: String
+            if score == .strain {
+                spoken = String(localized: "\(valueText) out of 21")
+            } else {
+                spoken = String(localized: "\(valueText) percent")
+            }
+            if case .carried(let caption) = state {
+                return String(localized: "\(name), \(spoken), \(caption)")
+            }
+            return String(localized: "\(name), \(spoken)")
+        }
+    }
+}
+
+/// Today's recommended strain range, from the day's recovery.
+struct PulseStrainTarget: Equatable {
+    /// On the 0-21 axis, from `CoupledView.optimalStrainRange`.
+    let range: ClosedRange<Double>
+    let intent: PulseDisplay.StrainIntent
+    let band: PulseDisplay.RecoveryBand
+    /// The day's strain so far, 0-21, or nil when there is none.
+    let current: Double?
+    /// True when the recovery behind the target was carried from an earlier night.
+    let fromCarriedRecovery: Bool
+
+    var intentTitle: String {
+        switch intent {
+        case .restore: return String(localized: "Restore")
+        case .maintain: return String(localized: "Maintain")
+        case .push: return String(localized: "Push")
+        }
+    }
+
+    var rangeText: String {
+        "\(PulseFormat.oneDecimal(range.lowerBound))–\(PulseFormat.oneDecimal(range.upperBound))"
+    }
+
+    /// One line on where the day stands against the range.
+    var progressText: String {
+        guard let current else { return String(localized: "No strain logged yet") }
+        if current < range.lowerBound {
+            return String(localized: "\(PulseFormat.oneDecimal(range.lowerBound - current)) below the range")
+        }
+        if current > range.upperBound {
+            return String(localized: "\(PulseFormat.oneDecimal(current - range.upperBound)) above the range")
+        }
+        return String(localized: "In the range")
+    }
+}
+
+/// Last night's main sleep, for My Day.
+struct PulseNightSummary: Equatable {
+    let onset: Date
+    let wake: Date
+    let asleepMin: Double
+    let inBedMin: Double
+    /// The Sleep dial's value for the same night, so the row and the dial agree.
+    let performance: Double?
+}
+
+/// A nap: a sleep block outside the main night.
+struct PulseNap: Identifiable, Equatable {
+    let id: Int
+    let start: Date
+    let end: Date
+    let asleepMin: Double
+}
+
+/// Tonight's plan: need and the bedtime that meets it.
+struct PulseTonight: Equatable {
+    enum WakeSource: Equatable {
+        /// The wake time set for the wind-down reminder.
+        case alarm
+        /// The median wake time of recent nights.
+        case habit
+        /// No wake time to go on; 07:00.
+        case fallback
+    }
+
+    /// The personalized need (the normative need the debt ledger measures against), minutes.
+    let baseNeedMin: Double
+    /// The current sleep debt, minutes (0 when none).
+    let debtMin: Double
+    /// Tonight's need: base need plus debt.
+    let needMin: Double
+    /// When to be asleep to meet it.
+    let bedtime: Date
+    let wake: Date
+    let wakeSource: WakeSource
+}
+
+/// A workout on the selected day.
+struct PulseWorkoutItem: Identifiable, Equatable {
+    let id: String
+    let title: String
+    /// The raw sport string, for the icon.
+    let sport: String
+    let start: Date
+    let durationMin: Int
+    /// On the 0-21 axis.
+    let strain: Double?
+    let kcal: Double?
+    let route: PulseWorkoutRoute
+}
+
+/// A pushable reference to one workout row. `WorkoutRow` is only `Equatable`; the path needs `Hashable`.
+struct PulseWorkoutRoute: Hashable {
+    let row: WorkoutRow
+
+    static func == (lhs: PulseWorkoutRoute, rhs: PulseWorkoutRoute) -> Bool { lhs.row == rhs.row }
+
+    func hash(into hasher: inout Hasher) {
+        hasher.combine(row.startTs)
+        hasher.combine(row.endTs)
+        hasher.combine(row.sport)
+        hasher.combine(row.source)
+    }
+}
+
+/// How a value compares with its recent average, as drawn under a stat.
+struct PulseComparison: Equatable {
+    let direction: PulseDisplay.Direction
+    /// The magnitude, e.g. "8%" or "0.3°".
+    let text: String
+    /// What it is compared against, e.g. "vs 30-day avg".
+    let caption: String
+    /// Spoken form.
+    let accessibility: String
+}
+
+/// One Key Stats tile.
+struct PulseKeyStat: Identifiable, Equatable {
+    let id: String
+    let title: String
+    let icon: String
+    let value: String
+    let unit: String
+    let caption: String?
+    let comparison: PulseComparison?
+    /// Trailing values ending on the displayed day, oldest first.
+    let spark: [Double]
+    let route: TabRoute
+}
+
+/// The day's stress read.
+struct PulseStressSummary: Equatable {
+    /// 0-3, or nil.
+    let score: Double?
+    let bandTitle: String?
+    /// Today's hourly curve; empty for a past day (the curve is scored for today only).
+    let hours: [DaytimeStress.HourPoint]
+    let maskedHours: Int
+    let isToday: Bool
+
+    var scoreText: String { score.map { PulseFormat.oneDecimal($0) } ?? "–" }
+    var hasCurve: Bool { hours.contains { $0.level != nil } }
+}
+
+/// Everything Home draws for one day.
+struct HomeSnapshot: Equatable {
+    let seq: Int
+    let day: PulseDay
+    let sleep: PulseDialData
+    let recovery: PulseDialData
+    let strain: PulseDialData
+    let target: PulseStrainTarget?
+    let lastNight: PulseNightSummary?
+    let naps: [PulseNap]
+    let workouts: [PulseWorkoutItem]
+    let tonight: PulseTonight?
+    let stats: [PulseKeyStat]
+    let stress: PulseStressSummary?
+
+    var dials: [PulseDialData] { [sleep, recovery, strain] }
+}
+
+// MARK: - Deep dives
+
+/// A contributor row: a value against its 30-day average.
+struct PulseContributor: Identifiable, Equatable {
+    let id: String
+    let title: String
+    let value: String
+    let unit: String
+    let averageText: String?
+    let comparison: PulseComparison?
+    let route: TabRoute?
+}
+
+/// One bar of a day-keyed history chart.
+struct PulseDayBar: Identifiable, Equatable {
+    /// The day key.
+    let id: String
+    let value: Double
+    /// Short axis label, formatted at UTC from the key.
+    let label: String
+    let band: PulseDisplay.RecoveryBand?
+}
+
+/// The Recovery deep dive for one day.
+struct RecoverySnapshot: Equatable {
+    let seq: Int
+    let day: PulseDay
+    let dial: PulseDialData
+    /// The day whose row the dial shows (its own, or the carried night's).
+    let sourceDayKey: String?
+    let contributors: [PulseContributor]
+    let context: [PulseContributor]
+    let drivers: [ChargeDriver]
+    let confidence: ScoreConfidence?
+    let skinTempRel: SkinTempRelative?
+    /// Up to 90 days ending on the selected day, oldest first.
+    let history: [PulseDayBar]
+}
+
+/// A timestamped value (the cumulative strain curve).
+struct PulseTimePoint: Identifiable, Equatable {
+    let date: Date
+    let value: Double
+    var id: Date { date }
+}
+
+/// One bucket of the day's heart rate.
+struct PulseHRPoint: Identifiable, Equatable {
+    let date: Date
+    let bpm: Double
+    /// Contiguous-run identity, so a gap in wear is drawn as a gap rather than a straight line.
+    let segment: String
+    var id: Date { date }
+}
+
+/// One heart-rate zone's bounds.
+struct PulseZoneBand: Identifiable, Equatable {
+    let number: Int
+    let lower: Double
+    let upper: Double
+    var id: Int { number }
+}
+
+/// The Strain deep dive for one day.
+struct StrainSnapshot: Equatable {
+    let seq: Int
+    let day: PulseDay
+    let dial: PulseDialData
+    let target: PulseStrainTarget?
+    let curve: [PulseTimePoint]
+    let hr: [PulseHRPoint]
+    let window: ClosedRange<Date>
+    let zones: [PulseZoneBand]
+    /// Minutes in zones 1-5.
+    let zoneMinutes: [Double]
+    let calories: Double?
+    let averageHR: Int?
+    let peakHR: Int?
+    let workouts: [PulseWorkoutItem]
+}
+
+/// A stage span on the hypnogram, seconds from the night's start.
+struct PulseStageSpan: Equatable {
+    let stage: SleepStage
+    let start: TimeInterval
+    let end: TimeInterval
+}
+
+/// One sleep-performance contributor.
+struct PulseSleepContributor: Identifiable, Equatable {
+    let id: String
+    let title: String
+    /// 0-100, or nil when the night cannot support it.
+    let percent: Double?
+    let detail: String?
+}
+
+/// One stage's share of the night.
+struct PulseStageRow: Identifiable, Equatable {
+    let stage: SleepStage
+    let minutes: Double
+    let share: Double
+    var id: String { stage.rawValue }
+}
+
+/// The Sleep deep dive for one night.
+struct SleepSnapshot: Equatable {
+    let seq: Int
+    /// Index into the newest-first night list (0 = the most recent night).
+    let nightIndex: Int
+    let nightCount: Int
+    /// The wake day the night belongs to (sleep is keyed by the local day it ends on).
+    let wakeDayKey: String?
+    let onset: Date?
+    let wake: Date?
+    let dial: PulseDialData
+    let asleepMin: Double?
+    let inBedMin: Double?
+    let needMin: Double?
+    let contributors: [PulseSleepContributor]
+    let spans: [PulseStageSpan]
+    let stages: [PulseStageRow]
+    let sleepingHR: Int?
+    let lowestHR: Int?
+    let respRate: Double?
+    let naps: [PulseNap]
+    /// True when the night has no decodable stages (the honest stage-less stub).
+    let isStub: Bool
+
+    var hasOlder: Bool { nightIndex + 1 < nightCount }
+    var hasNewer: Bool { nightIndex > 0 }
+}
+
+/// One vital on the Health Monitor.
+struct PulseVital: Identifiable, Equatable {
+    let id: String
+    let title: String
+    let value: String?
+    let unit: String
+    let band: VitalBands.Band
+    /// "Your typical range" / "Typical adult range".
+    let basisText: String
+    let rangeText: String?
+    /// Where the value and the typical range sit on the bar, 0...1.
+    let valueFraction: Double?
+    let typicalFraction: ClosedRange<Double>?
+    /// The day the value is from.
+    let dayLabel: String?
+    let route: TabRoute
+}
+
+/// The Health tab.
+struct HealthSnapshot: Equatable {
+    let seq: Int
+    let vitals: [PulseVital]
+    let stress: PulseStressSummary?
+    let fitnessAge: Double?
+    let bodyAge: Double?
+    let vitality: Double?
+    let vo2max: Double?
+    let stepsToday: Double?
+    let stepsRoute: TabRoute
+}
+
+// MARK: - Formatting
+
+enum PulseFormat {
+    static func oneDecimal(_ v: Double) -> String {
+        String(format: "%.1f", locale: AppLanguage.activeLocale, v)
+    }
+
+    static func whole(_ v: Double) -> String { "\(Int(v.rounded()))" }
+
+    static func grouped(_ v: Double) -> String {
+        groupedFormatter.string(from: NSNumber(value: Int(v.rounded()))) ?? whole(v)
+    }
+
+    private static let groupedFormatter: NumberFormatter = {
+        let f = NumberFormatter()
+        f.numberStyle = .decimal
+        f.locale = AppLanguage.activeLocale
+        return f
+    }()
+
+    /// "7h 12m" from minutes.
+    static func duration(minutes: Double) -> String {
+        let total = max(0, Int(minutes.rounded()))
+        let h = total / 60, m = total % 60
+        if h == 0 { return String(localized: "\(m)m") }
+        return String(localized: "\(h)h \(m)m")
+    }
+
+    /// A clock time for a real instant, in the device zone, honouring the Clock format setting.
+    static func clock(_ date: Date) -> String { AppClock.hourMinute(date) }
+
+    /// A short label for a DAY KEY ("12 Jul"), formatted at UTC midnight, the instant the key was parsed
+    /// at, so it names the key's own day in every time zone.
+    static func dayLabel(_ key: String, template: String = "dMMM") -> String {
+        guard let date = dayKeyParser.date(from: key) else { return key }
+        return dayFormatter(template).string(from: date)
+    }
+
+    private static let dayKeyParser: DateFormatter = {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.timeZone = TimeZone(identifier: "UTC")
+        f.dateFormat = "yyyy-MM-dd"
+        return f
+    }()
+
+    private static var dayFormatters: [String: DateFormatter] = [:]
+    private static let lock = NSLock()
+
+    private static func dayFormatter(_ template: String) -> DateFormatter {
+        lock.lock(); defer { lock.unlock() }
+        if let f = dayFormatters[template] { return f }
+        let f = DateFormatter()
+        f.locale = AppLanguage.activeLocale
+        f.setLocalizedDateFormatFromTemplate(template)
+        f.timeZone = TimeZone(identifier: "UTC")
+        dayFormatters[template] = f
+        return f
+    }
+
+    /// "Today" / "Yesterday" / the weekday for a Home day. `date` is a real instant on that logical day
+    /// (the logical now shifted back), so it is formatted in the device zone, the zone it was made in.
+    static func dayTitle(offset: Int, date: Date) -> String {
+        switch offset {
+        case 0: return String(localized: "Today")
+        case 1: return String(localized: "Yesterday")
+        default: return date.formatted(.dateTime.weekday(.wide).locale(AppLanguage.activeLocale))
+        }
+    }
+
+    /// "Wed, 30 Sep" for a Home day, device zone (see `dayTitle`).
+    static func daySubtitle(_ date: Date) -> String {
+        date.formatted(.dateTime.weekday(.abbreviated).day().month(.abbreviated)
+            .locale(AppLanguage.activeLocale))
+    }
+}
+#endif
