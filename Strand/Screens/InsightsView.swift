@@ -524,14 +524,14 @@ struct InsightsView: View {
 
     /// Rebuild the cached behaviour ranking for the current inputs.
     /// Called at load and whenever `outcome` changes, NOT in `body`.
+    ///
+    /// Ranks every outcome the segmented control offers and shows the selected one, so significance is
+    /// Benjamini–Hochberg-corrected across all the tests the screen can surface, not re-decided per tab.
     private func recomputeRanked() {
-        let outcomeDays = outcomeByKey[outcome.key] ?? [:]
-        ranked = BehaviorInsights.rank(
-            behaviors: behaviours,
-            controls: controls,
-            outcomeByDay: outcomeDays,
-            outcome: outcome.outcomeName
-        )
+        var outcomes: [String: [String: Double]] = [:]
+        for o in Outcome.allCases { outcomes[o.outcomeName] = outcomeByKey[o.key] ?? [:] }
+        ranked = BehaviorInsights.rankAll(behaviors: behaviours, controls: controls,
+                                          outcomes: outcomes)[outcome.outcomeName] ?? []
     }
 
     /// Rebuild the cached metric relationships from the loaded series.

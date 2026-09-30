@@ -115,51 +115,118 @@ final class BehaviorInsightsTests: XCTestCase {
     // MARK: - ranking
 
     func testRankOrdersByEffectSizeSignificantFirst() {
-        // Three behaviors over a shared outcome series of 12 days.
-        let outcome: [String: Double] = [
-            "d1": 50, "d2": 52, "d3": 48, "d4": 51, "d5": 49, "d6": 53,
-            "d7": 70, "d8": 72, "d9": 68, "d10": 71, "d11": 69, "d12": 73,
-        ]
-        // Strong: cleanly splits the low half (d1..d6) vs high half → big |d|, significant.
-        let strong: Set<String> = ["d1", "d2", "d3", "d4", "d5", "d6"]
-        // Weak: a scattered 3-day set, small + not enough per-group for significance.
-        let weak: Set<String> = ["d1", "d7", "d2"]
-        // Tiny-but-significant-impossible: 2 days only.
-        let tiny: Set<String> = ["d3", "d9"]
+        // Twenty days: d1..d10 low (~50), d11..d20 high (~70), with a little spread in each half.
+        var outcome: [String: Double] = [:]
+        for i in 1...20 { outcome["d\(i)"] = (i <= 10 ? 50.0 : 70.0) + Double(i % 3) - 1 }
+        // Strong: cleanly splits the halves → big |d|, significant after correction.
+        let strong = Set((1...10).map { "d\($0)" })
+        // Mixed: 3 low + 4 high "yes" days → a small effect, not significant.
+        let mixed: Set<String> = ["d1", "d2", "d3", "d11", "d12", "d13", "d14"]
+        // Null: alternating days → no effect.
+        let null = Set(stride(from: 1, through: 19, by: 2).map { "d\($0)" })
+        // Thin: 4 "yes" days — under WHOOP's 5/5 rule, never tested, never shown.
+        let thin: Set<String> = ["d1", "d2", "d3", "d4"]
 
         // Predates the Yes/No split and tests the ranking math, so it keeps its original partition
         // by declaring the complement as controls explicitly.
         let all = Set(outcome.keys)
-        let ranked = BehaviorInsights.rank(behaviors: ["Strong": strong, "Weak": weak, "Tiny": tiny],
-                                           controls: ["Strong": all.subtracting(strong),
-                                                      "Weak": all.subtracting(weak),
-                                                      "Tiny": all.subtracting(tiny)],
+        let behaviors = ["Strong": strong, "Mixed": mixed, "Null": null, "Thin": thin]
+        let ranked = BehaviorInsights.rank(behaviors: behaviors,
+                                           controls: behaviors.mapValues { all.subtracting($0) },
                                            outcomeByDay: outcome, outcome: "Recovery")
-        XCTAssertEqual(ranked.count, 3)
+        XCTAssertEqual(ranked.map(\.behavior).sorted(), ["Mixed", "Null", "Strong"], "Thin is not tested")
         XCTAssertEqual(ranked.first?.behavior, "Strong")   // significant + largest |d|
         XCTAssertTrue(ranked.first!.significant)
-        // Non-significant entries trail the significant one.
+        XCTAssertNotNil(ranked.first?.qValue)
+        // Non-significant entries trail the significant one, larger |cohensD| first.
         XCTAssertFalse(ranked[1].significant)
         XCTAssertFalse(ranked[2].significant)
-        // Among the non-significant, larger |cohensD| comes first.
         XCTAssertGreaterThanOrEqual(abs(ranked[1].cohensD), abs(ranked[2].cohensD))
     }
 
     func testRankDropsUncomputableBehaviors() {
-        let outcome: [String: Double] = ["a": 60, "b": 62, "c": 70, "d": 72]
-        // "AllDays" covers every day → no without group → dropped.
+        var outcome: [String: Double] = [:]
+        for i in 1...10 { outcome["d\(i)"] = (i <= 5 ? 60.0 : 70.0) + Double(i % 2) }
+        // "AllDays" covers every day → no without group → dropped. "Half" has 5 and 5 → tested.
         // Predates the Yes/No split and tests the ranking math, so it keeps its original partition
         // by declaring the complement as controls explicitly.
         let all = Set(outcome.keys)
-        let ranked = BehaviorInsights.rank(behaviors: [
-            "AllDays": ["a", "b", "c", "d"],
-            "Half": ["a", "b"],
-        ], controls: [
-            "AllDays": all.subtracting(["a", "b", "c", "d"]),
-            "Half": all.subtracting(["a", "b"]),
-        ], outcomeByDay: outcome, outcome: "Recovery")
+        let half = Set((1...5).map { "d\($0)" })
+        let ranked = BehaviorInsights.rank(behaviors: ["AllDays": all, "Half": half],
+                                           controls: ["AllDays": [], "Half": all.subtracting(half)],
+                                           outcomeByDay: outcome, outcome: "Recovery")
         XCTAssertEqual(ranked.count, 1)
         XCTAssertEqual(ranked.first?.behavior, "Half")
+    }
+
+    // MARK: - WHOOP's 5/5 rule and false-discovery control
+
+    func testFewerThanFiveYesOrNoDaysIsNeverTested() {
+        var outcome: [String: Double] = [:]
+        for i in 1...30 { outcome["d\(i)"] = (i <= 4 ? 30.0 : 70.0) + Double(i % 3) }
+        let fourYes = Set((1...4).map { "d\($0)" })
+        let ranked = BehaviorInsights.rank(behaviors: ["Rare": fourYes],
+                                           controls: ["Rare": Set(outcome.keys).subtracting(fourYes)],
+                                           outcomeByDay: outcome, outcome: "Recovery")
+        XCTAssertTrue(ranked.isEmpty, "a huge effect on 4 yes days is still not a finding")
+    }
+
+    /// One behaviour with an uncorrected p ≈ 0.02 among nineteen that show nothing: on its own it would be
+    /// "significant", but across the twenty tests the ranker ran its q-value is ≈ 0.5.
+    func testALuckyResultAmongManyTestsIsNotSignificant() throws {
+        var outcome: [String: Double] = [:]
+        let jitter: [Double] = [-2, -1, 0, 1, 2]
+        for i in 0..<20 { outcome["d\(i)"] = 60 + jitter[i % 5] + (i < 10 ? 1.5 : 0) }
+        let lucky = Set((0..<10).map { "d\($0)" })
+        let all = Set(outcome.keys)
+        var behaviors = ["Lucky": lucky]
+        // Nulls: five "yes" and five "no" days with identical jitter and no shift → exactly no effect.
+        for k in 0..<19 {
+            behaviors["Null\(k)"] = Set((10..<15).map { "d\($0)" })
+        }
+        let controls = behaviors.mapValues { $0 == lucky ? all.subtracting(lucky) : Set((15..<20).map { "d\($0)" }) }
+
+        let alone = BehaviorInsights.rank(behaviors: ["Lucky": lucky], controls: ["Lucky": controls["Lucky"]!],
+                                          outcomeByDay: outcome, outcome: "Recovery")
+        let luckyAlone = try XCTUnwrap(alone.first)
+        XCTAssertLessThan(luckyAlone.pApprox, 0.05)
+        XCTAssertTrue(luckyAlone.significant, "one test: q equals p")
+
+        let family = BehaviorInsights.rank(behaviors: behaviors, controls: controls,
+                                           outcomeByDay: outcome, outcome: "Recovery")
+        let luckyInFamily = try XCTUnwrap(family.first { $0.behavior == "Lucky" })
+        XCTAssertEqual(luckyInFamily.pApprox, luckyAlone.pApprox)
+        XCTAssertGreaterThanOrEqual(try XCTUnwrap(luckyInFamily.qValue), BehaviorInsights.fdrThreshold)
+        XCTAssertFalse(luckyInFamily.significant)
+        XCTAssertFalse(family.contains { $0.significant })
+    }
+
+    func testTheFamilySpansEveryOutcome() throws {
+        // The same lucky split, once against its own outcome and once beside four null outcomes.
+        var outcome: [String: Double] = [:], flat: [String: Double] = [:]
+        let jitter: [Double] = [-2, -1, 0, 1, 2]
+        for i in 0..<20 {
+            outcome["d\(i)"] = 60 + jitter[i % 5] + (i < 10 ? 1.5 : 0)
+            flat["d\(i)"] = 60 + jitter[i % 5]
+        }
+        let lucky = Set((0..<10).map { "d\($0)" })
+        let controls = ["Lucky": Set(outcome.keys).subtracting(lucky)]
+        var outcomes = ["Charge": outcome]
+        for k in 0..<4 { outcomes["Flat\(k)"] = flat }
+        let byOutcome = BehaviorInsights.rankAll(behaviors: ["Lucky": lucky], controls: controls, outcomes: outcomes)
+        XCTAssertEqual(Set(byOutcome.keys), Set(outcomes.keys))
+        let charge = try XCTUnwrap(byOutcome["Charge"]?.first)
+        XCTAssertLessThan(charge.pApprox, 0.05)
+        XCTAssertGreaterThan(try XCTUnwrap(charge.qValue), charge.pApprox, "corrected across all five outcomes")
+    }
+
+    func testBenjaminiHochbergQValues() {
+        let q = MultipleTesting.benjaminiHochberg([0.01, 0.04, 0.03, 0.005])
+        XCTAssertEqual(q.count, 4)
+        for (got, want) in zip(q, [0.02, 0.04, 0.04, 0.02]) { XCTAssertEqual(got, want, accuracy: 1e-12) }
+        XCTAssertEqual(MultipleTesting.benjaminiHochberg([]), [])
+        XCTAssertEqual(MultipleTesting.benjaminiHochberg([0.9, .nan]), [1, 1])
+        XCTAssertEqual(MultipleTesting.benjaminiHochberg([0.5]), [0.5])
     }
 
     // MARK: - sentence

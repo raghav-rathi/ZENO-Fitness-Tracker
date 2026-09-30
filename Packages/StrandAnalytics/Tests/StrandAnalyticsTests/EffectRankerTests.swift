@@ -120,6 +120,28 @@ final class EffectRankerTests: XCTestCase {
         XCTAssertEqual(row(out, "Small")!.lag, 0)
     }
 
+    // MARK: - False-discovery control across lags and outcomes
+
+    /// Every lag of every pair is in the corrected family, so the winning lag's q-value is at least its
+    /// p-value and a planted effect survives the correction; `rankAll` keys rows by outcome.
+    func testAllLagsAndOutcomesFormOneCorrectedFamily() throws {
+        var charge: [String: Double] = [:], flat: [String: Double] = [:]
+        var alcohol: Set<String> = []
+        for i in 0..<6 { alcohol.insert(ymd(2026, 6, 1 + 4 * i)) }
+        for d in 1...30 { charge[ymd(2026, 6, d)] = 70 + jitter(d); flat[ymd(2026, 6, d)] = 70 + jitter(d) }
+        for i in 0..<6 { let dip = 2 + 4 * i; charge[ymd(2026, 6, dip)] = 50 + jitter(dip) }
+        let controls = ["Alcohol": Set(charge.keys).subtracting(alcohol)]
+
+        let byOutcome = EffectRanker.rankAll(behaviors: ["Alcohol": alcohol], controls: controls,
+                                             outcomes: ["Charge": charge, "HRV": flat])
+        XCTAssertEqual(Set(byOutcome.keys), ["Charge", "HRV"])
+        let planted = try XCTUnwrap(byOutcome["Charge"]?.first)
+        XCTAssertEqual(planted.lag, 1)
+        XCTAssertTrue(planted.effect.significant)
+        XCTAssertGreaterThanOrEqual(try XCTUnwrap(planted.effect.qValue), planted.effect.pApprox)
+        XCTAssertFalse(try XCTUnwrap(byOutcome["HRV"]?.first).effect.significant)
+    }
+
     // MARK: - Confidence tiers from paired-day count
 
     func testConfidenceTiers() {

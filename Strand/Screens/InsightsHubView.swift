@@ -625,13 +625,16 @@ final class InsightsHubViewModel: ObservableObject {
     }
 
     /// Re-rank the mover feed for a (possibly new) outcome selection — cheap, no DB.
+    ///
+    /// The ranking runs over EVERY outcome the segmented control offers and shows the selected one, so a
+    /// row's significance is corrected across all the tests the screen can put in front of the user
+    /// (behaviours × outcomes × lags, Benjamini–Hochberg), not re-decided per tab.
     func rankFor(_ outcome: Outcome) {
         currentOutcome = outcome
-        let outcomeDays = outcomeByKey[outcome.key] ?? [:]
-        ranked = EffectRanker.rank(behaviors: behaviours,
-                                   controls: controls,
-                                   outcomeByDay: outcomeDays,
-                                   outcome: outcome.outcomeName)
+        var outcomes: [String: [String: Double]] = [:]
+        for o in Outcome.allCases { outcomes[o.outcomeName] = outcomeByKey[o.key] ?? [:] }
+        ranked = EffectRanker.rankAll(behaviors: behaviours, controls: controls,
+                                      outcomes: outcomes)[outcome.outcomeName] ?? []
     }
 
     // MARK: Static shaping helpers

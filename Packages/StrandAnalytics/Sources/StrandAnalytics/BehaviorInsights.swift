@@ -17,8 +17,10 @@ import Foundation
 //       df = (s1²/n1 + s2²/n2)² / ( (s1²/n1)²/(n1−1) + (s2²/n2)²/(n2−1) )  [Welch–Satterthwaite],
 //     converted to a tail probability with a normal approximation (deterministic,
 //     no special-function tables; slightly understates p for small samples).
-//   - significant : pApprox < 0.05 AND min(nWith, nWithout) ≥ 5 (guards against
-//     spurious "significance" from a handful of days).
+//   - significant : for a single `effect`, pApprox < 0.05 AND min(nWith, nWithout) ≥ 5.
+//     The rankers (`rank`, `rankAll`, EffectRanker) test only behaviours with ≥ 5 "yes" and
+//     ≥ 5 "no" days (WHOOP's rule) and replace it with a Benjamini–Hochberg q < 0.10 across
+//     every test they ran, so testing many behaviours × outcomes does not manufacture findings.
 //
 // Effect direction is carried by the SIGN of delta / cohensD: a behavior that
 // lowers the outcome yields negative values. `rank` orders behaviors by |cohensD|
@@ -48,12 +50,17 @@ public struct BehaviorEffect: Equatable, Sendable {
     public let cohensD: Double
     /// Two-sided p-value (Welch t-test, normal approximation).
     public let pApprox: Double
-    /// pApprox < 0.05 AND min(nWith, nWithout) ≥ 5.
+    /// From a ranker (`rank`, `rankAll`, `EffectRanker`): the Benjamini–Hochberg q-value is below
+    /// `BehaviorInsights.fdrThreshold` across every test the ranker ran. From the single-test `effect`:
+    /// the UNCORRECTED pApprox < 0.05 with both groups ≥ 5 — a screen should show a ranker's rows.
     public let significant: Bool
+    /// The Benjamini–Hochberg q-value across the family of tests this effect was ranked in; nil for an
+    /// effect computed on its own.
+    public let qValue: Double?
 
     public init(behavior: String, outcome: String, meanWith: Double, meanWithout: Double,
                 delta: Double, pctChange: Double?, nWith: Int, nWithout: Int,
-                cohensD: Double, pApprox: Double, significant: Bool) {
+                cohensD: Double, pApprox: Double, significant: Bool, qValue: Double? = nil) {
         self.behavior = behavior
         self.outcome = outcome
         self.meanWith = meanWith
@@ -65,15 +72,35 @@ public struct BehaviorEffect: Equatable, Sendable {
         self.cohensD = cohensD
         self.pApprox = pApprox
         self.significant = significant
+        self.qValue = qValue
+    }
+
+    /// This effect re-flagged by its family's q-value: significant only when q < the FDR threshold.
+    public func withFalseDiscoveryRate(q: Double) -> BehaviorEffect {
+        BehaviorEffect(behavior: behavior, outcome: outcome, meanWith: meanWith, meanWithout: meanWithout,
+                       delta: delta, pctChange: pctChange, nWith: nWith, nWithout: nWithout,
+                       cohensD: cohensD, pApprox: pApprox,
+                       significant: q < BehaviorInsights.fdrThreshold
+                           && Swift.min(nWith, nWithout) >= BehaviorInsights.minGroupForSignificance,
+                       qValue: q)
     }
 }
 
 public enum BehaviorInsights {
 
-    /// Minimum group size (each side) for an effect to be flagged significant.
+    /// Minimum answered days on EACH side — at least 5 "yes" and 5 "no" (WHOOP's rule) — before a
+    /// behaviour is tested at all by a ranker, and before a single effect can be flagged significant.
     public static let minGroupForSignificance: Int = 5
-    /// Significance threshold on the approximate p-value.
+    /// Significance threshold on the approximate p-value of a single, uncorrected test.
     public static let alpha: Double = 0.05
+    /// False-discovery rate a ranked finding must clear: its Benjamini–Hochberg q-value across every
+    /// test the ranker ran must be below this.
+    public static let fdrThreshold: Double = 0.10
+
+    /// Whether an effect has the 5 "yes" and 5 "no" days a ranker requires before testing it.
+    public static func meetsGroupRule(_ e: BehaviorEffect) -> Bool {
+        Swift.min(e.nWith, e.nWithout) >= minGroupForSignificance
+    }
 
     // MARK: - Single behavior effect
 
@@ -138,25 +165,53 @@ public enum BehaviorInsights {
 
     // MARK: - Ranking
 
-    /// Compute effects for every behavior in `behaviors` against one outcome and
-    /// return them sorted by |cohensD| descending, with significant effects first.
-    /// Behaviors that don't yield a computable effect are dropped.
+    /// Compute effects for every behavior in `behaviors` against one outcome and return them sorted by
+    /// |cohensD| descending, with significant effects first. The same rules as `rankAll` over this one
+    /// outcome: a behaviour without 5 "yes" and 5 "no" days is not tested, and significance is the
+    /// Benjamini–Hochberg q-value across the behaviours tested here.
     public static func rank(behaviors: [String: Set<String>],
                             controls: [String: Set<String>],
                             outcomeByDay: [String: Double],
                             outcome: String) -> [BehaviorEffect] {
-        var effects: [BehaviorEffect] = []
-        for (name, days) in behaviors {
-            // A behaviour absent from `controls` has no controls and yields nothing — failing CLOSED, so
-            // a caller that forgets loses the insight rather than getting a wrong one measured against
-            // every day the user never opened the journal.
-            if let e = effect(behaviorDays: days, controlDays: controls[name] ?? [],
-                              outcomeByDay: outcomeByDay,
-                              behavior: name, outcome: outcome) {
-                effects.append(e)
+        rankAll(behaviors: behaviors, controls: controls, outcomes: [outcome: outcomeByDay])[outcome] ?? []
+    }
+
+    /// Rank every behaviour against every outcome as ONE family of tests, keyed by outcome label.
+    ///
+    /// Each (behaviour, outcome) pair is tested only when it has at least 5 "yes" and 5 "no" days with an
+    /// outcome value (`minGroupForSignificance`, WHOOP's rule); a pair below that is not a test and is not
+    /// returned. The p-values of every test actually run — across all behaviours AND all outcomes — are
+    /// corrected together with Benjamini–Hochberg, and a row is `significant` only when its q-value is
+    /// below `fdrThreshold`. Correcting per outcome would let the number of outcomes a screen offers
+    /// quietly multiply its false findings.
+    public static func rankAll(behaviors: [String: Set<String>],
+                               controls: [String: Set<String>],
+                               outcomes: [String: [String: Double]]) -> [String: [BehaviorEffect]] {
+        var tests: [BehaviorEffect] = []
+        // Sorted iteration so the family (and so every q-value) is identical whatever the dict order.
+        for outcome in outcomes.keys.sorted() {
+            let byDay = outcomes[outcome] ?? [:]
+            for name in behaviors.keys.sorted() {
+                // A behaviour absent from `controls` has no controls and yields nothing — failing CLOSED,
+                // so a caller that forgets loses the insight rather than getting a wrong one measured
+                // against every day the user never opened the journal.
+                guard let e = effect(behaviorDays: behaviors[name] ?? [], controlDays: controls[name] ?? [],
+                                     outcomeByDay: byDay, behavior: name, outcome: outcome),
+                      meetsGroupRule(e) else { continue }
+                tests.append(e)
             }
         }
-        return effects.sorted { a, b in
+        let q = MultipleTesting.benjaminiHochberg(tests.map(\.pApprox))
+        var byOutcome: [String: [BehaviorEffect]] = [:]
+        for (i, e) in tests.enumerated() {
+            byOutcome[e.outcome, default: []].append(e.withFalseDiscoveryRate(q: q[i]))
+        }
+        return byOutcome.mapValues(sortedForDisplay)
+    }
+
+    /// Significant first, then |cohensD| descending, then behaviour name.
+    static func sortedForDisplay(_ effects: [BehaviorEffect]) -> [BehaviorEffect] {
+        effects.sorted { a, b in
             if a.significant != b.significant { return a.significant }  // significant first
             let la = abs(a.cohensD), lb = abs(b.cohensD)
             if la != lb { return la > lb }                              // bigger effect first
