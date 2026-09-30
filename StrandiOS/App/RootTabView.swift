@@ -114,7 +114,11 @@ struct RootTabView: View {
                 guard selectedTab != 0 else { return }
                 let dx = v.translation.width, dy = v.translation.height
                 guard abs(dx) > 60, abs(dx) > abs(dy) * 1.6 else { return }
-                let next = min(4, max(0, selectedTab + (dx < 0 ? 1 : -1)))
+                // Step through the tabs that EXIST, not the tag range 0…4: with Coach switched off tag 3 has
+                // no tab, and landing on it rendered an empty screen from Sleep (swipe left) or More (right).
+                let tags = coachEnabled ? [0, 1, 2, 3, 4] : [0, 1, 2, 4]
+                guard let here = tags.firstIndex(of: selectedTab) else { return }
+                let next = tags[min(tags.count - 1, max(0, here + (dx < 0 ? 1 : -1)))]
                 if next != selectedTab {
                     withAnimation(.timingCurve(0.22, 1, 0.36, 1, duration: 0.24)) { selectedTab = next }
                 }
