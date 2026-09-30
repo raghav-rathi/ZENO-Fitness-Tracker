@@ -195,6 +195,7 @@ struct PulseCardSurface: View {
 struct PulseLabel: View {
     let text: String
     var color: Color = PulseTheme.textTertiary
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     init(_ text: String, color: Color = PulseTheme.textTertiary) {
         self.text = text
@@ -206,8 +207,9 @@ struct PulseLabel: View {
             .font(PulseTheme.label)
             .tracking(PulseTheme.labelTracking)
             .foregroundStyle(color)
-            // Wraps rather than truncating at the largest text sizes ("RESPIRATORY RATE").
-            .lineLimit(2)
+            // One line, shrinking a little if it must; at accessibility sizes it wraps instead of
+            // truncating ("RESPIRAT…").
+            .lineLimit(typeSize.isAccessibilitySize ? 2 : 1)
             .minimumScaleFactor(0.8)
     }
 }
