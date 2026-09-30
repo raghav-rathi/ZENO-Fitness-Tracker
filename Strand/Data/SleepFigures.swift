@@ -205,10 +205,11 @@ extension Repository {
     func sleepNeedTonight(now: Date = Date(), age: Int? = nil) -> SleepNeedBreakdown {
         let todayKey = Self.localDayKey(now)
         if let stored = computedSleep[todayKey]?.tonightBreakdown { return stored }
-        // The model looks back at most 60 usable nights (baseline), 28 days (typical Effort) and 14 nights
-        // (debt), so the last 120 days cover everything it reads unless the history is gappy — at a bounded
-        // cost, because this can be reached from a view body.
-        let history = days.suffix(120).map {
+        // Every window the model reads is calendar-bounded (`SleepNeed.historyNeededDays` in all), so the
+        // rows since then give exactly the whole history's answer — at a bounded cost, because this can be
+        // reached from a view body.
+        let cutoff = LocalCalendarDate(key: todayKey)?.adding(days: -SleepNeed.historyNeededDays).key ?? ""
+        let history = days.filter { $0.day >= cutoff }.map {
             SleepNeedDay(day: $0.day, mainSleepMin: $0.totalSleepMin, effort: $0.strain)
         }
         return SleepNeed.timeline(days: history, age: age, tonightAfter: todayKey).tonight

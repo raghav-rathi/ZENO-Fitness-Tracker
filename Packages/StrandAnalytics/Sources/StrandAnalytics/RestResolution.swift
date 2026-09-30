@@ -78,8 +78,10 @@ public struct RestResolution: Equatable, Sendable {
     /// strain, debt or nap terms, rather than a population default.
     public func need(forNightEnding day: String) -> SleepNeedBreakdown {
         if let resolved = timeline.nights[day] { return resolved }
-        let cutoff = SleepNeed.ordinal(day) ?? Int.max
-        let prior = usableNights.filter { $0.ordinal < cutoff }.map(\.sleptMin)
+        let end = SleepNeed.ordinal(day) ?? Int.max
+        // The same calendar-bounded window a resolved night's baseline uses.
+        let prior = usableNights.filter { $0.ordinal < end && $0.ordinal >= end - SleepNeed.baselineWindowDays }
+            .map(\.sleptMin)
         return SleepNeed.compose(baselineMin: SleepNeed.baselineMin(priorNightlyMin: prior, age: age),
                                  strainMin: 0, debtMin: 0, napMin: 0)
     }

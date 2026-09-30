@@ -133,6 +133,41 @@ final class SleepNeedTests: XCTestCase {
         }
     }
 
+    func testHistoryOlderThanTheWindowsChangesNothing() {
+        // 200 days of mixed sleep and effort; dropping everything older than `historyNeededDays` before
+        // day 150 leaves every need from day 150 on identical — which is what lets the engine and the
+        // Repository fallback feed a bounded slice instead of the whole history.
+        let full: [SleepNeedDay] = (1...200).map { i in
+            SleepNeedDay(day: key(i), mainSleepMin: [330, 420, 510, 480, 560][i % 5],
+                         napSleepMin: i % 9 == 0 ? 25 : 0, effort: [20, 45, 70, 35][i % 4])
+        }
+        let cutoff = LocalCalendarDate(key: key(150))!.adding(days: -SleepNeed.historyNeededDays).key
+        let a = SleepNeed.timeline(days: full, age: 33)
+        let b = SleepNeed.timeline(days: full.filter { $0.day >= cutoff }, age: 33)
+        for i in 150...200 {
+            XCTAssertEqual(a.need(forNightEnding: key(i)), b.need(forNightEnding: key(i)), "night \(i)")
+            XCTAssertEqual(a.debtAfter[key(i)], b.debtAfter[key(i)], "night \(i)")
+        }
+        XCTAssertEqual(a.tonight, b.tonight)
+        XCTAssertEqual(a.ledger, b.ledger)
+    }
+
+    func testAShortfallDoesNotStayOwedAcrossALongBreak() {
+        // Ten 5-hour nights build real debt; after a five-week break the next night owes none of it.
+        let history = days(10, slept: 300) + [SleepNeedDay(day: key(46), mainSleepMin: 480)]
+        let t = SleepNeed.timeline(days: history, age: nil)
+        XCTAssertGreaterThan(t.need(forNightEnding: key(10))?.debtMin ?? 0, 60)
+        XCTAssertEqual(t.need(forNightEnding: key(46))?.debtMin, 0)
+    }
+
+    func testTheBaselineForgetsNightsOlderThanNinetyDays() {
+        // Thirty 9-hour nights, then a 100-day break: the next night is back on the population baseline.
+        let history = days(30, slept: 540) + [SleepNeedDay(day: key(131), mainSleepMin: 480)]
+        let t = SleepNeed.timeline(days: history, age: nil)
+        XCTAssertEqual(t.need(forNightEnding: key(30))?.baselineMin, 540)
+        XCTAssertEqual(t.need(forNightEnding: key(131))?.baselineMin, 480)
+    }
+
     func testTheBaselineIsTrailingAndPersonal() {
         // A long sleeper: 30 nights of 9 h. The first 7 nights see a cold-start 8 h; after that the upper
         // quartile of PRIOR nights (9 h) takes over.

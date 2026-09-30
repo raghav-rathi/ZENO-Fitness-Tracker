@@ -3327,12 +3327,18 @@ final class IntelligenceEngine: ObservableObject {
         let freshMerged = Repository.mergeDaily(imported: importedRows.filter { scoredDays.contains($0.day) },
                                                 computed: prepared,
                                                 userEditedDays: Repository.userEditedDays(editedRows))
-        var historyByDay = Dictionary(repo.days.map { ($0.day, $0) }, uniquingKeysWith: { _, last in last })
+        // Every window the need model reads is calendar-bounded, so rows older than
+        // `SleepNeed.historyNeededDays` before the oldest night scored here cannot change any result: drop
+        // them rather than re-resolving the whole cached history on every 21-day pass.
+        let oldestScored = min(scoredDays.min() ?? newestDay, newestDay)
+        let cutoff = LocalCalendarDate(key: oldestScored)?.adding(days: -SleepNeed.historyNeededDays).key ?? ""
+        var historyByDay: [String: DailyMetric] = [:]
+        for d in repo.days where d.day >= cutoff { historyByDay[d.day] = d }
         for d in freshMerged { historyByDay[d.day] = d }
 
-        // Blocks for the scored window plus enough before it for the debt window (14 usable nights) and the
-        // consistency window (4 nights) of its oldest night.
-        let stored = await repo.allSleepSessions(days: historyDays + 45)
+        // Blocks for the scored window plus the debt window (28 days) and consistency window (4 nights)
+        // before its oldest night, with a week's margin.
+        let stored = await repo.allSleepSessions(days: historyDays + SleepNeed.debtWindowDays + 7)
         var blocksByDay = Dictionary(grouping: stored) { AnalyticsEngine.dayString($0.endTs, offsetSec: tzOffset) }
         let skipWindows = editedRows.map { (start: $0.effectiveStartTs, end: $0.endTs) }
             + repo.dismissedSleepWindows()

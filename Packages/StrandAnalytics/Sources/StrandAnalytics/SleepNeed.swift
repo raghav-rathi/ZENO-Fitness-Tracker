@@ -10,15 +10,17 @@ import Foundation
 //
 //   need(night) = baseline + strain + debt − naps        (never below half the baseline)
 //
-//   baseline  `Rest.personalizedNeedHours` (upper quartile, age-floored, capped) over the usable nights
-//             BEFORE this one, at most `baselineWindowNights` of them. Trailing, so a night's need is the
-//             same number whenever it is recomputed and never moves when later nights land.
+//   baseline  `Rest.personalizedNeedHours` (upper quartile, age-floored, capped) over the usable nights in
+//             the 90 calendar days BEFORE this one, at most `baselineWindowNights` of them. Trailing, so a
+//             night's need is the same number whenever it is recomputed and never moves when later nights
+//             land; calendar-bounded, so it does not depend on how much older history is loaded either.
 //   strain    extra need after a harder-than-usual day: 0…`maxStrainExtraMin` minutes, linear in how far
 //             the day's Effort ran above the person's TYPICAL Effort (median of the 28 days before it,
 //             needing 7 of them). A documented heuristic, not a measured constant — WHOOP says a strain
 //             term exists, not how big it is. A below-typical day adds nothing and never subtracts.
-//   debt      the `SleepDebt` recurrence (55 % of each night's shortfall carries, under 10 min clears,
-//             14-night window), run over these same per-night needs, so the debt component IS the ledger.
+//   debt      the `SleepDebt` recurrence (55 % of each night's shortfall carries, under 10 min clears, at most
+//             14 usable nights within the 28 calendar days before the night), run over these same per-night
+//             needs, so the debt component IS the ledger.
 //   naps      asleep minutes napped on the day before the night. They reduce the NEXT night's need and are
 //             NOT also credited as slept time in the debt recurrence: counting them in both places would
 //             repay the same minutes twice.
@@ -116,8 +118,18 @@ public enum SleepNeed {
     public static let typicalEffortWindowDays: Int = 28
     /// Fewest scored days before a typical Effort exists (and so before any strain term applies).
     public static let minTypicalEffortDays: Int = 7
-    /// Usable nights the baseline is estimated over.
+    /// Usable nights the baseline is estimated over (at most; see `baselineWindowDays`).
     public static let baselineWindowNights: Int = 60
+    /// Calendar days before a night that its baseline may draw on, so a need reflects recent habit and
+    /// does not depend on how much older history happens to be loaded.
+    public static let baselineWindowDays: Int = 90
+    /// Calendar days before a night that its debt recurrence may reach back over (at most `ledgerWindow`
+    /// usable nights inside them): a shortfall from a month ago is not owed tonight, and like the baseline
+    /// bound this makes a night's need independent of how far back the history starts.
+    public static let debtWindowDays: Int = 28
+    /// Calendar days of history before a night that fully determine its need (the longest window above).
+    /// A caller may drop anything older without changing a single result.
+    public static let historyNeededDays: Int = max(baselineWindowDays, debtWindowDays, typicalEffortWindowDays + 1)
     /// Naps can lower a night's need to this fraction of the baseline and no further: a very long daytime
     /// block is more often a misfiled main sleep than a genuine halving of need.
     public static let minNeedFractionOfBaseline: Double = 0.5
@@ -195,10 +207,12 @@ public enum SleepNeed {
     ///   - age: the person's age, for the baseline's population floor (nil → adult).
     ///   - tonightAfter: the day whose evening to plan for. nil → the newest day in `days`. Nights after
     ///     it are ignored for `tonight` and the ledger (they are still resolved in `nights`).
-    ///   - ledgerWindow: usable nights the debt recurrence looks back over.
-    /// - Complexity: O(n · (window + log window)) — every night's debt is recomputed from its own
-    ///   trailing window, the same way `SleepDebt.debtSeries` does, so no night depends on how far back
-    ///   the history happened to start.
+    ///   - ledgerWindow: the most usable nights the debt recurrence looks back over (within
+    ///     `debtWindowDays`).
+    /// - Complexity: O(n · (window + log window)) — every night's baseline and debt are recomputed from
+    ///   its own calendar-bounded trailing windows (the way `SleepDebt.debtSeries` recomputes each day), so
+    ///   no night depends on how far back the history happens to start: history older than
+    ///   `historyNeededDays` before the first night of interest changes nothing.
     public static func timeline(days: [SleepNeedDay], age: Int?, tonightAfter: String? = nil,
                                 ledgerWindow: Int = SleepDebt.defaultWindowNights) -> SleepNeedTimeline {
         var byOrdinal: [Int: SleepNeedDay] = [:]
@@ -230,25 +244,35 @@ public enum SleepNeed {
         }
 
         var nights: [NightInput] = []
-        var sleptSoFar: [Double] = []
+        // The usable nights in the `baselineWindowDays` calendar days before a night ending on `endsOn`, of
+        // which the baseline keeps the latest `baselineWindowNights`.
+        func baseline(endingOn endsOn: Int, before end: Int) -> Double {
+            var start = end
+            while start > 0, nights[start - 1].ordinal >= endsOn - baselineWindowDays { start -= 1 }
+            return baselineMin(priorNightlyMin: nights[start..<end].map(\.sleptMin), age: age)
+        }
         for o in ordinals {
             guard let row = byOrdinal[o], let slept = row.mainSleepMin, slept > 0 else { continue }
             let ev = evening(o - 1)
             nights.append(NightInput(ordinal: o, day: row.day, sleptMin: slept,
-                                     baselineMin: baselineMin(priorNightlyMin: sleptSoFar, age: age),
+                                     baselineMin: baseline(endingOn: o, before: nights.count),
                                      strainMin: ev.strain, napMin: ev.nap))
-            sleptSoFar.append(slept)
         }
 
-        // Debt carried into the night at index `end`, from the recurrence over the usable nights before it.
-        func debtInto(_ end: Int) -> Double {
+        // The window of usable nights the debt recurrence runs over for a night ending on `endsOn` whose
+        // predecessors are `nights[..<end]`: the latest `window` of them inside `debtWindowDays`.
+        func debtWindow(endingOn endsOn: Int, before end: Int) -> Range<Int> {
+            var start = end
+            while start > max(0, end - window), nights[start - 1].ordinal >= endsOn - debtWindowDays { start -= 1 }
+            return start..<end
+        }
+        // Debt carried into a night: the ledger recurrence over its debt window, starting from zero.
+        func debtInto(endingOn endsOn: Int, before end: Int) -> Double {
             var running = 0.0
-            var k = max(0, end - window)
-            while k < end {
+            for k in debtWindow(endingOn: endsOn, before: end) {
                 let n = nights[k]
                 let need = unroundedTotal(base: n.baselineMin, strain: n.strainMin, debt: running, nap: n.napMin)
                 running = debtCarry(needMin: need, sleptMin: n.sleptMin)
-                k += 1
             }
             return running
         }
@@ -258,17 +282,24 @@ public enum SleepNeed {
         for i in nights.indices {
             let n = nights[i]
             resolved[n.day] = compose(baselineMin: n.baselineMin, strainMin: n.strainMin,
-                                      debtMin: debtInto(i), napMin: n.napMin)
-            debtAfter[n.day] = round1(debtInto(i + 1))
+                                      debtMin: debtInto(endingOn: n.ordinal, before: i), napMin: n.napMin)
+            // What it leaves for a night ending the next calendar day.
+            debtAfter[n.day] = round1(debtInto(endingOn: n.ordinal + 1, before: i + 1))
         }
 
         let planOrdinal = tonightAfter.flatMap(ordinal) ?? ordinals.last
         let done = planOrdinal.map { p in nights.firstIndex { $0.ordinal > p } ?? nights.count } ?? nights.count
         let tonightEvening = planOrdinal.map(evening) ?? (strain: 0, nap: 0)
-        let tonight = compose(baselineMin: baselineMin(priorNightlyMin: nights[..<done].map(\.sleptMin), age: age),
-                              strainMin: tonightEvening.strain, debtMin: debtInto(done),
+        // Tonight ends the day after the plan day.
+        let tonightEnds = (planOrdinal ?? 0) + 1
+        let tonight = compose(baselineMin: planOrdinal == nil
+                                  ? baselineMin(priorNightlyMin: [], age: age)
+                                  : baseline(endingOn: tonightEnds, before: done),
+                              strainMin: tonightEvening.strain,
+                              debtMin: planOrdinal == nil ? 0 : debtInto(endingOn: tonightEnds, before: done),
                               napMin: tonightEvening.nap)
-        let ledgerNights = nights[max(0, done - window)..<done].map {
+        let ledgerRange = planOrdinal == nil ? 0..<0 : debtWindow(endingOn: tonightEnds, before: done)
+        let ledgerNights = nights[ledgerRange].map {
             SleepDebtNight(day: $0.day, sleptMin: $0.sleptMin, deltaMin: round1($0.sleptMin - $0.baselineMin))
         }
         let ledger = SleepDebtLedger(balanceMin: -tonight.debtMin, nights: ledgerNights,
