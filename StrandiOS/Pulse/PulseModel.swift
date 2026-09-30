@@ -54,8 +54,6 @@ final class PulseModel {
     /// A day to open on once the history's extent is known (DEBUG `--pulse-day`).
     @ObservationIgnored private var pendingDayOffset: Int?
 
-    var isAttached: Bool { repo != nil }
-
     /// Wire the model to the app's repository once. Later calls are ignored.
     func attach(repo: Repository, profile: ProfileStore, ble: BLEManager) {
         guard self.repo == nil else { return }
@@ -275,12 +273,9 @@ final class PulseModel {
         rebuildHome()
     }
 
-    /// A tab re-tap or launch: re-read the store.
+    /// A tab re-tap: re-read the store (the classic shell's reselect convention).
     func refresh() async {
         await repo?.refresh()
     }
-
-    /// The repository, for the launch-time backup checkpoint.
-    var repository: Repository? { repo }
 }
 #endif

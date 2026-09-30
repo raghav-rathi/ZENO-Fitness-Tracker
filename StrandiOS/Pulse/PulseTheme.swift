@@ -206,7 +206,8 @@ struct PulseLabel: View {
             .font(PulseTheme.label)
             .tracking(PulseTheme.labelTracking)
             .foregroundStyle(color)
-            .lineLimit(1)
+            // Wraps rather than truncating at the largest text sizes ("RESPIRATORY RATE").
+            .lineLimit(2)
             .minimumScaleFactor(0.8)
     }
 }

@@ -275,7 +275,8 @@ struct PulseComparisonLine: View {
 
 // MARK: - Rows
 
-/// A tappable list row: icon, title and subtitle, a trailing value, a chevron.
+/// A tappable list row: icon, title and subtitle, a trailing value, a chevron. At accessibility text
+/// sizes the value moves under the title, so neither is truncated to make room for the other.
 struct PulseRow<Icon: View>: View {
     let title: String
     var subtitle: String?
@@ -285,8 +286,10 @@ struct PulseRow<Icon: View>: View {
     var showsChevron = true
     @ViewBuilder var icon: () -> Icon
 
+    @Environment(\.dynamicTypeSize) private var typeSize
+
     var body: some View {
-        HStack(spacing: 12) {
+        HStack(alignment: typeSize.isAccessibilitySize ? .top : .center, spacing: 12) {
             icon()
                 .frame(width: 36, height: 36)
                 .background(Circle().fill(PulseTheme.cardRaised))
@@ -294,36 +297,42 @@ struct PulseRow<Icon: View>: View {
                 Text(title)
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(PulseTheme.textPrimary)
-                    .lineLimit(1)
+                    .lineLimit(typeSize.isAccessibilitySize ? 3 : 1)
                 if let subtitle {
                     Text(subtitle)
                         .font(.caption)
                         .foregroundStyle(PulseTheme.textTertiary)
-                        .lineLimit(3)
+                        .lineLimit(typeSize.isAccessibilitySize ? nil : 3)
                         .fixedSize(horizontal: false, vertical: true)
                 }
+                if typeSize.isAccessibilitySize { valueStack(alignment: .leading).padding(.top, 4) }
             }
             Spacer(minLength: 8)
-            if value != nil || valueCaption != nil {
-                VStack(alignment: .trailing, spacing: 2) {
-                    if let value {
-                        Text(value)
-                            .font(PulseTheme.numeral(20))
-                            .foregroundStyle(valueTint)
-                    }
-                    if let valueCaption {
-                        Text(valueCaption)
-                            .font(.caption2)
-                            .foregroundStyle(PulseTheme.textTertiary)
-                    }
-                }
-            }
+            if !typeSize.isAccessibilitySize { valueStack(alignment: .trailing) }
             if showsChevron { PulseChevron() }
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
         .frame(minHeight: 60)
         .contentShape(Rectangle())
+    }
+
+    @ViewBuilder
+    private func valueStack(alignment: HorizontalAlignment) -> some View {
+        if value != nil || valueCaption != nil {
+            VStack(alignment: alignment, spacing: 2) {
+                if let value {
+                    Text(value)
+                        .font(PulseTheme.numeral(20))
+                        .foregroundStyle(valueTint)
+                }
+                if let valueCaption {
+                    Text(valueCaption)
+                        .font(.caption2)
+                        .foregroundStyle(PulseTheme.textTertiary)
+                }
+            }
+        }
     }
 }
 

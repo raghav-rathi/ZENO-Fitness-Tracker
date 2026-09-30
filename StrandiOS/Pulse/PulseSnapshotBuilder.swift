@@ -212,8 +212,13 @@ actor PulseSnapshotBuilder {
     }
 
     /// The day window's heart rate, read once per refresh and shared by Home and the Strain dive.
-    private func heartRate(dayKey: String, from: Int, to: Int) async -> [HRSample] {
-        let key = "\(dayKey)|\(from)"
+    ///
+    /// A finished day's window is fixed, but today's runs to now and the strap keeps writing into it
+    /// without a refresh necessarily following (`refresh()` publishes only when the daily caches
+    /// change). Keying today on a five-minute bucket of the window's end lets a foreground rebuild pick
+    /// up new beats while a burst of rebuilds still shares one read.
+    private func heartRate(dayKey: String, from: Int, to: Int, isToday: Bool) async -> [HRSample] {
+        let key = isToday ? "\(dayKey)|\(from)|\(to / 300)" : "\(dayKey)|\(from)"
         if let v = cache.hr[key] { return v }
         let seq = cacheSeq
         // An explicit whole-window limit: the 8000 default is chart-sized and `hrSamples` truncates the
@@ -228,8 +233,8 @@ actor PulseSnapshotBuilder {
 
     // MARK: Shared day resolution
 
-    /// The day's row: today prefers the repository's resolved today row (its pre-04:00 local-day
-    /// carve-out included), a past day reads its own row.
+    /// The day's own row. For today the model keyed the request with the repository's resolved today
+    /// row (its pre-04:00 local-day carve-out included), so this finds that same row.
     private func displayRow(_ r: PulseRequest) -> DailyMetric? {
         r.days.last(where: { $0.day == r.day.key })
     }
@@ -291,11 +296,22 @@ actor PulseSnapshotBuilder {
         }
     }
 
-    /// Sleep performance for the day: the night that ENDED on it, from the same `sleep_performance`
-    /// series and freshness rule the Liquid Today reads.
+    /// Sleep performance for the night that ENDED on `dayKey`: the stored `sleep_performance` point,
+    /// else the Rest composite of that day's row, the order the Sleep tab resolves it in
+    /// (`SleepModel.performanceSeries`). The ONE resolver Home's dial, Home's sleep row and the Sleep
+    /// dive all read, so no two of them can show different numbers for the same night.
+    private func sleepPerformance(dayKey: String, rest: [(day: String, value: Double)],
+                                  days: [DailyMetric]) -> Double? {
+        rest.last(where: { $0.day == dayKey })?.value
+            ?? days.last(where: { $0.day == dayKey }).flatMap { AnalyticsEngine.Rest.composite(daily: $0) }
+    }
+
+    /// The Sleep dial for the day: the night that ended on it, else (today only) the last scored night
+    /// under the Liquid Today's freshness rule, labelled as carried.
     private func sleepDial(_ r: PulseRequest, rest: [(day: String, value: Double)]) -> PulseDialData {
-        let own = rest.last(where: { $0.day == r.day.key })?.value
-        if let own { return PulseDialData(score: .sleep, value: own, state: .scored) }
+        if let own = sleepPerformance(dayKey: r.day.key, rest: rest, days: r.days) {
+            return PulseDialData(score: .sleep, value: own, state: .scored)
+        }
         let shown = TodayView.freshRestScore(todayValue: nil, lastDay: rest.last?.day,
                                              lastValue: rest.last?.value,
                                              isTodaySelected: r.day.isToday, todayKey: r.day.key)
@@ -391,7 +407,7 @@ actor PulseSnapshotBuilder {
         let (charge, _) = chargeDisplay(r, row: row)
         let window = await dayWindow(r)
         let hr: [HRSample]? = r.day.isToday
-            ? await heartRate(dayKey: r.day.key, from: window.from, to: window.to)
+            ? await heartRate(dayKey: r.day.key, from: window.from, to: window.to, isToday: r.day.isToday)
             : nil
         guard isCurrent(r) else { return nil }
         let strain = strainValue(r, row: row, hr: hr)
@@ -412,7 +428,7 @@ actor PulseSnapshotBuilder {
                     wake: Date(timeIntervalSince1970: TimeInterval(night.session.endTs)),
                     asleepMin: night.stages.asleep,
                     inBedMin: night.timeInBed,
-                    performance: rest.last(where: { $0.day == r.day.key })?.value)
+                    performance: sleep.state == .scored ? sleep.value : nil)
             }
             napList = naps(in: g, night: night)
         }
@@ -569,7 +585,7 @@ actor PulseSnapshotBuilder {
         let apple = await appleRows()
         let stepsEst = await stepsEstSeries()
         out.append(stepsStat(r, apple: apple, estimate: stepsEst))
-        out.append(caloriesStat(r, row: row, apple: apple))
+        out.append(caloriesStat(r, apple: apple))
         return out
     }
 
@@ -663,7 +679,7 @@ actor PulseSnapshotBuilder {
     }
 
     /// Active calories: Apple Health's imported figure first, else the on-device HR estimate (#616).
-    private func caloriesStat(_ r: PulseRequest, row: DailyMetric?, apple: [AppleDaily]) -> PulseKeyStat {
+    private func caloriesStat(_ r: PulseRequest, apple: [AppleDaily]) -> PulseKeyStat {
         var importedByDay: [String: Double] = [:]
         for a in apple { if let k = a.activeKcal { importedByDay[a.day] = max(importedByDay[a.day] ?? 0, k) } }
         let deviceByDay = Dictionary(r.days.compactMap { m in m.activeKcalEst.map { (m.day, $0) } },
@@ -750,7 +766,8 @@ actor PulseSnapshotBuilder {
                         day: sourceDay, unit: "rpm", text: PulseFormat.oneDecimal,
                         history: series(\.respRateBpm), route: .metric("resp_rate")),
             contributor(id: "sleep", title: PulseScore.sleep.displayName,
-                        value: sourceDay.flatMap { restByDay[$0] }, day: sourceDay, unit: "%",
+                        value: sourceDay.flatMap { sleepPerformance(dayKey: $0, rest: rest, days: days) },
+                        day: sourceDay, unit: "%",
                         text: PulseFormat.whole, history: rest,
                         route: .metric(HeroRingMetric.rest)),
         ]
@@ -798,7 +815,7 @@ actor PulseSnapshotBuilder {
         let row = displayRow(r)
         let (charge, _) = chargeDisplay(r, row: row)
         let window = await dayWindow(r)
-        let hr = await heartRate(dayKey: r.day.key, from: window.from, to: window.to)
+        let hr = await heartRate(dayKey: r.day.key, from: window.from, to: window.to, isToday: r.day.isToday)
         guard isCurrent(r) else { return nil }
         let strain = strainValue(r, row: row, hr: hr)
 
@@ -872,16 +889,17 @@ actor PulseSnapshotBuilder {
         let wakeKey = Repository.localDayKey(Date(timeIntervalSince1970: TimeInterval(endTs)))
         let row = r.days.last(where: { $0.day == wakeKey })
 
-        // The dial reads the same `sleep_performance` point as Home's Sleep dial for this wake day.
-        let perf = rest.last(where: { $0.day == wakeKey })?.value
-            ?? row.flatMap { AnalyticsEngine.Rest.composite(daily: $0) }
+        // The same resolver as Home's Sleep dial for this wake day.
+        let perf = sleepPerformance(dayKey: wakeKey, rest: rest, days: r.days)
         let dial = PulseDialData(score: .sleep, value: perf, state: perf == nil ? .noData : .scored)
 
+        // Every duration on this screen is the merged main night the hypnogram draws, so the stage rows
+        // add up to the "asleep" figure and the efficiency matches the classic stage card.
         let stages = night?.stages
         let asleep = stages?.asleep
         let inBed = stages?.total
-        // Hours vs needed and consistency mirror the Sleep tab's own tiles (`SleepModel`), so this screen
-        // and the classic one it links to agree about the same night.
+        // The need is the Sleep tab's (the imported need, else `SleepModel.sleepNeedMin`), and
+        // consistency is its rolling bedtime score as of this night.
         let need = r.importedSleep[wakeKey]?.needMin ?? SleepModel.sleepNeedMin(days: r.days)
         let hoursPct = asleep.flatMap { a in need > 0 && a > 0 ? min(100, a / need * 100) : nil }
         let effPct = stages.flatMap { s in s.total > 0 ? s.asleep / s.total * 100 : nil }
@@ -1000,6 +1018,7 @@ actor PulseSnapshotBuilder {
         // the baseline is trusted, else the fixed adult range, the same two yardsticks the band itself
         // uses (`VitalBands.band`). Folded from the same source precedence the reading used.
         var typical = population
+        var personal = false
         if reading.banding.basis == .personal, let cfg, let day = reading.day {
             // Source precedence, highest first: the rule `BodyVitalSigns` resolves readings by
             // (`DailyMetricSource.vitalPrecedence`, private to VitalSignsSummary.swift). Skin omits Apple
@@ -1019,6 +1038,7 @@ actor PulseSnapshotBuilder {
             if state.trusted {
                 let half = VitalBands.sigmaK * Baselines.sigma(state)
                 typical = (state.baseline - half)...(state.baseline + half)
+                personal = true
             }
         }
 
@@ -1041,7 +1061,7 @@ actor PulseSnapshotBuilder {
             value: v.map(format),
             unit: reading.unit,
             band: reading.banding.band,
-            basisText: reading.banding.basis == .personal
+            basisText: personal
                 ? String(localized: "Your typical range")
                 : String(localized: "Typical adult range"),
             rangeText: rangeText,

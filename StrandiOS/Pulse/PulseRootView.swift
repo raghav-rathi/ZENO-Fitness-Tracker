@@ -82,9 +82,9 @@ struct PulseClassicScreen<Content: View>: View {
 /// Mirrors what `RootTabView` provides the rest of the app: pop-to-root and scroll-to-top on a tab
 /// re-tap, every `NavRouter` request, the Home Screen quick actions (held until the launch gates clear),
 /// the gym-session bar and sheet, the launch refresh and the backup catch-up. It observes only the router,
-/// the quick-action delegate and two settings; the repository, the live strap state, the Coach engine and
-/// the gym session are each observed by a small leaf so their frequent publishes never re-render the
-/// TabView.
+/// the quick-action delegate, the scene phase and the Coach switch; the repository, the live strap state,
+/// the Coach engine and the gym session are each observed by a small leaf so their frequent publishes
+/// never re-render the TabView.
 struct PulseRootView: View {
     /// External entry points wait until the mandatory first-run gates have completed (see RootTabView).
     let homeScreenQuickActionsEnabled: Bool

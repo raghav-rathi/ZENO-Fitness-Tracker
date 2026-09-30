@@ -169,7 +169,7 @@ struct PulseCalibrationCard: View {
     var body: some View {
         PulseCard {
             VStack(alignment: .leading, spacing: 10) {
-                PulseLabel(String(localized: "Calibrating"), color: PulseTheme.textSecondary)
+                PulseLabel(String(localized: "Building your baseline"), color: PulseTheme.textSecondary)
                 Text(ChargeBreakdownFormat.calibrationProgress(banked: nights, seed: of))
                     .font(.headline)
                     .foregroundStyle(PulseTheme.textPrimary)

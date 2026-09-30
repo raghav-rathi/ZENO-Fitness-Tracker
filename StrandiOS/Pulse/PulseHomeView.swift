@@ -393,10 +393,17 @@ struct PulseMyDaySection: View {
         }
     }
 
+    /// Short lines, because they share the row with the need on the right.
     private func tonightSubtitle(_ t: PulseTonight) -> String {
-        let line = String(localized: "Asleep by \(PulseFormat.clock(t.bedtime)) · wake \(PulseFormat.clock(t.wake))")
-        guard t.debtMin >= 5 else { return line }
-        return line + "\n" + String(localized: "Includes \(PulseFormat.duration(minutes: t.debtMin)) of sleep debt")
+        let wake = PulseFormat.clock(t.wake)
+        var lines = [String(localized: "Asleep by \(PulseFormat.clock(t.bedtime))"),
+                     // With no alarm and too few nights to learn a habit, say the wake time is assumed.
+                     t.wakeSource == .fallback ? String(localized: "Wake \(wake) (default)")
+                                               : String(localized: "Wake \(wake)")]
+        if t.debtMin >= 5 {
+            lines.append(String(localized: "Incl. \(PulseFormat.duration(minutes: t.debtMin)) debt"))
+        }
+        return lines.joined(separator: "\n")
     }
 }
 
