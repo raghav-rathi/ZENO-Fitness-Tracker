@@ -1,3 +1,8 @@
+> **ZENO Fitness Tracker** is a personal fork of [NOOP](https://github.com/ryanbr/noop) for a WHOOP 4.0 on
+> iPhone, adding a WHOOP-style interface, a steps tracker and scoring fixes. All credit for the original work
+> belongs to the NOOP project; this fork keeps its [PolyForm Noncommercial 1.0.0](LICENSE) license and notices.
+> Not affiliated with WHOOP, Inc. The original NOOP README follows.
+
 <p align="center">
   <img src="docs/assets/logo-v3.png" alt="NOOP" width="72">
 </p>
