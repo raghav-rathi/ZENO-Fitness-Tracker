@@ -35,6 +35,9 @@ enum TabRoute: Hashable {
     case health
     case hydration
     case coupled
+    /// The Steps screen, opened on `day` ("yyyy-MM-dd"; nil = today). Today's steps tile and card pass the
+    /// day they are showing, so the screen opens on the same count the tile just read.
+    case steps(day: String?)
 }
 
 extension View {
@@ -71,6 +74,7 @@ extension View {
             case .health: HealthView()
             case .hydration: HydrationView()
             case .coupled: CoupledView()
+            case .steps(let day): StepsView(day: day)
             }
         }
     }

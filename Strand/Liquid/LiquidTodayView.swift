@@ -64,8 +64,9 @@ struct LiquidTodayView: View {
     // Read unconditionally like the classic TodayView's `spo2CandidateSpark` — always empty when
     // the toggle is off, so no separate gate is needed at fetch time.
     @State private var spo2CandidateByDay: [String: Double] = [:]
-    @State private var stepsEst: Double?           // steps_est, day-keyed to the selected day (fallback)
-    @State private var importedStepsDay: Int?      // Apple Health steps for the selected day (middle tier)
+    /// The selected day's steps as THE steps resolver sees them (count + source), resolved in load(). The
+    /// tile and card read the live `StepsService` day through `StepsLiveReading`; this is their fallback.
+    @State private var stepsDay: ResolvedStepDay?
     @State private var importedActiveKcalDay: Double?  // #616: Apple Health active energy for the day (calorie fallback)
     @State private var weightKg: Double?           // #204: Apple Health weight ?: profile fallback
     @State private var hrValues: [Double] = []     // hrBuckets since midnight → 5-min means
@@ -1000,11 +1001,15 @@ struct LiquidTodayView: View {
                      value: unitText(displayDay?.respRateBpm, card.unit, decimals: 1),
                      tint: StrandPalette.accent, frac: fracOver(displayDay?.respRateBpm, 24))
         case .steps:
-            // Route by the EXACT (key, source) the tile chose to display — measured my-whoop, imported
-            // apple-health, or the my-whoop estimate — NOT by bare key (bare "steps" resolves to
-            // apple-health and would mismatch a WHOOP-measured value). Order-independent.
-            cardLink(.metricSourced(key: stepsDetailKey, source: stepsDetailSource), title: card.title, sub: card.subtitle,
-                     value: stepsText, tint: StrandPalette.metricCyan, frac: fracOver(stepCount, 10000))
+            // The Steps screen, opened on the day shown. The count is THE steps resolver's (Apple Health >
+            // iPhone > strap counter > strap estimate) and follows the live pedometer while it is today, so this
+            // card, the Key Metrics tile and the screen it opens read one number. Fill is against the goal.
+            StepsLiveReading(day: selectedDayKey, fallback: stepsDay) { steps, goal in
+                cardLink(.steps(day: selectedDayKey), title: card.title, sub: card.subtitle,
+                         value: steps.map { StepsFormat.count($0.steps) } ?? Self.noValueDash,
+                         tint: StrandPalette.metricCyan,
+                         frac: steps.map { StepGoal.ringFraction(steps: $0.steps, goal: goal) })
+            }
         case .bloodOxygen:
             // #1627: these two were the last cards still on the "not wired yet" placeholder, so on iOS 26 —
             // where Liquid Today is the DEFAULT Today screen — Blood Oxygen and Skin Temp read "–" for
@@ -1406,8 +1411,13 @@ struct LiquidTodayView: View {
             let resp = displayDay?.respRateBpm ?? vitalsDay?.respRateBpm ?? respDay?.respRateBpm
             ktile(String(localized: "Respiratory"), icon: keyMetricIcon(metric), resp.map { String(format: "%.1f", locale: AppLanguage.activeLocale, $0) } ?? "—", "rpm", StrandPalette.accent, fracOver(resp, 24), key: "resp_rate")
         case .steps:
-            ktile(String(localized: "Steps"), icon: keyMetricIcon(metric), stepsText, "", StrandPalette.chargeColor,
-                  fracOver(stepCount, 10000), key: stepsDetailKey, detailMetric: stepsDetailMetric)
+            // Same resolved, live count as the Steps card above; taps through to the Steps screen.
+            StepsLiveReading(day: selectedDayKey, fallback: stepsDay) { steps, goal in
+                ktile(String(localized: "Steps"), icon: keyMetricIcon(metric),
+                      steps.map { StepsFormat.count($0.steps) } ?? Self.noValueDash, "", StrandPalette.chargeColor,
+                      steps.map { StepGoal.ringFraction(steps: $0.steps, goal: goal) },
+                      key: "steps", destination: .steps(day: selectedDayKey))
+            }
         case .weight:
             let (val, cap) = weightTile(weightKg)
             ktile(String(localized: "Weight"), icon: keyMetricIcon(metric), val, "", StrandPalette.metricAmber, nil, key: "weight", caption: cap)
@@ -1449,7 +1459,8 @@ struct LiquidTodayView: View {
     }
 
     private func ktile(_ label: String, icon: String, _ value: String, _ unit: String, _ tint: Color, _ frac: Double?,
-                       key: String? = nil, detailMetric: MetricDescriptor? = nil, caption: String? = nil) -> some View {
+                       key: String? = nil, detailMetric: MetricDescriptor? = nil, caption: String? = nil,
+                       destination: TabRoute? = nil) -> some View {
         let displayValue = Self.tileDisplayValue(value, unit: unit)
         let tile = VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 6) {
@@ -1506,7 +1517,11 @@ struct LiquidTodayView: View {
         // #430 parity: tap -> the metric's trend detail (the same Explore dossier its MetricRow pushes,
         // closure-based NavigationLink per #38). A metric with no catalog entry stays inert.
         return Group {
-            if let metric = detailMetric ?? key.flatMap({ key in
+            if let destination {
+                // A dedicated screen (Steps), pushed by value like the cards so a Today re-tap can pop it.
+                NavigationLink(value: destination) { tile }
+                    .buttonStyle(.plain)
+            } else if let metric = detailMetric ?? key.flatMap({ key in
                 MetricCatalog.all.first(where: { $0.key == key })
             }) {
                 NavigationLink { MetricDetailView(metric: metric) } label: { tile }
@@ -1696,7 +1711,10 @@ struct LiquidTodayView: View {
         async let fitA = repo.exploreSeries(key: "fitness_age", source: "my-whoop")
         async let vo2A = repo.exploreSeries(key: "vo2max_est", source: "my-whoop")
         async let vitA = repo.exploreSeries(key: "vitality", source: "my-whoop")
-        async let stepsA = repo.exploreSeries(key: "steps_est", source: "my-whoop")
+        // THE steps resolver over the trailing 30 days: the selected day's count + source, and the detailed
+        // tile's trend, from one read (the same window the other sparks bank below).
+        let stepsFrom = Repository.localDayKey(cal.date(byAdding: .day, value: -29, to: dayStart) ?? dayStart)
+        async let stepsA = repo.resolvedStepDays(from: stepsFrom, to: selectedDayKey)
         // Queue 11a: SpO₂ candidate fallback (see `spo2CandidateByDay`'s declaration).
         async let spo2CandA = repo.exploreSeries(key: "spo2_candidate", source: "my-whoop")
         async let weightA = repo.series(key: "weight", source: "apple-health", days: 91)
@@ -1716,7 +1734,7 @@ struct LiquidTodayView: View {
                                                     from: sourceDayKey, to: sourceDayKey)
 
         let restSeries = await restA
-        let stepsSeries = await stepsA
+        let stepsWindow = await stepsA
         let restByDay = Dictionary(restSeries.map { ($0.day, $0.value) }, uniquingKeysWith: { _, last in last })
         // Selected day's Rest; tail fallback only at offset 0 (a past day with no row shows nothing) AND
         // only when the tail night is still fresh. #977: a live 5.0 whose sleep never scores (no overnight
@@ -1768,13 +1786,11 @@ struct LiquidTodayView: View {
             // loaded on `sparkRows` (`daysSnapshot`), same as every other DailyMetric-column tile above.
             "skin_temp": sparkRows.compactMap { r in r.skinTempDevC.map { (r.day, $0) } },
             "resp_rate": sparkRows.compactMap { r in r.respRateBpm.map { (r.day, $0) } },
-            "steps": sparkRows.compactMap { r in r.steps.map { (r.day, Double($0)) } },
+            "steps": stepsWindow.days.map { ($0.day, Double($0.steps)) },
             // #616: the Calories tile drew no trend line — this dict had no matching entry, so windowedSpark
             // returned []. Bank the imported-first calorie series (built above) so the sparkline matches the
             // tile's imported-first number and a Health-Connect / Apple-only user gets a trend.
             "energy_kcal": energyKcalSpark,
-            "steps_est": stepsSeries.filter { $0.day >= sparkCutoff && $0.day <= selectedDayKey }
-                .map { ($0.day, $0.value) },
             "sleep_performance": restSeries.filter { $0.day >= sparkCutoff && $0.day <= selectedDayKey }
                 .map { ($0.day, $0.value) },
             "weight": (await weightA).filter { $0.day >= sparkCutoff && $0.day <= selectedDayKey },
@@ -1785,15 +1801,9 @@ struct LiquidTodayView: View {
         fitnessAge = (await fitA).last?.value   // history-wide latest banked (not day-scoped)
         vo2max = (await vo2A).last?.value        // #1391: latest banked VO₂max estimate
         vitality = (await vitA).last?.value
-        // Steps is a DAILY metric, so key it to the SELECTED day (like restScore above), not the history-wide
-        // latest. Without this, swiping to a past day with no strap step count showed today's estimate (the
-        // `.last` value) instead of that day's. Mirrors the classic Today's stepsEstByDay[selectedDayKey].
-        let stepsByDay = Dictionary(stepsSeries.map { ($0.day, $0.value) }, uniquingKeysWith: { _, last in last })
-        stepsEst = stepsByDay[selectedDayKey] ?? (selectedDayOffset == 0 ? stepsSeries.last?.value : nil)
-        // Imported Apple Health steps for the SELECTED day (max across rows), the middle tier between the
-        // measured strap count and the motion estimate. Health Connect is Android-only, so apple-health is
-        // the sole import source on iOS. Mirrors Android `stepsForDay` (#377).
-        importedStepsDay = (await appleA).filter { $0.day == selectedDayKey }.compactMap { $0.steps }.max()
+        // Steps is a DAILY metric keyed to the SELECTED day, never the history-wide latest: a past day with
+        // nothing counted shows a dash, not today's number.
+        stepsDay = stepsWindow.days.last(where: { $0.day == selectedDayKey })
         // #616: same-day imported active energy — the calorie fallback when the strap banked no on-device
         // HR estimate for the day, so the tile/card/detail agree (imported-first, mirrors steps).
         importedActiveKcalDay = (await appleA).filter { $0.day == selectedDayKey }.compactMap { $0.activeKcal }.max()
@@ -1942,23 +1952,9 @@ struct LiquidTodayView: View {
             : String(localized: "Good evening")
     }
 
-    // Measured strap count ?: imported Apple Health count ?: motion estimate — the same precedence the
-    // detail routing follows below, so the tapped-through source always matches the number shown (#377).
-    private var stepCount: Double? {
-        displayDay?.steps.map(Double.init) ?? importedStepsDay.map(Double.init) ?? stepsEst
-    }
-
-    private var stepsDetailMetric: MetricDescriptor? {
-        MetricCatalog.todayStepsMetric(hasMeasuredSteps: displayDay?.steps != nil,
-                                       hasImportedSteps: importedStepsDay != nil)
-    }
-
-    private var stepsDetailKey: String { stepsDetailMetric?.key ?? "steps_est" }
-    private var stepsDetailSource: String { stepsDetailMetric?.source ?? "my-whoop" }
-
     // #616: calories resolved IMPORTED-FIRST (the day's imported Apple active energy — the figure these
     // surfaces already showed — else NOOP's on-device HR estimate `activeKcalEst`) — one number across the
-    // tile, card and the detail it taps to. Mirrors the steps precedence above.
+    // tile, card and the detail it taps to.
     private var caloriesCount: Double? {
         importedActiveKcalDay ?? displayDay?.activeKcalEst
     }
@@ -2009,13 +2005,6 @@ struct LiquidTodayView: View {
     private var sleepText: String {
         guard let m = displayDay?.totalSleepMin else { return "–" }
         return "\(Int(m) / 60)h \(Int(m) % 60)m"
-    }
-
-    private var stepsText: String {
-        guard let s = stepCount else { return "–" }
-        let f = NumberFormatter()
-        f.numberStyle = .decimal
-        return f.string(from: NSNumber(value: Int(s))) ?? "\(Int(s))"
     }
 
     // °C / °F for the Skin Temp card, resolved exactly the way the other six screens that show a

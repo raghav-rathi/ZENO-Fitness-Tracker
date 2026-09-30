@@ -359,6 +359,10 @@ struct StrandiOSApp: App {
                 // Re-arm the strap's smart alarm on foreground: the firmware alarm is a single instant
                 // and iOS can't re-arm it while suspended, so it would otherwise fire once and stop.
                 model.applySmartAlarm()
+                // Steps: stream the iPhone pedometer while on screen and bank what CoreMotion counted while
+                // the app was away (a no-op until Motion & Fitness access has been granted from the Steps
+                // screen). Its store reads and pedometer queries run off the main actor.
+                StepsService.shared.appDidBecomeActive(repo: model.repo)
                 // #267: pull a reasonably fresh sync on open rather than waiting for the 900s periodic
                 // timer or an incidental reconnect. Floored at 90s and never clock/empty-streak-suppressed
                 // (BackfillPolicy.shouldRun's .foreground case), so this is a safe no-op on rapid re-opens.
@@ -385,6 +389,8 @@ struct StrandiOSApp: App {
                                 authorized: health.auth == .authorized)
                         }
                     )
+                    // Apple Health's step totals and hours can change without moving `refreshSeq`.
+                    StepsService.shared.healthDataDidChange()
                     await WidgetSnapshot.publish(from: model)
                     // Push the wrist on the SAME refresh as the Home-screen widget so the watch, the
                     // widget and Today never disagree about which day they describe. Without this the
@@ -392,6 +398,8 @@ struct StrandiOSApp: App {
                     await watch.pushLatest(from: model)
                 }
             } else if phase == .background {
+                // Stop the live pedometer stream and bank the day so far.
+                StepsService.shared.appDidEnterBackground()
                 // Re-submit on every transition because iOS may discard an old best-effort request.
                 HealthWritebackBackgroundScheduler.updateSchedule(
                     isAuthorized: health.auth == .authorized)
@@ -584,6 +592,9 @@ enum DemoScreens {
         case "live":     return AnyView(LiveView())
         case "stress":   return AnyView(StressView())
         case "workouts": return AnyView(WorkoutsView())
+        // The Steps screen, and the drop-in Steps card on its own (what a home screen embeds).
+        case "steps":    return AnyView(StepsView())
+        case "stepscard": return AnyView(StepsCardDemoHost())
         case "health":   return AnyView(HealthView())
         case "insights": return AnyView(InsightsView())
         case "explore":  return AnyView(MetricExplorerView())
@@ -614,6 +625,18 @@ enum DemoScreens {
 #endif
 
 #if DEBUG
+/// DEBUG-only host so `--demo-screen stepscard` shows the drop-in Steps card the way a home screen would
+/// embed it: on the page canvas, at the page margins, with nothing else around it.
+private struct StepsCardDemoHost: View {
+    var body: some View {
+        ScrollView {
+            StepsCard()
+                .padding(.horizontal, NoopMetrics.screenHPadding)
+                .padding(.top, 24)
+        }
+    }
+}
+
 /// DEBUG-only host so `--demo-screen addwizard` can render the multi-step Add-a-device wizard.
 /// A SwiftUI View body is main-actor, so it can pull the injected LiveState and hand it to the
 /// wizard's `init(live:)` (the nonisolated DemoScreens switch can't construct a LiveState itself).

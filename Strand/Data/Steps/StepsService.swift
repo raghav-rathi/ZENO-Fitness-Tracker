@@ -162,6 +162,13 @@ final class StepsService: ObservableObject {
         runBackfill(force: true)
     }
 
+    /// Pull-to-refresh: bank the pedometer now and re-read the whole window.
+    func refreshNow() async {
+        phoneAccess = PhonePedometer.access
+        runBackfill(force: true)
+        await reload(from: nil)
+    }
+
     /// Make sure the window reaches back to `day` (a focus day more than a year old).
     func ensureCovers(_ day: String) {
         guard snapshot.loaded, day < snapshot.windowStart else { return }

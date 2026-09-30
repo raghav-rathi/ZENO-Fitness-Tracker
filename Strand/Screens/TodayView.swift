@@ -941,6 +941,8 @@ struct TodayView: View {
         if rawSource.hasSuffix("-noop") { return String(localized: "On-device") }
         if rawSource == deviceId || rawSource == Repository.whoopSource { return Self.whoopBrandName }
         if rawSource == Repository.appleHealthSource { return "Apple Health" }
+        // The iPhone's own pedometer, banked by the Steps feature (combined Steps detail readings).
+        if rawSource == StepsPrefs.phoneDeviceId { return "iPhone" }
         // Localize the non-brand source names here rather than exposing the analytics layer's
         // intentionally locale-free wire/display vocabulary on Home.
         switch FusionSource(rawValue: rawSource) {
