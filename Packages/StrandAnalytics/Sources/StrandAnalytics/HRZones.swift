@@ -15,9 +15,11 @@ import WhoopProtocol
 //
 // NOTE: the Python source (strain.py) uses Karvonen %HRR zones (Edwards 5-zone,
 // 50/60/70/80/90 %HRR) for TRIMP/strain. Those are reproduced faithfully in
-// StrainScorer.swift. This file provides the simpler, age-only %HRmax zone model
-// the task asks for (zones from age, time-in-zone from [HRSample]); it is the
-// "display" zone model and is independent of the HRR-based strain math.
+// StrainScorer.swift. This file provides both zone models: the age-only %HRmax
+// bands above, and `reserveZones`, the SAME 50/60/70/80/90 % bands of heart-rate
+// RESERVE (Karvonen: RHR + pct × (HRmax − RHR)) that Effort scores against and that
+// WHOOP uses for its zones. The app's display and haptic-coaching zones use the
+// reserve model, so the zone a live bpm is drawn in is the zone Effort credits it to.
 
 /// A single heart-rate zone defined as a bpm interval [lower, upper).
 public struct HRZone: Equatable, Sendable {
@@ -27,9 +29,10 @@ public struct HRZone: Equatable, Sendable {
     public let lower: Double
     /// Upper bound (bpm); exclusive except for the top zone where it is inclusive.
     public let upper: Double
-    /// Fraction-of-HRmax lower bound (e.g. 0.50 for Zone 1).
+    /// Lower bound as a fraction of the set's scale (e.g. 0.50 for Zone 1): of HRmax for a %HRmax set,
+    /// of heart-rate reserve for a reserve set (`HRZoneSet.restingHR != nil`).
     public let lowerPct: Double
-    /// Fraction-of-HRmax upper bound (e.g. 0.60 for Zone 1).
+    /// Upper bound as a fraction of the same scale (e.g. 0.60 for Zone 1).
     public let upperPct: Double
 
     public init(number: Int, lower: Double, upper: Double, lowerPct: Double, upperPct: Double) {
@@ -50,11 +53,14 @@ public struct HRZoneSet: Equatable, Sendable {
     public let maxHR: Double
     /// "tanaka" (age formula), "manual" (caller override), or "custom" (personalized boundaries).
     public let source: String
+    /// The resting HR a heart-rate-reserve set was built on; nil for a %HRmax set.
+    public let restingHR: Double?
 
-    public init(zones: [HRZone], maxHR: Double, source: String) {
+    public init(zones: [HRZone], maxHR: Double, source: String, restingHR: Double? = nil) {
         self.zones = zones
         self.maxHR = maxHR
         self.source = source
+        self.restingHR = restingHR
     }
 
     /// Return the zone number (1...5) for a bpm value, or 0 when below Zone 1.
@@ -156,6 +162,44 @@ public enum HRZones {
     /// up preserves the existing integer-sample classification (e.g. a 93.5 edge starts at 94 bpm).
     public static func defaultLowerBounds(maxHR: Double) -> [Int] {
         Array(zoneEdges.prefix(5)).map { Int(ceil($0 * maxHR)) }
+    }
+
+    /// Five zones on heart-rate RESERVE (Karvonen): zone edge = RHR + pct × (HRmax − RHR) at the same
+    /// 50/60/70/80/90/100 % edges — Z1 50–60 %, … Z5 90–100 % of HRR, the bands WHOOP uses and the bands
+    /// `StrainScorer` scores Effort in, so a zone read on screen or buzzed by the coach is the zone the
+    /// same heartbeat earns Effort in. `lowerPct`/`upperPct` are fractions of HRR.
+    ///
+    /// Personalized `customLowerBounds` (absolute BPM the user chose) still win, as in `zones(maxHR:)`.
+    /// A resting HR that is not a positive value below `maxHR` has no reserve to take a percentage of, so
+    /// the set falls back to the %HRmax bands (with `restingHR == nil`) rather than inverting.
+    public static func reserveZones(maxHR: Double, restingHR: Double, source: String = "manual",
+                                    customLowerBounds: [Double]? = nil) -> HRZoneSet {
+        guard restingHR.isFinite, maxHR.isFinite, restingHR > 0, restingHR < maxHR else {
+            return zones(maxHR: maxHR, source: source, customLowerBounds: customLowerBounds)
+        }
+        let reserve = maxHR - restingHR
+        let custom = customLowerBounds.flatMap(validCustomLowerBounds)
+        var built: [HRZone] = []
+        for i in 0..<5 {
+            let lower = custom?[i] ?? restingHR + zoneEdges[i] * reserve
+            let upper = custom.map { i < 4 ? $0[i + 1] : max(maxHR, $0[i]) }
+                ?? restingHR + zoneEdges[i + 1] * reserve
+            built.append(HRZone(number: i + 1, lower: lower, upper: upper,
+                                lowerPct: (lower - restingHR) / reserve,
+                                upperPct: (upper - restingHR) / reserve))
+        }
+        return HRZoneSet(zones: built, maxHR: maxHR, source: custom == nil ? source : "custom",
+                         restingHR: restingHR)
+    }
+
+    /// The heart-rate-reserve lower bounds rounded up to whole BPM, to seed the custom-zone editor with
+    /// boundaries that classify integer BPM exactly as `reserveZones` does. Falls back to the %HRmax
+    /// bounds under the same resting-HR rule.
+    public static func defaultLowerBounds(maxHR: Double, restingHR: Double) -> [Int] {
+        guard restingHR.isFinite, maxHR.isFinite, restingHR > 0, restingHR < maxHR else {
+            return defaultLowerBounds(maxHR: maxHR)
+        }
+        return Array(zoneEdges.prefix(5)).map { Int(ceil(restingHR + $0 * (maxHR - restingHR))) }
     }
 
     /// Return a valid five-boundary custom model, or nil unless values are positive, finite, and

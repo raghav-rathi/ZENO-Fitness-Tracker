@@ -455,8 +455,8 @@ struct SettingsView: View {
                     }
                 }
                 rowDivider
-                // Custom HR zones (#531, @kavemang): replace the conventional %HRmax bands with five
-                // personalized inclusive BPM lower bounds. Off = the effective set stays conventional.
+                // Custom HR zones (#531, @kavemang): replace the heart-rate-reserve bands with five
+                // personalized inclusive BPM lower bounds. Off = the effective set stays on reserve zones.
                 FormRow(label: "Custom HR zones") {
                     Toggle("Custom HR zones", isOn: Binding(
                         get: { profile.hasCustomHRZones },
@@ -466,7 +466,7 @@ struct SettingsView: View {
                     .accessibilityLabel("Custom HR zones")
                 }
                 if profile.hasCustomHRZones {
-                    Text("Set the BPM where each zone begins. Turn off to restore the default percentage-of-max zones.")
+                    Text("Set the BPM where each zone begins. Turn off to restore the default heart-rate-reserve zones.")
                         .font(StrandFont.footnote)
                         .foregroundStyle(StrandPalette.textTertiary)
                         .fixedSize(horizontal: false, vertical: true)

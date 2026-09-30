@@ -360,6 +360,8 @@ final class AppModel: ObservableObject {
         repo.$days.sink { [weak self] days in
             self?.evaluateIllness(days)
             self?.evaluateStrainTarget()
+            // The display/coaching zones are heart-rate-reserve zones on the latest nightly resting HR.
+            self?.profile.updateZoneRestingHR(from: days)
             // Keep the battery night-guard's learned bedtime warm off the same signal (throttled inside).
             self?.refreshHabitualMidsleep()
         }.store(in: &hrCancellables)
@@ -1896,7 +1898,7 @@ final class AppModel: ObservableObject {
         guard behavior.zoneCoaching, live.bonded, live.worn, let hr, hr >= 30 else { return }
         guard profile.hrMax > 0 else { return }
         // #531: route the haptic coach through the profile's effective zone set (personalized when set,
-        // conventional %HRmax otherwise) instead of hardcoded percentage bands.
+        // heart-rate-reserve zones otherwise — the bands Effort scores in) instead of hardcoded bands.
         let zone = profile.hrZoneSet.zoneNumber(forBPM: Double(hr))
         defer { lastCoachZone = zone }
         guard lastCoachZone != -1, zone != lastCoachZone else { return }

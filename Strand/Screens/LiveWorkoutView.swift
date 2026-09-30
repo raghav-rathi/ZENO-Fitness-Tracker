@@ -272,7 +272,12 @@ struct LiveWorkoutView: View {
                 }
             }
             if let band = zoneSet.zones.first(where: { $0.number == zone }) {
-                Text("Zone \(zone): \(Int(band.lower))-\(Int(band.upper)) bpm (\(Int(band.lowerPct * 100))-\(Int(band.upperPct * 100))% max HR)")
+                // The percentages are of heart-rate RESERVE on a reserve set (the default), of max HR only
+                // when no resting HR could anchor one. Rounded, since a reserve fraction carries float noise.
+                let lo = Int((band.lowerPct * 100).rounded()), hi = Int((band.upperPct * 100).rounded())
+                Text(zoneSet.restingHR != nil
+                     ? "Zone \(zone): \(Int(band.lower))-\(Int(band.upper)) bpm (\(lo)-\(hi)% HR reserve)"
+                     : "Zone \(zone): \(Int(band.lower))-\(Int(band.upper)) bpm (\(lo)-\(hi)% max HR)")
                     .font(StrandFont.footnote).foregroundStyle(StrandPalette.textTertiary)
             } else {
                 Text("Warming up. Keep moving to climb into Zone 1.")

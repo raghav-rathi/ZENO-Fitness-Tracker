@@ -499,7 +499,7 @@ struct WorkoutDetailView: View {
                         }
                         Text(zonesFromImport
                              ? "WHOOP's imported per-zone split for this session."
-                             : "Time in each %HRmax zone, derived from the strap's heart rate over this window (approximate).")
+                             : "Time in each heart-rate-reserve zone, derived from the strap's heart rate over this window (approximate).")
                             .font(StrandFont.footnote)
                             .foregroundStyle(StrandPalette.textTertiary)
                     }

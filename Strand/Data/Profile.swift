@@ -2,6 +2,7 @@ import Foundation
 import Combine
 import SwiftUI
 import StrandAnalytics
+import WhoopStore
 
 /// User profile (age/sex/body metrics/HR-max) persisted in UserDefaults.
 /// Powers HR zones, calories and recovery baselines.
@@ -27,7 +28,16 @@ final class ProfileStore: ObservableObject {
     @Published var waistCm: Double { didSet { d.set(waistCm, forKey: K.waist) } }
     /// 0 = auto-estimate from age.
     @Published var hrMaxOverride: Int { didSet { d.set(hrMaxOverride, forKey: K.hrMax) } }
-    /// Five personalized inclusive zone starts in BPM; empty = conventional %HRmax zones.
+    /// The resting HR the display and coaching zones take their heart-rate reserve from: the latest
+    /// nightly resting HR, kept current by AppModel from the daily history (persisted so the zones are
+    /// right from launch, before the history loads). nil until a night has been scored.
+    @Published var zoneRestingHR: Double? {
+        didSet {
+            if let zoneRestingHR { d.set(zoneRestingHR, forKey: K.zoneRestingHR) }
+            else { d.removeObject(forKey: K.zoneRestingHR) }
+        }
+    }
+    /// Five personalized inclusive zone starts in BPM; empty = the heart-rate-reserve zones.
     @Published var hrZoneThresholds: [Int] {
         didSet {
             if hrZoneThresholds.isEmpty { d.removeObject(forKey: K.hrZoneThresholds) }
@@ -88,6 +98,7 @@ final class ProfileStore: ObservableObject {
         static let sex = "profile.sex", weight = "profile.weightKg"
         static let height = "profile.heightCm", hrMax = "profile.hrMaxOverride"
         static let hrZoneThresholds = "profile.hrZoneThresholds"
+        static let zoneRestingHR = "profile.zoneRestingHR"
         static let stepScale = "profile.stepTicksPerStep"
         static let waist = "profile.waistCm"
         static let stepsCoeff = "profile.stepsCalibrationCoefficient"
@@ -126,6 +137,7 @@ final class ProfileStore: ObservableObject {
         heightCm = d.object(forKey: K.height) as? Double ?? 178
         waistCm = d.object(forKey: K.waist) as? Double ?? 0
         hrMaxOverride = d.object(forKey: K.hrMax) as? Int ?? 0
+        zoneRestingHR = d.object(forKey: K.zoneRestingHR) as? Double
         let storedThresholds = d.string(forKey: K.hrZoneThresholds)?
             .split(separator: ",").compactMap { Int($0) } ?? []
         hrZoneThresholds = Self.validZoneThresholds(storedThresholds) ? storedThresholds : []
@@ -220,17 +232,44 @@ final class ProfileStore: ObservableObject {
         return hrZoneThresholds.map(Double.init)
     }
 
-    /// The single display-zone model used by live HR, workout splits, and haptic coaching.
+    /// The single display-zone model used by live HR, workout splits, and haptic coaching: heart-rate
+    /// RESERVE zones (Z1 50–60 % … Z5 90–100 % of HRmax − RHR), the bands WHOOP uses and the bands Effort
+    /// is scored in, built on the same HRmax Effort uses (`effortHRmax`) and the latest nightly resting HR.
+    /// Before this they were %HRmax bands, so a bpm could sit in "zone 3" on screen while Effort credited
+    /// it as zone 1. With no scored night yet the resting HR falls back to 60 bpm, the value Effort itself
+    /// scores against when a night has none (`StrainScorer.defaultRestingHR`). User-set custom zones are
+    /// absolute BPM and keep winning.
     var hrZoneSet: HRZoneSet {
-        HRZones.zones(maxHR: Double(hrMax), customLowerBounds: customHRZoneLowerBounds)
+        HRZones.reserveZones(maxHR: zoneMaxHR, restingHR: resolvedZoneRestingHR,
+                             customLowerBounds: customHRZoneLowerBounds)
+    }
+
+    /// The HRmax the zones span: the Effort HRmax (override, else Tanaka), else the rounded `hrMax`.
+    var zoneMaxHR: Double { effortHRmax ?? Double(hrMax) }
+
+    /// The resting HR the zones use, with the Effort scorer's own fallback.
+    var resolvedZoneRestingHR: Double { zoneRestingHR ?? StrainScorer.defaultRestingHR }
+
+    /// Track the newest nightly resting HR in `days` (the input AppModel observes). Assigns only on a
+    /// change, so an unchanged history does not republish the profile.
+    func updateZoneRestingHR(from days: [DailyMetric]) {
+        let latest = Self.latestNightlyRestingHR(days)
+        if let latest, latest != zoneRestingHR { zoneRestingHR = latest }
+    }
+
+    /// The resting HR of the newest day that has one. Pure.
+    nonisolated static func latestNightlyRestingHR(_ days: [DailyMetric]) -> Double? {
+        days.filter { $0.restingHr != nil }.max { $0.day < $1.day }?.restingHr.map(Double.init)
     }
 
     var hasCustomHRZones: Bool { customHRZoneLowerBounds != nil }
 
-    /// Enable by seeding the editor with boundaries that classify integer BPM exactly like today's
-    /// conventional percentages; disabling removes the override and immediately restores defaults.
+    /// Enable by seeding the editor with boundaries that classify integer BPM exactly like the current
+    /// heart-rate-reserve zones; disabling removes the override and immediately restores them.
     func setCustomHRZonesEnabled(_ enabled: Bool) {
-        hrZoneThresholds = enabled ? HRZones.defaultLowerBounds(maxHR: Double(hrMax)) : []
+        hrZoneThresholds = enabled
+            ? HRZones.defaultLowerBounds(maxHR: zoneMaxHR, restingHR: resolvedZoneRestingHR)
+            : []
     }
 
     /// Move one boundary while preserving strict ordering. Neighbour-aware clamps make it impossible
