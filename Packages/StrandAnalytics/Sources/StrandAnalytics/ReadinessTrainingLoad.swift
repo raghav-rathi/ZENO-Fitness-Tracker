@@ -29,12 +29,18 @@ public extension ReadinessEngine {
         trainingLoadConfiguration: TrainingLoadEngine.Configuration = .standard
     ) -> TrainingLoadAnalysis {
         let readiness = evaluate(days: days, today: today)
-        let trainingDays = days.map { TrainingLoadEngine.DailyLoad(day: $0.day, load: $0.strain) }
         let trainingLoad = TrainingLoadEngine.evaluate(
-            days: trainingDays,
+            days: trainingLoadDays(days),
             through: today,
             configuration: trainingLoadConfiguration
         )
         return TrainingLoadAnalysis(readiness: readiness, trainingLoad: trainingLoad)
+    }
+
+    /// The calendar-day loads the CTL/ATL/TSB model runs on: each day's linear `dailyLoad`
+    /// (TRIMP-equivalent), the same load ACWR and monotony use, so every load read-out is on one scale.
+    /// A day without an Effort stays unobserved (nil), never an invented zero.
+    static func trainingLoadDays(_ days: [DailyMetric]) -> [TrainingLoadEngine.DailyLoad] {
+        days.map { TrainingLoadEngine.DailyLoad(day: $0.day, load: $0.strain.map { dailyLoad(effort: $0) }) }
     }
 }

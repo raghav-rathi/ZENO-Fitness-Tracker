@@ -13,10 +13,12 @@ import WhoopStore
 /// - **Resting-HR drift** — elevated resting HR vs baseline is a classic overtraining / illness
 ///   signal (Lamberts et al. 2004).
 /// - **Respiratory-rate drift** — a rise in sleeping respiratory rate is an early illness signal.
-/// - **Training Stress Balance (ACWR)** — acute (7-day) vs chronic (28-day) strain. The 0.8–1.3
-///   band is the "sweet spot"; >1.5 is associated with higher injury risk (Gabbett 2016).
-/// - **Training monotony** — mean/SD of daily strain over a week; high monotony (low variety) is
+/// - **Training Stress Balance (ACWR)** — acute (7-day) vs chronic (28-day) mean daily load. The
+///   0.8–1.3 band is the "sweet spot"; >1.5 is associated with higher injury risk (Gabbett 2016).
+/// - **Training monotony** — mean/SD of daily load over a week; high monotony (low variety) is
 ///   associated with higher strain and illness (Foster 1998).
+///
+/// "Load" is linear: the TRIMP each day's Effort stands for (`dailyLoad`), never the log-scaled Effort.
 ///
 /// Not medical advice. These are approximations from a consumer strap; they describe trends in
 /// *your own* data, nothing more.
@@ -84,7 +86,33 @@ public enum ReadinessEngine {
     private static let minBaseline    = 7    // need at least this many baseline nights
     private static let acuteWindow    = 7
     private static let chronicWindow  = 28
-    private static let minChronic     = 14   // need at least this much strain history for ACWR
+    private static let minChronic     = 14   // days with Effort in the 28-day window before ACWR
+    private static let minAcuteDays   = 4    // days with Effort in the 7-day window before ACWR/monotony
+
+    // MARK: Load
+
+    /// A day's linear training load: the TRIMP its stored 0–100 Effort stands for
+    /// (`StrainScorer.trimp(fromStrain:)`). The one conversion every load model here uses, so ACWR,
+    /// monotony and CTL/ATL/TSB are all on the same scale.
+    public static func dailyLoad(effort: Double) -> Double {
+        StrainScorer.trimp(fromStrain: effort)
+    }
+
+    /// Linear loads of the days with an Effort in the acute (7-day) and chronic (28-day) calendar windows
+    /// ending on `day`, inclusive. Rows after `day` never count.
+    static func trainingLoadWindows(_ rows: [DailyMetric], endingOn day: String) -> (acute: [Double], chronic: [Double]) {
+        guard let end = LocalCalendarDate(key: day)?.daysSinceEpoch else { return ([], []) }
+        var acute: [Double] = [], chronic: [Double] = []
+        for row in rows {
+            guard let effort = row.strain, let o = LocalCalendarDate(key: row.day)?.daysSinceEpoch else { continue }
+            let age = end - o
+            guard age >= 0, age < chronicWindow else { continue }
+            let load = dailyLoad(effort: effort)
+            chronic.append(load)
+            if age < acuteWindow { acute.append(load) }
+        }
+        return (acute, chronic)
+    }
 
     // MARK: Entry point
 
@@ -201,20 +229,32 @@ public enum ReadinessEngine {
         }
 
         // Training Stress Balance (ACWR) + monotony --------------------------
-        let strainSeries = sorted.compactMap { $0.strain }
+        // Both run on LINEAR daily load — the TRIMP each day's Effort stands for (`dailyLoad`), not the
+        // Effort score itself. Effort is 100·ln(TRIMP+1)/ln(D): a worn rest day near 25 and a hard day near
+        // 60 are 2.4× apart on that axis but ~25× apart in load, so a week's mean/SD on Effort came out ≥ 2
+        // ("monotonous") almost every week, the watch flag that follows made "Primed" unreachable, and the
+        // acute:chronic ratio understated every build-up. Foster's and Gabbett's measures are defined on a
+        // linear load (TRIMP / session-RPE) with rest days in it, which is what this is: a worn rest day is a
+        // small (Edwards: often zero) load that stays in the week, while a day with no Effort at all is
+        // missing, never an invented zero. Windows are CALENDAR days ending on the scored day, so a break in
+        // wear does not pull older weeks into "this week".
+        let load = trainingLoadWindows(sorted, endingOn: latest.day)
         var acwr: Double? = nil
         var monotony: Double? = nil
-        if strainSeries.count >= minChronic {
-            let acute = mean(Array(strainSeries.suffix(acuteWindow)))!
-            let chronic = mean(Array(strainSeries.suffix(chronicWindow)))!
+        if load.chronic.count >= minChronic, load.acute.count >= minAcuteDays {
+            let acute = mean(load.acute)!
+            let chronic = mean(load.chronic)!
             if chronic > 0 {
                 let ratio = acute / chronic
                 acwr = ratio
                 signals.append(acwrSignal(ratio, acute: acute, chronic: chronic))
             }
-            // Foster monotony over the last week of strain.
-            let week = Array(strainSeries.suffix(acuteWindow))
-            if week.count >= 4, let sd = sampleSD(week), sd > 0, let m = mean(week) {
+            // Foster monotony over the last week of daily load. A week with no spread at all has no
+            // defined monotony and is skipped, as it always was; the relative tolerance keeps rounding
+            // noise in the exp() transform (~1e-16) from turning seven identical loads into a monotony of
+            // 10^16.
+            let week = load.acute
+            if let sd = sampleSD(week), let m = mean(week), sd > 1e-9 * max(abs(m), 1) {
                 let mono = m / sd
                 monotony = mono
                 if mono >= 2.0 {

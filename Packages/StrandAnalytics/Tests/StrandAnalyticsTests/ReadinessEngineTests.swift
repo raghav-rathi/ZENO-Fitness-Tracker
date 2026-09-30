@@ -36,7 +36,10 @@ final class ReadinessEngineTests: XCTestCase {
         XCTAssertEqual(r.signals.first { $0.key == "acwr" }?.flag, .good)
         XCTAssertEqual(r.signals.first { $0.key == "hrv" }?.evidence, "72 vs 60 ms")
         XCTAssertEqual(r.signals.first { $0.key == "rhr" }?.evidence, "46 vs 52 bpm")
-        XCTAssertEqual(r.signals.first { $0.key == "acwr" }?.evidence, "7d 10.0 / 28d 10.0")
+        // Load is linear now: the evidence carries the TRIMP an Effort of 10 stands for, not the Effort.
+        let load = ReadinessEngine.dailyLoad(effort: 10)
+        XCTAssertEqual(r.signals.first { $0.key == "acwr" }?.evidence,
+                       String(format: "7d %.1f / 28d %.1f", load, load))
     }
 
     func testRundownWhenTwoRecoverySignalsDown() {

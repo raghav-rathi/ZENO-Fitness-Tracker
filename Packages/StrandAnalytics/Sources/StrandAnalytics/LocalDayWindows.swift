@@ -45,6 +45,20 @@ public struct LocalCalendarDate: Hashable, Comparable, Sendable {
         self.init(year: y, month: m, day: d)
     }
 
+    /// Parse a strict `YYYY-MM-DD` day key, or nil when it is malformed or names a day the month does not
+    /// have. Integer-only, so it is timezone-free: neighbouring keys are exactly one `daysSinceEpoch` apart
+    /// across any DST change.
+    public init?(key: String) {
+        let parts = key.split(separator: "-", omittingEmptySubsequences: false)
+        guard parts.count == 3, parts[0].count == 4, parts[1].count == 2, parts[2].count == 2,
+              let y = Int(parts[0]), let m = Int(parts[1]), let d = Int(parts[2]),
+              (1...12).contains(m), d >= 1 else { return nil }
+        let leap = y % 4 == 0 && (y % 100 != 0 || y % 400 == 0)
+        let monthDays = [31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+        guard d <= monthDays[m - 1] else { return nil }
+        self.init(year: y, month: m, day: d)
+    }
+
     /// The number of days from 1970-01-01 to this date, negative before it.
     public var daysSinceEpoch: Int {
         // Howard Hinnant's days_from_civil, the exact inverse of the initialiser above.

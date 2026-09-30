@@ -350,6 +350,23 @@ public enum StrainScorer {
         return (value * 100).rounded() / 100
     }
 
+    /// The inverse of `trimpToStrain`: the accumulated TRIMP a 0–100 Effort stands for,
+    /// `D^(strain / maxStrain) − 1`. Load models (ACWR, Foster monotony, CTL/ATL) need a LINEAR load, and
+    /// Effort is log-compressed on purpose — a rest day at 25 and a hard day at 60 are 2.4× apart on the
+    /// Effort axis but about 25× apart in load — so means, SDs and ratios taken on Effort understate every
+    /// difference between days.
+    ///
+    /// Exact for an Edwards-scored day (the default denominator). A Banister day or an imported WHOOP
+    /// Strain (rescaled onto this axis at import) maps through the same monotone curve, which keeps it a
+    /// linear-in-effort load on one consistent scale rather than a recovery of that method's own TRIMP.
+    /// Out-of-range input is clamped to [0, maxStrain]; a non-finite Effort or a denominator outside the
+    /// map's domain is no load.
+    public static func trimp(fromStrain strain: Double, denominator: Double = strainDenominator) -> Double {
+        guard strain.isFinite, denominator > 1 else { return 0 }
+        let clamped = min(max(strain, 0), maxStrain)
+        return exp(clamped / maxStrain * log(denominator)) - 1.0
+    }
+
     // MARK: - Denominator calibration
 
     /// Calibrate D from (TRIMP, reference_strain) pairs via the through-origin

@@ -71,6 +71,7 @@ final class ReadinessTrainingLoadTests: XCTestCase {
 
         XCTAssertEqual(paired.trainingLoad.endDay, "2026-01-20")
         XCTAssertEqual(paired.trainingLoad.contiguousDays, 20)
-        XCTAssertEqual(paired.trainingLoad.points.last?.load, 10)
+        // The model's load is the linear TRIMP an Effort of 10 stands for (not the Effort itself).
+        XCTAssertEqual(paired.trainingLoad.points.last?.load, ReadinessEngine.dailyLoad(effort: 10))
     }
 }

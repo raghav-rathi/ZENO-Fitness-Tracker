@@ -4,8 +4,9 @@ import Foundation
 ///
 /// Complements `ReadinessEngine`'s existing rolling-mean ACWR and Foster monotony without replacing
 /// either and WITHOUT feeding the Readiness level. It keeps chronic load (CTL), acute load (ATL), and
-/// their difference (TSB / "form") in the SAME units as the supplied daily load. NOOP currently supplies
-/// daily Effort/strain, so these values are not TRIMP and must not be relabelled as such.
+/// their difference (TSB / "form") in the SAME units as the supplied daily load. NOOP supplies the linear
+/// TRIMP-equivalent of each day's Effort (`ReadinessEngine.trainingLoadDays`): an EWMA of the log-scaled
+/// Effort itself would compress every hard day toward the easy ones.
 ///
 /// Model:
 ///   alpha = 1 - exp(-1 / tauDays)

@@ -315,11 +315,7 @@ public enum SleepNeed {
     /// Days since 1970-01-01 for a strict "yyyy-MM-dd" key, or nil when it does not parse. Timezone-free
     /// integer arithmetic, so neighbouring days are one apart across DST changes.
     static func ordinal(_ key: String) -> Int? {
-        let parts = key.split(separator: "-", omittingEmptySubsequences: false)
-        guard parts.count == 3, parts[0].count == 4, parts[1].count == 2, parts[2].count == 2,
-              let y = Int(parts[0]), let m = Int(parts[1]), let d = Int(parts[2]),
-              (1...12).contains(m), (1...31).contains(d) else { return nil }
-        return LocalCalendarDate(year: y, month: m, day: d).daysSinceEpoch
+        LocalCalendarDate(key: key)?.daysSinceEpoch
     }
 
     static func round1(_ v: Double) -> Double { (v * 10.0).rounded() / 10.0 }
