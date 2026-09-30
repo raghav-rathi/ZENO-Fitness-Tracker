@@ -11,7 +11,8 @@ enum PhoneStepAccess: Equatable, Sendable {
     case notDetermined
     /// The wearer said no, or has Fitness Tracking switched off in Settings.
     case denied
-    /// Blocked by Screen Time or device management; nothing in the app can grant it.
+    /// Fitness Tracking is off system-wide, or Screen Time / device management blocks it. The app cannot
+    /// grant it; only Settings can.
     case restricted
     case authorized
 }
@@ -46,6 +47,9 @@ final class PhonePedometer: @unchecked Sendable {
 
     /// Where authorisation stands right now. Cheap; safe to call from anywhere.
     static var access: PhoneStepAccess {
+        #if DEBUG
+        if let forced = debugForcedAccess { return forced }
+        #endif
         #if os(iOS)
         guard CMPedometer.isStepCountingAvailable() else { return .unavailable }
         switch CMPedometer.authorizationStatus() {
@@ -59,6 +63,21 @@ final class PhonePedometer: @unchecked Sendable {
         return .unavailable
         #endif
     }
+
+    #if DEBUG
+    /// DEBUG harness: `--demo-steps-access notDetermined|denied|restricted` pins the reported access, so the
+    /// Steps screen's access card can be seen on a Simulator, which has no pedometer to ask.
+    private static let debugForcedAccess: PhoneStepAccess? = {
+        let args = CommandLine.arguments
+        guard let i = args.firstIndex(of: "--demo-steps-access"), i + 1 < args.count else { return nil }
+        switch args[i + 1] {
+        case "notDetermined": return .notDetermined
+        case "denied": return .denied
+        case "restricted": return .restricted
+        default: return nil
+        }
+    }()
+    #endif
 
     /// The phone's reading over `[from, to]`, or nil when it cannot be counted: no hardware, access denied,
     /// a window older than CoreMotion keeps, or any other query error. Never a fabricated zero. On a fresh

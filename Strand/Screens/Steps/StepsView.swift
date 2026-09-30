@@ -113,17 +113,17 @@ struct StepsView: View {
                     Label("iPhone step counting is off", systemImage: "iphone.slash")
                         .font(StrandFont.headline)
                         .foregroundStyle(StrandPalette.textPrimary)
+                    // iOS reports "restricted" both for Fitness Tracking switched off system-wide and for a
+                    // Screen Time or management block, so the copy names the one place to look.
                     Text(service.phoneAccess == .restricted
-                         ? "Motion & Fitness is restricted on this iPhone, so ZENO can't read its step count. Steps come from Apple Health or your strap instead."
+                         ? "Motion & Fitness is off or restricted on this iPhone. Check Settings > Privacy & Security > Motion & Fitness. Until then, steps come from Apple Health or your strap."
                          : "Motion & Fitness access is off for ZENO. Turn it on in Settings > Privacy & Security > Motion & Fitness to count steps with this iPhone.")
                         .font(StrandFont.subhead)
                         .foregroundStyle(StrandPalette.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
                     #if os(iOS)
-                    if service.phoneAccess == .denied {
-                        NoopButton("Open Settings", systemImage: "gearshape", kind: .secondary, fullWidth: true) {
-                            if let url = URL(string: UIApplication.openSettingsURLString) { PlatformOpen.url(url) }
-                        }
+                    NoopButton("Open Settings", systemImage: "gearshape", kind: .secondary, fullWidth: true) {
+                        if let url = URL(string: UIApplication.openSettingsURLString) { PlatformOpen.url(url) }
                     }
                     #endif
                 }

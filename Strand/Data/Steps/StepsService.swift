@@ -105,7 +105,7 @@ final class StepsService: ObservableObject {
                 Task { @MainActor in self?.dayDidChange() }
             }
         }
-        phoneAccess = PhonePedometer.access
+        refreshPhoneAccess()
         if !snapshot.loaded || snapshot.today != Repository.localDayKey(Date()) {
             scheduleReload(from: nil)
         }
@@ -150,12 +150,12 @@ final class StepsService: ObservableObject {
     /// below is what shows the system prompt, and it returns once the wearer has answered.
     func requestPhoneAccess() async {
         guard PhonePedometer.access == .notDetermined else {
-            phoneAccess = PhonePedometer.access
+            refreshPhoneAccess()
             return
         }
         let now = Date()
         _ = await pedometer.query(from: Calendar.current.startOfDay(for: now), to: now)
-        phoneAccess = PhonePedometer.access
+        refreshPhoneAccess()
         guard phoneAccess == .authorized else { return }
         #if os(iOS)
         // The tap itself proves the app is in the foreground.
@@ -167,7 +167,7 @@ final class StepsService: ObservableObject {
 
     /// Pull-to-refresh: bank the pedometer now and re-read the whole window.
     func refreshNow() async {
-        phoneAccess = PhonePedometer.access
+        refreshPhoneAccess()
         runBackfill(force: true)
         await reload(from: nil)
     }
@@ -260,8 +260,14 @@ final class StepsService: ObservableObject {
 
     // MARK: - Live pedometer
 
+    /// Re-read authorisation, publishing only a real change (`@Published` fires on every assignment).
+    private func refreshPhoneAccess() {
+        let access = PhonePedometer.access
+        if access != phoneAccess { phoneAccess = access }
+    }
+
     private func startStreamingIfPermitted() {
-        phoneAccess = PhonePedometer.access
+        refreshPhoneAccess()
         guard appActive, phoneAccess == .authorized, !isStreaming else { return }
         let midnight = Calendar.current.startOfDay(for: Date())
         pedometer.startLive(from: midnight) { [weak self] reading in
