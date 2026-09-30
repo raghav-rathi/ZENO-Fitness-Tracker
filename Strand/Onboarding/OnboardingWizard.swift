@@ -676,36 +676,51 @@ private struct ScanStep: View {
 private struct BondedStep: View {
     @EnvironmentObject private var live: LiveState
     @State private var bloom = false
+    /// The scan step's Continue also lands here when the wearer skips pairing, so the celebration has to
+    /// be earned: "You're connected." is only said once a strap has actually bonded.
+    private var bonded: Bool { live.bonded }
     var body: some View {
         StepShell {
             VStack(spacing: 26) {
                 Spacer()
                 ZStack {
                     Circle()
-                        .fill(StrandPalette.statusPositive)
+                        .fill(bonded ? StrandPalette.statusPositive : StrandPalette.textTertiary)
                         .frame(width: 160, height: 160)
                         .blur(radius: 70)
                         .opacity(bloom ? 0.5 : 0.0)
                         .blendMode(.plusLighter)
-                    // A ring materialises — a taste of the signature component.
-                    RecoveryRing(score: 100, supporting: nil, diameter: 200, lineWidth: 14, showsLabel: false)
-                        .scaleEffect(bloom ? 1 : 0.7)
-                        .opacity(bloom ? 1 : 0)
-                    Image(systemName: "checkmark")
+                    if bonded {
+                        // A ring materialises — a taste of the signature component.
+                        RecoveryRing(score: 100, supporting: nil, diameter: 200, lineWidth: 14, showsLabel: false)
+                            .scaleEffect(bloom ? 1 : 0.7)
+                            .opacity(bloom ? 1 : 0)
+                    }
+                    Image(systemName: bonded ? "checkmark" : "antenna.radiowaves.left.and.right")
                         .font(.system(size: 44, weight: .bold))
-                        .foregroundStyle(StrandPalette.statusPositive)
+                        .foregroundStyle(bonded ? StrandPalette.statusPositive : StrandPalette.textSecondary)
                         .scaleEffect(bloom ? 1 : 0.4)
                         .opacity(bloom ? 1 : 0)
                 }
                 .frame(height: 210)
 
                 VStack(spacing: 8) {
-                    Text("You're connected.")
-                        .font(StrandFont.title1)
-                        .foregroundStyle(StrandPalette.textPrimary)
-                    Text(batteryLine)
-                        .font(StrandFont.body)
-                        .foregroundStyle(StrandPalette.textSecondary)
+                    if bonded {
+                        Text("You're connected.")
+                            .font(StrandFont.title1)
+                            .foregroundStyle(StrandPalette.textPrimary)
+                        Text(batteryLine)
+                            .font(StrandFont.body)
+                            .foregroundStyle(StrandPalette.textSecondary)
+                    } else {
+                        Text("No strap paired yet")
+                            .font(StrandFont.title1)
+                            .foregroundStyle(StrandPalette.textPrimary)
+                        Text("That's fine. Pair your strap any time from Devices, and your data fills in once it connects.")
+                            .font(StrandFont.body)
+                            .foregroundStyle(StrandPalette.textSecondary)
+                            .multilineTextAlignment(.center)
+                    }
                 }
                 .opacity(bloom ? 1 : 0)
                 Spacer()
