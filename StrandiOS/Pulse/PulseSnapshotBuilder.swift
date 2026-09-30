@@ -842,8 +842,7 @@ actor PulseSnapshotBuilder {
                                   uniquingKeysWith: { _, last in last })
         let history = keys.compactMap { k -> PulseDayBar? in
             guard let v = recByDay[k] else { return nil }
-            return PulseDayBar(id: k, value: v, label: PulseFormat.dayLabel(k),
-                               band: PulseDisplay.recoveryBand(percent: v))
+            return PulseDayBar(id: k, value: v, band: PulseDisplay.recoveryBand(percent: v))
         }
         guard isCurrent(r) else { return nil }
         return RecoverySnapshot(seq: r.seq, day: r.day, dial: dial, sourceDayKey: sourceDay,

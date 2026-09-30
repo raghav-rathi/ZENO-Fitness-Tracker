@@ -329,13 +329,11 @@ struct PulseContributor: Identifiable, Equatable {
     let route: TabRoute?
 }
 
-/// One bar of a day-keyed history chart.
+/// One bar of a day-keyed history chart. Its axis label is formatted from the key, at UTC.
 struct PulseDayBar: Identifiable, Equatable {
     /// The day key.
     let id: String
     let value: Double
-    /// Short axis label, formatted at UTC from the key.
-    let label: String
     let band: PulseDisplay.RecoveryBand?
 }
 

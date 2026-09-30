@@ -74,6 +74,7 @@ enum PulseDemo {
 ///   `--pulse-tab home|health|more`     the selected tab
 ///   `--pulse-day N`                    Home N days back
 ///   `--pulse-night N`                  the Sleep dive N nights back
+///   `--pulse-range 7|30|90`            the Recovery history's range
 ///   `--pulse-push recovery|strain|sleep`  push a deep dive onto Home
 ///   `--pulse-sheet actions`            present the ＋ menu
 ///   `--pulse-scroll <anchor>`          scroll to a section id ("myday", "stats", "stress", "bottom", …)
@@ -98,6 +99,11 @@ enum PulseDebugLaunch {
 
     /// `--pulse-night N`: open the Sleep dive N nights back from the latest.
     static var nightIndex: Int? { value("--pulse-night").flatMap(Int.init) }
+
+    /// `--pulse-range 7|30|90`: the Recovery history's initial range.
+    static var historyRange: Int? {
+        value("--pulse-range").flatMap(Int.init).flatMap { [7, 30, 90].contains($0) ? $0 : nil }
+    }
 
     static var push: PulseRoute? {
         switch value("--pulse-push") {

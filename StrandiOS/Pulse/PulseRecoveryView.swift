@@ -66,7 +66,11 @@ extension PulseModel {
 
 struct PulseRecoveryView: View {
     @Environment(PulseModel.self) private var model
+    #if DEBUG
+    @State private var range = PulseDebugLaunch.historyRange ?? 30
+    #else
     @State private var range = 30
+    #endif
 
     var body: some View {
         PulseDetailScaffold(title: PulseScore.recovery.displayName, subtitle: model.dayCaption,
@@ -103,7 +107,7 @@ struct PulseRecoveryView: View {
                 .id("pulse.shaped")
         }
 
-        PulseRecoveryHistory(bars: s.history, range: $range)
+        PulseRecoveryHistory(bars: s.history, endKey: s.day.key, range: $range)
             .id("pulse.history")
     }
 }
@@ -333,9 +337,18 @@ struct PulseContributorRow: View {
 /// 7 / 30 / 90 days of Recovery, each bar in its band colour.
 struct PulseRecoveryHistory: View {
     let bars: [PulseDayBar]
+    /// The chart's last day: the day the dive is showing.
+    let endKey: String
     @Binding var range: Int
 
-    private var shown: [PulseDayBar] { Array(bars.suffix(range)) }
+    /// Every calendar day in the range, oldest first. It is the x domain, so a day without a score
+    /// leaves a gap: taking the last N BARS instead let "7 days" quietly reach back past a missed night.
+    private var days: [String] { PulseDisplay.trailingDayKeys(endingOn: endKey, count: range) }
+
+    private var shown: [PulseDayBar] {
+        guard let first = days.first else { return [] }
+        return bars.filter { $0.id >= first && $0.id <= endKey }
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -351,14 +364,15 @@ struct PulseRecoveryHistory: View {
 
                     if shown.count >= 2 {
                         let data = shown
-                        let labels = Dictionary(data.map { ($0.id, $0.label) }, uniquingKeysWith: { a, _ in a })
-                        // Categorical x on the DAY KEY: the key is unique and the label beside it was
-                        // formatted at UTC, so no axis ever re-derives a date in the device zone.
+                        let domain = days
+                        // Categorical x on the DAY KEY: the key is unique and its label is formatted at
+                        // UTC, so no axis ever re-derives a date in the device zone.
                         Chart(data) { bar in
                             BarMark(x: .value("Day", bar.id), y: .value("Recovery", bar.value))
                                 .foregroundStyle(PulseTheme.recovery(bar.band ?? .yellow))
                                 .cornerRadius(2)
                         }
+                        .chartXScale(domain: domain)
                         .chartYScale(domain: 0...100)
                         .chartYAxis {
                             AxisMarks(position: .trailing, values: [0, 33, 67, 100]) { _ in
@@ -367,10 +381,10 @@ struct PulseRecoveryHistory: View {
                             }
                         }
                         .chartXAxis {
-                            AxisMarks(values: axisKeys(data)) { value in
+                            AxisMarks(values: axisKeys(domain)) { value in
                                 AxisValueLabel {
-                                    if let key = value.as(String.self), let label = labels[key] {
-                                        Text(label)
+                                    if let key = value.as(String.self) {
+                                        Text(PulseFormat.dayLabel(key))
                                     }
                                 }
                                 .foregroundStyle(PulseTheme.textTertiary)
@@ -402,16 +416,15 @@ struct PulseRecoveryHistory: View {
         }
     }
 
-    /// Day keys to label: every other day on a week, four evenly spaced interior days otherwise. The
-    /// last bar sits against the value axis, where a label would be clipped, so it is never chosen.
-    private func axisKeys(_ data: [PulseDayBar]) -> [String] {
-        let count = data.count
-        guard count > 1 else { return data.map(\.id) }
-        if count <= 8 {
-            return stride(from: 0, to: count - 1, by: 2).map { data[$0].id }
-        }
-        let fractions = [0.1, 0.35, 0.6, 0.85]
-        return fractions.map { data[min(count - 2, Int((Double(count - 1) * $0).rounded()))].id }
+    /// Days to label, a fixed number of days apart counted back from the last day (every 2nd day on a
+    /// week, weekly on a month, every 3 weeks on 90 days), so the ticks keep one rhythm; evenly spaced
+    /// fractions landed 7, 7 and then 8 days apart. The last day sits against the value axis, where
+    /// its label would be clipped, so counting starts one step back.
+    private func axisKeys(_ keys: [String]) -> [String] {
+        let count = keys.count
+        guard count > 1 else { return keys }
+        let step = count <= 7 ? 2 : (count <= 30 ? 7 : 21)
+        return stride(from: count - 1 - step, through: 0, by: -step).map { keys[$0] }.reversed()
     }
 
     private func legend(_ band: PulseDisplay.RecoveryBand, _ text: String) -> some View {
