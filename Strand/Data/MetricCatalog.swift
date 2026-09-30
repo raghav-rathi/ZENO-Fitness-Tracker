@@ -160,8 +160,8 @@ enum MetricCatalog {
         // WHOOP 5.0 / MG exposes a measured daily step count. Declared AFTER apple-health on purpose:
         // the bare-key `first { key == "steps" }` resolvers (LabBookView, CompareView, the TabRoute
         // `.metric` fallback) keep their prior apple-health default, so this entry's position never
-        // changes where any of them tap through. The Today card/tile route to it EXPLICITLY by source
-        // (`.metricSourced` / `todayStepsMetric`), which is what actually needs it.
+        // changes where any of them tap through. A surface that needs it routes EXPLICITLY by source
+        // (`.metricSourced`).
         d("steps", String(localized: "Steps"), "Effort", "steps", "my-whoop", "figure.walk", 0, true),
         // On-device steps ESTIMATE for a WHOOP 4.0 (no real step count over BLE): the strap's daily
         // motion volume scaled by a personal calibration. Stored under the computed "-noop" source, so
@@ -222,17 +222,7 @@ enum MetricCatalog {
         return all.first { $0.key == key && $0.source == source }
     }
 
-    /// The source the Today steps tile taps through to, matching the value it displays. Precedence
-    /// mirrors Android's `TodayScreen` (#377): the measured WHOOP 5.0 / MG count, else the imported
-    /// Apple Health count, else the WHOOP 4.0 motion estimate. `hasImportedSteps` defaults false so
-    /// existing callers keep the measured-or-estimate behaviour unchanged.
-    static func todayStepsMetric(hasMeasuredSteps: Bool, hasImportedSteps: Bool = false) -> MetricDescriptor? {
-        if hasMeasuredSteps { return metric(key: "steps", source: "my-whoop") }
-        if hasImportedSteps { return metric(key: "steps", source: "apple-health") }
-        return metric(key: "steps_est", source: "my-whoop")
-    }
-
-    /// #616: the calorie twin of `todayStepsMetric` — route the tapped detail to the source that MATCHES
+    /// #616: route the Calories tile's tapped detail to the source that MATCHES
     /// the value the tile shows (imported-first, like Android). The imported Apple-Health detail
     /// (`active_kcal` / apple-health) when the day has an imported value, else NOOP's on-device HR-estimate
     /// detail (`energy_kcal` / my-whoop, which `exploreSeries` fuses from `activeKcalEst`). Without this the
