@@ -6,6 +6,8 @@ import GRDB
 // a range read — all GRDB work via syncWrite/syncRead. `appleDaily.steps` already answers "how many
 // steps that day"; this table answers "which HOURS were recorded", so the UI can show retroactively
 // when the iPhone was off/dead/left behind (e.g. mid-hike) instead of a single flattened daily total.
+// The iPhone's own pedometer (CoreMotion, read by the app's Steps feature) banks the same hour shape
+// under its own deviceId, so its history outlives CoreMotion's 7-day window without a new table.
 
 extension WhoopStore {
 
@@ -37,6 +39,17 @@ extension WhoopStore {
                 ORDER BY ts ASC
                 """, arguments: [deviceId, fromTs, toTs])
                 .map { (ts: $0["ts"], steps: $0["steps"]) }
+        }
+    }
+
+    /// Delete every hourly row one device holds, returning how many went. The table is partitioned by
+    /// source: Apple Health's hours sit under "apple-health" and the iPhone pedometer's hours (read by
+    /// the app's Steps feature) under their own id, so clearing one source never touches another's.
+    @discardableResult
+    public func deleteAppleStepHours(deviceId: String) async throws -> Int {
+        try syncWrite { db in
+            try db.execute(sql: "DELETE FROM appleStepHour WHERE deviceId = ?", arguments: [deviceId])
+            return db.changesCount
         }
     }
 }

@@ -53,4 +53,24 @@ final class AppleStepHourStoreTests: XCTestCase {
         XCTAssertEqual(others.count, 1)
         XCTAssertEqual(others.first?.steps, 999)
     }
+
+    /// The iPhone pedometer banks its hours under its own id beside Apple Health's; clearing one source
+    /// must remove exactly that source's hours and leave the other's intact.
+    func testDeleteRemovesOnlyTheNamedDevicesHours() async throws {
+        let store = try await WhoopStore.inMemory()
+        _ = try await store.upsertAppleStepHours([(ts: 3_600, steps: 10), (ts: 7_200, steps: 20)],
+                                                 deviceId: "iphone-pedometer")
+        _ = try await store.upsertAppleStepHours([(ts: 3_600, steps: 30)], deviceId: "apple-health")
+
+        let removed = try await store.deleteAppleStepHours(deviceId: "iphone-pedometer")
+        XCTAssertEqual(removed, 2)
+        let phone = try await store.appleStepHours(deviceId: "iphone-pedometer", fromTs: 0, toTs: 100_000)
+        XCTAssertTrue(phone.isEmpty)
+        let health = try await store.appleStepHours(deviceId: "apple-health", fromTs: 0, toTs: 100_000)
+        XCTAssertEqual(health.map(\.steps), [30])
+
+        // Deleting an absent source is an idempotent zero-row change.
+        let again = try await store.deleteAppleStepHours(deviceId: "iphone-pedometer")
+        XCTAssertEqual(again, 0)
+    }
 }
