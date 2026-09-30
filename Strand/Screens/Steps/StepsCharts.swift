@@ -128,7 +128,7 @@ struct StepsHourlyBarsView: View {
                     .font(StrandFont.caption)
                     .foregroundStyle(StrandPalette.textTertiary)
                     .fixedSize()
-                    .position(x: slot * (CGFloat(hour) + 0.5), y: 7)
+                    .position(x: min(max(slot * (CGFloat(hour) + 0.5), 18), geo.size.width - 18), y: 7)
             }
         }
         .frame(height: 14)
@@ -148,24 +148,31 @@ struct StepsDailyBarsView: View {
     let labels: Labels
     var height: CGFloat = 128
 
+    /// Width of the leading gutter the goal tag sits in, clear of every bar.
+    private static let gutter: CGFloat = 30
+
     var body: some View {
         let ceiling = CGFloat(StepsStats.chartCeiling(values: bars.compactMap(\.steps), goal: goal))
         let goalFrac = CGFloat(StepGoal.clamp(goal)) / max(ceiling, 1)
         VStack(spacing: 6) {
-            ZStack(alignment: .bottom) {
-                HStack(alignment: .bottom, spacing: labels == .weekdays ? 10 : 3) {
-                    ForEach(bars, id: \.day) { bar in
-                        barShape(bar, ceiling: ceiling)
-                            .frame(maxWidth: .infinity)
-                            .accessibilityElement()
-                            .accessibilityLabel(StepsLabels.full(bar.day))
-                            .accessibilityValue(accessibilityValue(bar))
+            HStack(spacing: 0) {
+                goalTag(fraction: goalFrac)
+                    .frame(width: Self.gutter)
+                ZStack(alignment: .bottom) {
+                    HStack(alignment: .bottom, spacing: labels == .weekdays ? 10 : 3) {
+                        ForEach(bars, id: \.day) { bar in
+                            barShape(bar, ceiling: ceiling)
+                                .frame(maxWidth: .infinity)
+                                .accessibilityElement()
+                                .accessibilityLabel(StepsLabels.full(bar.day))
+                                .accessibilityValue(accessibilityValue(bar))
+                        }
                     }
+                    goalLine(fraction: goalFrac)
                 }
-                goalLine(fraction: goalFrac)
             }
             .frame(height: height)
-            axis
+            axis.padding(.leading, Self.gutter)
         }
         .accessibilityElement(children: .contain)
     }
@@ -197,18 +204,22 @@ struct StepsDailyBarsView: View {
                 p.addLine(to: CGPoint(x: geo.size.width, y: y))
             }
             .stroke(StrandPalette.textSecondary.opacity(0.7), style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
-            // Tagged at the LEADING edge: the newest day, the one being read, sits at the trailing end.
+        }
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+    }
+
+    /// The goal's value, level with its line, in the gutter left of the bars.
+    private func goalTag(fraction: CGFloat) -> some View {
+        GeometryReader { geo in
+            let y = geo.size.height * (1 - min(max(fraction, 0), 1))
             Text(StepsFormat.compact(StepGoal.clamp(goal)))
                 .font(StrandFont.overline)
                 .monospacedDigit()
                 .foregroundStyle(StrandPalette.textSecondary)
-                .padding(.horizontal, 5)
-                .padding(.vertical, 1)
-                .background(StrandPalette.surfaceRaised.opacity(0.9), in: Capsule())
                 .fixedSize()
-                .position(x: 16, y: max(8, y - 9))
+                .position(x: geo.size.width / 2 - 2, y: min(max(y, 6), geo.size.height - 6))
         }
-        .allowsHitTesting(false)
         .accessibilityHidden(true)
     }
 

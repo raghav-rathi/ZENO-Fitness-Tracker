@@ -333,14 +333,18 @@ struct StepsView: View {
         card {
             VStack(alignment: .leading, spacing: NoopMetrics.cardInnerSpacing) {
                 Text("Daily goal").strandOverline()
-                HStack(alignment: .firstTextBaseline, spacing: 6) {
-                    Text(StepsFormat.count(goal))
-                        .font(StrandFont.rounded(28, weight: .bold))
-                        .foregroundStyle(StrandPalette.textPrimary)
-                        .monospacedDigit()
-                    Text("steps")
-                        .font(StrandFont.subhead)
-                        .foregroundStyle(StrandPalette.textSecondary)
+                // Centre-aligned: a label-less Stepper has no text baseline, so first-baseline alignment
+                // hung it below the number.
+                HStack(alignment: .center, spacing: 8) {
+                    HStack(alignment: .firstTextBaseline, spacing: 6) {
+                        Text(StepsFormat.count(goal))
+                            .font(StrandFont.rounded(28, weight: .bold))
+                            .foregroundStyle(StrandPalette.textPrimary)
+                            .monospacedDigit()
+                        Text("steps")
+                            .font(StrandFont.subhead)
+                            .foregroundStyle(StrandPalette.textSecondary)
+                    }
                     Spacer(minLength: 8)
                     Stepper("Daily goal", value: goalBinding, in: StepGoal.range, step: StepGoal.increment)
                         .labelsHidden()
@@ -352,7 +356,7 @@ struct StepsView: View {
                         Text("Notify me when I reach it")
                             .font(StrandFont.body)
                             .foregroundStyle(StrandPalette.textPrimary)
-                        Text("Once a day. It arrives when ZENO next reads your steps, so it can be late if the app was closed.")
+                        Text("Once a day. It can arrive late if ZENO was closed.")
                             .font(StrandFont.footnote)
                             .foregroundStyle(StrandPalette.textTertiary)
                             .fixedSize(horizontal: false, vertical: true)
