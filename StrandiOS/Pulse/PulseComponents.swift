@@ -121,9 +121,10 @@ struct PulseStrainTargetBar: View {
     var body: some View {
         GeometryReader { geo in
             let w = geo.size.width
-            let lo = target.range.lowerBound / 21
-            let hi = target.range.upperBound / 21
-            let current = min(1, max(0, (target.current ?? 0) / 21))
+            let lo = CGFloat(target.range.lowerBound / 21)
+            let hi = CGFloat(target.range.upperBound / 21)
+            let current = CGFloat(min(1, max(0, (target.current ?? 0) / 21)))
+            let knob = height + 6
             ZStack(alignment: .leading) {
                 Capsule().fill(PulseTheme.track)
                 // The recommended range.
@@ -142,8 +143,8 @@ struct PulseStrainTargetBar: View {
                         .frame(width: max(height, w * current))
                     Circle()
                         .fill(PulseTheme.textPrimary)
-                        .frame(width: height + 6, height: height + 6)
-                        .offset(x: max(0, w * current - (height + 6) / 2))
+                        .frame(width: knob, height: knob)
+                        .offset(x: min(max(0, w * current - knob / 2), w - knob))
                 }
             }
             .frame(height: height)

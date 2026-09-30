@@ -266,6 +266,8 @@ struct PulseMiniStat: View {
                 Text(value ?? "–")
                     .font(PulseTheme.numeral(24))
                     .foregroundStyle(value == nil ? PulseTheme.textTertiary : PulseTheme.textPrimary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
                 if value != nil {
                     Text(unit)
                         .font(.caption2.weight(.semibold))

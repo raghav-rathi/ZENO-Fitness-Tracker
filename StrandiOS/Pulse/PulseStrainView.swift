@@ -261,33 +261,11 @@ struct PulseStrainStatsRow: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            stat(String(localized: "Calories"), snapshot.calories.map { PulseFormat.grouped($0) }, "kcal")
-            stat(String(localized: "Avg HR"), snapshot.averageHR.map { "\($0)" }, "bpm")
-            stat(String(localized: "Peak HR"), snapshot.peakHR.map { "\($0)" }, "bpm")
+            PulseMiniStat(title: String(localized: "Calories"),
+                          value: snapshot.calories.map { PulseFormat.grouped($0) }, unit: "kcal")
+            PulseMiniStat(title: String(localized: "Avg HR"), value: snapshot.averageHR.map { "\($0)" }, unit: "bpm")
+            PulseMiniStat(title: String(localized: "Peak HR"), value: snapshot.peakHR.map { "\($0)" }, unit: "bpm")
         }
-    }
-
-    private func stat(_ title: String, _ value: String?, _ unit: String) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            PulseLabel(title)
-            HStack(alignment: .firstTextBaseline, spacing: 2) {
-                Text(value ?? "–")
-                    .font(PulseTheme.numeral(24))
-                    .foregroundStyle(value == nil ? PulseTheme.textTertiary : PulseTheme.textPrimary)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.7)
-                if value != nil {
-                    Text(unit)
-                        .font(.caption2.weight(.semibold))
-                        .foregroundStyle(PulseTheme.textTertiary)
-                }
-            }
-        }
-        .padding(12)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(PulseCardSurface())
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(value.map { "\(title), \($0) \(unit)" } ?? "\(title), no data")
     }
 }
 #endif

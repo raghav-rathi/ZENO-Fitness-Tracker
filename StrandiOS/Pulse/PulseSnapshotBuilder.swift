@@ -972,8 +972,12 @@ actor PulseSnapshotBuilder {
         // uses (`VitalBands.band`). Folded from the same source precedence the reading used.
         var typical = population
         if reading.banding.basis == .personal, let cfg, let day = reading.day {
-            let key = reading.key == "skin" ? "skin" : reading.key
-            let precedence = DailyMetricSource.vitalPrecedence(for: key)
+            // Source precedence, highest first: the rule `BodyVitalSigns` resolves readings by
+            // (`DailyMetricSource.vitalPrecedence`, private to VitalSignsSummary.swift). Skin omits Apple
+            // Health, which has no equivalent of the strap's deviation. Keep the two in step.
+            let precedence: [DailyMetricSource] = reading.key == "skin"
+                ? [.whoopImport, .noopComputed, .localCache]
+                : [.whoopImport, .noopComputed, .appleHealth, .localCache]
             var byDay: [String: Double] = [:]
             for source in precedence {
                 for row in r.vitalRows where row.source == source && row.metric.day < day {

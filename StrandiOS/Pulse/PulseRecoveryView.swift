@@ -292,13 +292,15 @@ struct PulseRecoveryHistory: View {
 
                     if shown.count >= 2 {
                         let data = shown
-                        Chart(Array(data.enumerated()), id: \.element.id) { index, bar in
-                            BarMark(x: .value("Day", index), y: .value("Recovery", bar.value), width: .ratio(0.7))
+                        let labels = Dictionary(data.map { ($0.id, $0.label) }, uniquingKeysWith: { a, _ in a })
+                        // Categorical x on the DAY KEY: the key is unique and the label beside it was
+                        // formatted at UTC, so no axis ever re-derives a date in the device zone.
+                        Chart(data) { bar in
+                            BarMark(x: .value("Day", bar.id), y: .value("Recovery", bar.value))
                                 .foregroundStyle(PulseTheme.recovery(bar.band ?? .yellow))
                                 .cornerRadius(2)
                         }
                         .chartYScale(domain: 0...100)
-                        .chartXScale(domain: -0.5...(Double(data.count) - 0.5))
                         .chartYAxis {
                             AxisMarks(position: .trailing, values: [0, 33, 67, 100]) { _ in
                                 AxisGridLine().foregroundStyle(PulseTheme.hairline)
@@ -306,10 +308,10 @@ struct PulseRecoveryHistory: View {
                             }
                         }
                         .chartXAxis {
-                            AxisMarks(values: axisIndices(count: data.count)) { value in
+                            AxisMarks(values: axisKeys(data)) { value in
                                 AxisValueLabel {
-                                    if let i = value.as(Int.self), data.indices.contains(i) {
-                                        Text(data[i].label)
+                                    if let key = value.as(String.self), let label = labels[key] {
+                                        Text(label)
                                     }
                                 }
                                 .foregroundStyle(PulseTheme.textTertiary)
@@ -341,13 +343,14 @@ struct PulseRecoveryHistory: View {
         }
     }
 
-    private func axisIndices(count: Int) -> [Int] {
-        guard count > 1 else { return [0] }
+    /// Up to four evenly spaced day keys to label, always including the newest.
+    private func axisKeys(_ data: [PulseDayBar]) -> [String] {
+        let count = data.count
+        guard count > 1 else { return data.map(\.id) }
         let step = max(1, count / 4)
-        var out = Array(stride(from: 0, to: count, by: step))
-        if out.last != count - 1 { out.append(count - 1) }
-        if out.count >= 2, out[out.count - 1] - out[out.count - 2] < step / 2 { out.remove(at: out.count - 2) }
-        return out
+        var idx = Array(stride(from: count - 1, through: 0, by: -step)).reversed().map { $0 }
+        if idx.count > 4 { idx.removeFirst(idx.count - 4) }
+        return idx.map { data[$0].id }
     }
 
     private func legend(_ band: PulseDisplay.RecoveryBand, _ text: String) -> some View {
