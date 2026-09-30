@@ -238,9 +238,13 @@ struct HowNoopWorksView: View {
             case .charge:
                 return String(localized: "A baseline-normalized recovery score: your resting heart rate, sleep quality and night-to-night consistency, weighted against your own baseline, with heart-rate variability (rMSSD) leading wherever the strap gives us a clean reading.")
             case .effort:
-                return String(localized: "A cardiovascular load from time in heart-rate zones (Edwards TRIMP): each zone is weighted so harder ones count for more, summed into one daily figure. Settings offers an exponential alternative (Banister) that credits short, hard efforts more.")
+                // Names the method Effort is ACTUALLY scored with (`PuffinExperiment.effortMethod`, read at
+                // render): the family tag used to say Banister while Edwards is the default.
+                return PuffinExperiment.effortMethod == .banister
+                    ? String(localized: "A cardiovascular load from your heart rate as a share of your heart-rate reserve, weighted exponentially (Banister TRIMP) so short, hard efforts count for more, summed into one daily figure. You chose this in Settings; the default is the zone-based Edwards method.")
+                    : String(localized: "A cardiovascular load from time in heart-rate zones (Edwards TRIMP): each zone is weighted so harder ones count for more, summed into one daily figure. Settings offers an exponential alternative (Banister) that credits short, hard efforts more.")
             case .rest:
-                return String(localized: "Sleep scored from how long you slept versus how much you needed, how efficient the night was, and the restorative (deep and REM) share of it.")
+                return String(localized: "Sleep scored from how long you slept versus how much you needed (your baseline, plus extra after a hard day or while you carry sleep debt, less any naps), how efficient the night was, the restorative (deep and REM) share of it, and how closely your bed and wake times matched the nights before.")
             case .fitnessAge:
                 return String(localized: "An estimated VO2max from the Nes / HUNT Fitness Study model (resting heart rate, age and activity), read against population norms to express it as a fitness age.")
             }
@@ -250,8 +254,11 @@ struct HowNoopWorksView: View {
         var family: String {
             switch self {
             case .charge:     return String(localized: "RESTING HR + SLEEP + HRV")
-            case .effort:     return String(localized: "BANISTER TRIMP / HR ZONES")
-            case .rest:       return String(localized: "DURATION + EFFICIENCY + STAGES")
+            case .effort:
+                return PuffinExperiment.effortMethod == .banister
+                    ? String(localized: "BANISTER TRIMP / HR ZONES")
+                    : String(localized: "EDWARDS TRIMP / HR ZONES")
+            case .rest:       return String(localized: "DURATION + EFFICIENCY + STAGES + TIMING")
             case .fitnessAge: return String(localized: "NES / HUNT VO2MAX")
             }
         }
