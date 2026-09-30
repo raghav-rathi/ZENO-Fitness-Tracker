@@ -2649,7 +2649,14 @@ struct TodayView: View {
         case .stress:
             pinnedCardRow(icon: card.icon, tint: tint, title: card.title, subtitle: card.subtitle,
                           value: dashboardValue(card), route: .stress)
-        case .fitnessAge, .vo2max, .vitality, .steps, .calories:
+        case .steps:
+            // The Steps screen on the selected day, with the tile's resolved, live count.
+            StepsLiveReading(day: selectedDayKey, fallback: stepsFallback) { steps, _ in
+                pinnedCardRow(icon: card.icon, tint: tint, title: card.title, subtitle: card.subtitle,
+                              value: steps.map { intString(Double($0.steps)) } ?? "—",
+                              route: .steps(day: selectedDayKey))
+            }
+        case .fitnessAge, .vo2max, .vitality, .calories:
             pinnedCardRow(icon: card.icon, tint: tint, title: card.title, subtitle: card.subtitle,
                           value: dashboardValue(card), route: .health)
         case .hrv, .restingHr, .respiratory, .bloodOxygen, .skinTemp:
@@ -2775,13 +2782,8 @@ struct TodayView: View {
         case .sleep:
             return sleepValue(d)
         case .steps:
-            // #843/#813, same-day real count only (strap @57 or same-day phone import); never the latest
-            // imported row or the sparkline tail (both went stale). Else fall through to the estimate.
-            let appleStepsForDay = appleDays.last(where: { $0.day == selectedDayKey })?.steps
-            let real = (d?.steps).map { intString(Double($0)) }
-                ?? appleStepsForDay.map { intString(Double($0)) }
-            let est = stepsEstByDay[selectedDayKey].map { intString(Double($0)) }
-            return real ?? est ?? "—"
+            // The card row renders through `StepsLiveReading`; this plain form resolves the same way.
+            return stepsFallback.map { intString(Double($0.steps)) } ?? "—"
         case .calories:
             return withUnit(caloriesValue(appleDays.last))
         case .stress:
@@ -2828,6 +2830,20 @@ struct TodayView: View {
             pinnedCardRowBody(icon: icon, tint: tint, title: title, subtitle: subtitle, value: value)
         }
         .buttonStyle(.plain)
+    }
+
+    /// The selected day's steps from this screen's own loaded rows (Apple Health's day total, the strap
+    /// counter, the strap estimate), resolved by THE steps resolver. What `StepsLiveReading` falls back to
+    /// for a day outside the steps service's window; inside it, the service's resolution (which adds the
+    /// iPhone pedometer) wins.
+    private var stepsFallback: ResolvedStepDay? {
+        StepsResolver.resolve(
+            day: selectedDayKey,
+            candidates: StepDayCandidates(
+                healthKit: appleDays.last(where: { $0.day == selectedDayKey })?.steps,
+                strapCounter: displayDay?.steps,
+                strapEstimate: stepsEstByDay[selectedDayKey]),
+            isInProgressDay: false)
     }
 
     /// The same row, but it runs `action` instead of pushing a route (#1862).
@@ -4078,57 +4094,43 @@ struct TodayView: View {
                 sparkColor: StrandPalette.accent
             )
         case .steps:
-            // Prefer a REAL step count: the strap's own @57 counter (DailyMetric.steps, WHOOP 5/MG),
-            // then Apple Health FOR THE SELECTED DAY (#589, when the user imported phone steps for this
-            // day, show THAT number directly, not the strap estimate), then the loaded Apple-Health steps
-            // sparkline tail as a last-resort recent value. Only when a day has NONE of those real sources
-            // do we fall back to the on-device ESTIMATE (steps_est) a WHOOP 4.0 user gets, flagged "est."
-            // so it's never mistaken for a measured count. Mirrors Android (#276/#150).
-            // #843/#813, a day shows a REAL count only from the strap (@57) or a SAME-DAY phone import.
-            // Never the latest imported Apple-Health row (it can be days stale) or the sparkline tail (that
-            // is the most-recent value, not this day's): both froze the tile on an old import. Otherwise
-            // fall through to the on-device estimate ("est."). Mirrors Android stepsForDay (#276/#150).
-            let appleStepsForDay = appleDays.last(where: { $0.day == selectedDayKey })?.steps
-            let realSteps: String? = (d?.steps).map { intString(Double($0)) }
-                ?? appleStepsForDay.map { intString(Double($0)) }
-            let estSteps = stepsEstByDay[selectedDayKey]
-            // H6, only an ESTIMATED day (no real strap/phone count, so the on-device estimate filled in)
-            // gets the calibration entry; a real measured count needs no calibration.
-            let isEstimated = realSteps == nil && estSteps != nil
-            // #589, when the tile would be BLANK on a strap that estimates steps (a WHOOP 4.0 sends no
-            // step count) explain WHY rather than a bare "—", and still expose the ⚙︎ so the user can reach
-            // the sheet to set a manual coefficient. #1491: this used to require calibration state to
-            // already exist, which excluded every 4.0 owner who had not calibrated yet — see
-            // `stepsPipelineActive`.
-            let needsCalibration = realSteps == nil && estSteps == nil
-                && stepsPipelineActive(hasDayData: d != nil)
-            StatTile(
-                label: "Steps",
-                value: realSteps ?? estSteps.map { intString(Double($0)) } ?? "—",
-                // An estimated day reads "est." plus the calibration STATUS (k / days / confidence) so a
-                // frozen-looking estimate self-explains (#760/#792); a not-yet-calibrated day says how many
-                // more phone-counted days are needed (so a blank tile is never silently unexplained, #589).
-                caption: realSteps != nil ? String(localized: "today")
-                    : (estSteps != nil ? stepsEstimateCaption
-                       : (needsCalibration ? stepsCalibrationCaption : String(localized: "today"))),
-                accent: (realSteps != nil || estSteps != nil) ? StrandPalette.metricCyan : StrandPalette.textPrimary,
-                sparkline: sparks["steps"],
-                sparkColor: StrandPalette.metricCyan,
-                // H6, an estimated (or awaiting-calibration) steps tile carries a small ⚙︎ that opens the
-                // steps-calibration sheet (the SAME one Settings hosts), so a WHOOP 4.0 user can tune or
-                // hand-set the estimate from here even before enough auto-fit days exist (#589).
-                // #316, a day with a REAL measured count (not an estimate) and a known @63 activity class
-                // instead shows a small still/walk/run glyph, so the tile quietly says what the wrist was
-                // doing. The two are mutually exclusive (the gear is only for estimated/blank days), so they
-                // never collide in the single accessory slot.
-                accessory: {
-                    if isEstimated || needsCalibration {
-                        stepsCalibrationButton
-                    } else if realSteps != nil, let cls = stepActivityClassToday {
-                        stepActivityIcon(cls)
+            // THE steps resolver's count for the selected day (Apple Health > iPhone pedometer > strap
+            // counter > strap estimate, Steps/StepsRepository.swift), live while it is today, so this tile,
+            // Liquid Today and the Steps screen cannot disagree. #843/#813 hold by construction: the resolver
+            // only ever reads the selected day's own rows, never a stale import or a sparkline tail.
+            StepsLiveReading(day: selectedDayKey, fallback: stepsFallback) { steps, _ in
+                let measured = steps?.source.isMeasured == true
+                // H6, only an ESTIMATED day (nothing measured, so the on-device estimate filled in) gets the
+                // calibration entry; a measured count needs no calibration.
+                let isEstimated = steps?.source == .strapEstimate
+                // #589, when the tile would be BLANK on a strap that estimates steps (a WHOOP 4.0 sends no
+                // step count) explain WHY rather than a bare "—", and still expose the ⚙︎ so the user can
+                // reach the sheet to set a manual coefficient. #1491: see `stepsPipelineActive`.
+                let needsCalibration = steps == nil && stepsPipelineActive(hasDayData: d != nil)
+                StatTile(
+                    label: "Steps",
+                    value: steps.map { intString(Double($0.steps)) } ?? "—",
+                    // An estimated day reads "est." plus the calibration STATUS (k / days / confidence) so a
+                    // frozen-looking estimate self-explains (#760/#792); a not-yet-calibrated day says how
+                    // many more phone-counted days are needed (#589).
+                    caption: measured ? String(localized: "today")
+                        : (isEstimated ? stepsEstimateCaption
+                           : (needsCalibration ? stepsCalibrationCaption : String(localized: "today"))),
+                    accent: steps != nil ? StrandPalette.metricCyan : StrandPalette.textPrimary,
+                    sparkline: sparks["steps"],
+                    sparkColor: StrandPalette.metricCyan,
+                    // H6, an estimated (or awaiting-calibration) tile carries the ⚙︎ that opens the
+                    // steps-calibration sheet; #316, a measured day instead shows the strap's still/walk/run
+                    // glyph. Mutually exclusive, so they never collide in the single accessory slot.
+                    accessory: {
+                        if isEstimated || needsCalibration {
+                            stepsCalibrationButton
+                        } else if measured, let cls = stepActivityClassToday {
+                            stepActivityIcon(cls)
+                        }
                     }
-                }
-            )
+                )
+            }
         case .weight:
             StatTile(
                 label: "Weight",
