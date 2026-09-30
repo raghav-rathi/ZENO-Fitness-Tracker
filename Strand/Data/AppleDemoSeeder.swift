@@ -19,6 +19,8 @@ enum AppleDemoSeeder {
     static let whoop = "my-whoop"
     static let apple = "apple-health"
     private static let DAYS = 120
+    /// The recent days whose steps come from the iPhone pedometer (see `seedPhoneSteps`).
+    private static let PHONE_STEP_DAYS = 60
     /// Effort rescale factor: the old 0–21 strain scale → the new 0–100 Effort scale.
     private static let STRAIN_SCALE = 100.0 / 21.0
 
@@ -156,9 +158,13 @@ enum AppleDemoSeeder {
                 value: round1((demoNeedMin - totalSleep).atLeast(0.0))))
 
             // --- Apple Health daily aggregate ---
+            // Steps stay drawn (the RNG stream, and so every other seeded value, is unchanged) but are not
+            // stored for the last PHONE_STEP_DAYS: the demo stands for a WHOOP 4.0 wearer whose recent steps
+            // come from the iPhone pedometer (`seedPhoneSteps`), the path a sideloaded build without
+            // HealthKit relies on. Apple Health would outrank the phone, so it holds the older history only.
             let steps = Int(gauss(&rng, 8500.0, 2600.0).clamped(1200.0, 19000.0))
             appleRows.append(AppleDaily(
-                day: day, steps: steps,
+                day: day, steps: i >= DAYS - PHONE_STEP_DAYS ? nil : steps,
                 activeKcal: round1((Double(steps) * 0.045 + Double(nWorkouts) * 220).clamped(120.0, 1400.0)),
                 basalKcal: round1(gauss(&rng, 1650.0, 40.0)),
                 vo2max: round1((46 + fitness * 0.3 + gauss(&rng, 0.0, 0.5)).clamped(38.0, 56.0)),
@@ -228,7 +234,69 @@ enum AppleDemoSeeder {
         _ = try await store.upsertAppleDaily(appleRows, deviceId: apple)
         if !workouts.isEmpty { _ = try await store.upsertWorkouts(workouts, deviceId: whoop) }
         if !journal.isEmpty { _ = try await store.upsertJournal(journal, deviceId: whoop) }
+        try await seedPhoneSteps(into: store, calendar: cal, dayKey: { isoFmt.string(from: $0) })
         NSLog("AppleDemoSeeder: seeded \(daily.count) days, \(workouts.count) workouts.")
+    }
+
+    /// The Steps feature's demo data, banked exactly where `StepsService` banks a real iPhone pedometer: 60
+    /// days of day totals with distance and floors, and the last 7 days hour by hour (today only up to the
+    /// current hour, so the day reads as in progress). The Simulator has no pedometer, so without this the
+    /// Steps screens would be empty there. Its own RNG, so the main dataset above is untouched.
+    ///
+    /// Shaped to exercise the screen: the four days before today clear the default 10,000 goal (a visible
+    /// streak), and two days the phone "stayed home" carry only a strap estimate, which the charts draw
+    /// hollow and the resolver picks only because nothing measured that day.
+    private static func seedPhoneSteps(into store: WhoopStore, calendar cal: Calendar,
+                                       dayKey: (Date) -> String) async throws {
+        var rng = SplitMix64(seed: 0x57E9_5D0E)
+        let now = Date()
+        let todayStart = cal.startOfDay(for: now)
+        let currentHour = cal.component(.hour, from: now)
+        let minuteFraction = Double(cal.component(.minute, from: now)) / 60
+        let phoneLeftHome: Set<Int> = [23, 41]
+        var days: [(day: String, reading: PedometerReading)] = []
+        var hours: [(ts: Int, steps: Int)] = []
+        var estimates: [MetricPoint] = []
+
+        for back in stride(from: PHONE_STEP_DAYS - 1, through: 0, by: -1) {
+            guard let dayStart = cal.date(byAdding: .day, value: -back, to: todayStart) else { continue }
+            let weekday = cal.component(.weekday, from: dayStart)
+            let weekend = weekday == 1 || weekday == 7
+            var total = Int(gauss(&rng, weekend ? 8_200 : 10_300, 2_600).clamped(2_400, 21_500))
+            if (1...4).contains(back) { total = max(total, 10_150 + rng.nextInt(0, 3_200)) }
+            if phoneLeftHome.contains(back) {
+                estimates.append(MetricPoint(day: dayKey(dayStart), key: "steps_est",
+                                             value: Double(Int(gauss(&rng, 7_400, 1_200).clamped(3_000, 12_000)))))
+                continue
+            }
+            if back < 7 {
+                // A plausible day: quiet night, a morning and an evening commute, a lunch walk.
+                let base: [Double] = [0, 0, 0, 0, 0, 0.004, 0.02, 0.06, 0.09, 0.05, 0.04, 0.05,
+                                      0.09, 0.06, 0.04, 0.04, 0.05, 0.10, 0.12, 0.08, 0.06, 0.04, 0.02, 0.01]
+                let weights = base.map { $0 * (0.6 + 0.8 * rng.nextDouble()) }
+                let sum = weights.reduce(0, +)
+                var perHour = weights.map { Int((Double(total) * $0 / sum).rounded()) }
+                if back == 0 {
+                    // Today: nothing after now, and the current hour only partly walked.
+                    for h in perHour.indices where h > currentHour { perHour[h] = 0 }
+                    perHour[currentHour] = Int(Double(perHour[currentHour]) * minuteFraction)
+                }
+                total = perHour.reduce(0, +)
+                for (h, n) in perHour.enumerated() where n > 0 {
+                    if let hourStart = cal.date(byAdding: .hour, value: h, to: dayStart) {
+                        hours.append((ts: Int(hourStart.timeIntervalSince1970), steps: n))
+                    }
+                }
+            }
+            let end = back == 0 ? now : (cal.date(byAdding: .day, value: 1, to: dayStart) ?? now)
+            days.append((day: dayKey(dayStart), reading: PedometerReading(
+                start: dayStart, end: end, steps: total,
+                distanceM: (Double(total) * (0.74 + 0.04 * rng.nextDouble())).rounded(),
+                floorsUp: Int(gauss(&rng, 7, 3).clamped(0, 22)))))
+        }
+        try await PhoneStepsStore.save(days: days, to: store)
+        try await PhoneStepsStore.save(hours: hours, to: store)
+        _ = try await store.upsertMetricSeries(estimates, deviceId: whoop + "-noop")
     }
 
     // MARK: - helpers

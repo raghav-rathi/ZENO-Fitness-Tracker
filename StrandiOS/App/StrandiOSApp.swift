@@ -594,6 +594,11 @@ enum DemoScreens {
         case "workouts": return AnyView(WorkoutsView())
         // The Steps screen, and the drop-in Steps card on its own (what a home screen embeds).
         case "steps":    return AnyView(StepsView())
+        // The same screen further down, for a headless simulator that cannot be scrolled by hand.
+        case "steps-mid": return AnyView(OffsetDemoHost(offset: 760) { StepsView() })
+        case "steps-end": return AnyView(OffsetDemoHost(offset: 1_180) { StepsView() })
+        // Liquid Today scrolled to its Key Metrics grid, where the Steps tile lives.
+        case "liquidtoday-metrics": return AnyView(OffsetDemoHost(offset: 700) { LiquidTodayView() })
         case "stepscard": return AnyView(StepsCardDemoHost())
         case "health":   return AnyView(HealthView())
         case "insights": return AnyView(InsightsView())
@@ -625,6 +630,23 @@ enum DemoScreens {
 #endif
 
 #if DEBUG
+/// DEBUG-only: lays a scrolling screen out `offset` points taller than the display and shifts it up by the
+/// same amount, so a screenshot shows the part a person would scroll to. For captures on a simulator booted
+/// without its window, where nothing can drive a scroll.
+private struct OffsetDemoHost<Content: View>: View {
+    let offset: CGFloat
+    @ViewBuilder let content: () -> Content
+
+    var body: some View {
+        GeometryReader { geo in
+            content()
+                .frame(width: geo.size.width, height: geo.size.height + offset)
+                .offset(y: -offset)
+        }
+        .clipped()
+    }
+}
+
 /// DEBUG-only host so `--demo-screen stepscard` shows the drop-in Steps card the way a home screen would
 /// embed it: on the page canvas, at the page margins, with nothing else around it.
 private struct StepsCardDemoHost: View {
