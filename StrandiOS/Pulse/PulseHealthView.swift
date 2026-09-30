@@ -286,8 +286,7 @@ struct PulseHealthLinks: View {
             PulseSectionHeader(title: String(localized: "Records"))
             PulseCard(padding: 0) {
                 VStack(spacing: 0) {
-                    // TODO(steps-merge): open StepsView (and read its today total) once the steps branch
-                    // lands; until then this is the steps metric trend.
+                    // Today's total from the shared steps resolver; opens the Steps screen (TabRoute.steps).
                     NavigationLink(value: health.stepsRoute) {
                         PulseRow(title: String(localized: "Steps"),
                                  subtitle: String(localized: "Today and your trend"),

@@ -196,11 +196,15 @@ struct PulseTonight: Equatable {
         case fallback
     }
 
-    /// The personalized need (the normative need the debt ledger measures against), minutes.
+    /// The unified model's baseline need, minutes.
     let baseNeedMin: Double
-    /// The current sleep debt, minutes (0 when none).
+    /// Extra need from the day's Strain above the wearer's typical, minutes (0 when none).
+    let strainMin: Double
+    /// Sleep debt carried into tonight, minutes (0 when none).
     let debtMin: Double
-    /// Tonight's need: base need plus debt.
+    /// Credit for today's naps, minutes (0 when none).
+    let napCreditMin: Double
+    /// Tonight's need: baseline + strain + debt − nap credit (`SleepNeedBreakdown.totalMin`).
     let needMin: Double
     /// When to be asleep to meet it.
     let bedtime: Date
@@ -259,6 +263,9 @@ struct PulseKeyStat: Identifiable, Equatable {
     /// Trailing values ending on the displayed day, oldest first.
     let spark: [Double]
     let route: TabRoute
+    /// Today's still-accumulating count (steps, calories): shown as "So far today" in place of a
+    /// comparison, since a partial day against full-day averages would always read as a drop.
+    var isRunningTotal: Bool = false
 }
 
 /// The day's stress read.

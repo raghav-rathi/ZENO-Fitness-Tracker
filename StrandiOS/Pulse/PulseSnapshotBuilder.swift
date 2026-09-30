@@ -70,7 +70,6 @@ actor PulseSnapshotBuilder {
     private struct Cache {
         var rest: [(day: String, value: Double)]?
         var stressStored: [(day: String, value: Double)]?
-        var stepsEst: [(day: String, value: Double)]?
         var markers: [(day: String, value: Double)]?
         var apple: [AppleDaily]?
         var workouts: [WorkoutRow]?
@@ -78,7 +77,6 @@ actor PulseSnapshotBuilder {
         var habitual: Int?
         var habitualLoaded = false
         var nights: [[CachedSleepSession]]?
-        var napMinByDay: [String: Double]?
         var todayStressScore: Double??
         var weekly: Weekly?
         /// Heart rate for a day window, keyed "dayKey|from". At most a few entries.
@@ -129,14 +127,6 @@ actor PulseSnapshotBuilder {
         return v
     }
 
-    private func stepsEstSeries() async -> [(day: String, value: Double)] {
-        if let v = cache.stepsEst { return v }
-        let seq = cacheSeq
-        let v = await repo.exploreSeries(key: "steps_est", source: "my-whoop")
-        if seq == cacheSeq { cache.stepsEst = v }
-        return v
-    }
-
     private func onsetMarkers() async -> [(day: String, value: Double)] {
         if let v = cache.markers { return v }
         let seq = cacheSeq
@@ -184,16 +174,6 @@ actor PulseSnapshotBuilder {
         let groups = SleepModel.navDays(navSessions: all)
         if seq == cacheSeq { cache.nights = groups }
         return groups
-    }
-
-    private func napMinutesByDay(_ r: PulseRequest) async -> [String: Double] {
-        if let v = cache.napMinByDay { return v }
-        let seq = cacheSeq
-        let groups = await nightGroups(r)
-        let habitual = await habitualMidsleep()
-        let v = SleepModel.napSleepMinutesByDay(navDays: groups, habitualMidsleepSec: habitual)
-        if seq == cacheSeq { cache.napMinByDay = v }
-        return v
     }
 
     private func weekly() async -> Weekly {
@@ -468,15 +448,11 @@ actor PulseSnapshotBuilder {
         })
     }
 
-    /// Tonight's need and bedtime from the existing personalized need and the debt ledger.
+    /// Tonight's need and bedtime from the unified sleep-need model (baseline + strain + debt − naps) —
+    /// the same breakdown the scoring pass stores and the wind-down reminder counts back from.
     private func tonightPlan(_ r: PulseRequest, groups: [[CachedSleepSession]], habitual: Int?) async -> PulseTonight? {
-        let napMin = await napMinutesByDay(r)
-        // TODO(analytics-merge): replace base need + debt with the unified sleep-need breakdown
-        // (baseline + strain + debt - naps) once the analytics branch lands; keep this row's shape.
-        let baseNeed = SleepModel.debtNeedMin(days: r.days)
-        let ledger = SleepModel.debtLedger(days: r.days, napSleepMinByDay: napMin)
-        let debt = ledger.isDebt ? ledger.magnitudeMin : 0
-        let need = baseNeed + debt
+        let breakdown = await repo.sleepNeedTonight(now: r.now)
+        let need = breakdown.totalMin
         guard need > 0 else { return nil }
 
         let cal = Calendar.current
@@ -504,7 +480,9 @@ actor PulseSnapshotBuilder {
         let base = cal.startOfDay(for: r.now)
         let bedDay = bedMinute >= 12 * 60 ? base : (cal.date(byAdding: .day, value: 1, to: base) ?? base)
         let bedtime = bedDay.addingTimeInterval(TimeInterval(bedMinute * 60))
-        return PulseTonight(baseNeedMin: baseNeed, debtMin: debt, needMin: need, bedtime: bedtime,
+        return PulseTonight(baseNeedMin: breakdown.baselineMin, strainMin: breakdown.strainMin,
+                            debtMin: breakdown.debtMin, napCreditMin: breakdown.napCreditMin,
+                            needMin: need, bedtime: bedtime,
                             wake: bedtime.addingTimeInterval(need * 60), wakeSource: source)
     }
 
@@ -516,21 +494,27 @@ actor PulseSnapshotBuilder {
     }
 
     /// One tile's value vs its 30-day average plus its 14-day spark, all from `history`.
+    /// `runningTotal`: the tile shows TODAY's still-accumulating count (steps, calories; callers pass the
+    /// displayed day's `isToday`). Comparing a partial day with full-day averages would read as a steep
+    /// drop every morning, so such a tile says "So far today" instead of showing a delta; any finished day
+    /// compares normally.
     private func stat(id: String, title: String, icon: String, value: StatValue?, text: (Double) -> String,
                       unit: String, history: [(day: String, value: Double)], route: TabRoute,
-                      dayKey: String, flatPercent: Double = 2) -> PulseKeyStat {
-        let comparison = value.flatMap { v in
+                      dayKey: String, flatPercent: Double = 2, runningTotal: Bool = false) -> PulseKeyStat {
+        let inProgress = runningTotal && value?.day == dayKey
+        let comparison = inProgress ? nil : value.flatMap { v in
             PulseDisplay.compare(value: v.value, history: history, dayKey: v.day, flatPercent: flatPercent)
         }.map { PulseStatText.comparison($0, unit: unit, absoluteText: text) }
         let byDay = Dictionary(history.map { ($0.day, $0.value) }, uniquingKeysWith: { _, last in last })
         let spark = PulseDisplay.trailingDayKeys(endingOn: dayKey, count: 14).compactMap { byDay[$0] }
-        let caption = value.flatMap { v in
+        let caption = inProgress ? nil : value.flatMap { v in
             v.day == dayKey ? nil : TodayView.carriedCaption(priorDayKey: v.day, todayKey: dayKey)
         }
         return PulseKeyStat(id: id, title: title, icon: icon,
                             value: value.map { text($0.value) } ?? "–",
                             unit: value == nil ? "" : unit,
-                            caption: caption, comparison: comparison, spark: spark, route: route)
+                            caption: caption, comparison: comparison, spark: spark, route: route,
+                            isRunningTotal: inProgress)
     }
 
     private func keyStats(_ r: PulseRequest, row: DailyMetric?) async -> [PulseKeyStat] {
@@ -583,8 +567,7 @@ actor PulseSnapshotBuilder {
         }
 
         let apple = await appleRows()
-        let stepsEst = await stepsEstSeries()
-        out.append(stepsStat(r, apple: apple, estimate: stepsEst))
+        out.append(await stepsStat(r))
         out.append(caloriesStat(r, apple: apple))
         return out
     }
@@ -649,33 +632,29 @@ actor PulseSnapshotBuilder {
 
     /// Steps for a day: the strap's measured count, else Apple Health's, else the motion estimate, the
     /// precedence every other steps surface uses, with the detail route for the source it chose.
-    private func stepsResolution(_ r: PulseRequest, apple: [AppleDaily], estimate: [(day: String, value: Double)])
-        -> (value: Double?, history: [(day: String, value: Double)], route: TabRoute) {
-        // TODO(steps-merge): read the day's total, history and detail route from StepsService once the
-        // steps branch lands, instead of resolving the three sources here.
-        var appleByDay: [String: Double] = [:]
-        for a in apple { if let s = a.steps { appleByDay[a.day] = max(appleByDay[a.day] ?? 0, Double(s)) } }
-        let estByDay = Dictionary(estimate.map { ($0.day, $0.value) }, uniquingKeysWith: { _, last in last })
-        let measuredByDay = Dictionary(r.days.compactMap { m in m.steps.map { (m.day, Double($0)) } },
-                                       uniquingKeysWith: { _, last in last })
-        let keys = Set(appleByDay.keys).union(estByDay.keys).union(measuredByDay.keys).sorted()
-        let history = keys.compactMap { k in
-            (measuredByDay[k] ?? appleByDay[k] ?? estByDay[k]).map { (day: k, value: $0) }
-        }
+    /// The day's steps from the ONE resolver every steps surface shares (Apple Health, then the iPhone
+    /// pedometer, then a strap counter, then the strap estimate — see `StepsResolver`), so this tile, the
+    /// Steps screen, its card and the classic Today can never show different counts. `history` covers the
+    /// window the tile's 30-day comparison and 14-day spark read; taps open the Steps screen on that day.
+    private func stepsResolution(_ r: PulseRequest)
+        async -> (value: Double?, history: [(day: String, value: Double)], route: TabRoute) {
         let key = r.day.key
-        let metric = MetricCatalog.todayStepsMetric(hasMeasuredSteps: measuredByDay[key] != nil,
-                                                    hasImportedSteps: appleByDay[key] != nil)
-        let route = TabRoute.metricSourced(key: metric?.key ?? "steps_est", source: metric?.source ?? "my-whoop")
-        return (measuredByDay[key] ?? appleByDay[key] ?? estByDay[key], history, route)
+        let from = PulseDisplay.dayKey(key, offsetBy: -Self.stepsHistoryDays) ?? key
+        let resolved = await repo.resolvedStepDays(from: from, to: key).days
+        let history = resolved.map { (day: $0.day, value: Double($0.steps)) }
+        let value = resolved.last(where: { $0.day == key }).map { Double($0.steps) }
+        return (value, history, .steps(day: key))
     }
 
-    private func stepsStat(_ r: PulseRequest, apple: [AppleDaily],
-                           estimate: [(day: String, value: Double)]) -> PulseKeyStat {
-        let steps = stepsResolution(r, apple: apple, estimate: estimate)
+    /// Days of step history behind the tile: its 30-day average plus a margin, never the whole store.
+    private static let stepsHistoryDays = 45
+
+    private func stepsStat(_ r: PulseRequest) async -> PulseKeyStat {
+        let steps = await stepsResolution(r)
         return stat(id: "steps", title: String(localized: "Steps"), icon: "figure.walk",
                     value: steps.value.map { StatValue(value: $0, day: r.day.key) },
                     text: PulseFormat.grouped, unit: "", history: steps.history, route: steps.route,
-                    dayKey: r.day.key, flatPercent: 5)
+                    dayKey: r.day.key, flatPercent: 5, runningTotal: r.day.isToday)
     }
 
     /// Active calories: Apple Health's imported figure first, else the on-device HR estimate (#616).
@@ -693,7 +672,7 @@ actor PulseSnapshotBuilder {
         let route = TabRoute.metricSourced(key: metric?.key ?? "energy_kcal", source: metric?.source ?? "my-whoop")
         return stat(id: "kcal", title: String(localized: "Calories"), icon: "flame.fill", value: value,
                     text: PulseFormat.grouped, unit: "kcal", history: history, route: route, dayKey: key,
-                    flatPercent: 5)
+                    flatPercent: 5, runningTotal: r.day.isToday)
     }
 
     // MARK: Stress
@@ -942,25 +921,27 @@ actor PulseSnapshotBuilder {
         let stages = night?.stages
         let asleep = stages?.asleep
         let inBed = stages?.total
-        // The need is the Sleep tab's (the imported need, else `SleepModel.sleepNeedMin`), and
-        // consistency is its rolling bedtime score as of this night.
-        // TODO(analytics-merge): read the unified need here too. Upstream keeps two needs on purpose
-        // for now (#464): this descriptive one for "hours vs needed", the normative
-        // `SleepModel.debtNeedMin` behind debt and Home's Tonight row, so the two can differ.
-        let need = r.importedSleep[wakeKey]?.needMin ?? SleepModel.sleepNeedMin(days: r.days)
-        let hoursPct = asleep.flatMap { a in need > 0 && a > 0 ? min(100, a / need * 100) : nil }
+        // Need and consistency come from the ONE per-night resolver (the export's figures for an imported
+        // night, else the unified need and WHOOP-style bed + wake consistency the scoring pass stored), so
+        // this screen, the Sleep tab and the stored Rest agree. Hours-vs-needed divides THIS screen's merged
+        // main night by that need, so the percent and its "x of y" caption can never disagree.
+        let resolved = await repo.resolvedNightSleep(day: wakeKey)
+        guard isCurrent(r) else { return nil }
+        let need = resolved.needMin
+        let hoursPct = asleep.flatMap { a in
+            need.flatMap { n in n > 0 && a > 0 ? min(100, a / n * 100) : nil }
+        }
         let effPct = stages.flatMap { s in s.total > 0 ? s.asleep / s.total * 100 : nil }
         let restorativePct = stages.flatMap { s in s.asleep > 0 ? (s.deep + s.rem) / s.asleep * 100 : nil }
-        // TODO(analytics-merge): swap in the WHOOP-style sleep consistency once the analytics branch lands.
-        let daysUpTo = r.days.filter { $0.day <= wakeKey }
-        let sleepsUpTo = r.sleeps.filter { $0.endTs <= endTs }
-        let consistency = SleepModel.consistencySeries(days: daysUpTo, sleeps: sleepsUpTo,
-                                                       importedSleep: r.importedSleep).latest
+        let consistency = resolved.consistencyPct
 
         let contributors = [
             PulseSleepContributor(id: "hours", title: String(localized: "Hours vs needed"), percent: hoursPct,
                                   detail: asleep.map { a in
-                                      String(localized: "\(PulseFormat.duration(minutes: a)) of \(PulseFormat.duration(minutes: need))")
+                                      guard let n = need else {
+                                          return String(localized: "\(PulseFormat.duration(minutes: a)) asleep")
+                                      }
+                                      return String(localized: "\(PulseFormat.duration(minutes: a)) of \(PulseFormat.duration(minutes: n))")
                                   }),
             PulseSleepContributor(id: "efficiency", title: String(localized: "Efficiency"), percent: effPct,
                                   detail: inBed.map { String(localized: "\(PulseFormat.duration(minutes: $0)) in bed") }),
@@ -1015,12 +996,9 @@ actor PulseSnapshotBuilder {
         let vitals = readings.compactMap { vital(for: $0, r: r) }
         let stress = await stressSummary(r)
         let weekly = await weekly()
-        // TODO(steps-merge): the Health tab's Steps entry reads StepsService's today total and opens
-        // StepsView once the steps branch lands; until then it resolves steps like the Home tile.
-        let apple = await appleRows()
-        let estimate = await stepsEstSeries()
+        // The Steps entry reads today's total from the shared resolver and opens the Steps screen.
+        let steps = await stepsResolution(r)
         guard isCurrent(r) else { return nil }
-        let steps = stepsResolution(r, apple: apple, estimate: estimate)
         return HealthSnapshot(seq: r.seq, vitals: vitals, stress: stress, fitnessAge: weekly.fitnessAge,
                               bodyAge: weekly.bodyAge, vitality: weekly.vitality, vo2max: weekly.vo2max,
                               stepsToday: steps.value, stepsRoute: steps.route)

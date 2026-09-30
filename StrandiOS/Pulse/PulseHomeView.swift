@@ -400,9 +400,12 @@ struct PulseMyDaySection: View {
                      // With no alarm and too few nights to learn a habit, say the wake time is assumed.
                      t.wakeSource == .fallback ? String(localized: "Wake \(wake) (default)")
                                                : String(localized: "Wake \(wake)")]
-        if t.debtMin >= 5 {
-            lines.append(String(localized: "Incl. \(PulseFormat.duration(minutes: t.debtMin)) debt"))
-        }
+        // What moved tonight's need off the baseline, largest terms only (under 5 minutes is noise here).
+        var parts: [String] = []
+        if t.debtMin >= 5 { parts.append(String(localized: "+\(PulseFormat.duration(minutes: t.debtMin)) debt")) }
+        if t.strainMin >= 5 { parts.append(String(localized: "+\(PulseFormat.duration(minutes: t.strainMin)) strain")) }
+        if t.napCreditMin >= 5 { parts.append(String(localized: "−\(PulseFormat.duration(minutes: t.napCreditMin)) nap")) }
+        if !parts.isEmpty { lines.append(parts.joined(separator: " · ")) }
         return lines.joined(separator: "\n")
     }
 }
@@ -464,6 +467,10 @@ struct PulseStatTile: View {
             }
             if let comparison = stat.comparison {
                 PulseComparisonLine(comparison: comparison, showsCaption: false)
+            } else if stat.isRunningTotal {
+                Text(String(localized: "So far today"))
+                    .font(.caption)
+                    .foregroundStyle(PulseTheme.textTertiary)
             } else {
                 Text(stat.value == "–" ? String(localized: "No data") : String(localized: "Building average"))
                     .font(.caption)
