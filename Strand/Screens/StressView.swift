@@ -858,40 +858,26 @@ struct StressModel {
         else { return nil }   // no days at all
         let today = days[idx]
 
-        // Baseline window: up to 30 days ending the day BEFORE the scored day, so it's measured
-        // against its own recent past rather than itself.
-        let baseline = idx > 0 ? Array(days[0..<idx].suffix(30)) : []
-
-        let rhrBase = baseline.compactMap { $0.restingHr }.map(Double.init)
-        let hrvBase = baseline.compactMap { $0.avgHrv }
-
-        let meanRHR = StressMath.mean(rhrBase)
-        let sdRHR   = StressMath.std(rhrBase, mean: meanRHR)
-        let meanHRV = StressMath.mean(hrvBase)
-        let sdHRV   = StressMath.std(hrvBase, mean: meanHRV)
-
-        let rhrT = today.restingHr.map(Double.init)
-        let hrvT = today.avgHrv
+        // Every day — the headline and each point of the trend — is scored against ITS OWN trailing
+        // 30-day baseline (`DailyStressTrend`, sample SD, 7 prior values per signal), so the headline is
+        // the trend's own point for its day and a past day never moves when today does.
+        let derived = DailyStressTrend.scores(days.map {
+            DailyStressTrend.Day(day: $0.day, restingHR: $0.restingHr.map(Double.init), hrv: $0.avgHrv)
+        })
 
         // Resolve today's score: prefer a stored value, else derive.
-        let derivedAvailable = (rhrT != nil && meanRHR != nil) || (hrvT != nil && meanHRV != nil)
+        let derivedToday = derived[today.day]
         let storedToday = storedByDay[today.day]
-        guard storedToday != nil || derivedAvailable else { return nil }
+        guard storedToday != nil || derivedToday != nil else { return nil }
 
-        let derivedToday: Double? = derivedAvailable
-            ? StressMath.squash(StressMath.rawScore(
-                rhrToday: rhrT, meanRHR: meanRHR, sdRHR: sdRHR,
-                hrvToday: hrvT, meanHRV: meanHRV, sdHRV: sdHRV))
-            : nil
-
-        let s = storedToday ?? derivedToday ?? 1.5
+        let s = storedToday ?? derivedToday?.score ?? 1.5
         self.usingStored = storedToday != nil
         self.score = s
         self.band = StressBand(score: s)
         self.rhrToday = today.restingHr
-        self.hrvToday = hrvT
-        self.rhrDelta = (rhrT != nil && meanRHR != nil) ? (rhrT! - meanRHR!) : nil
-        self.hrvDelta = (hrvT != nil && meanHRV != nil) ? (hrvT! - meanHRV!) : nil
+        self.hrvToday = today.avgHrv
+        self.rhrDelta = derivedToday?.rhrDelta
+        self.hrvDelta = derivedToday?.hrvDelta
 
         self.explanation = StressMath.explanation(
             band: self.band,
@@ -900,23 +886,14 @@ struct StressModel {
             usingStored: self.usingStored
         )
 
-        // Full daily proxy history: stored value if present for the day, else the
-        // z-score derivation against the SAME baseline so the line is comparable.
+        // Full daily proxy history: stored value if present for the day, else that day's derivation
+        // against its own trailing baseline. A day with too little history before it has no point.
         var pts: [TrendPoint] = []
         for d in days {
             guard let date = Self.dayParser.date(from: d.day) else { continue }
-            if let v = storedByDay[d.day] {
+            if let v = storedByDay[d.day] ?? derived[d.day]?.score {
                 pts.append(TrendPoint(date: date, value: v))
-                continue
             }
-            let dRHR = d.restingHr.map(Double.init)
-            let dHRV = d.avgHrv
-            guard (dRHR != nil && meanRHR != nil) || (dHRV != nil && meanHRV != nil) else { continue }
-            let r = StressMath.rawScore(
-                rhrToday: dRHR, meanRHR: meanRHR, sdRHR: sdRHR,
-                hrvToday: dHRV, meanHRV: meanHRV, sdHRV: sdHRV
-            )
-            pts.append(TrendPoint(date: date, value: StressMath.squash(r)))
         }
         self.fullTrend = pts
 
@@ -934,42 +911,9 @@ struct StressModel {
     }
 }
 
-// MARK: - Stress math (pure, testable helpers)
+// MARK: - Stress copy (the scoring itself is `DailyStressTrend` in StrandAnalytics)
 
 enum StressMath {
-    static func mean(_ xs: [Double]) -> Double? {
-        guard !xs.isEmpty else { return nil }
-        return xs.reduce(0, +) / Double(xs.count)
-    }
-
-    /// Population standard deviation; 0 when there's no spread.
-    static func std(_ xs: [Double], mean m: Double?) -> Double {
-        guard let m, xs.count > 1 else { return 0 }
-        let v = xs.map { ($0 - m) * ($0 - m) }.reduce(0, +) / Double(xs.count)
-        return v.squareRoot()
-    }
-
-    /// Combined autonomic z-score. RHR-up and HRV-down both push it positive.
-    static func rawScore(
-        rhrToday: Double?, meanRHR: Double?, sdRHR: Double,
-        hrvToday: Double?, meanHRV: Double?, sdHRV: Double
-    ) -> Double {
-        var sum = 0.0
-        if let r = rhrToday, let m = meanRHR, sdRHR > 0.0001 {
-            sum += (r - m) / sdRHR            // up = stress
-        }
-        if let h = hrvToday, let m = meanHRV, sdHRV > 0.0001 {
-            sum += (m - h) / sdHRV            // down = stress
-        }
-        return sum
-    }
-
-    /// Logistic squash of the raw z-sum onto 0–3 (baseline 0 → 1.5).
-    static func squash(_ raw: Double) -> Double {
-        let s = 3.0 / (1.0 + exp(-raw))
-        return min(max(s, 0), 3)
-    }
-
     static func explanation(band: StressBand, rhrDelta: Double?, hrvDelta: Double?, usingStored: Bool) -> String {
         let rhrUp = (rhrDelta ?? 0) > 1.0
         let rhrDn = (rhrDelta ?? 0) < -1.0
