@@ -64,7 +64,7 @@ struct NoopButtonAppearance {
         switch kind {
         case .primary:
             fill = StrandPalette.accent
-            label = StrandPalette.goldDeepText   // designated crisp white for text on accent fills
+            label = StrandPalette.onAccent   // contrast-picked ink; white on the default mint read at 1.66:1
             border = nil
             usesPanelSurface = false
         case .secondary:

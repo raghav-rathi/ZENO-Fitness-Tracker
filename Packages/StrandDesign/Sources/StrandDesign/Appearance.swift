@@ -139,6 +139,39 @@ public enum AccentColor: String, CaseIterable, Identifiable, Sendable {
 
     public var focusRing: Color { accent }
 
+    /// Label/icon colour for content drawn ON an accent fill (primary buttons, the Coach send button).
+    /// Chosen per appearance by WCAG contrast rather than hard-coded white: white on the default dark-mode
+    /// mint (#69DDB8) measured 1.66:1 and on the light-mode mint 3.5:1, both below the 4.5:1 text minimum.
+    public var onAccent: Color {
+        switch self {
+        case .mint:      return AccentColor.mintOnAccent
+        case .whoopBlue: return AccentColor.whoopBlueOnAccent
+        case .custom:    return Color(hex: AccentColor.inkOn(StrandPalette.customAccentHex))
+        }
+    }
+
+    // Resolved once: the fixed accents' hexes never change, so the contrast pick is not re-run per render.
+    private static let mintOnAccent = Color(light: inkOn("#149A78"), dark: inkOn("#69DDB8"))
+    private static let whoopBlueOnAccent = Color(light: inkOn("#234F9E"), dark: inkOn("#60A0E0"))
+
+    /// White or near-black ink, whichever contrasts more with `hex` (WCAG 2.x contrast ratio).
+    static func inkOn(_ hex: String) -> String {
+        let luminance = relativeLuminance(hex)
+        let onWhite = 1.05 / (luminance + 0.05)
+        let onInk = (luminance + 0.05) / (relativeLuminance(inkHex) + 0.05)
+        return onWhite >= onInk ? "#FFFFFF" : inkHex
+    }
+
+    /// WCAG 2.x relative luminance of an sRGB hex, 0 (black) … 1 (white).
+    static func relativeLuminance(_ hex: String) -> Double {
+        let c = Color.sRGBComponents(hex: hex)
+        func linear(_ v: Double) -> Double { v <= 0.04045 ? v / 12.92 : pow((v + 0.055) / 1.055, 2.4) }
+        return 0.2126 * linear(c.r) + 0.7152 * linear(c.g) + 0.0722 * linear(c.b)
+    }
+
+    /// The near-black ink used on light accents.
+    static let inkHex = "#0B0D10"
+
     /// Blend an sRGB hex toward white by `amount` (0…1) — the deterministic "hover" derivation for a
     /// custom accent, so a single picked colour still gets a sensible brighter pressed state.
     static func lighten(_ hex: String, by amount: Double = 0.24) -> Color {

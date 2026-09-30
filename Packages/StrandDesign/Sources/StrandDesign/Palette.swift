@@ -133,6 +133,8 @@ public enum StrandPalette {
     public static var accent: Color { accentChoice.accent }
     public static var accentHover: Color { accentChoice.accentHover }
     public static var accentMuted: Color { accentChoice.accentMuted }
+    /// Label/icon colour for content ON an accent fill — contrast-picked per accent and appearance.
+    public static var onAccent: Color { accentChoice.onAccent }
     /// Focus ring color — the same accent, on both schemes.
     public static var focusRing: Color { accentChoice.focusRing }
     /// Opacity for dimmed/disabled sections (shared so screens don't invent their own value).
