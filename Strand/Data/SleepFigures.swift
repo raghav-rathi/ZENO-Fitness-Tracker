@@ -227,7 +227,10 @@ enum SleepNeedInputs {
                          habitualMidsleepSec: Int?) -> (bedTs: Int, wakeTs: Int, napMin: Double)? {
         let group = SleepView.mainNightGroup(blocks, habitualMidsleepSec: habitualMidsleepSec)
         guard let last = group.last else { return nil }
-        let bed = SleepModel.nightOnsetTs(group)
+        // A one-block night's displayed onset is its own start; only a fragmented night needs the stage
+        // decode that skips a leading pre-onset awake stub (a full-history pass would otherwise decode
+        // every night's stage JSON just to learn nothing).
+        let bed = group.count == 1 ? last.effectiveStartTs : SleepModel.nightOnsetTs(group)
         guard last.endTs > bed else { return nil }
         return (bed, last.endTs, SleepView.napSleepMinutes(blocks, habitualMidsleepSec: habitualMidsleepSec))
     }
