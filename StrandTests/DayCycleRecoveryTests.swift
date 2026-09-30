@@ -94,7 +94,8 @@ final class DayCycleRecoveryTests: XCTestCase {
 
         for (nightly, deviation) in [(34.804, 0.3), (34.196, -0.3)] {
             let result = IntelligenceEngine.recomputeRecoveryDaily(
-                daily, nightlySkinTempC: nightly, baselines: baselines)
+                daily, nightlySkinTempC: nightly, baselines: baselines,
+                restScore: AnalyticsEngine.Rest.composite(daily: daily))
             let expected = try XCTUnwrap(expectedRecovery(daily, baselines: baselines, skinDev: deviation))
             XCTAssertNotEqual(expected, withoutSkin)
             XCTAssertEqual(result.recovery, expected)
@@ -118,7 +119,8 @@ final class DayCycleRecoveryTests: XCTestCase {
             let baselines = AnalyticsEngine.ProfileBaselines(
                 hrv: recoveryBaseline(50, spread: 6), skinTemp: skinBaseline)
             let result = IntelligenceEngine.recomputeRecoveryDaily(
-                daily, nightlySkinTempC: nightly, baselines: baselines)
+                daily, nightlySkinTempC: nightly, baselines: baselines,
+                restScore: AnalyticsEngine.Rest.composite(daily: daily))
             XCTAssertNil(result.skinTempDevC)
             XCTAssertEqual(result.skinTempC, nightly)
             XCTAssertEqual(result.recovery, expectedRecovery(daily, baselines: baselines, skinDev: nil))
@@ -131,10 +133,29 @@ final class DayCycleRecoveryTests: XCTestCase {
             let result = IntelligenceEngine.recomputeRecoveryDaily(
                 recoveryDailyFixture(), nightlySkinTempC: 34.8,
                 baselines: AnalyticsEngine.ProfileBaselines(
-                    hrv: hrv, skinTemp: recoveryBaseline(34.5, spread: 0.4)))
+                    hrv: hrv, skinTemp: recoveryBaseline(34.5, spread: 0.4)),
+                restScore: AnalyticsEngine.Rest.composite(daily: recoveryDailyFixture()))
             XCTAssertNil(result.recovery)
             XCTAssertEqual(result.skinTempDevC, 0.3)
         }
+    }
+
+    /// Charge's sleep term is the Rest the pass resolved and stores, handed in — not a composite re-derived
+    /// from the row with default need and consistency (the pre-unification bug that let the two differ).
+    func testPass2ChargeSleepTermIsTheResolvedRest() throws {
+        let daily = recoveryDailyFixture()
+        let baselines = AnalyticsEngine.ProfileBaselines(hrv: recoveryBaseline(50, spread: 6))
+        let resolvedRest = 61.5
+        let result = IntelligenceEngine.recomputeRecoveryDaily(daily, nightlySkinTempC: nil,
+                                                               baselines: baselines, restScore: resolvedRest)
+        let expected = RecoveryScorer.recovery(
+            hrv: 48, rhr: 58, resp: 15, hrvBaseline: baselines.hrv!, rhrBaseline: nil, respBaseline: nil,
+            sleepPerf: resolvedRest / 100.0, skinTempDev: nil)
+        XCTAssertEqual(result.recovery, expected)
+        XCTAssertNotEqual(result.recovery, expectedRecovery(daily, baselines: baselines, skinDev: nil),
+                          "the default-need composite would have scored this night differently")
+        // With no Rest (no asleep time or efficiency) the scorer keeps its efficiency fallback.
+        XCTAssertEqual(IntelligenceEngine.chargeSleepQuality(restScore: nil, daily: daily), daily.efficiency)
     }
 
     private func recoveryBaseline(_ mean: Double, spread: Double,

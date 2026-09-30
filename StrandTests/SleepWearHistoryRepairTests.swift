@@ -15,6 +15,7 @@ final class SleepWearHistoryRepairTests: XCTestCase {
             "profile.stepsCalibrationConfidence", "profile.stepsCalibrationManual",
             "profile.stepsManualCoefficient", "profile.stepsHasBankedMotion",
             IntelligenceEngine.effortRescoreFlagKey, IntelligenceEngine.sleepWearRescoreFlagKey,
+            IntelligenceEngine.scoringVersionKey, "windDown.learnedNeedMinutes",
             "noop.analyzeWatermark", "analyzeRecent.stepsMotionCache.v1",
             "noop.hrvBaselineEpoch", "noop.recoveryBaselineEpoch", UnitPrefs.hrvWindowKey,
             RescoreBackgroundScheduler.owedKey, RescoreBackgroundScheduler.owedTokenKey,
@@ -40,6 +41,17 @@ final class SleepWearHistoryRepairTests: XCTestCase {
         XCTAssertTrue(IntelligenceEngine.historyRepairIsPending(effortDone: true, sleepWearDone: false))
         XCTAssertTrue(IntelligenceEngine.historyRepairIsPending(effortDone: false, sleepWearDone: true))
         XCTAssertFalse(IntelligenceEngine.historyRepairIsPending(effortDone: true, sleepWearDone: true))
+    }
+
+    /// An install whose history was scored before the unified sleep-need model (no version stored reads as
+    /// 0) owes one full-history re-score even with both legacy flags set; the current version owes none.
+    func testAnOlderScoringVersionSchedulesTheSharedRepair() {
+        XCTAssertTrue(IntelligenceEngine.historyRepairIsPending(effortDone: true, sleepWearDone: true,
+                                                                scoredVersion: 0))
+        XCTAssertTrue(IntelligenceEngine.historyRepairIsPending(
+            effortDone: true, sleepWearDone: true, scoredVersion: IntelligenceEngine.scoringVersion - 1))
+        XCTAssertFalse(IntelligenceEngine.historyRepairIsPending(
+            effortDone: true, sleepWearDone: true, scoredVersion: IntelligenceEngine.scoringVersion))
     }
 
     func testRepairsOlderThan21DaysPersistsAndRunsOnlyOnce() async throws {
@@ -99,6 +111,12 @@ final class SleepWearHistoryRepairTests: XCTestCase {
             XCTAssertEqual(editedAfter.first?.userEdited, true)
             XCTAssertTrue(UserDefaults.standard.bool(forKey: IntelligenceEngine.sleepWearRescoreFlagKey))
             XCTAssertTrue(UserDefaults.standard.bool(forKey: IntelligenceEngine.effortRescoreFlagKey))
+            XCTAssertEqual(UserDefaults.standard.integer(forKey: IntelligenceEngine.scoringVersionKey),
+                           IntelligenceEngine.scoringVersion)
+            // The repaired older night now carries the unified figures beside its Rest.
+            let figures = try await store.metricSeries(deviceId: source + "-noop", keys: SleepFigureKeys.all,
+                                                       from: day, to: day)
+            XCTAssertTrue(figures.contains { $0.key == SleepFigureKeys.need }, "need stored with the repaired night")
             await engine.runSleepWearRescoreIfNeeded(historyDays: 40)
             XCTAssertEqual(triggers, 1, "Completed history repair must not run on every launch")
         }

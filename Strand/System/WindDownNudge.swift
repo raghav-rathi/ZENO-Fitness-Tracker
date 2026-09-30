@@ -18,7 +18,9 @@ enum WindDownNudge {
 
     private enum K {
         static let enabled = "windDown.enabled"
-        static let sleepNeed = "windDown.sleepNeedMinutes"   // default 8h
+        static let sleepNeed = "windDown.sleepNeedMinutes"   // the user's own override; unset by default
+        // Tonight's need from the unified sleep-need model, written by the engine after each scoring pass.
+        static let learnedNeed = "windDown.learnedNeedMinutes"
         static let lead = "windDown.leadMinutes"             // default 30m
         static let wake = "windDown.wakeMinutes"             // earliest wake, minutes since midnight
         // PR#554 (MumiZed) — per-day wake overrides. A JSON map of {weekday(1=Sun…7=Sat): wakeMinutes}.
@@ -29,9 +31,26 @@ enum WindDownNudge {
 
     static var isEnabled: Bool { UserDefaults.standard.bool(forKey: K.enabled) }
 
+    /// The need the nudge counts back from: the user's own value when one is stored, else tonight's need
+    /// from the unified sleep-need model (baseline + strain + debt − naps — the same need Rest scores
+    /// against), else 8 h before any scoring pass has run. It used to be a flat 8 h of its own, a fourth
+    /// definition of sleep need that no other screen agreed with.
     static var sleepNeedMinutes: Int {
-        let v = UserDefaults.standard.object(forKey: K.sleepNeed) as? Int ?? 8 * 60
+        let d = UserDefaults.standard
+        let v = d.object(forKey: K.sleepNeed) as? Int ?? d.object(forKey: K.learnedNeed) as? Int ?? 8 * 60
         return min(max(v, 5 * 60), 11 * 60)
+    }
+
+    /// Record tonight's need from a scoring pass. Rounded to 5 minutes so pass-to-pass wobble does not
+    /// churn the schedule; the pending trigger is replaced only when that rounded value moves, the nudge
+    /// is on, and the user has not set their own need.
+    static func updateLearnedNeed(minutes: Double) {
+        guard minutes.isFinite, minutes > 0 else { return }
+        let rounded = Int((minutes / 5).rounded()) * 5
+        let d = UserDefaults.standard
+        guard d.object(forKey: K.learnedNeed) as? Int != rounded else { return }
+        d.set(rounded, forKey: K.learnedNeed)
+        if isEnabled, d.object(forKey: K.sleepNeed) == nil { schedule() }
     }
 
     static var leadMinutes: Int {

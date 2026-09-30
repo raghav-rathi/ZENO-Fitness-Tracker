@@ -236,6 +236,9 @@ struct SleepModelInputs {
     let allSessions: [CachedSleepSession]
     /// Per-day imported WHOOP figures (`Repository.importedSleep`) — export-verbatim tile values.
     let importedSleep: [String: ImportedSleepFigures]
+    /// Per-day figures the engine stored (`Repository.computedSleep`) — the unified Rest, need breakdown,
+    /// consistency and debt every tile reads through `Repository.resolvedNightSleep`.
+    let computedSleep: [String: ComputedSleepFigures]
     /// The learned habitual midsleep (local seconds) the engine threaded into the daily totals.
     let habitualMidsleepSec: Int?
     /// Per-epoch motion keyed by detected block start (`SleepView.motionByStart`).
@@ -370,25 +373,23 @@ extension SleepModel {
         mean(days.compactMap { $0[keyPath: key] }.filter { $0 > 0 })
     }
 
-    /// The personal sleep need (minutes): mean asleep, but never below a 7.5h floor so
-    /// debt/performance read sensibly even for a chronically short sleeper.
-    static func sleepNeedMin(days: [DailyMetric]) -> Double {
-        Swift.max(450, typicalTotalMin(days: days) ?? 450)   // 450 min = 7.5h
+    /// The unified need timeline (`SleepNeed`: baseline + strain + debt − naps) over the displayed days,
+    /// the FALLBACK for a night the engine has not stored figures for (an import-only history, or a night
+    /// scored before the unified model). There is no second need definition here any more: the old
+    /// descriptive max(7.5 h, mean) need and the ledger's standalone upper quartile both became this.
+    /// Age is not plumbed to this screen (nil → the adult floor), matching what it used before.
+    static func needTimeline(days: [DailyMetric], napSleepMinByDay: [String: Double]) -> SleepNeedTimeline {
+        SleepNeed.timeline(
+            days: days.map { SleepNeedDay(day: $0.day, mainSleepMin: $0.totalSleepMin,
+                                          napSleepMin: napSleepMinByDay[$0.day] ?? 0, effort: $0.strain) },
+            age: nil)
     }
 
-    /// The NORMATIVE per-user sleep need (minutes) the DEBT surfaces measure against — the
-    /// population-anchored, age-floored, upper-quartile `personalizedNeedHours`, the SAME estimator
-    /// Rest/Intelligence score against. Deliberately NOT the descriptive `sleepNeedMin` (mean total
-    /// sleep): the mean drifts DOWN toward a chronic under-sleeper's own deficit and quietly erases
-    /// their debt, whereas the upper-quartile floored at the ~8 h adult target only adjusts UP for
-    /// genuine long sleepers. Age isn't plumbed to this screen (age: nil → adult target); wiring it
-    /// would only raise it for under-18s. One need across every debt surface, agreeing with the engine.
-    /// (#242; need-unification from #464 by @vishk23. The descriptive `sleepNeedMin` still drives the
-    /// non-debt "hours vs needed" performance tile.)
-    static func debtNeedMin(days: [DailyMetric]) -> Double {
-        AnalyticsEngine.Rest.personalizedNeedHours(
-            nightlyHours: days.compactMap { $0.totalSleepMin.map { $0 / 60.0 } },
-            age: nil) * 60.0
+    /// The resolved per-night figures for every displayed day — `Repository.resolvedNightSleep`, the same
+    /// read the Today hero, the Coupled screen and the weekly digest use.
+    private static func resolved(_ d: DailyMetric, _ importedSleep: [String: ImportedSleepFigures],
+                                 _ computedSleep: [String: ComputedSleepFigures]) -> ResolvedNightSleep {
+        Repository.resolvedNightSleep(day: d.day, daily: d, imported: importedSleep, computed: computedSleep)
     }
 
     // MARK: Per-tile series (latest, typical mean, sparkline history)
@@ -420,14 +421,12 @@ extension SleepModel {
         return (fresh?.value, latestDay, mean(series), series)
     }
 
-    /// Sleep performance %: the imported WHOOP figure when the export carried one for that day;
-    /// else the REAL resolved Rest composite for that day. (#614 follow-up)
-    static func performanceSeries(days: [DailyMetric], importedSleep: [String: ImportedSleepFigures]) -> Metric {
-        let imported = importedSleep
-        return metric(days: days) { d in
-            if let p = imported[d.day]?.performancePct { return p }   // export-verbatim
-            return AnalyticsEngine.Rest.composite(daily: d)            // real resolved Rest composite
-        }
+    /// Sleep performance %: the imported WHOOP figure when the export carried one for that day, else the
+    /// Rest the engine STORED for it (unified need + timing consistency), else the daily-column fallback —
+    /// `Repository.resolvedNightSleep`, so this tile and the Today Rest score are one number. (#614)
+    static func performanceSeries(days: [DailyMetric], importedSleep: [String: ImportedSleepFigures],
+                                  computedSleep: [String: ComputedSleepFigures]) -> Metric {
+        metric(days: days) { resolved($0, importedSleep, computedSleep).restScore }
     }
 
     static func efficiencySeries(days: [DailyMetric]) -> Metric {
@@ -437,48 +436,25 @@ extension SleepModel {
         }
     }
 
-    /// Consistency: prefer the imported sleep_consistency series when it covers the latest night;
-    /// else the APPROXIMATE rolling bedtime-spread score.
-    static func consistencySeries(days: [DailyMetric], sleeps: [CachedSleepSession],
-                                  importedSleep: [String: ImportedSleepFigures]) -> Metric {
-        let imported = importedSleep
-        if let lastDay = days.last?.day, imported[lastDay]?.consistencyPct != nil {
-            let series = days.compactMap { imported[$0.day]?.consistencyPct }
-            return (series.last, nil, mean(series), series)
-        }
-        let cal = Calendar.current
-        func bedMinutes(_ s: CachedSleepSession) -> Double {
-            let d = Date(timeIntervalSince1970: TimeInterval(s.effectiveStartTs))
-            let comps = cal.dateComponents([.hour, .minute], from: d)
-            var m = Double((comps.hour ?? 0) * 60 + (comps.minute ?? 0))
-            if m < 12 * 60 { m += 24 * 60 }   // wrap evening onsets into one continuous scale
-            return m
-        }
-        let mins = sleeps.map(bedMinutes)
-        guard mins.count >= 3 else { return (nil, nil, nil, []) }
-        var scores: [Double] = []
-        for i in mins.indices {
-            let lo = Swift.max(0, i - 13)
-            let window = Array(mins[lo...i])
-            guard window.count >= 3 else { continue }
-            let m = window.reduce(0, +) / Double(window.count)
-            let variance = window.map { ($0 - m) * ($0 - m) }.reduce(0, +) / Double(window.count)
-            let sd = variance.squareRoot()
-            scores.append(Swift.max(0, Swift.min(100, 100 * (1 - sd / 120))))
-        }
-        return (scores.last, nil, mean(scores), scores)
+    /// Consistency %: the imported sleep_consistency where the export carried one, else the bed-AND-wake
+    /// timing consistency the engine stored for the night — the SAME value its Rest was scored with, so
+    /// this tile explains the score rather than running a second definition beside it. The old local
+    /// bedtime-spread approximation (onset only, 14-night SD) is gone for that reason.
+    static func consistencySeries(days: [DailyMetric], importedSleep: [String: ImportedSleepFigures],
+                                  computedSleep: [String: ComputedSleepFigures]) -> Metric {
+        metric(days: days) { resolved($0, importedSleep, computedSleep).consistencyPct }
     }
 
-    /// Hours vs needed % = asleep / need. The imported sleep_need_min wins per day; else the
-    /// APPROXIMATE personal-mean need.
-    static func hoursVsNeededSeries(days: [DailyMetric], importedSleep: [String: ImportedSleepFigures]) -> Metric {
-        let imported = importedSleep
-        let fallbackNeed = sleepNeedMin(days: days)
-        return metric(days: days) { d in
-            guard let asleep = d.totalSleepMin, asleep > 0 else { return nil }
-            let need = imported[d.day]?.needMin ?? fallbackNeed
-            guard need > 0 else { return nil }
-            return asleep / need * 100
+    /// Hours vs needed % = asleep / need, against the need that night was actually scored with: the
+    /// export's own need for an imported night, else the engine's stored unified need, else the fallback
+    /// timeline's need for a night the engine has not stored.
+    static func hoursVsNeededSeries(days: [DailyMetric], importedSleep: [String: ImportedSleepFigures],
+                                    computedSleep: [String: ComputedSleepFigures],
+                                    fallback: SleepNeedTimeline) -> Metric {
+        metric(days: days) { d in
+            resolved(d, importedSleep, computedSleep).hoursVsNeededPct
+                ?? AnalyticsEngine.Rest.hoursVsNeededPct(sleptMin: d.totalSleepMin,
+                                                         needMin: fallback.need(forNightEnding: d.day)?.totalMin)
         }
     }
 
@@ -495,22 +471,20 @@ extension SleepModel {
         metric(days: days) { $0.respRateBpm }
     }
 
-    /// Sleep debt (minutes): imported `sleep_debt_min` remains export-verbatim. Otherwise use
-    /// the same recency-weighted ledger as the card, including nap credit and its 14-night window.
+    /// Sleep debt (minutes) per night: imported `sleep_debt_min` stays export-verbatim; otherwise the debt
+    /// the unified ledger was left with after the night — the engine's stored value, else the fallback
+    /// timeline's. The newest value is therefore the debt owed tonight, the number the ledger card
+    /// headlines.
     static func sleepDebtSeries(days: [DailyMetric], importedSleep: [String: ImportedSleepFigures],
-                                napSleepMinByDay: [String: Double]) -> Metric {
-        let need = debtNeedMin(days: days)   // #242: normative need, not the self-referential mean
-        let credited = days.map { d in
-            (day: d.day, totalSleepMin: SleepDebt.creditedSleepMin(
-                mainSleepMin: d.totalSleepMin,
-                napSleepMin: napSleepMinByDay[d.day] ?? 0))
+                                computedSleep: [String: ComputedSleepFigures] = [:],
+                                napSleepMinByDay: [String: Double],
+                                fallback: SleepNeedTimeline? = nil) -> Metric {
+        let timeline = fallback ?? needTimeline(days: days, napSleepMinByDay: napSleepMinByDay)
+        let series: [Double] = days.compactMap { d in
+            if let imported = importedSleep[d.day]?.debtMin { return imported }
+            guard (d.totalSleepMin ?? 0) > 0 else { return nil }
+            return computedSleep[d.day]?.debtAfterMin ?? timeline.debtAfter[d.day]
         }
-        let importedDebt = importedSleep.compactMapValues(\.debtMin)
-        let series = SleepDebt.debtSeries(
-            series: credited,
-            needHours: need / 60.0,
-            importedDebtMin: importedDebt
-        ).map(\.value)
         return (series.last, nil, mean(series), series)
     }
 
@@ -524,17 +498,27 @@ extension SleepModel {
 
     // MARK: Sleep-debt ledger
 
-    /// The 14-night recency-weighted estimate from cached daily metrics. It measures against the
-    /// normative `debtNeedMin` (the engine's `personalizedNeedHours`) — the SAME need and recurrence
-    /// the local "Sleep Debt" tile uses — and credits actual asleep minutes from separate naps. (#242)
-    static func debtLedger(days: [DailyMetric], napSleepMinByDay: [String: Double]) -> SleepDebtLedger {
-        SleepDebt.ledger(
-            series: days.map { day in
-                (day: day.day, totalSleepMin: SleepDebt.creditedSleepMin(
-                    mainSleepMin: day.totalSleepMin,
-                    napSleepMin: napSleepMinByDay[day.day] ?? 0))
-            },
-            needHours: debtNeedMin(days: days) / 60.0)
+    /// The 14-night debt ledger over the unified need. When the engine has stored tonight's need at least
+    /// as recently as the newest displayed night, the card is built from what it stored — tonight's debt
+    /// as the balance, each night's stored baseline for its bar — so the headline is the same number the
+    /// planner and the need breakdown show. Otherwise (an import-only history, or before the first scoring
+    /// pass) the pure timeline over the displayed days supplies all of it. Naps lower the next night's need
+    /// inside the model rather than being credited as sleep here, so they count once. (#242)
+    static func debtLedger(days: [DailyMetric], napSleepMinByDay: [String: Double],
+                           computedSleep: [String: ComputedSleepFigures] = [:],
+                           fallback: SleepNeedTimeline? = nil) -> SleepDebtLedger {
+        let timeline = fallback ?? needTimeline(days: days, napSleepMinByDay: napSleepMinByDay)
+        let usable = days.filter { ($0.totalSleepMin ?? 0) > 0 }
+        guard let storedDay = computedSleep.filter({ $0.value.tonightBreakdown != nil }).keys.max(),
+              let tonight = computedSleep[storedDay]?.tonightBreakdown,
+              storedDay >= (usable.last?.day ?? "") else { return timeline.ledger }
+        let nights = usable.filter { $0.day <= storedDay }.suffix(SleepDebt.defaultWindowNights).map { d in
+            let slept = d.totalSleepMin ?? 0
+            let base = computedSleep[d.day]?.needBaselineMin
+                ?? timeline.need(forNightEnding: d.day)?.baselineMin ?? tonight.baselineMin
+            return SleepDebtNight(day: d.day, sleptMin: slept, deltaMin: ((slept - base) * 10).rounded() / 10)
+        }
+        return SleepDebtLedger(balanceMin: -tonight.debtMin, nights: Array(nights), needMin: tonight.baselineMin)
     }
 
     // MARK: - Build
@@ -569,23 +553,31 @@ extension SleepModel {
         }
 
         let napSleepMinByDay = napSleepMinutesByDay(navDays: dayGroups, habitualMidsleepSec: habitual)
+        // One fallback need timeline per build (O(nights × window)), shared by every tile that may need it.
+        let fallback = needTimeline(days: inputs.days, napSleepMinByDay: napSleepMinByDay)
         return SleepModel(
             night: night,
             intervals: night.intervals,
             isPersistedHypnogram: (night.realSegments?.count ?? 0) >= 2,
             isStubNight: isStub,
-            performance: performanceSeries(days: inputs.days, importedSleep: inputs.importedSleep),
+            performance: performanceSeries(days: inputs.days, importedSleep: inputs.importedSleep,
+                                           computedSleep: inputs.computedSleep),
             efficiency: efficiencySeries(days: inputs.days),
-            consistency: consistencySeries(days: inputs.days, sleeps: inputs.sleeps, importedSleep: inputs.importedSleep),
-            hoursVsNeeded: hoursVsNeededSeries(days: inputs.days, importedSleep: inputs.importedSleep),
+            consistency: consistencySeries(days: inputs.days, importedSleep: inputs.importedSleep,
+                                           computedSleep: inputs.computedSleep),
+            hoursVsNeeded: hoursVsNeededSeries(days: inputs.days, importedSleep: inputs.importedSleep,
+                                               computedSleep: inputs.computedSleep, fallback: fallback),
             restorative: restorativeSeries(days: inputs.days),
             respiratory: respiratorySeries(days: inputs.days),
-            sleepDebt: sleepDebtSeries(days: inputs.days, importedSleep: inputs.importedSleep, napSleepMinByDay: napSleepMinByDay),
+            sleepDebt: sleepDebtSeries(days: inputs.days, importedSleep: inputs.importedSleep,
+                                       computedSleep: inputs.computedSleep,
+                                       napSleepMinByDay: napSleepMinByDay, fallback: fallback),
             typicalTotalMin: typicalTotalMin(days: inputs.days),
             typicalDeepMin: typicalStageMin(days: inputs.days, \.deepMin),
             typicalRemMin: typicalStageMin(days: inputs.days, \.remMin),
             typicalLightMin: typicalStageMin(days: inputs.days, \.lightMin),
             trendPoints: durationTrendPoints(days: inputs.days),
-            sleepDebtLedger: debtLedger(days: inputs.days, napSleepMinByDay: napSleepMinByDay))
+            sleepDebtLedger: debtLedger(days: inputs.days, napSleepMinByDay: napSleepMinByDay,
+                                        computedSleep: inputs.computedSleep, fallback: fallback))
     }
 }

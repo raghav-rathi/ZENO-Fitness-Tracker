@@ -65,6 +65,26 @@ extension WhoopStore {
         }
     }
 
+    /// Points for every key in `keys` on days in [from, to], ordered by day then key. One indexed query
+    /// instead of one per key, for a reader that needs a whole family of per-night figures at once (the
+    /// dashboard refresh reads the computed sleep figures this way). An empty `keys` reads nothing.
+    public func metricSeries(deviceId: String, keys: [String], from: String, to: String) async throws -> [MetricPoint] {
+        guard !keys.isEmpty else { return [] }
+        return try syncRead { db in
+            let placeholders = Array(repeating: "?", count: keys.count).joined(separator: ", ")
+            var arguments: [DatabaseValueConvertible] = [deviceId]
+            arguments.append(contentsOf: keys)
+            arguments.append(from)
+            arguments.append(to)
+            return try Row.fetchAll(db, sql: """
+                SELECT day, key, value FROM metricSeries
+                WHERE deviceId = ? AND key IN (\(placeholders)) AND day >= ? AND day <= ?
+                ORDER BY day ASC, key ASC
+                """, arguments: StatementArguments(arguments))
+                .map { MetricPoint(day: $0["day"], key: $0["key"], value: $0["value"]) }
+        }
+    }
+
     /// Distinct metric keys present for a device, sorted ascending.
     public func metricKeys(deviceId: String) async throws -> [String] {
         try syncRead { db in

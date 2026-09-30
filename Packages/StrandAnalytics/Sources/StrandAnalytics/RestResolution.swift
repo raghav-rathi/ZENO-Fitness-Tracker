@@ -35,14 +35,17 @@ public struct RestNightFigures: Equatable, Sendable {
     public let rest: Double?
     /// Asleep ÷ need × 100.
     public let hoursVsNeededPct: Double?
+    /// The debt the night left behind (the ledger balance through it); nil without a night.
+    public let debtAfterMin: Double?
 
     public init(day: String, need: SleepNeedBreakdown, consistency: Double?, rest: Double?,
-                hoursVsNeededPct: Double?) {
+                hoursVsNeededPct: Double?, debtAfterMin: Double? = nil) {
         self.day = day
         self.need = need
         self.consistency = consistency
         self.rest = rest
         self.hoursVsNeededPct = hoursVsNeededPct
+        self.debtAfterMin = debtAfterMin
     }
 }
 
@@ -81,15 +84,20 @@ public struct RestResolution: Equatable, Sendable {
                                  strainMin: 0, debtMin: 0, napMin: 0)
     }
 
-    /// Everything stored for `daily`'s night.
+    /// Everything stored for `daily`'s night. A night outside the history has no ledger behind it, so its
+    /// debt-after is that one night's own carry.
     public func figures(for daily: DailyMetric) -> RestNightFigures {
         let need = need(forNightEnding: daily.day)
         let cons = consistency[daily.day]
+        let slept = daily.totalSleepMin.flatMap { $0 > 0 ? $0 : nil }
+        let debtAfter = timeline.debtAfter[daily.day]
+            ?? slept.map { SleepNeed.round1(SleepNeed.debtCarry(needMin: need.totalMin, sleptMin: $0)) }
         return RestNightFigures(
             day: daily.day, need: need, consistency: cons,
             rest: AnalyticsEngine.Rest.composite(daily: daily, need: need, consistency: cons),
             hoursVsNeededPct: AnalyticsEngine.Rest.hoursVsNeededPct(sleptMin: daily.totalSleepMin,
-                                                                    needMin: need.totalMin))
+                                                                    needMin: need.totalMin),
+            debtAfterMin: debtAfter)
     }
 
     public static func == (lhs: RestResolution, rhs: RestResolution) -> Bool {

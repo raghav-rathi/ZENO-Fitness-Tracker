@@ -188,6 +188,9 @@ final class Repository: ObservableObject {
     @Published var sleeps: [CachedSleepSession] = []
     /// Imported (export-verbatim) sleep figures by day. Empty until a WHOOP import lands.
     @Published var importedSleep: [String: ImportedSleepFigures] = [:]
+    /// The engine's stored per-night sleep figures (unified Rest, need breakdown, consistency, tonight's
+    /// need) by day. Read through `resolvedNightSleep` / `sleepNeedTonight`, never directly by a screen.
+    @Published var computedSleep: [String: ComputedSleepFigures] = [:]
     @Published var loaded = false
     /// How much history each source currently holds, recomputed on every `refresh()`. Powers the
     /// Data Sources "Freshness Pipeline" card so the user can see imported vs computed vs Apple coverage.
@@ -847,6 +850,7 @@ final class Repository: ObservableObject {
     /// project's `minimal` strict-concurrency setting (SWIFT_STRICT_CONCURRENCY: minimal, Swift 5 mode).
     private struct MergedCaches {
         let importedSleep: [String: ImportedSleepFigures]
+        let computedSleep: [String: ComputedSleepFigures]
         let days: [DailyMetric]
         let sleeps: [CachedSleepSession]
         let vitalRows: [SourcedDailyMetric]
@@ -962,6 +966,18 @@ final class Repository: ObservableObject {
         let cons = await unionMetricSeries(store: store, key: "sleep_consistency", from: fromDay, to: toDay)
         let need = await unionMetricSeries(store: store, key: "sleep_need_min", from: fromDay, to: toDay)
         let debt = await unionMetricSeries(store: store, key: "sleep_debt_min", from: fromDay, to: toDay)
+        // The engine's stored sleep figures (unified Rest, need breakdown, consistency, tonight's need): one
+        // query per computed id, active strap's sibling first, first id to supply a (day, key) wins — the
+        // precedence `exploreSeries`' computed layer gives the Today hero, so the two reads cannot differ.
+        var computedSleepPoints: [MetricPoint] = []
+        var computedSleepSeen = Set<String>()
+        for id in computedReadIds {
+            let rows = (try? await store.metricSeries(deviceId: id, keys: SleepFigureKeys.all,
+                                                      from: fromDay, to: toDay)) ?? []
+            for p in rows where computedSleepSeen.insert("\(p.day)|\(p.key)").inserted {
+                computedSleepPoints.append(p)
+            }
+        }
 
         // Merge + sort OFF the main actor (FIX 3): the figures build, the two O(n log n) daily/sleep merges,
         // the source-row sort, and the freshness counts are all pure over the rows just read, so they run in
@@ -979,6 +995,7 @@ final class Repository: ObservableObject {
             let editedDays = Self.userEditedDays(compSleep)
             return MergedCaches(
                 importedSleep: fig,
+                computedSleep: SleepFigureKeys.figures(from: computedSleepPoints),
                 days: Self.mergeActivityFileSteps(
                     into: Self.mergeDaily(imported: imported, computed: computed, userEditedDays: editedDays),
                     activityFile
@@ -1001,6 +1018,7 @@ final class Repository: ObservableObject {
             && merged.days == days
             && merged.sleeps == sleeps
             && merged.importedSleep == importedSleep
+            && merged.computedSleep == computedSleep
             && merged.vitalRows == vitalRows
             && merged.freshness == freshness
         guard !unchanged else { return }
@@ -1008,6 +1026,7 @@ final class Repository: ObservableObject {
         // One consistent publish per refresh: assign every cache, flip `loaded`, then bump `refreshSeq` so
         // the intraday-updating views reload exactly once for this real change.
         self.importedSleep = merged.importedSleep
+        self.computedSleep = merged.computedSleep
         self.days = merged.days
         self.sleeps = merged.sleeps
         self.vitalRows = merged.vitalRows

@@ -459,16 +459,14 @@ struct SleepView: View {
         (nightOffset == 0 ? model.night : navNight) ?? model.night
     }
 
-    /// The sleep-performance score (0–100) for a SPECIFIC night: the imported WHOOP figure for that
-    /// night's LOCAL wake-day when the export carried one, else the resolved Rest composite for that
-    /// day. Mirrors `performanceSeries`'s per-day transform exactly (the same single source of truth
-    /// the Today Rest score reads), keyed by the wake-day (sleep is filed under the day you woke) so
-    /// a navigated past night reads ITS OWN score, never last night's. nil when that day has no score.
+    /// The sleep-performance score (0–100) for a SPECIFIC night, through `Repository.resolvedNightSleep`
+    /// — the imported WHOOP figure for that night's LOCAL wake-day when the export carried one, else the
+    /// Rest the engine stored for it (unified need + timing consistency), exactly what `performanceSeries`
+    /// and the Today Rest score read. Keyed by the wake-day (sleep is filed under the day you woke) so a
+    /// navigated past night reads ITS OWN score, never last night's. nil when that day has no score.
     private func performanceScore(for night: Night) -> Double? {
         let wakeDay = Repository.localDayKey(Date(timeIntervalSince1970: TimeInterval(night.session.endTs)))
-        if let p = repo.importedSleep[wakeDay]?.performancePct { return p }
-        guard let daily = repo.days.last(where: { $0.day == wakeDay }) else { return nil }
-        return AnalyticsEngine.Rest.composite(daily: daily)
+        return repo.restScore(forDay: wakeDay)
     }
 
     /// Dispatch a reorderable Sleep section to its card. Naps rides with `.stages` (drawn inside the stages
@@ -1026,7 +1024,18 @@ struct SleepView: View {
     private func stageShowsIncompleteNote(_ night: Night) -> Bool {
         SleepView.stageSparseNoteApplies(
             stagingSparse: night.sourceBlocks.contains { $0.stagingSparse == true },
-            asleepMin: night.stages.asleep)
+            asleepMin: night.stages.asleep,
+            needHours: SleepView.scoredNeedHours(for: night, repo: repo))
+    }
+
+    /// The need (hours) a night was scored against — `Repository.resolvedNightSleep` for its wake day —
+    /// so "reads short" means short of the same need its Rest used. The 8 h default only for a night with
+    /// no stored or imported need.
+    @MainActor
+    static func scoredNeedHours(for night: Night, repo: Repository) -> Double {
+        let wakeDay = Repository.localDayKey(Date(timeIntervalSince1970: TimeInterval(night.session.endTs)))
+        return repo.resolvedNightSleep(day: wakeDay).needMin.map { $0 / 60.0 }
+            ?? AnalyticsEngine.Rest.defaultNeedHours
     }
 
     /// Pure #345 gate (unit-testable without a live view) — whether the "May be incomplete" caveat applies.
@@ -1047,10 +1056,8 @@ struct SleepView: View {
     /// A night that staged to NOTHING keeps the caveat: zero asleep is the strongest form of the collapse
     /// this note exists to explain, not an exemption from it.
     ///
-    /// `needHours` is a parameter rather than a constant so a personalised need
-    /// (`AnalyticsEngine.Rest.personalizedNeedHours`) can be threaded in later without moving the rule. It
-    /// is computed per pass today and not persisted on the row a screen can reach, so the shared default
-    /// stands in.
+    /// `needHours` is the need the night was scored against (`scoredNeedHours`), threaded in by both hosts;
+    /// the default remains only for pure callers and tests.
     static func stageSparseNoteApplies(stagingSparse: Bool,
                                        asleepMin: Double,
                                        needHours: Double = AnalyticsEngine.Rest.defaultNeedHours) -> Bool {
@@ -1892,6 +1899,7 @@ struct SleepView: View {
             sleeps: repo.sleeps,
             allSessions: allSessions,
             importedSleep: repo.importedSleep,
+            computedSleep: repo.computedSleep,
             habitualMidsleepSec: habitualMidsleepSec,
             motionByStart: motionByStart))
     }

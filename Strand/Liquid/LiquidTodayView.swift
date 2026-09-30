@@ -1861,6 +1861,7 @@ struct LiquidTodayView: View {
                 sleeps: repo.sleeps,
                 allSessions: hostedSessions,
                 importedSleep: repo.importedSleep,
+                computedSleep: repo.computedSleep,
                 habitualMidsleepSec: hostedHabitual,
                 motionByStart: hostedMotion))
         } else {

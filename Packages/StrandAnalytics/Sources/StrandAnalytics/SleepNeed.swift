@@ -77,6 +77,9 @@ public struct SleepNeedDay: Equatable, Sendable {
 public struct SleepNeedTimeline: Equatable, Sendable {
     /// The need that applied to each usable night, keyed by that night's wake day.
     public let nights: [String: SleepNeedBreakdown]
+    /// The debt each usable night LEFT (the ledger balance through that night, as a positive magnitude) —
+    /// what it carried into the next night's need. For the newest night this equals `tonight.debtMin`.
+    public let debtAfter: [String: Double]
     /// The need for the NEXT night: the one that follows `tonightAfterDay`.
     public let tonight: SleepNeedBreakdown
     /// The day whose evening `tonight` plans for (the night itself ends the day after). nil only for an
@@ -87,9 +90,10 @@ public struct SleepNeedTimeline: Equatable, Sendable {
     /// `needMin` is tonight's baseline.
     public let ledger: SleepDebtLedger
 
-    public init(nights: [String: SleepNeedBreakdown], tonight: SleepNeedBreakdown,
-                tonightAfterDay: String?, ledger: SleepDebtLedger) {
+    public init(nights: [String: SleepNeedBreakdown], debtAfter: [String: Double] = [:],
+                tonight: SleepNeedBreakdown, tonightAfterDay: String?, ledger: SleepDebtLedger) {
         self.nights = nights
+        self.debtAfter = debtAfter
         self.tonight = tonight
         self.tonightAfterDay = tonightAfterDay
         self.ledger = ledger
@@ -250,10 +254,12 @@ public enum SleepNeed {
         }
 
         var resolved: [String: SleepNeedBreakdown] = [:]
+        var debtAfter: [String: Double] = [:]
         for i in nights.indices {
             let n = nights[i]
             resolved[n.day] = compose(baselineMin: n.baselineMin, strainMin: n.strainMin,
                                       debtMin: debtInto(i), napMin: n.napMin)
+            debtAfter[n.day] = round1(debtInto(i + 1))
         }
 
         let planOrdinal = tonightAfter.flatMap(ordinal) ?? ordinals.last
@@ -267,7 +273,7 @@ public enum SleepNeed {
         }
         let ledger = SleepDebtLedger(balanceMin: -tonight.debtMin, nights: ledgerNights,
                                      needMin: tonight.baselineMin)
-        return SleepNeedTimeline(nights: resolved, tonight: tonight,
+        return SleepNeedTimeline(nights: resolved, debtAfter: debtAfter, tonight: tonight,
                                  tonightAfterDay: planOrdinal.map { LocalCalendarDate(daysSinceEpoch: $0).key },
                                  ledger: ledger)
     }

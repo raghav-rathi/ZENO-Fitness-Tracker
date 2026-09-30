@@ -139,7 +139,7 @@ struct SmartAlarmView: View {
                     }
                 }
                 Text(windDownOn
-                     ? "A calm nudge \(WindDownNudge.sleepNeedMinutes / 60)h \(WindDownNudge.leadMinutes)m before your usual wake time."
+                     ? "A calm nudge \(Self.nudgeLeadMinutes / 60)h \(Self.nudgeLeadMinutes % 60)m before your usual wake time."
                      : "Turn on the wind-down reminder below to land at your usual wake time rested.")
                     .font(StrandFont.footnote)
                     .foregroundStyle(StrandPalette.textSecondary)
@@ -381,7 +381,7 @@ struct SmartAlarmView: View {
                             Text("Your usual wake time")
                                 .font(StrandFont.body)
                                 .foregroundStyle(StrandPalette.textPrimary)
-                            Text("The nudge fires \(WindDownNudge.sleepNeedMinutes / 60)h \(WindDownNudge.leadMinutes)m before this.")
+                            Text("The nudge fires \(Self.nudgeLeadMinutes / 60)h \(Self.nudgeLeadMinutes % 60)m before this.")
                                 .font(StrandFont.footnote)
                                 .foregroundStyle(StrandPalette.textTertiary)
                             Text("This time does not wake you. It only decides when the evening reminder fires.")
@@ -681,6 +681,12 @@ struct SmartAlarmView: View {
             }
         )
     }
+
+    /// How far before the wake time the nudge fires: sleep need plus the wind-down lead, as one duration.
+    /// The need is no longer a whole number of hours (it is tonight's need from the unified model), so
+    /// printing need-hours beside lead-minutes would drop the need's own minutes; the same "Xh Ym" string
+    /// now carries the true total.
+    @MainActor private static var nudgeLeadMinutes: Int { WindDownNudge.sleepNeedMinutes + WindDownNudge.leadMinutes }
 
     private func timeLabel(_ minutes: Int) -> String {
         String(format: "%02d:%02d", minutes / 60, minutes % 60)

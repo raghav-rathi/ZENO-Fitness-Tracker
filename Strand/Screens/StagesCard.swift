@@ -253,7 +253,8 @@ struct StageDetailView: View {
         // must not disagree about whether it earns the caveat.
         SleepView.stageSparseNoteApplies(
             stagingSparse: night.sourceBlocks.contains { $0.stagingSparse == true },
-            asleepMin: night.stages.asleep)
+            asleepMin: night.stages.asleep,
+            needHours: SleepView.scoredNeedHours(for: night, repo: repo))
     }
 
     /// How much of this night's window its stage timeline actually accounts for, or nil when coverage is not

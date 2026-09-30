@@ -82,6 +82,16 @@ final class SleepNeedTests: XCTestCase {
         XCTAssertEqual(second.totalMin, 480 + 0.55 * 120, accuracy: 0.05)
     }
 
+    func testDebtAfterANightIsTheDebtCarriedIntoTheNextAndTheNewestIsTonights() {
+        let history = days(6, slept: 400)
+        let t = SleepNeed.timeline(days: history, age: nil)
+        for d in 1...5 {
+            XCTAssertEqual(t.debtAfter[key(d)], t.need(forNightEnding: key(d + 1))?.debtMin, "night \(d)")
+        }
+        XCTAssertEqual(t.debtAfter[key(6)], t.tonight.debtMin)
+        XCTAssertEqual(t.debtAfter[key(6)], t.ledger.magnitudeMin)
+    }
+
     func testAHardDayRaisesOnlyTheNextNightsNeed() {
         // Nine ordinary days at Effort 40, then a 65 on day 10: night 11 carries the full +60.
         var history = days(10, slept: 480, effort: 40)
