@@ -844,7 +844,7 @@ public final class LiveState: ObservableObject {
     }
 
     nonisolated static func logPublishDecision(
-        now: Double, lastPublish: Double, flushQueued: Bool, interval: Double = publishCoalesceSeconds,
+        now: Double, lastPublish: Double, flushQueued: Bool, interval: Double = publishCoalesceSeconds
     ) -> LogPublishDecision {
         let elapsed = now - lastPublish
         if elapsed >= interval { return .publishNow }

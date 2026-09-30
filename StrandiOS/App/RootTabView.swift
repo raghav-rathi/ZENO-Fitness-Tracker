@@ -781,11 +781,6 @@ private struct QuickActionSheet: View {
 extension View {
     @ViewBuilder
     func noopTabBarAutoHide(_ enabled: Bool) -> some View {
-        if #available(iOS 26.0, *) {
-            // `.onScrollDown` minimises to a pill on downward scroll; `.never` pins it fully visible.
-            self.tabBarMinimizeBehavior(enabled ? .onScrollDown : .never)
-        } else {
-            self
-        }
+        self
     }
 }

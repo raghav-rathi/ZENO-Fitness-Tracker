@@ -112,7 +112,7 @@ private struct StressMovingMarksShape: Shape {
             let x0 = min(lo, max(x1 - minWidth, 0))
             path.addRoundedRect(
                 in: CGRect(x: x0, y: rect.minY, width: x1 - x0, height: rect.height),
-                cornerSize: CGSize(width: radius, height: radius),
+                cornerSize: CGSize(width: radius, height: radius)
             )
         }
         return path
@@ -268,7 +268,7 @@ private struct StressCurveChart: View {
                 StressCurveShape(series: series, filled: true)
                     .fill(LinearGradient(
                         colors: [fillTint.opacity(0.3), fillTint.opacity(0)],
-                        startPoint: .top, endPoint: .bottom,
+                        startPoint: .top, endPoint: .bottom
                     ))
                 StressCurveShape(series: series, filled: false)
                     .stroke(ramp, style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))

@@ -55,7 +55,7 @@ struct LiveView: View {
     private var activeIsWhoop: Bool {
         LiveConsoleReadout.activeIsWhoop(
             devices: model.deviceRegistry?.devices ?? [],
-            activeId: model.deviceRegistry?.activeDeviceId,
+            activeId: model.deviceRegistry?.activeDeviceId
         )
     }
 
@@ -63,7 +63,7 @@ struct LiveView: View {
     private var activeIsOura: Bool {
         LiveConsoleReadout.activeIsOura(
             devices: model.deviceRegistry?.devices ?? [],
-            activeId: model.deviceRegistry?.activeDeviceId,
+            activeId: model.deviceRegistry?.activeDeviceId
         )
     }
 
@@ -818,7 +818,7 @@ private struct LiveHeaderStats: View {
     /// confident lie, and was exactly what the report saw.
     private var batteryLabel: String {
         LiveConsoleReadout.batteryPercent(
-            activeIsWhoop: activeIsWhoop, whoopPct: live.batteryPct, ringPct: live.ouraBatteryPct,
+            activeIsWhoop: activeIsWhoop, whoopPct: live.batteryPct, ringPct: live.ouraBatteryPct
         ).map { "\($0)%" } ?? "—"
     }
 
@@ -1099,7 +1099,7 @@ private struct LiveSignalTrustRail: View {
     /// The ACTIVE device's charge, or nil when it has not reported one.
     private var activeBatteryPct: Int? {
         LiveConsoleReadout.batteryPercent(
-            activeIsWhoop: activeIsWhoop, whoopPct: live.batteryPct, ringPct: live.ouraBatteryPct,
+            activeIsWhoop: activeIsWhoop, whoopPct: live.batteryPct, ringPct: live.ouraBatteryPct
         )
     }
 

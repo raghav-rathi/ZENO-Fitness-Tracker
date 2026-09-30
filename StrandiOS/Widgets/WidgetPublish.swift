@@ -16,10 +16,10 @@ extension WidgetSnapshot {
         LiveConsoleReadout.batteryPercent(
             activeIsWhoop: LiveConsoleReadout.activeIsWhoop(
                 devices: model.deviceRegistry?.devices ?? [],
-                activeId: model.deviceRegistry?.activeDeviceId,
+                activeId: model.deviceRegistry?.activeDeviceId
             ),
             whoopPct: model.live.batteryPct,
-            ringPct: model.live.ouraBatteryPct,
+            ringPct: model.live.ouraBatteryPct
         )
     }
 

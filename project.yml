@@ -337,8 +337,6 @@ targets:
         # Required by HealthKit on iOS 15+ for the observer queries registered by HealthKitBridge.
         com.apple.developer.healthkit.background-delivery: true
         com.apple.developer.healthkit.access: []
-        com.apple.security.application-groups:
-          - $(APP_GROUP_ID)
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: $(BUNDLE_ID_PREFIX).noop
@@ -359,12 +357,8 @@ targets:
       - package: MarkdownUI
       - package: ZIPFoundation
       - package: PolarProtocol
-      - target: NOOPiOSWidgets
-      # Embed the watchOS app so the iPhone app carries it (NOOP.app/Watch/NOOPWatch.app). A watch app
-      # installs by riding inside its iOS companion; without this it would never reach a paired watch.
-      # Build-from-source delivers it for certain; sideload install of the embedded watch app under a free
-      # Apple ID is unproven (an Apple limitation), so the docs steer watch users to a source build for now.
-      - target: NOOPWatch
+      # - target: NOOPiOSWidgets
+      # - target: NOOPWatch
 
   # WidgetKit + Live Activity extension — the iOS analogue of the macOS menu-bar
   # extra. Reads a tiny snapshot the app publishes into the shared App Group.

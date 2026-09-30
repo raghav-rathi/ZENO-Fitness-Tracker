@@ -214,7 +214,7 @@ private struct HrTraceChart: View {
             HrTraceShape(series: series, filled: true)
                 .fill(LinearGradient(
                     colors: [accent.opacity(0.35), accent.opacity(0)],
-                    startPoint: .top, endPoint: .bottom,
+                    startPoint: .top, endPoint: .bottom
                 ))
             HrTraceShape(series: series, filled: false)
                 .stroke(accent, style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))

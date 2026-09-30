@@ -69,58 +69,26 @@ public struct NoopLiquidGlassSearchField: View {
 }
 
 public extension View {
-    /// Capsule Liquid Glass search chrome. iOS 26 uses interactive `glassEffect`; macOS and older
-    /// iOS use the shared elevated pill surface. Glass APIs stay behind `#if os(iOS)` so macOS
-    /// (deployment 13) never type-checks or applies Liquid Glass.
+    /// Capsule search chrome using shared elevated pill surface.
     @ViewBuilder
     func nativeLiquidGlassSearchChrome() -> some View {
-        #if os(iOS)
-        if #available(iOS 26.0, *) {
-            self.glassEffect(.regular.interactive(), in: Capsule())
-        } else {
-            self.noopStandardSearchChrome()
-        }
-        #else
         self.noopStandardSearchChrome()
-        #endif
     }
 
-    /// Circular / capsule interactive Liquid Glass button chrome (Home header, live-workout controls,
-    /// workout-selection close/chips). iOS 26 only; every other platform keeps the caller's
-    /// `fallback` (standard material / press style) unchanged.
+    /// Circular / capsule button chrome using standard material / press style fallback.
     @ViewBuilder
     func nativeLiquidGlassButtonChrome<Fallback: View>(
         controlSize: ControlSize = .small,
         capsule: Bool = false,
         @ViewBuilder fallback: () -> Fallback
     ) -> some View {
-        #if os(iOS)
-        if #available(iOS 26.0, *) {
-            self
-                .buttonStyle(.glass)
-                .buttonBorderShape(capsule ? .capsule : .circle)
-                .controlSize(controlSize)
-        } else {
-            fallback()
-        }
-        #else
         fallback()
-        #endif
     }
 
-    /// Interactive circular `glassEffect` finish layer (e.g. Home profile photo over glass).
-    /// No-op outside iOS 26 so macOS never imports the glass path.
+    /// Circular finish layer.
     @ViewBuilder
     func nativeLiquidGlassCircleFinish() -> some View {
-        #if os(iOS)
-        if #available(iOS 26.0, *) {
-            self.glassEffect(.regular.interactive(), in: Circle())
-        } else {
-            self
-        }
-        #else
         self
-        #endif
     }
 
     @ViewBuilder

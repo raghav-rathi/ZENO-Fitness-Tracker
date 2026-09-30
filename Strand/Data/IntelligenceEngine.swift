@@ -574,7 +574,7 @@ final class IntelligenceEngine: ObservableObject {
     /// Mirrors the Android `IntelligenceEngine.fitnessAgeRows`.
     static func fitnessAgeRows(
         gateDays: [DailyMetric], age: Int, sex: String, waistCm: Double, heightCm: Double, weightKg: Double,
-        computedId: String, satKey: String,
+        computedId: String, satKey: String
     ) -> [MetricPoint] {
         let rhrs = gateDays.compactMap { $0.restingHr }.map(Double.init)
         let strains = gateDays.compactMap { $0.strain }.filter { $0 >= 30 }

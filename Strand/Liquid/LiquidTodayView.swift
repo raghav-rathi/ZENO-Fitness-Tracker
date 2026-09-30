@@ -3015,24 +3015,10 @@ private extension View {
     /// 36-point label, so a Capsule over the identical 36×36 frame is already that circle.
     @ViewBuilder
     func nativeLiquidGlassSyncButton() -> some View {
-        #if os(iOS)
-        if #available(iOS 26.0, *) {
-            self
-                .buttonStyle(.plain)
-                .padding(NoopMetrics.syncIndicatorGlassPadding)
-                .glassEffect(.regular.interactive(), in: Capsule())
-        } else {
-            self
-                .buttonStyle(LiquidPressStyle())
-                .background(.ultraThinMaterial, in: Capsule())
-                .overlay(Capsule().strokeBorder(.white.opacity(0.16), lineWidth: 0.8))
-        }
-        #else
         self
             .buttonStyle(LiquidPressStyle())
             .background(.ultraThinMaterial, in: Capsule())
             .overlay(Capsule().strokeBorder(.white.opacity(0.16), lineWidth: 0.8))
-        #endif
     }
 }
 
