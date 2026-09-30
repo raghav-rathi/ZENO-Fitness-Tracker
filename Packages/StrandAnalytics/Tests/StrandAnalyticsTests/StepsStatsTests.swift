@@ -160,6 +160,43 @@ final class StepsStatsTests: XCTestCase {
         XCTAssertNil(StepsStats.bestDay([]))
     }
 
+    func testHistoryBuildsBarsAveragesStreakAndBestFromOneResolvedSet() {
+        var resolved: [String: ResolvedStepDay] = [:]
+        func add(_ day: String, _ steps: Int, _ source: StepSource = .phonePedometer) {
+            resolved[day] = ResolvedStepDay(day: day, steps: steps, source: source)
+        }
+        add("2026-08-01", 25_000, .healthKit)   // outside both windows, still the best day so far
+        add("2026-09-24", 11_000)
+        add("2026-09-25", 12_000)
+        add("2026-09-28", 10_500)
+        add("2026-09-29", 10_000, .strapEstimate)
+        add("2026-09-30", 4_000)                // today, still short of the goal
+        add("2026-10-01", 40_000)               // after the chart's last day: never the "best" of a past view
+
+        let h = StepsStats.history(resolved: resolved, endingOn: "2026-09-30", today: "2026-09-30", goal: 10_000)
+        XCTAssertEqual(h.week.map(\.day).first, "2026-09-24")
+        XCTAssertEqual(h.week.map(\.day).last, "2026-09-30")
+        XCTAssertEqual(h.week.map(\.steps), [11_000, 12_000, nil, nil, 10_500, 10_000, 4_000])
+        XCTAssertEqual(h.week[5].source, .strapEstimate)
+        XCTAssertEqual(h.month.count, 30)
+        XCTAssertEqual(h.weekAverage, StepsAverage(mean: 47_500.0 / 5.0, observedDays: 5))
+        XCTAssertEqual(h.monthAverage.observedDays, 5)
+        XCTAssertEqual(h.streak, 2)
+        XCTAssertEqual(h.best?.day, "2026-08-01")
+    }
+
+    func testHistoryStreakIsAlwaysAsOfToday() {
+        let resolved = [
+            "2026-09-20": ResolvedStepDay(day: "2026-09-20", steps: 15_000, source: .healthKit),
+            "2026-09-30": ResolvedStepDay(day: "2026-09-30", steps: 12_000, source: .healthKit),
+        ]
+        // Charts ending on the 20th still report today's streak (1), not the 20th's.
+        let h = StepsStats.history(resolved: resolved, endingOn: "2026-09-20", today: "2026-09-30", goal: 10_000)
+        XCTAssertEqual(h.streak, 1)
+        XCTAssertEqual(h.best?.day, "2026-09-20")
+        XCTAssertEqual(h.week.last?.steps, 15_000)
+    }
+
     func testChartCeilingKeepsTheGoalLineAndTallestBarOnTheChart() {
         XCTAssertEqual(StepsStats.chartCeiling(values: [3_000, 4_000], goal: 10_000), 10_800)
         XCTAssertEqual(StepsStats.chartCeiling(values: [3_000, 20_000], goal: 10_000), 21_600)

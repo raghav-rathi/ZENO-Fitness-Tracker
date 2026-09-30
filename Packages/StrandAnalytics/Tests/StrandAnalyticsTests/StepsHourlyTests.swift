@@ -110,4 +110,53 @@ final class StepsHourlyTests: XCTestCase {
         XCTAssertEqual(StepsHourly.reconcilingCurrentHour(buckets, dayTotal: 999, currentHour: 24), buckets)
         XCTAssertEqual(StepsHourly.reconcilingCurrentHour(buckets, dayTotal: 999, currentHour: -1), buckets)
     }
+
+    // MARK: Chart composition
+
+    private func hours(_ pairs: [Int: Int]) -> [Int] {
+        var out = Array(repeating: 0, count: 24)
+        for (h, v) in pairs { out[h] = v }
+        return out
+    }
+
+    func testChartDrawsTheDaysOwnSourceAndReconcilesTheLiveHour() {
+        let phone = hours([8: 1_000, 9: 200])
+        let chart = StepsHourly.chart(daySource: .phonePedometer, dayTotal: 1_500,
+                                      hours: [.phonePedometer: phone, .healthKit: hours([8: 900])],
+                                      currentHour: 9)
+        XCTAssertEqual(chart?.source, .phonePedometer)
+        XCTAssertEqual(chart?.matchesDaySource, true)
+        XCTAssertEqual(chart?.bars[9], 500)
+        XCTAssertEqual(chart?.bars.reduce(0, +), 1_500)
+        XCTAssertEqual(chart?.currentHour, 9)
+        XCTAssertEqual(chart?.peakHour, 8)
+    }
+
+    func testChartBorrowsAnotherSourcesShapeWithoutReconcilingIt() {
+        // The day resolved to the strap estimate; the phone's hours are only a shape and must not be
+        // stretched to the estimate's total.
+        let phone = hours([12: 300])
+        let chart = StepsHourly.chart(daySource: .strapEstimate, dayTotal: 9_000,
+                                      hours: [.phonePedometer: phone], currentHour: 12)
+        XCTAssertEqual(chart?.source, .phonePedometer)
+        XCTAssertEqual(chart?.matchesDaySource, false)
+        XCTAssertEqual(chart?.bars, phone)
+    }
+
+    func testPastDayChartIsNotReconciled() {
+        let phone = hours([7: 400])
+        let chart = StepsHourly.chart(daySource: .phonePedometer, dayTotal: 5_000,
+                                      hours: [.phonePedometer: phone], currentHour: nil)
+        XCTAssertEqual(chart?.bars, phone)
+        XCTAssertNil(chart?.currentHour)
+    }
+
+    func testNoHoursMeansNoChart() {
+        XCTAssertNil(StepsHourly.chart(daySource: .healthKit, dayTotal: 5_000, hours: [:], currentHour: 10))
+        // A malformed bucket array is not a chart either.
+        XCTAssertNil(StepsHourly.chart(daySource: .phonePedometer, dayTotal: 5,
+                                       hours: [.phonePedometer: [1, 2, 3]], currentHour: nil))
+        XCTAssertNil(StepsHourly.Chart(bars: Array(repeating: 0, count: 24), source: .healthKit,
+                                       matchesDaySource: true, currentHour: nil).peakHour)
+    }
 }

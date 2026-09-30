@@ -62,4 +62,47 @@ public enum StepsHourly {
         out[currentHour] = max(out[currentHour], dayTotal - others, 0)
         return out
     }
+
+    /// What an hour-by-hour chart of one day draws.
+    public struct Chart: Equatable, Sendable {
+        /// `hoursPerDay` bars.
+        public let bars: [Int]
+        /// Whose hours these are.
+        public let source: StepSource
+        /// True when the bars are the day's own source, so they add up to the headline. False means the
+        /// shape is borrowed from another source and the chart must say so.
+        public let matchesDaySource: Bool
+        /// The clock hour to highlight: the current one, on the in-progress day only.
+        public let currentHour: Int?
+
+        public init(bars: [Int], source: StepSource, matchesDaySource: Bool, currentHour: Int?) {
+            self.bars = bars
+            self.source = source
+            self.matchesDaySource = matchesDaySource
+            self.currentHour = currentHour
+        }
+
+        /// The busiest hour, nil when every hour is empty. On a tie the earlier hour.
+        public var peakHour: Int? {
+            guard let top = bars.max(), top > 0 else { return nil }
+            return bars.firstIndex(of: top)
+        }
+    }
+
+    /// Compose the chart for a day from its resolved source and total, the hours each source banked, and
+    /// (for the in-progress day) the current clock hour. The bars come from `StepsResolver.hourlySource`;
+    /// when they are the day's own source on the in-progress day, the current hour absorbs whatever the
+    /// headline counts that the banked hours do not yet, so the bars and the number agree while walking.
+    /// nil when no source banked any hour for the day.
+    public static func chart(daySource: StepSource?, dayTotal: Int?, hours: [StepSource: [Int]],
+                             currentHour: Int?) -> Chart? {
+        let withHours = Set(hours.filter { $0.value.count == hoursPerDay }.keys)
+        guard let source = StepsResolver.hourlySource(daySource: daySource, sourcesWithHours: withHours),
+              var bars = hours[source] else { return nil }
+        let matches = source == daySource
+        if matches, let currentHour, let dayTotal {
+            bars = reconcilingCurrentHour(bars, dayTotal: dayTotal, currentHour: currentHour)
+        }
+        return Chart(bars: bars, source: source, matchesDaySource: matches, currentHour: currentHour)
+    }
 }

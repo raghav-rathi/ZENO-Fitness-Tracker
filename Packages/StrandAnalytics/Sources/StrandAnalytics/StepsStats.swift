@@ -153,4 +153,48 @@ public enum StepsStats {
         let top = max(StepGoal.clamp(goal), values.max() ?? 0)
         return Int((Double(top) * 1.08).rounded(.up))
     }
+
+    /// One day's bar in a history chart. `steps` nil is a day nothing counted (drawn as a gap, not a zero).
+    public struct Bar: Equatable, Sendable {
+        public let day: String
+        public let steps: Int?
+        public let source: StepSource?
+
+        public init(day: String, steps: Int?, source: StepSource?) {
+            self.day = day
+            self.steps = steps
+            self.source = source
+        }
+    }
+
+    /// Everything the Steps screen's history section shows.
+    public struct History: Equatable, Sendable {
+        public let week: [Bar]
+        public let month: [Bar]
+        public let weekAverage: StepsAverage
+        public let monthAverage: StepsAverage
+        /// Consecutive days at or over the goal as of `today`, whatever day the charts end on.
+        public let streak: Int
+        /// The best day on or before the charts' last day.
+        public let best: ResolvedStepDay?
+    }
+
+    /// Build the history section: 7- and 30-day bars ending on `day`, their observed-day averages, the
+    /// current streak as of `today` and the best day up to `day`, all from the same resolved days.
+    public static func history(resolved: [String: ResolvedStepDay], endingOn day: String, today: String,
+                               goal: Int) -> History {
+        func bars(_ count: Int) -> [Bar] {
+            StepsDayKeys.window(endingOn: day, count: count).map { key in
+                Bar(day: key, steps: resolved[key]?.steps, source: resolved[key]?.source)
+            }
+        }
+        let readings = resolved.values.map { (day: $0.day, value: Double($0.steps)) }
+        return History(
+            week: bars(7),
+            month: bars(30),
+            weekAverage: average(readings: readings, endingOn: day, days: 7),
+            monthAverage: average(readings: readings, endingOn: day, days: 30),
+            streak: currentStreak(stepsByDay: resolved.mapValues(\.steps), goal: goal, today: today),
+            best: bestDay(resolved.values.filter { $0.day <= day }))
+    }
 }
