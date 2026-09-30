@@ -2716,6 +2716,17 @@ final class IntelligenceEngine: ObservableObject {
                                                          from: calOldest, to: newestDay)) ?? []
             var refSteps: [String: Double] = [:]
             for r in appleRows { if let s = r.steps, s > 0 { refSteps[r.day] = Double(s) } }
+            // The iPhone's own pedometer, banked by the Steps feature, is a phone step count too. It fills
+            // the days Apple Health has none for, which is every day on a build without HealthKit, where the
+            // estimate could otherwise never calibrate. Health stays first (StepsResolver's order): it
+            // already includes the phone's steps. A day the phone counted then keeps its real count below
+            // instead of gaining an estimate, exactly as a Health-counted day always has.
+            let phoneRows = (try? await store.metricSeries(deviceId: StepsPrefs.phoneDeviceId,
+                                                           key: StepsPrefs.phoneStepsKey,
+                                                           from: calOldest, to: newestDay)) ?? []
+            for p in phoneRows where refSteps[p.day] == nil && p.value.isFinite && p.value > 0 {
+                refSteps[p.day] = p.value
+            }
             // Per-day motion volume over the calibration window, read from the owner-resolved strap streams.
             // (Owner resolution mirrors the scoring loop; one device installs resolve to `deviceId`.)
             //
