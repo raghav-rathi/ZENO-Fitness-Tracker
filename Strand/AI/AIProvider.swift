@@ -23,7 +23,7 @@ enum AIProvider: String, CaseIterable, Identifiable {
     var defaultModel: String {
         switch self {
         case .openAI:    return "gpt-5-mini"
-        case .anthropic: return "claude-sonnet-4-6"
+        case .anthropic: return "claude-sonnet-5-5"
         case .gemini:    return "gemini-flash-latest"   // stable alias → current Flash, no version churn (#400)
         case .custom:    return ""   // the user picks the model their server serves
         }
@@ -56,14 +56,16 @@ enum AIProvider: String, CaseIterable, Identifiable {
                 "o4-mini"
             ]
         case .anthropic:
+            // Current Claude 5 family first. The Claude 3.x `-latest` aliases were dropped: those models
+            // are retired, so picking one only produced an API error. `refreshModels()` still merges the
+            // live catalogue for anything newer.
             return [
-                "claude-opus-4-8",
-                "claude-sonnet-4-6",
+                "claude-opus-5-5",
+                "claude-sonnet-5-5",
                 "claude-haiku-4-5-20251001",
-                "claude-3-7-sonnet-latest",
-                "claude-3-5-sonnet-latest",
-                "claude-3-5-haiku-latest",
-                "claude-3-opus-latest"
+                "claude-fable-5-1",
+                "claude-opus-4-8",
+                "claude-sonnet-4-6"
             ]
         case .gemini:
             // Stable `-latest` ALIASES, not pinned versions (#400): they always resolve to the current
