@@ -120,7 +120,7 @@ struct PulseMoreView: View {
                 Section {
                     row(String(localized: "Test Centre"), "stethoscope", .testCentre)
                         .id("pulse.advanced")
-                    row(String(localized: "NOOP Limitations"), "list.bullet.rectangle", .limitations)
+                    row(String(localized: "Limitations"), "list.bullet.rectangle", .limitations)
                     row(String(localized: "Mi Band"), "figure.walk.motion", .miBand)
                     row(String(localized: "Rhythm"), "waveform.path", .rhythm)
                     row(String(localized: "Intelligence"), "brain.head.profile", .intelligence)
@@ -141,7 +141,7 @@ struct PulseMoreView: View {
                 } header: {
                     header(String(localized: "Interface"))
                 } footer: {
-                    Text(String(localized: "Switches to the classic NOOP tabs. Settings › WHOOP-style interface brings this one back."))
+                    Text(String(localized: "Switches to the classic tabs. Settings › WHOOP-style interface brings this one back."))
                         .font(.caption)
                         .foregroundStyle(PulseTheme.textTertiary)
                 }
@@ -200,7 +200,12 @@ struct PulseMoreView: View {
                 .foregroundStyle(PulseTheme.textPrimary)
             if chevron {
                 Spacer(minLength: 8)
-                PulseChevron()
+                // The List's own disclosure colour, so this button row matches its NavigationLink
+                // neighbours rather than standing out brighter.
+                Image(systemName: "chevron.right")
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(Color(uiColor: .tertiaryLabel))
+                    .accessibilityHidden(true)
             }
         }
         // A list row is already at least 44 pt tall; padding it further made each row read oversized.

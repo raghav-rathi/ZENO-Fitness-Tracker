@@ -27,7 +27,7 @@ struct PulseSleepView: View {
             await model.openSleep()
         }
         .onChange(of: model.seq) { _, _ in
-            Task { await model.reloadSleep() }
+            model.reloadSleep()
         }
     }
 

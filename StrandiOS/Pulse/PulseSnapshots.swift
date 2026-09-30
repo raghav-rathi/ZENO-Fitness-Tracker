@@ -423,9 +423,14 @@ struct PulseStageRow: Identifiable, Equatable {
 /// The Sleep deep dive for one night.
 struct SleepSnapshot: Equatable {
     let seq: Int
+    /// The wake day the night was looked up from (Home's day, or the night ‹ › stepped to).
+    let anchorKey: String
     /// Index into the newest-first night list (0 = the most recent night).
     let nightIndex: Int
-    let nightCount: Int
+    /// Every banked night's wake day, newest first: ‹ › step through these by KEY, so a night banked
+    /// while the screen is open cannot shift what it shows.
+    let nightKeys: [String]
+    var nightCount: Int { nightKeys.count }
     /// The wake day the night belongs to (sleep is keyed by the local day it ends on).
     let wakeDayKey: String?
     let onset: Date?

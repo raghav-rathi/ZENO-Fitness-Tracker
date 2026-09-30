@@ -55,7 +55,7 @@ final class PulseDisplayTests: XCTestCase {
         history.append((day: "2026-09-30", value: 500))   // the compared day: must not count
         history.append((day: "2026-07-01", value: 900))   // outside the 30-day window
         let c = PulseDisplay.compare(value: 55, history: history, dayKey: "2026-09-30")
-        XCTAssertEqual(c?.average ?? -1, 50, accuracy: 1e-9)
+        XCTAssertEqual(c?.reference ?? -1, 50, accuracy: 1e-9)
         XCTAssertEqual(c?.samples, 10)
         XCTAssertEqual(c?.delta ?? -1, 5, accuracy: 1e-9)
         XCTAssertEqual(c?.percent ?? -1, 10, accuracy: 1e-9)
@@ -82,6 +82,48 @@ final class PulseDisplayTests: XCTestCase {
         XCTAssertNil(c?.percent)
         XCTAssertEqual(c?.direction, .up)
         XCTAssertEqual(PulseDisplay.compare(value: 0.02, history: h, dayKey: "2026-09-30")?.direction, .flat)
+    }
+
+    func testBaselineCompareUsesThePrintedFigures() {
+        // 57 vs a 56.4 baseline prints "57" against "56": up, by the printed 1 of 56.
+        let rhr = PulseDisplay.compare(value: 57, baseline: 56.4, fractionDigits: 0)
+        XCTAssertEqual(rhr?.direction, .up)
+        XCTAssertEqual(rhr?.reference ?? -1, 56, accuracy: 1e-9)
+        XCTAssertEqual(rhr?.percent ?? -1, 100.0 / 56.0, accuracy: 1e-9)
+        // 14.24 vs 14.16 both print "14.2": flat, whatever the raw difference.
+        XCTAssertEqual(PulseDisplay.compare(value: 14.24, baseline: 14.16, fractionDigits: 1)?.direction, .flat)
+        // Half away from zero, as the engine rounds: 14.25 prints "14.3".
+        XCTAssertEqual(PulseDisplay.compare(value: 14.25, baseline: 14.2, fractionDigits: 1)?.direction, .up)
+        XCTAssertNil(PulseDisplay.compare(value: .nan, baseline: 50, fractionDigits: 0))
+    }
+
+    /// The arrow must never point against the engine's own "above / below baseline" verdict for the
+    /// same value and baseline (the What shaped it row printed right beside it). Swept over a grid,
+    /// including values that print equal and half-way cases, for both precisions the engine uses.
+    func testBaselineCompareNeverContradictsTheEngineVerdict() {
+        for digits in [0, 1] {
+            let step = digits == 0 ? 0.25 : 0.025
+            for i in 0...80 {
+                let value = 50 + Double(i) * step
+                for j in 0...80 {
+                    let baseline = 50 + Double(j) * step
+                    guard let c = PulseDisplay.compare(value: value, baseline: baseline, fractionDigits: digits) else {
+                        return XCTFail("no comparison for \(value) vs \(baseline)")
+                    }
+                    for points in [-3, 0, 3] {
+                        let verdict = RecoveryScorer.baselineVerdict(value: value, baseline: baseline,
+                                                                     deltaPoints: points, fractionDigits: digits)
+                        switch c.direction {
+                        case .up: XCTAssertTrue(verdict.hasPrefix("above baseline"), "\(value) vs \(baseline): \(verdict)")
+                        case .down: XCTAssertTrue(verdict.hasPrefix("below baseline"), "\(value) vs \(baseline): \(verdict)")
+                        case .flat:
+                            XCTAssertTrue(verdict == "at baseline" || verdict.hasPrefix("slightly"),
+                                          "\(value) vs \(baseline): \(verdict)")
+                        }
+                    }
+                }
+            }
+        }
     }
 
     func testDayKeyArithmeticIsZoneIndependentAndCrossesMonthsAndDST() {

@@ -73,6 +73,7 @@ enum PulseDemo {
 /// captured by `simctl` (which cannot tap or swipe):
 ///   `--pulse-tab home|health|more`     the selected tab
 ///   `--pulse-day N`                    Home N days back
+///   `--pulse-night N`                  the Sleep dive N nights back
 ///   `--pulse-push recovery|strain|sleep`  push a deep dive onto Home
 ///   `--pulse-sheet actions`            present the ＋ menu
 ///   `--pulse-scroll <anchor>`          scroll to a section id ("myday", "stats", "stress", "bottom", …)
@@ -94,6 +95,9 @@ enum PulseDebugLaunch {
     }
 
     static var dayOffset: Int? { value("--pulse-day").flatMap(Int.init) }
+
+    /// `--pulse-night N`: open the Sleep dive N nights back from the latest.
+    static var nightIndex: Int? { value("--pulse-night").flatMap(Int.init) }
 
     static var push: PulseRoute? {
         switch value("--pulse-push") {

@@ -99,12 +99,8 @@ struct PulseRecoveryView: View {
         }
 
         if !s.drivers.isEmpty, let confidence = s.confidence {
-            // The relative skin-temperature marker is left off: the Context card above already states
-            // the same night's deviation, and a third copy on one screen is noise.
-            PulseCard {
-                ChargeBreakdownSection(drivers: s.drivers, confidence: confidence, skinTempRel: nil)
-            }
-            .id("pulse.shaped")
+            PulseWhatShapedIt(drivers: s.drivers, confidence: confidence)
+                .id("pulse.shaped")
         }
 
         PulseRecoveryHistory(bars: s.history, range: $range)
@@ -206,7 +202,58 @@ struct PulseSegmentBar: View {
     }
 }
 
-/// Rows of contributors, each against its 30-day average.
+/// "What shaped it": the engine's per-term points, one upstream `ChargeDriverRow` per driver, under a
+/// Pulse section header rather than inside `ChargeBreakdownSection`, whose leading divider (it sits
+/// under the classic ring) drew a stray rule across the top of a card. The relative skin-temperature
+/// marker is left off: the Context card above already states that night's deviation.
+struct PulseWhatShapedIt: View {
+    let drivers: [ChargeDriver]
+    let confidence: ScoreConfidence
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .center) {
+                PulseLabel(String(localized: "What shaped it"), color: PulseTheme.textSecondary)
+                    .accessibilityAddTraits(.isHeader)
+                Spacer(minLength: 8)
+                PulseChip(text: confidenceTitle, tint: confidenceTint)
+                    .accessibilityLabel(confidenceAccessibility)
+            }
+            .padding(.horizontal, 4)
+            PulseCard {
+                VStack(spacing: 18) {
+                    let biggest = drivers.map { abs($0.deltaPoints) }.max() ?? 1
+                    ForEach(Array(drivers.enumerated()), id: \.offset) { _, driver in
+                        ChargeDriverRow(driver: driver, maxMagnitude: biggest)
+                    }
+                }
+            }
+        }
+    }
+
+    /// Spelled out: the classic chip's "REL." / "EST." abbreviations do not read on their own.
+    private var confidenceTitle: String {
+        switch confidence {
+        case .solid: return String(localized: "Reliable")
+        case .building: return String(localized: "Estimate")
+        case .calibrating: return String(localized: "Calibrating")
+        }
+    }
+
+    private var confidenceTint: Color {
+        confidence == .solid ? PulseTheme.accent : PulseTheme.textSecondary
+    }
+
+    private var confidenceAccessibility: String {
+        switch confidence {
+        case .solid: return String(localized: "Confidence: reliable")
+        case .building: return String(localized: "Confidence: estimate")
+        case .calibrating: return String(localized: "Confidence: calibrating")
+        }
+    }
+}
+
+/// Rows of contributors, each against the engine's baseline or, for terms without one, its 30-day mean.
 struct PulseContributorsCard: View {
     let title: String
     let trailing: String?

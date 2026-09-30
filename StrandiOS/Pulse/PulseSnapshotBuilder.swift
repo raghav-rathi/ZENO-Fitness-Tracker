@@ -733,9 +733,15 @@ actor PulseSnapshotBuilder {
         let days = r.days
         let restByDay = Dictionary(rest.map { ($0.day, $0.value) }, uniquingKeysWith: { _, last in last })
 
+        // Contributors are read off the SAME row the dial shows (its own, or the carried night's), so the
+        // inputs never describe a different night from the number above them.
+        let r0 = source
+        let sourceDay = r0?.day
+
         func series(_ f: (DailyMetric) -> Double?) -> [(day: String, value: Double)] {
             days.compactMap { m in f(m).map { (day: m.day, value: $0) } }
         }
+        /// A contributor against its 30-day mean (the terms the engine has no learned baseline for).
         func contributor(id: String, title: String, value: Double?, day: String?, unit: String,
                          text: (Double) -> String, history: [(day: String, value: Double)],
                          route: TabRoute?, flatPercent: Double = 2) -> PulseContributor {
@@ -745,26 +751,70 @@ actor PulseSnapshotBuilder {
                 id: id, title: title,
                 value: value.map(text) ?? "–",
                 unit: value == nil ? "" : unit,
-                averageText: c.map { String(localized: "30-day avg \(PulseFormat.withUnit(text($0.average), unit))") },
+                averageText: c.map { String(localized: "30-day avg \(PulseFormat.withUnit(text($0.reference), unit))") },
                 comparison: c.map { PulseStatText.comparison($0, unit: unit, absoluteText: text) },
                 route: route)
         }
+        /// A contributor against the baseline the engine scored it with, printed as the engine prints
+        /// it; falls back to the 30-day mean when the engine had no usable baseline for the term.
+        func engineContributor(id: String, title: String, value: Double?, baseline: BaselineState?,
+                               fractionDigits: Int, unit: String, text: (Double) -> String,
+                               history: [(day: String, value: Double)], route: TabRoute) -> PulseContributor {
+            guard let value, let baseline,
+                  let c = PulseDisplay.compare(value: value, baseline: baseline.baseline,
+                                               fractionDigits: fractionDigits) else {
+                return contributor(id: id, title: title, value: value, day: sourceDay, unit: unit,
+                                   text: text, history: history, route: route)
+            }
+            // The value exactly as the comparison read it (rounded the engine's way), so the printed
+            // figure and its arrow cannot disagree at a half.
+            return PulseContributor(
+                id: id, title: title, value: text(c.reference + c.delta), unit: unit,
+                averageText: String(localized: "Baseline \(PulseFormat.withUnit(text(c.reference), unit))"),
+                comparison: PulseStatText.baselineComparison(c),
+                route: route)
+        }
 
-        // Contributors are read off the SAME row the dial shows (its own, or the carried night's), so the
-        // inputs never describe a different night from the number above them.
-        let r0 = source
-        let sourceDay = r0?.day
+        // The engine's baselines, folded ONCE here exactly as `ChargeBreakdownWiring.breakdown` folds them
+        // (the same series, configs, HRV recalibration epoch and usable gates), and read by BOTH the
+        // Contributors card and "What shaped it". The screen used to print a plain 30-day mean (55 bpm)
+        // in one card and the engine's baseline (56 bpm) in the next; one fold makes that impossible.
+        // Keep this in step with `ChargeBreakdownWiring.breakdown` if the engine's wiring changes.
+        let hrvBase = Baselines.foldHistory(days.map(\.avgHrv), dayKeys: days.map(\.day), cfg: Baselines.hrvCfg,
+                                            baselineEpoch: Baselines.hrvBaselineEpoch())
+        let rhrFold = Baselines.foldHistory(days.map { $0.restingHr.map(Double.init) }, cfg: Baselines.restingHRCfg)
+        let respFold = Baselines.foldHistory(days.map(\.respRateBpm), cfg: Baselines.respCfg)
+        let rhrBase = rhrFold.usable ? rhrFold : nil
+        let respBase = respFold.usable ? respFold : nil
+
+        // "What shaped it": the engine's own per-term breakdown for the dial's row. Like the classic
+        // sheet it hides when the night cannot honestly score (no HRV or resting HR, or an HRV baseline
+        // that is not usable yet), and then the contributors fall back to their 30-day means as well.
+        var drivers: [ChargeDriver] = []
+        var confidence: ScoreConfidence?
+        if let row = r0, let hrv = row.avgHrv, let rhr = row.restingHr, hrvBase.usable {
+            drivers = RecoveryScorer.chargeDrivers(
+                hrv: hrv, rhr: Double(rhr), resp: row.respRateBpm,
+                hrvBaseline: hrvBase, rhrBaseline: rhrBase, respBaseline: respBase,
+                sleepPerf: restByDay[row.day].map { $0 / 100.0 },
+                skinTempDev: row.skinTempDevC)
+            confidence = ScoreConfidence.charge(recovery: row.recovery, hrvBaseline: hrvBase)
+        }
+        let scored = !drivers.isEmpty
+
         let contributors = [
-            contributor(id: "hrv", title: String(localized: "Heart rate variability"), value: r0?.avgHrv,
-                        day: sourceDay, unit: "ms", text: PulseFormat.whole, history: series(\.avgHrv),
-                        route: .metric("hrv")),
-            contributor(id: "rhr", title: String(localized: "Resting heart rate"),
-                        value: r0?.restingHr.map(Double.init), day: sourceDay, unit: "bpm",
-                        text: PulseFormat.whole, history: series { $0.restingHr.map(Double.init) },
-                        route: .metric("rhr")),
-            contributor(id: "resp", title: String(localized: "Respiratory rate"), value: r0?.respRateBpm,
-                        day: sourceDay, unit: "rpm", text: PulseFormat.oneDecimal,
-                        history: series(\.respRateBpm), route: .metric("resp_rate")),
+            engineContributor(id: "hrv", title: String(localized: "Heart rate variability"), value: r0?.avgHrv,
+                              baseline: scored ? hrvBase : nil, fractionDigits: 0, unit: "ms",
+                              text: PulseFormat.whole, history: series(\.avgHrv), route: .metric("hrv")),
+            engineContributor(id: "rhr", title: String(localized: "Resting heart rate"),
+                              value: r0?.restingHr.map(Double.init), baseline: scored ? rhrBase : nil,
+                              fractionDigits: 0, unit: "bpm", text: PulseFormat.whole,
+                              history: series { $0.restingHr.map(Double.init) }, route: .metric("rhr")),
+            engineContributor(id: "resp", title: String(localized: "Respiratory rate"), value: r0?.respRateBpm,
+                              baseline: scored ? respBase : nil, fractionDigits: 1, unit: "rpm",
+                              text: PulseFormat.oneDecimal, history: series(\.respRateBpm),
+                              route: .metric("resp_rate")),
+            // The engine scores sleep against a fixed "good night", not a learned baseline.
             contributor(id: "sleep", title: PulseScore.sleep.displayName,
                         value: sourceDay.flatMap { sleepPerformance(dayKey: $0, rest: rest, days: days) },
                         day: sourceDay, unit: "%",
@@ -787,12 +837,6 @@ actor PulseSnapshotBuilder {
                                        history: series(\.spo2Pct), route: .metric("spo2"), flatPercent: 1))
         }
 
-        // "What shaped it": the engine's own per-term breakdown for the dial's row, unchanged.
-        let breakdown = r0.flatMap { row in
-            ChargeBreakdownWiring.breakdown(days: days, row: row, sleepPerfPercent: restByDay[row.day],
-                                            hrvBaselineEpoch: Baselines.hrvBaselineEpoch())
-        }
-
         let keys = PulseDisplay.trailingDayKeys(endingOn: r.day.key, count: 90)
         let recByDay = Dictionary(days.compactMap { m in m.recovery.map { (m.day, $0) } },
                                   uniquingKeysWith: { _, last in last })
@@ -804,7 +848,7 @@ actor PulseSnapshotBuilder {
         guard isCurrent(r) else { return nil }
         return RecoverySnapshot(seq: r.seq, day: r.day, dial: dial, sourceDayKey: sourceDay,
                                 contributors: contributors, context: context,
-                                drivers: breakdown?.drivers ?? [], confidence: breakdown?.confidence,
+                                drivers: drivers, confidence: confidence,
                                 history: history)
     }
 
@@ -858,31 +902,32 @@ actor PulseSnapshotBuilder {
 
     // MARK: - Sleep
 
-    /// The index of the newest night that ended on or before `dayKey` (the night Home's day refers to).
-    func nightIndex(for r: PulseRequest) async -> Int {
-        begin(r.seq)
-        let groups = await nightGroups(r)
-        return groups.firstIndex { g in
-            guard let end = g.first?.endTs else { return false }
-            return Repository.localDayKey(Date(timeIntervalSince1970: TimeInterval(end))) <= r.day.key
-        } ?? 0
-    }
-
-    func sleep(_ r: PulseRequest, nightIndex: Int) async -> SleepSnapshot? {
+    /// The Sleep dive for the newest night that ended on or before `anchorKey` (a wake day key; Home's
+    /// day when nil).
+    ///
+    /// Nights are addressed by wake day, never by position: a newly banked night shifts every index by
+    /// one, so an index kept across a refresh would silently swap the screen to the neighbouring night.
+    func sleep(_ r: PulseRequest, onOrBefore anchorKey: String?) async -> SleepSnapshot? {
         begin(r.seq)
         let groups = await nightGroups(r)
         let habitual = await habitualMidsleep()
         let rest = await restSeries()
         guard isCurrent(r) else { return nil }
-        let count = groups.count
-        guard count > 0 else {
-            return SleepSnapshot(seq: r.seq, nightIndex: 0, nightCount: 0, wakeDayKey: nil, onset: nil,
-                                 wake: nil, dial: PulseDialData(score: .sleep, value: nil, state: .noData),
+        let anchor = anchorKey ?? r.day.key
+        // `navDays` groups sessions by the local day they END on, newest first.
+        let keys = groups.map { g in
+            Repository.localDayKey(Date(timeIntervalSince1970: TimeInterval(g.first?.endTs ?? 0)))
+        }
+        guard !keys.isEmpty else {
+            return SleepSnapshot(seq: r.seq, anchorKey: anchor, nightIndex: 0, nightKeys: [], wakeDayKey: nil,
+                                 onset: nil, wake: nil,
+                                 dial: PulseDialData(score: .sleep, value: nil, state: .noData),
                                  asleepMin: nil, inBedMin: nil, needMin: nil, contributors: [], spans: [],
                                  stages: [], sleepingHR: nil, lowestHR: nil, respRate: nil, naps: [],
                                  isStub: true)
         }
-        let index = min(max(0, nightIndex), count - 1)
+        // A day older than every banked night opens on the oldest night, the nearest one there is.
+        let index = keys.firstIndex { $0 <= anchor } ?? keys.count - 1
         let group = groups[index]
         let night = SleepModel.mergeDay(group, habitualMidsleepSec: habitual, motionByStart: [:])
         let endTs = night?.session.endTs ?? group.last?.endTs ?? 0
@@ -900,6 +945,9 @@ actor PulseSnapshotBuilder {
         let inBed = stages?.total
         // The need is the Sleep tab's (the imported need, else `SleepModel.sleepNeedMin`), and
         // consistency is its rolling bedtime score as of this night.
+        // TODO(analytics-merge): read the unified need here too. Upstream keeps two needs on purpose
+        // for now (#464): this descriptive one for "hours vs needed", the normative
+        // `SleepModel.debtNeedMin` behind debt and Home's Tonight row, so the two can differ.
         let need = r.importedSleep[wakeKey]?.needMin ?? SleepModel.sleepNeedMin(days: r.days)
         let hoursPct = asleep.flatMap { a in need > 0 && a > 0 ? min(100, a / need * 100) : nil }
         let effPct = stages.flatMap { s in s.total > 0 ? s.asleep / s.total * 100 : nil }
@@ -946,7 +994,7 @@ actor PulseSnapshotBuilder {
         }
 
         return SleepSnapshot(
-            seq: r.seq, nightIndex: index, nightCount: count, wakeDayKey: wakeKey,
+            seq: r.seq, anchorKey: anchor, nightIndex: index, nightKeys: keys, wakeDayKey: wakeKey,
             onset: night?.onsetDate,
             wake: night.map { Date(timeIntervalSince1970: TimeInterval($0.session.endTs)) },
             dial: dial, asleepMin: asleep, inBedMin: inBed, needMin: need,
@@ -1100,6 +1148,25 @@ enum PulseStatText {
             : String(localized: "\(magnitude) \(unit) below your 30-day average")
         return PulseComparison(direction: c.direction, text: "\(magnitude) \(unit)", caption: caption,
                                accessibility: spoken)
+    }
+
+    /// A value against the engine's learned baseline (`PulseDisplay.compare(value:baseline:…)`). Equal
+    /// printed figures read "Near baseline", which holds whether the engine calls the row "at baseline"
+    /// or "slightly above / below baseline" (both happen when the two figures print the same).
+    static func baselineComparison(_ c: PulseDisplay.Comparison) -> PulseComparison {
+        let caption = String(localized: "vs baseline")
+        guard c.direction != .flat, let pct = c.percent else {
+            return PulseComparison(direction: .flat, text: String(localized: "Near baseline"), caption: caption,
+                                   accessibility: String(localized: "near your baseline"))
+        }
+        // Figures that print differently are never "0%": a sub-percent gap still points the right way.
+        let n = Int(abs(pct).rounded())
+        let text = n == 0 ? "<1%" : "\(n)%"
+        let amount = n == 0 ? String(localized: "less than 1 percent") : String(localized: "\(n) percent")
+        let spoken = c.direction == .up
+            ? String(localized: "\(amount) above your baseline")
+            : String(localized: "\(amount) below your baseline")
+        return PulseComparison(direction: c.direction, text: text, caption: caption, accessibility: spoken)
     }
 }
 #endif

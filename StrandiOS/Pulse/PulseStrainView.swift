@@ -50,7 +50,7 @@ struct PulseStrainView: View {
                 VStack(spacing: 0) {
                     if s.workouts.isEmpty {
                         PulseRow(title: String(localized: "No activities"),
-                                 subtitle: String(localized: "Workouts you log or NOOP detects appear here"),
+                                 subtitle: String(localized: "Logged and auto-detected workouts appear here"),
                                  showsChevron: false) {
                             PulseRowIcon(symbol: "figure.run", tint: PulseTheme.textTertiary)
                         }

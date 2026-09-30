@@ -67,26 +67,46 @@ public enum PulseDisplay {
     /// Which way a value sits relative to its recent average.
     public enum Direction: String, Equatable, Sendable { case up, down, flat }
 
-    /// A value compared with the mean of the days before it.
+    /// A value compared with a reference: the mean of the days before it, or a learned baseline.
     public struct Comparison: Equatable, Sendable {
-        /// Mean of the window's values (the days strictly before the compared day).
-        public let average: Double
-        /// `value - average`, in the metric's own unit.
+        /// What the value was compared with: the window's mean (`compare(value:history:…)`) or the
+        /// baseline as printed (`compare(value:baseline:…)`).
+        public let reference: Double
+        /// `value - reference`, in the metric's own unit.
         public let delta: Double
-        /// `delta` as a percentage of `|average|`, or nil when the average is too close to zero for a
-        /// percentage to mean anything (a skin-temperature deviation centred on 0, for one).
+        /// `delta` as a percentage of `|reference|`, or nil when the reference is too close to zero
+        /// for a percentage to mean anything (a skin-temperature deviation centred on 0, for one).
         public let percent: Double?
-        /// How many days backed the average.
+        /// How many days backed the reference (0 for a learned baseline, which carries no window).
         public let samples: Int
         public let direction: Direction
 
-        public init(average: Double, delta: Double, percent: Double?, samples: Int, direction: Direction) {
-            self.average = average
+        public init(reference: Double, delta: Double, percent: Double?, samples: Int, direction: Direction) {
+            self.reference = reference
             self.delta = delta
             self.percent = percent
             self.samples = samples
             self.direction = direction
         }
+    }
+
+    /// Compare `value` with a LEARNED baseline (the recovery engine's), the way the engine reads it.
+    ///
+    /// Both numbers are first rounded to `fractionDigits` with the engine's own rounding
+    /// (`RecoveryScorer.displayRounded`, half away from zero), and the direction and percentage come
+    /// from those printed figures: equal figures read `.flat`, otherwise the sign decides. That is the
+    /// rule `RecoveryScorer.baselineVerdict` uses for "above / below baseline", so an arrow drawn from
+    /// this can never point against the engine's verdict for the same row, nor against the two numbers
+    /// printed beside it. `reference` is the ROUNDED baseline, ready to print.
+    public static func compare(value: Double, baseline: Double, fractionDigits: Int,
+                               percentFloor: Double = 0.5) -> Comparison? {
+        guard value.isFinite, baseline.isFinite, fractionDigits >= 0 else { return nil }
+        let shown = RecoveryScorer.displayRounded(value, fractionDigits: fractionDigits)
+        let reference = RecoveryScorer.displayRounded(baseline, fractionDigits: fractionDigits)
+        let delta = shown - reference
+        let percent: Double? = abs(reference) >= percentFloor ? delta / abs(reference) * 100.0 : nil
+        let direction: Direction = shown == reference ? .flat : (delta > 0 ? .up : .down)
+        return Comparison(reference: reference, delta: delta, percent: percent, samples: 0, direction: direction)
     }
 
     /// Compare `value` with the mean of `history` over the `windowDays` calendar days BEFORE `dayKey`.
@@ -124,7 +144,7 @@ public enum PulseDisplay {
         } else {
             direction = abs(delta) < flatAbsolute ? .flat : (delta > 0 ? .up : .down)
         }
-        return Comparison(average: average, delta: delta, percent: percent, samples: n, direction: direction)
+        return Comparison(reference: average, delta: delta, percent: percent, samples: n, direction: direction)
     }
 
     /// The trailing `count` calendar days ending ON `dayKey` (inclusive), oldest first, as day keys.
