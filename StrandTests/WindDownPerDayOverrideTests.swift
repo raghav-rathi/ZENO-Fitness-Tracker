@@ -14,17 +14,32 @@ final class WindDownPerDayOverrideTests: XCTestCase {
 
     private let perDayKey = "windDown.perDayWakeMinutes"
     private let wakeKey = "windDown.wakeMinutes"
+    /// The need inputs: the user's own value and the unified model's learned tonight-need, which any
+    /// engine pass in the same test process writes. Cleared so "default 8h need" below means exactly that.
+    private let needKeys = ["windDown.sleepNeedMinutes", "windDown.learnedNeedMinutes"]
 
     override func setUp() {
         super.setUp()
         UserDefaults.standard.removeObject(forKey: perDayKey)
         UserDefaults.standard.removeObject(forKey: wakeKey)
+        for key in needKeys { UserDefaults.standard.removeObject(forKey: key) }
     }
 
     override func tearDown() {
         UserDefaults.standard.removeObject(forKey: perDayKey)
         UserDefaults.standard.removeObject(forKey: wakeKey)
+        for key in needKeys { UserDefaults.standard.removeObject(forKey: key) }
         super.tearDown()
+    }
+
+    /// With no value of their own the nudge counts back from tonight's unified need (rounded to 5 min);
+    /// a stored user value wins; with neither it is 8 h.
+    func testLearnedNeedIsTheDefaultAndAUserValueWins() {
+        XCTAssertEqual(WindDownNudge.sleepNeedMinutes, 8 * 60)
+        WindDownNudge.updateLearnedNeed(minutes: 512)
+        XCTAssertEqual(WindDownNudge.sleepNeedMinutes, 510)
+        UserDefaults.standard.set(7 * 60, forKey: "windDown.sleepNeedMinutes")
+        XCTAssertEqual(WindDownNudge.sleepNeedMinutes, 7 * 60)
     }
 
     func testNoOverrides_everyDayUsesDefaultWake() {
