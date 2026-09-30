@@ -357,7 +357,10 @@ targets:
       - package: MarkdownUI
       - package: ZIPFoundation
       - package: PolarProtocol
-      # - target: NOOPiOSWidgets
+      # Live Activities (live HR, Lift session, strap sync) ride ActivityKit rather than the App Group,
+      # so the extension is embedded even under free signing. Its Home/Lock Screen widgets still need
+      # the App Group to read the app's snapshot and show a placeholder without it.
+      - target: NOOPiOSWidgets
       # - target: NOOPWatch
 
   # WidgetKit + Live Activity extension — the iOS analogue of the macOS menu-bar
@@ -388,11 +391,12 @@ targets:
         AppGroupIdentifier: "$(APP_GROUP_ID)"
         NSExtension:
           NSExtensionPointIdentifier: com.apple.widgetkit-extension
+    # Free personal-team signing carries no App Group (the app target dropped it too). With a paid
+    # account or SideStore, restore `com.apple.security.application-groups: [$(APP_GROUP_ID)]` here and
+    # on the app target so the Home/Lock Screen widgets can read the shared snapshot again.
     entitlements:
       path: StrandiOSWidgets/NOOPWidgets.entitlements
-      properties:
-        com.apple.security.application-groups:
-          - $(APP_GROUP_ID)
+      properties: {}
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: $(BUNDLE_ID_PREFIX).noop.widgets
