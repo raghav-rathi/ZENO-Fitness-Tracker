@@ -1032,6 +1032,9 @@ actor PulseSnapshotBuilder {
         guard reading.key != "spo2raw" else { return nil }
         if reading.key == "spo2" && reading.value == nil { return nil }
 
+        // Titles are Pulse's own names for these metrics, the ones Recovery uses, rather than the classic
+        // monitor's abbreviations ("Resp Rate", "Blood O₂"), so one metric reads the same everywhere.
+        let title: String
         let route: TabRoute
         let population: ClosedRange<Double>
         let cfg: MetricCfg?
@@ -1039,18 +1042,23 @@ actor PulseSnapshotBuilder {
         let isAbsoluteSkin = reading.key == "skin" && (reading.value.map(VitalBands.isAbsoluteSkinTemp) ?? false)
         switch reading.key {
         case "resp":
+            title = String(localized: "Respiratory rate")
             route = .metric("resp_rate"); population = 12...20; cfg = Baselines.respCfg
             extract = { $0.respRateBpm }
         case "spo2":
+            title = String(localized: "Blood oxygen")
             route = .metric("spo2"); population = 95...100; cfg = nil
             extract = { $0.spo2Pct }
         case "rhr":
+            title = String(localized: "Resting heart rate")
             route = .metric("rhr"); population = 40...60; cfg = Baselines.restingHRCfg
             extract = { $0.restingHr.map(Double.init) }
         case "hrv":
+            title = String(localized: "Heart rate variability")
             route = .metric("hrv"); population = 40...120; cfg = Baselines.hrvCfg
             extract = { $0.avgHrv }
         case "skin":
+            title = String(localized: "Skin temperature")
             route = .metric("skin_temp")
             population = isAbsoluteSkin ? 33...36 : (-0.6)...0.6
             cfg = isAbsoluteSkin ? Baselines.metricCfg["skin_temp"] : VitalBands.skinTempDeviationCfg
@@ -1104,7 +1112,7 @@ actor PulseSnapshotBuilder {
             : "\(format(typical.lowerBound))–\(format(typical.upperBound))"
         return PulseVital(
             id: reading.key,
-            title: reading.label,
+            title: title,
             value: v.map(format),
             unit: reading.unit,
             band: reading.banding.band,
