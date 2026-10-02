@@ -71,8 +71,9 @@ extension PulseTheme {
         static let homeDiameter: CGFloat = 88
         static let homeStroke: CGFloat = 6
         static let homeSpacing: CGFloat = 33
-        /// The gap between a Home dial's ring and its "LABEL ›" caption.
-        static let labelGap: CGFloat = 12
+        /// The gap between a Home dial's ring and its "LABEL ›" caption's text frame. The frame starts
+        /// ≈2.5 pt above the caps, so the caps land ≈12.5 pt under the ring (spec: 12–13 pt).
+        static let labelGap: CGFloat = 10
         /// Deep dive: one 260 pt ring, 15 pt stroke.
         static let heroDiameter: CGFloat = 260
         static let heroStroke: CGFloat = 15
@@ -97,8 +98,17 @@ extension PulseTheme {
         /// Between the capsule and the Coach button.
         static let coachGap: CGFloat = 12
         static let coachSize: CGFloat = 64
-        /// The capsule's bottom edge above the screen's bottom edge.
-        static let bottomOffset: CGFloat = 21
+        /// The capsule's bottom edge sits this far BELOW the bottom safe-area edge on Face ID iPhones:
+        /// 29 pt above the screen edge on the 393 × 852 reference capture (reviews/02) and 28 pt on a
+        /// 2026 Pro Max capture. (The spec's "≈21 pt" matches neither capture.)
+        static let belowSafeArea: CGFloat = 5
+        /// The capsule's bottom edge above the screen edge on iPhones without a home indicator.
+        static let bottomOffsetWithoutIndicator: CGFloat = 12
+        /// The capsule's bottom edge above the screen edge for a given bottom safe-area inset.
+        static func bottomOffset(safeAreaBottom: CGFloat) -> CGFloat {
+            safeAreaBottom > 0 ? max(bottomOffsetWithoutIndicator, safeAreaBottom - belowSafeArea)
+                               : bottomOffsetWithoutIndicator
+        }
         static let iconSize: CGFloat = 22
         /// The ring around the coach monogram.
         static let coachRing: CGFloat = 32

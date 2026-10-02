@@ -84,9 +84,14 @@ struct PulseRootView: View {
                        quickAction: { perform($0) })
     }
 
+    /// The capsule's bottom edge above the screen's bottom edge.
+    private var barBottomFromScreenBottom: CGFloat {
+        PulseTheme.TabBarMetrics.bottomOffset(safeAreaBottom: bottomSafeArea)
+    }
+
     /// The capsule's top edge above the screen's bottom edge.
     private var barTopFromScreenBottom: CGFloat {
-        PulseTheme.TabBarMetrics.bottomOffset + PulseTheme.TabBarMetrics.height
+        barBottomFromScreenBottom + PulseTheme.TabBarMetrics.height
     }
 
     private var chromeMetrics: PulseChromeMetrics {
@@ -120,13 +125,18 @@ struct PulseRootView: View {
         }
         .modifier(PulseLiftSessionChrome(
             bottomPadding: selectedTabAtRoot ? max(8, barTopFromScreenBottom - bottomSafeArea + 8) : 8))
-        .overlay(alignment: .bottom) {
+        .overlay {
             if selectedTabAtRoot {
-                PulseBottomChrome(tabs: PulseTab.allCases, selection: selectedTab, coach: coachAvailability,
-                                  onSelect: select, onCoach: { openCoach(seed: nil) })
-                    .padding(.bottom, PulseTheme.TabBarMetrics.bottomOffset)
-                    .ignoresSafeArea(.container, edges: .bottom)
-                    .transition(.opacity)
+                // A flexible column, so ignoring the bottom safe area really reaches the screen's edge
+                // (a fixed-height view only rests on the safe-area edge).
+                VStack(spacing: 0) {
+                    Spacer(minLength: 0)
+                    PulseBottomChrome(tabs: PulseTab.allCases, selection: selectedTab, coach: coachAvailability,
+                                      onSelect: select, onCoach: { openCoach(seed: nil) })
+                        .padding(.bottom, barBottomFromScreenBottom)
+                }
+                .ignoresSafeArea(.container, edges: .bottom)
+                .transition(.opacity)
             }
         }
         .ignoresSafeArea(.keyboard, edges: .bottom)

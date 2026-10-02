@@ -32,7 +32,8 @@ struct PulseChromeMetrics: Equatable {
     /// from the bottom safe-area edge.
     var tabRootBottomInset: CGFloat = PulseTheme.Layout.floatingChromeInset
     /// The distance from the screen's bottom edge to the capsule's top edge (where the scrim ends).
-    var barTopFromScreenBottom: CGFloat = PulseTheme.TabBarMetrics.bottomOffset + PulseTheme.TabBarMetrics.height
+    var barTopFromScreenBottom: CGFloat = PulseTheme.TabBarMetrics.bottomOffset(safeAreaBottom: 34)
+        + PulseTheme.TabBarMetrics.height
 }
 
 private struct PulseChromeMetricsKey: EnvironmentKey {
