@@ -452,6 +452,18 @@ extension View {
 // MARK: - DEBUG names (`--pulse-route <name>`)
 
 #if DEBUG
+/// A `PulseScreenRoute` declared outside the route enum, as a group declares its own sub-screens, so
+/// `--pulse-route screen-sample` shows the open `.screen` case pushing like any other route.
+struct PulseSampleScreenRoute: PulseScreenRoute {
+    let name: String
+
+    var view: some View {
+        PulsePlaceholderScreen(name: name, symbol: "square.stack.3d.up",
+                               summary: "A group's own destination, declared in its folder and opened with `.route`.",
+                               spec: "ARCHITECTURE §4", group: "any", coach: .button)
+    }
+}
+
 extension PulseRoute {
     /// Every route by its `--pulse-route` name. Names are kebab-case; "trend-view:<metric>" picks a metric,
     /// "classic-<screen>" opens a classic screen, "tab-<route>" a shared metric route.
@@ -473,6 +485,7 @@ extension PulseRoute {
             ("year-in-review", .yearInReview), ("challenges", .challenges), ("day-timeline", .dayTimeline),
             ("privacy-data", .privacyData), ("report-problem", .reportProblem), ("first-week", .firstWeek),
             ("training-load", .trainingLoad), ("guided-session", .guidedSession),
+            ("screen-sample", PulseSampleScreenRoute(name: "Sample").route),
         ]
         let classic: [(String, PulseClassicDestination)] = [
             ("trends", .trends), ("weekly-digest", .weeklyDigest), ("report", .report),
