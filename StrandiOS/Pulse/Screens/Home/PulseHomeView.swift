@@ -55,7 +55,7 @@ struct PulseHomeView: View {
             PulseDialsRow(home: model.home)
                 .padding(.top, PulseTheme.Header.dialsTop)
                 .pulseScrolledPast($dialsScrolledOff, threshold: 8)
-            PulseHomeContent(extras: currentExtras, dashboardItems: dashboardItems)
+            PulseHomeContent(extras: extras, dashboardItems: dashboardItems)
         }
         .overlay(alignment: .top) {
             if dialsScrolledOff, let home = model.home {
@@ -132,16 +132,18 @@ struct PulseDialsRow: View {
 
 // MARK: - Content
 
-/// Everything below the dials, rendered from `model.home`: white-10% skeleton blocks while the first
-/// snapshot builds (after 200 ms, for at least 400 ms), never a spinner.
+/// Everything below the dials, rendered from `model.home` and Home's own facts: white-10% skeleton blocks
+/// while the first of both builds (after 200 ms, for at least 400 ms), never a spinner, so the coaching
+/// card never pops in above the tiles after launch.
 struct PulseHomeContent: View {
+    /// The latest extras built, possibly for the previous day while a new day builds.
     let extras: HomeExtrasSnapshot?
     let dashboardItems: [PulseDashboardItem]
 
     @Environment(PulseModel.self) private var model
 
     var body: some View {
-        PulseLoadingGate(isLoading: model.home == nil) {
+        PulseLoadingGate(isLoading: model.home == nil || extras == nil) {
             if let home = model.home {
                 PulseHomeSections(home: home, extras: extras, dashboardItems: dashboardItems)
                     // While a newly selected day builds, the previous day's numbers dim rather than pass for it.
@@ -158,8 +160,15 @@ struct PulseHomeContent: View {
 /// The sections in WHOOP's 2026 order, for today, a past day or a new member.
 struct PulseHomeSections: View {
     let home: HomeSnapshot
+    /// Home's own facts. While a newly selected day's are still building these are the previous day's:
+    /// only the dashboard rows read them then, dimmed (`extrasStale`); everything day-specific reads
+    /// `current`.
     let extras: HomeExtrasSnapshot?
     let dashboardItems: [PulseDashboardItem]
+
+    /// The extras for the day on screen, never another day's.
+    private var current: HomeExtrasSnapshot? { extras?.day == home.day ? extras : nil }
+    private var extrasStale: Bool { extras != nil && current == nil }
 
     @Environment(\.pulseCoach) private var coach
 
@@ -173,7 +182,7 @@ struct PulseHomeSections: View {
             // The new member's Home goes straight from the dials to Get Started (onboarding/31a,
             // completeness-critic/24): no coaching card and no monitor tiles yet.
             if isToday && !isNewMember {
-                if let base = extras?.coaching {
+                if let base = current?.coaching {
                     // The stack, when a card is due, then the tiles 22 pt under its peek.
                     PulseCoachingStackHost(base: base, home: home)
                 } else {
@@ -189,7 +198,7 @@ struct PulseHomeSections: View {
                 .id("pulse.myday")
             VStack(spacing: PulseTheme.Layout.stackGap) {
                 if isNewMember {
-                    newMemberDay(extras?.start)
+                    newMemberDay(current?.start)
                 } else {
                     myDay
                 }
@@ -204,7 +213,7 @@ struct PulseHomeSections: View {
                     .padding(.top, PulseTheme.Layout.headerGap)
             }
 
-            if let progress = extras?.start.calibration {
+            if let progress = current?.start.calibration {
                 PulseSectionHeader(String(localized: "Looking Ahead"))
                     .padding(.top, PulseTheme.Layout.sectionGap)
                     .id("pulse.looking-ahead")
@@ -213,7 +222,8 @@ struct PulseHomeSections: View {
             }
 
             PulseDashboardViews.Section(home: home, extras: extras, items: dashboardItems,
-                                        personalizing: extras?.start.personalizing ?? false)
+                                        personalizing: current?.start.personalizing ?? false,
+                                        extrasStale: extrasStale)
                 .padding(.top, PulseTheme.Layout.sectionGap)
 
             // The footer: a small ZENO mark at white 50%, 40 pt above the bottom inset.
@@ -229,7 +239,7 @@ struct PulseHomeSections: View {
     @ViewBuilder
     private var myDay: some View {
         if isToday {
-            PulseHomeCoachEntry(home: home, facts: extras?.outlook)
+            PulseHomeCoachEntry(home: home, facts: current?.outlook)
         }
         if isToday && PulseDailyOutlook.isEvening(home), let tonight = home.tonight {
             PulseTonightsSleepCard(tonight: tonight)

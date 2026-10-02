@@ -19,6 +19,9 @@ enum PulseDashboardViews {
         let items: [PulseDashboardItem]
         /// Fewer than 7 scored days: the Personalization card shows and CUSTOMIZE hides.
         let personalizing: Bool
+        /// The rows' values are the previous day's while this day's build: they dim, as Home does while a
+        /// day loads, rather than pass for it or flash "no data".
+        var extrasStale = false
 
         @Environment(\.pulseNavigator) private var navigator
 
@@ -45,8 +48,10 @@ enum PulseDashboardViews {
                             PulseLink(route(item, value: value)) {
                                 PulseDashboardMetricRow(item: item, value: value,
                                                         caption: value.captionText(dayKey: home.day.key))
+                                    .opacity(extrasStale ? 0.45 : 1)
                             }
                             .buttonStyle(PulsePressStyle())
+                            .disabled(extrasStale)
                         }
                     }
                 }
