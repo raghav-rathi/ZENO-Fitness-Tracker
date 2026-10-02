@@ -17,13 +17,14 @@
 #   gallery                          the component gallery          (--pulse-gallery)
 #   actions                          the ＋ menu                     (--pulse-sheet actions)
 #   coach-sheet                      the Coach sheet / setup        (--pulse-sheet coach)
+#   menu                             Home with the ＋ menu open      (--pulse-sheet menu)
 #   <route>                          any route by name              (--pulse-route <route>), e.g.
 #                                    sleep-dive, recovery-dive, strain-dive, sleep-planner, trend-view,
 #                                    trend-view:rhr, healthspan, profile, journal, classic-settings, …
 #                                    (the full list: PulseRoute.debugCatalog in Shell/PulseRoutes.swift)
 # Quote a target to pass extra launch arguments after it; they are added verbatim and the file name is
 # built from the whole string:
-#   "home --pulse-scroll stats"      Home scrolled to Key Stats
+#   "home --pulse-scroll dashboard"  Home scrolled to My Dashboard
 #   "home --pulse-day 3"             Home three days back
 #   "home -noop.coachEnabled NO"     Home with Coach switched off (a UserDefaults launch argument)
 #   "gallery --pulse-scroll gallery-charts"
@@ -32,12 +33,17 @@
 #
 # Example:
 #   Tools/zeno/shoot.sh 3F6D8EB8-27A5-4842-BAA1-AB85CCDF7242 /tmp/shots \
-#     build/DD/Build/Products/Debug-iphonesimulator/"NOOP Staging.app" --fresh home "home --pulse-scroll stats" sleep-dive
+#     build/DD/Build/Products/Debug-iphonesimulator/"NOOP Staging.app" --fresh home "home --pulse-scroll dashboard" sleep-dive
 
 set -u
 
+usage() {
+    # The header comment only (everything up to the first blank line after it).
+    sed -n '2,36p' "$0"
+}
+
 if [ $# -lt 3 ]; then
-    sed -n '2,40p' "$0"
+    usage
     exit 2
 fi
 
@@ -52,7 +58,13 @@ TARGETS=()
 while [ $# -gt 0 ]; do
     case "$1" in
         --fresh) FRESH=1; shift ;;
-        --wait) WAIT=$2; shift 2 ;;
+        --wait)
+            if [ $# -lt 2 ] || ! [[ "$2" =~ ^[0-9]+$ ]]; then
+                echo "shoot.sh: --wait needs a number of seconds" >&2
+                usage
+                exit 2
+            fi
+            WAIT=$2; shift 2 ;;
         *) TARGETS+=("$1"); shift ;;
     esac
 done
@@ -89,6 +101,7 @@ for target in "${TARGETS[@]}"; do
         home|health|trends|more) args=(--pulse-tab "$name") ;;
         gallery) args=(--pulse-gallery) ;;
         actions) args=(--pulse-sheet actions) ;;
+        menu) args=(--pulse-tab home --pulse-sheet menu) ;;
         coach-sheet) args=(--pulse-sheet coach) ;;
         *) args=(--pulse-route "$name") ;;
     esac
