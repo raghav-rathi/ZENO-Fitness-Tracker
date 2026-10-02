@@ -178,6 +178,7 @@ private struct PulseCustomizeRowStyle: ViewModifier {
         content
             .padding(.leading, PulseTheme.Space.s + 2)
             .padding(.trailing, PulseTheme.Space.xs)
+            .padding(.vertical, PulseTheme.Space.xs)
             .frame(minHeight: 57)
             .listRowInsets(EdgeInsets(top: PulseTheme.Space.xs - 2, leading: PulseTheme.Layout.pageMargin,
                                       bottom: PulseTheme.Space.xs - 2, trailing: PulseTheme.Layout.pageMargin))

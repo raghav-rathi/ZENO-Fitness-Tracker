@@ -16,10 +16,28 @@ struct PulseMenstrualCardHost: View {
     @AppStorage(AppModel.cycleAwarenessKey) private var enabled = false
 
     var body: some View {
-        if enabled {
+        if let demo = PulseMenstrualCardHost.debugResult {
+            PulseMenstrualCard(result: demo)
+                .equatable()
+        } else if enabled {
             PulseMenstrualCard(result: app.cyclePhase)
                 .equatable()
         }
+    }
+
+    /// DEBUG `--pulse-cycle-demo`: a synthetic luteal estimate, so the card's phase, window and dot strip
+    /// can be captured without six weeks of temperature data. nil in Release and without the flag.
+    static var debugResult: CyclePhaseEngine.Result? {
+        #if DEBUG
+        guard CommandLine.arguments.contains("--pulse-cycle-demo") else { return nil }
+        let today = Repository.localDayKey(Date())
+        let window = CyclePhaseEngine.NextPeriodWindow(earliestDay: PulseDisplay.dayKey(today, offsetBy: 6) ?? today,
+                                                       latestDay: PulseDisplay.dayKey(today, offsetBy: 9) ?? today)
+        return CyclePhaseEngine.Result(phase: .luteal, confidence: .building, cycleDayLow: 21, cycleDayHigh: 21,
+                                       cycleLengthDays: 28, nextPeriodWindow: window, shiftMarkers: [], note: "")
+        #else
+        return nil
+        #endif
     }
 }
 

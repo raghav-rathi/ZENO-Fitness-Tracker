@@ -43,6 +43,7 @@ struct PulseCoachingStack: View {
     let onOpen: (PulseCoachingCardModel) -> Void
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     var body: some View {
         if let top = cards.first {
@@ -79,10 +80,11 @@ struct PulseCoachingStack: View {
                         .pulseText(.coachingTitle)
                         .foregroundStyle(PulseTheme.textPrimary)
                         .fixedSize(horizontal: false, vertical: true)
+                    // Up to four lines at the default sizes (§2.6 item 5); the card grows with larger text.
                     Text(model.body)
                         .pulseText(.body)
                         .foregroundStyle(PulseTheme.textSecondary)
-                        .lineLimit(4)
+                        .lineLimit(typeSize > .xxLarge ? nil : 4)
                         .fixedSize(horizontal: false, vertical: true)
                     if let cta = model.cta {
                         HStack(spacing: 6) {
@@ -220,6 +222,10 @@ private struct PulseCoachingStackContent: View, Equatable {
         .pulseAnimation(PulseMotion.chrome, value: cards.map(\.id))
     }
 
+    // TODO(achievement-card): group "more-profile" adds "Achievement unlocked" / "Level up" (§3.30) once
+    // achievements exist; feed them in here as cards like the rest (they are app state, not store data).
+    // TODO(auto-workout-card): the opt-in auto-detected workout (Save / Dismiss, §3.14 [Z]) needs
+    // `Repository.autoDetectCandidate()` split so its detection can run off the main actor first.
     private var models: [PulseCoachingCardModel] {
         var inputs = base
         inputs.illness = illness != nil
