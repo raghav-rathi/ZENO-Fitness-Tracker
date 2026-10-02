@@ -206,6 +206,18 @@ struct PulseTrendMetric: Identifiable, Equatable, Hashable {
     let source: PulseTrendSource
 
     var id: String { key }
+
+    /// The name on a Trends row, where WHOOP's dashboard names are shorter than the dropdown's.
+    var rowTitle: String {
+        switch key {
+        case "sleep_total_min": return String(localized: "Hours of Sleep")
+        case "hours_vs_needed_pct": return String(localized: "Hours vs. Needed")
+        case "restorative_min": return String(localized: "Restorative Sleep")
+        case "restorative_pct": return String(localized: "Restorative %")
+        case "strength_min": return String(localized: "Strength Time")
+        default: return title
+        }
+    }
 }
 
 // MARK: - The catalogue

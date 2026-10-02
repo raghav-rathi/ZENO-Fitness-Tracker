@@ -187,9 +187,9 @@ enum PulseDigestBuilder {
         func spokenValue(_ v: Double) -> String { "\(format.text(v)) \(unit)" }
         guard let latest = s.points.last else {
             guard coreMetrics.contains(m.key) else { return nil }
-            return .init(id: m.key, title: m.title, symbol: m.symbol, value: nil, unit: "",
+            return .init(id: m.key, title: m.rowTitle, symbol: m.symbol, value: nil, unit: "",
                          caption: String(localized: "No readings yet"), trend: nil, baseline: nil, spark: spark,
-                         color: color, accessibility: String(localized: "\(m.title), no readings yet"))
+                         color: color, accessibility: String(localized: "\(m.rowTitle), no readings yet"))
         }
         let history = s.points.map { (day: $0.day, value: $0.value) }
 
@@ -204,31 +204,31 @@ enum PulseDigestBuilder {
             let trend = reference.map { ref in
                 PulseTrend(delta: format.text(total) == format.text(ref) ? 0 : total - ref, polarity: m.polarity)
             }
-            return .init(id: m.key, title: m.title, symbol: m.symbol, value: text(total), unit: unit,
+            return .init(id: m.key, title: m.rowTitle, symbol: m.symbol, value: text(total), unit: unit,
                          caption: String(localized: "Last 7 days"), trend: trend, baseline: reference.map(text),
                          spark: spark, color: color,
-                         accessibility: String(localized: "\(m.title), \(spokenValue(total)) in the last 7 days"))
+                         accessibility: String(localized: "\(m.rowTitle), \(spokenValue(total)) in the last 7 days"))
         }
 
         let comparison = PulseDisplay.compare(value: latest.value, history: history, dayKey: latest.day)
         let baseline = comparison.map { text($0.reference) }
         if m.isRunningTotal && latest.day == today {
             // Still counting: no arrow against full days, as Home's tiles say "So far today".
-            return .init(id: m.key, title: m.title, symbol: m.symbol, value: text(latest.value), unit: unit,
+            return .init(id: m.key, title: m.rowTitle, symbol: m.symbol, value: text(latest.value), unit: unit,
                          caption: String(localized: "So far today"), trend: nil, baseline: baseline, spark: spark,
                          color: color,
-                         accessibility: String(localized: "\(m.title), \(spokenValue(latest.value)) so far today"))
+                         accessibility: String(localized: "\(m.rowTitle), \(spokenValue(latest.value)) so far today"))
         }
         let trend = comparison.map { c in
             PulseTrend(delta: text(latest.value) == text(c.reference) ? 0 : latest.value - c.reference,
                        polarity: m.polarity)
         }
         let caption = latest.day == today ? nil : PulseFormat.dayLabel(latest.day, template: "MMMd")
-        var spoken = "\(m.title), \(spokenValue(latest.value))"
+        var spoken = "\(m.rowTitle), \(spokenValue(latest.value))"
         if let caption { spoken += ", \(caption)" }
         if let trend { spoken += ", \(trend.accessibilityDescription)" }
         if let baseline { spoken += ", " + String(localized: "30-day average \(baseline)") }
-        return .init(id: m.key, title: m.title, symbol: m.symbol, value: text(latest.value), unit: unit,
+        return .init(id: m.key, title: m.rowTitle, symbol: m.symbol, value: text(latest.value), unit: unit,
                      caption: caption, trend: trend, baseline: baseline, spark: spark, color: color,
                      accessibility: spoken)
     }
@@ -296,9 +296,10 @@ enum PulseDigestBuilder {
                 label = PulseFormat.dayLabel(k, template: "EEE")
                 sub = PulseFormat.dayLabel(k, template: "d")
             } else {
-                let labelled = (keys.count - 1 - i) % 7 == 0
-                label = labelled ? PulseFormat.dayLabel(k, template: "MMM") : ""
-                sub = labelled ? PulseFormat.dayLabel(k, template: "d") : nil
+                // The date alone on every seventh day from the 1st (1, 8, 15, 22, 29): the pager already names
+                // the month, and a one- or two-digit label fits even the edge columns.
+                label = i % 7 == 0 ? PulseFormat.dayLabel(k, template: "d") : ""
+                sub = nil
             }
             let valueLabel: String? = mode == .week ? v.map { m.unit == "%" ? "\(PulseDisplay.displayedPercent($0))%" : m.format.text($0) } : nil
             return PulseChartDatum(id: k, label: label, sublabel: sub, value: v, color: color, valueLabel: valueLabel)

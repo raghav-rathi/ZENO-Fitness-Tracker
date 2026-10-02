@@ -37,6 +37,32 @@ enum PulseTrendPageBuilder {
             showsCycleNote: !chart.phases.isEmpty)
     }
 
+    // MARK: What correlates
+
+    /// The metrics whose daily values move with `metric`'s over the page's window, strongest first.
+    static func correlations(metric: PulseTrendMetric, series: PulseTrendSeries,
+                             others: [(PulseTrendMetric, PulseTrendSeries)], anchor: String,
+                             range requested: PulseTrendMath.Range, page: Int) -> [PulseTrendCorrelation] {
+        let range = metric.ranges.contains(requested) ? requested : (metric.ranges.first ?? .week)
+        let earliest = series.earliest
+        let clamped = max(0, min(page, PulseTrendMath.lastPage(range, anchor: anchor, earliest: earliest)))
+        guard let window = PulseTrendMath.window(range, anchor: anchor, page: clamped, earliest: earliest) else { return [] }
+        let mine = PulseTrendMath.points(series.points, in: window).map { (day: $0.day, value: $0.value) }
+        guard mine.count >= minimumCorrelationDays else { return [] }
+        var rows: [PulseTrendCorrelation] = []
+        for (other, otherSeries) in others {
+            let theirs = PulseTrendMath.points(otherSeries.points, in: window).map { (day: $0.day, value: $0.value) }
+            let pairs = CorrelationEngine.alignByDay(mine, theirs)
+            guard pairs.count >= minimumCorrelationDays, let c = CorrelationEngine.pearson(pairs),
+                  abs(c.r) >= 0.3 else { continue }
+            rows.append(PulseTrendCorrelation(id: other.key, title: other.rowTitle, symbol: other.symbol, r: c.r, n: c.n))
+        }
+        return Array(rows.sorted { abs($0.r) > abs($1.r) }.prefix(5))
+    }
+
+    /// Shared days below which a correlation is not shown (the classic card's n ≥ 10).
+    static let minimumCorrelationDays = 10
+
     // MARK: Pager
 
     /// "Sep 19 - Sep 25, 26"; both years once the window crosses one ("Sep 3, 23 - Feb 29, 24"). Day keys,
@@ -102,7 +128,9 @@ enum PulseTrendPageBuilder {
                 previous = range == .all ? nil : PulseTrendMath.average(series.points, in: window.previous)?.value
             case .weeklyTotal:
                 current = PulseTrendMath.averageWeeklyTotal(series.points, in: window)
-                previous = range == .all ? nil : PulseTrendMath.averageWeeklyTotal(series.points, in: window.previous)
+                // A week with days of unknown zone time is a lower bound: it is not compared.
+                previous = range == .all || hasGaps(window) || hasGaps(window.previous) ? nil
+                    : PulseTrendMath.averageWeeklyTotal(series.points, in: window.previous)
             }
             let label: String
             if isWeeklyTotal {
@@ -118,6 +146,15 @@ enum PulseTrendPageBuilder {
                     ?? String(localized: "\(label), no readings"))
             return Headline(items: [item], current: current, previous: previous, excludedDay: excluded,
                             chartAverage: current)
+        }
+
+        /// True when a minute metric's window has days with no reading after its first one (an activity
+        /// without zones), so its totals cover only part of the period.
+        func hasGaps(_ w: PulseTrendMath.Window) -> Bool {
+            guard isWeeklyTotal, let first = series.earliest else { return false }
+            let expected = w.dayKeys.filter { $0 >= first && $0 <= anchor }
+            guard !expected.isEmpty else { return false }
+            return PulseTrendMath.points(series.points, in: w).count < expected.count
         }
 
         /// HOURS VS. NEEDED (HOURS): the average need (teal) over the average hours (sleep blue), each with a
@@ -212,6 +249,12 @@ enum PulseTrendPageBuilder {
                 }
             }
             if isWeeklyTotal {
+                if hasGaps(window) {
+                    let known = PulseTrendMath.points(series.points, in: window).count
+                    return range == .week
+                        ? String(localized: "During this 7-day period, your time in \(name) was \(value) across the \(known) days with zone data.")
+                        : String(localized: "Over this period, your average weekly time in \(name) was \(value), counting only the days with zone data.")
+                }
                 guard let previous else {
                     return range == .week
                         ? String(localized: "During this 7-day period, your total time in \(name) was \(value).")

@@ -191,6 +191,17 @@ struct TrendViewSnapshot: Equatable {
     let showsCycleNote: Bool
 }
 
+/// A metric that moves with (or against) the Trend View's metric over its period (the WHAT CORRELATES
+/// card, §3.12 [Z]): Pearson r on the days both have a reading.
+struct PulseTrendCorrelation: Equatable, Identifiable {
+    /// The other metric's key (its Trend View).
+    let id: String
+    let title: String
+    let symbol: String
+    let r: Double
+    let n: Int
+}
+
 /// A row of the metric picker.
 struct PulseTrendPickerItem: Equatable, Identifiable {
     let id: String
@@ -318,5 +329,31 @@ struct WeeklyDigestSnapshot: Equatable {
     let highlights: [Highlight]
     let behaviors: [Behavior]
     let insight: String
+}
+#endif
+
+#if os(iOS)
+// MARK: - Training Load snapshot (§3.35 INSIGHTS › TRAINING LOAD)
+
+/// Fitness (CTL), fatigue (ATL) and form (TSB) over one range, from `TrainingLoadEngine`.
+struct TrainingLoadSnapshot: Equatable {
+    struct Stat: Equatable, Identifiable {
+        let id: String
+        let title: String
+        let value: String
+    }
+
+    let seq: Int
+    let range: PulseTrendMath.Range
+    /// The model has enough contiguous days to draw.
+    let isAvailable: Bool
+    /// "Building: 20 of 42 days", or why nothing is drawn yet.
+    let status: String?
+    /// Form, signed ("+3.2", "-4.1"), and what it means.
+    let form: String
+    let formWord: String
+    let insight: String
+    let chart: PulseTrendChartModel
+    let stats: [Stat]
 }
 #endif

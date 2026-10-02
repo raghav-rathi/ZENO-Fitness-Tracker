@@ -18,7 +18,7 @@ import StrandAnalytics
 struct PulseWeeklyDigestView: View {
     /// Existing entry points (Trends › THIS WEEK, INSIGHTS) open this screen instead of the classic Weekly
     /// digest once it is true (see `PulseRoute.forExistingEntryPoint`).
-    static let isRebuilt = false
+    static let isRebuilt = true
 
     @Environment(PulseModel.self) private var model
     @State private var mode: WeeklyDigestSnapshot.Mode = .week

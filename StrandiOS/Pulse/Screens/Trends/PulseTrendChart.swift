@@ -250,7 +250,9 @@ struct PulseTrendChart: View {
             var path = Path()
             path.addLines(series.map(\.point))
             context.stroke(path, with: .color(color.opacity(0.7)), style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
-            for p in series { drawMarker(&context, at: p.point, color: color) }
+            if model.showsMarkers {
+                for p in series { drawMarker(&context, at: p.point, color: color) }
+            }
         }
         // Each day's higher value is labelled above its marker, the lower one below.
         for (i, column) in model.columns.enumerated() {

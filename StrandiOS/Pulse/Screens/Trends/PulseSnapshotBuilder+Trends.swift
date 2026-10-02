@@ -34,6 +34,22 @@ extension PulseSnapshotBuilder {
                                           range: range, page: page, phases: phases)
     }
 
+    /// WHAT CORRELATES for one Trend View page: the other metrics whose days move with this one's over the
+    /// same period, by Pearson r (|r| ≥ 0.30 on at least 10 shared days, the classic card's rule).
+    func trendCorrelations(_ r: PulseRequest, key: String, range: PulseTrendMath.Range, page: Int,
+                           units: PulseTrendUnits) async -> [PulseTrendCorrelation]? {
+        begin(r.seq)
+        guard let metric = PulseTrendMetric.resolve(key) else { return nil }
+        let own = await trendSeries(r, metric: metric, units: units)
+        var others: [(PulseTrendMetric, PulseTrendSeries)] = []
+        for other in PulseTrendMetric.curated where other.key != metric.key {
+            others.append((other, await trendSeries(r, metric: other, units: units)))
+            guard isCurrent(r) else { return nil }
+        }
+        return PulseTrendPageBuilder.correlations(metric: metric, series: own, others: others, anchor: r.day.key,
+                                                  range: range, page: page)
+    }
+
     /// Every curated metric with whether it holds a reading, for the metric picker.
     func trendPicker(_ r: PulseRequest, units: PulseTrendUnits) async -> [PulseTrendPickerItem]? {
         begin(r.seq)
@@ -80,6 +96,18 @@ extension PulseSnapshotBuilder {
             seq: r.seq, today: r.day.key, mode: mode, page: page,
             inputs: .init(sleep: sleep, recovery: recovery, strain: strain, hours: hours, zones13: zones13,
                           zones45: zones45, journal: journal))
+    }
+
+    // MARK: Training Load
+
+    /// Fitness, fatigue and form over `range` (M, 6M, 1Y or ALL), from the model the classic card draws.
+    func trainingLoad(_ r: PulseRequest, range: PulseTrendMath.Range) async -> TrainingLoadSnapshot? {
+        begin(r.seq)
+        let result = await cached("trends.trainingLoad") { () async -> TrainingLoadEngine.Result in
+            TrainingLoadEngine.evaluate(days: ReadinessEngine.trainingLoadDays(r.days))
+        }
+        guard isCurrent(r) else { return nil }
+        return PulseTrainingLoadBuilder.snapshot(seq: r.seq, result: result, today: r.day.key, range: range)
     }
 
     // MARK: Series
@@ -232,7 +260,14 @@ extension PulseSnapshotBuilder {
 
         case .stress:
             let stored = await stressStoredSeries()
-            return PulseTrendSeries(points: Self.points(stored.map { ($0.day, min(max($0.value, 0), 3)) }, through: today))
+            var rows = stored.map { ($0.day, min(max($0.value, 0), 3)) }
+            // Today's level through Home's model (StressModel over the history), so today's bar is the
+            // STRESS MONITOR's number rather than a stored score that may not exist yet.
+            if let score = StressModel(days: r.days, stored: stored)?.score {
+                rows.removeAll { $0.0 == today }
+                rows.append((today, min(max(score, 0), 3)))
+            }
+            return PulseTrendSeries(points: Self.points(rows, through: today))
 
         case .vo2Estimate:
             let resolved = await repo.resolvedSeries(key: "vo2max_est", source: "my-whoop")

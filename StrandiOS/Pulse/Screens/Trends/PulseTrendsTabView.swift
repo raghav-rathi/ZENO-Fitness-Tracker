@@ -16,7 +16,7 @@ import StrandAnalytics
 struct PulseTrendsTabView: View {
     /// NavRouter's "open Trends" lands on this tab once it is true, instead of pushing the classic Trends
     /// screen onto it.
-    static let isRebuilt = false
+    static let isRebuilt = true
 
     @Environment(PulseModel.self) private var model
     @Environment(\.pulseNavigator) private var navigator

@@ -16,7 +16,7 @@ import StrandAnalytics
 struct PulseTrendView: View {
     /// Existing entry points (My Dashboard rows, STRAIN & RECOVERY) open this screen instead of the classic
     /// metric detail once it is true (see `PulseRoute.forExistingEntryPoint`).
-    static let isRebuilt = false
+    static let isRebuilt = true
     /// The `MetricCatalog` key of the metric to chart first.
     let metric: String
 
@@ -26,6 +26,8 @@ struct PulseTrendView: View {
     @State private var range: PulseTrendMath.Range
     @State private var page: Int
     @State private var snapshot: TrendViewSnapshot?
+    /// WHAT CORRELATES, loaded after the page (it scans every other metric).
+    @State private var correlations: [PulseTrendCorrelation]?
     @State private var showsPicker = false
     @AppStorage(UnitPrefs.systemKey) private var unitSystemRaw = UnitSystem.metric.rawValue
     @AppStorage(UnitPrefs.temperatureKey) private var temperatureRaw = ""
@@ -36,12 +38,15 @@ struct PulseTrendView: View {
         _key = State(initialValue: metric)
         var range = PulseTrendMath.Range.week
         var page = 0
+        var picker = false
         #if DEBUG
         range = PulseTrendDebugLaunch.range ?? range
         page = PulseTrendDebugLaunch.page ?? page
+        picker = PulseTrendDebugLaunch.opensPicker
         #endif
         _range = State(initialValue: range)
         _page = State(initialValue: page)
+        _showsPicker = State(initialValue: picker)
     }
 
     private var units: PulseTrendUnits {
@@ -66,7 +71,10 @@ struct PulseTrendView: View {
                     .padding(.top, 24)
             } else {
                 PulseLoadingGate(isLoading: snapshot == nil) {
-                    if let snapshot { PulseTrendPage(snapshot: snapshot, range: rangeBinding, onBack: back, onForward: forward) }
+                    if let snapshot {
+                        PulseTrendPage(snapshot: snapshot, correlations: correlations, range: rangeBinding,
+                                       onBack: back, onForward: forward)
+                    }
                 } skeleton: {
                     skeleton
                 }
@@ -79,6 +87,7 @@ struct PulseTrendView: View {
                 key = chosen
                 page = 0
                 snapshot = nil
+                correlations = nil
                 if let m = PulseTrendMetric.resolve(chosen), !m.ranges.contains(range) {
                     range = m.ranges.first ?? .week
                 }
@@ -99,6 +108,11 @@ struct PulseTrendView: View {
             // The builder clamps a page past the history; keep the state in step with what is shown.
             if s.page != self.page { self.page = s.page }
             if s.range != self.range { self.range = s.range }
+        }
+        if let rows = await model.build(dayOffset: 0, { builder, request in
+            await builder.trendCorrelations(request, key: key, range: range, page: page, units: units)
+        }) {
+            correlations = rows
         }
     }
 
@@ -197,6 +211,7 @@ struct PulseTrendView: View {
 /// Everything below the dropdown, drawn from one snapshot.
 private struct PulseTrendPage: View {
     let snapshot: TrendViewSnapshot
+    let correlations: [PulseTrendCorrelation]?
     @Binding var range: PulseTrendMath.Range
     let onBack: () -> Void
     let onForward: () -> Void
@@ -244,6 +259,10 @@ private struct PulseTrendPage: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 .padding(.top, 28)
+            }
+            if let correlations, snapshot.hasData {
+                PulseTrendCorrelationsCard(rows: correlations, metric: snapshot.metric, range: snapshot.range)
+                    .padding(.top, 28)
             }
         }
     }
@@ -380,7 +399,7 @@ private struct PulseTrendPage: View {
                 .font(.system(size: 17, weight: .semibold))
                 .foregroundStyle(PulseTheme.Activity.infoBannerText)
                 .accessibilityHidden(true)
-            Text(String(localized: "See patterns in your trends data across your menstrual cycle. You can turn cycle awareness off in Automations at any time."))
+            Text(String(localized: "See patterns in your trends data across your menstrual cycle. Phases follow your nightly temperature; menstrual days are the five from each period start you log. You can turn cycle awareness off in Automations at any time."))
                 .pulseText(.body)
                 .foregroundStyle(PulseTheme.Activity.infoBannerText)
                 .fixedSize(horizontal: false, vertical: true)
@@ -420,13 +439,83 @@ private struct PulseTrendPage: View {
     private static func cta(_ cta: PulseTrendCTA) -> (String, String, PulseRoute) {
         switch cta {
         case .addActivity:
-            return (String(localized: "+ Add activity"), "plus", PulseRoute.addActivity.forExistingEntryPoint)
+            return (String(localized: "Add activity"), "plus", PulseRoute.addActivity.forExistingEntryPoint)
         case .stepsGoal:
             let plan = PulseRoute.weeklyPlan(editing: true)
             return plan.isRebuilt
                 ? (String(localized: "Set a steps goal in Weekly Plan"), "list.clipboard", plan)
                 : (String(localized: "Update your daily step goal"), "list.clipboard", .tab(.steps(day: nil)))
         }
+    }
+}
+
+// MARK: - What correlates
+
+/// WHAT CORRELATES (§3.12 [Z]): the other metrics that move with this one over the page's period, each
+/// opening its own Trend View. Pearson r on the days both have a reading; |r| ≥ 0.30 on 10 or more days.
+private struct PulseTrendCorrelationsCard: View {
+    let rows: [PulseTrendCorrelation]
+    let metric: PulseTrendMetric
+    let range: PulseTrendMath.Range
+
+    var body: some View {
+        PulseCard {
+            VStack(alignment: .leading, spacing: 0) {
+                PulseCardTitle(String(localized: "What correlates"))
+                Text(String(localized: "Metrics whose days moved with \(metric.sentenceName) over this period"))
+                    .pulseText(.secondary)
+                    .foregroundStyle(PulseTheme.textTertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.top, 4)
+                if rows.isEmpty {
+                    Text(range == .week
+                         ? String(localized: "A week is too short to tell. Try M or a longer range.")
+                         : String(localized: "Nothing moved clearly with \(metric.sentenceName) over this period."))
+                        .pulseText(.body)
+                        .foregroundStyle(PulseTheme.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.top, 12)
+                } else {
+                    VStack(spacing: 0) {
+                        ForEach(Array(rows.enumerated()), id: \.element.id) { index, row in
+                            if index > 0 { PulseDivider() }
+                            PulseLink(.trendView(metric: row.id)) { line(row) }
+                                .buttonStyle(PulsePressStyle())
+                        }
+                    }
+                    .padding(.top, 6)
+                }
+            }
+        }
+    }
+
+    private func line(_ row: PulseTrendCorrelation) -> some View {
+        HStack(spacing: 14) {
+            Image(systemName: row.symbol)
+                .font(.system(size: 18, weight: .regular))
+                .foregroundStyle(PulseTheme.textTertiary)
+                .frame(width: 22)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(row.title)
+                    .pulseText(.cardTitle)
+                    .foregroundStyle(PulseTheme.textPrimary)
+                Text(row.r > 0 ? String(localized: "Moves with it, \(row.n) days")
+                               : String(localized: "Moves against it, \(row.n) days"))
+                    .pulseText(.secondary)
+                    .foregroundStyle(PulseTheme.textTertiary)
+            }
+            Spacer(minLength: 8)
+            Text(String(format: "%+.2f", locale: AppLanguage.activeLocale, row.r))
+                .pulseText(.rowValue)
+                .foregroundStyle(PulseTheme.textPrimary)
+            PulseChevron()
+        }
+        .frame(minHeight: 56)
+        .contentShape(Rectangle())
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(String(localized: "\(row.title), correlation \(String(format: "%.2f", row.r)) over \(row.n) days"))
+        .accessibilityHint(String(localized: "Opens its Trend View"))
     }
 }
 
@@ -531,7 +620,7 @@ struct PulseTrendBreakdownView: View {
 
 #if DEBUG
 /// DEBUG launch flags for captures: `--trend-range w|m|6m|1y|all`, `--trend-page N` (also the digest's
-/// page) and `--digest-mode w|m`.
+/// page), `--trend-picker` and `--digest-mode w|m`.
 enum PulseTrendDebugLaunch {
     private static func value(_ flag: String) -> String? {
         let args = CommandLine.arguments
@@ -551,6 +640,9 @@ enum PulseTrendDebugLaunch {
     }
 
     static var page: Int? { value("--trend-page").flatMap(Int.init) }
+
+    /// `--trend-picker`: open the Trend View's metric picker at launch.
+    static var opensPicker: Bool { CommandLine.arguments.contains("--trend-picker") }
 
     /// `--digest-mode w|m`: the Weekly Digest's week or month.
     static var digestMode: WeeklyDigestSnapshot.Mode? {
