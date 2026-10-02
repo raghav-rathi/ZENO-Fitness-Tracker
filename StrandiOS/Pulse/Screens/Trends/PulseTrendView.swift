@@ -620,7 +620,7 @@ struct PulseTrendBreakdownView: View {
 
 #if DEBUG
 /// DEBUG launch flags for captures: `--trend-range w|m|6m|1y|all`, `--trend-page N` (also the digest's
-/// page), `--trend-picker` and `--digest-mode w|m`.
+/// page), `--trend-picker`, `--trend-cycle-demo` and `--digest-mode w|m`.
 enum PulseTrendDebugLaunch {
     private static func value(_ flag: String) -> String? {
         let args = CommandLine.arguments
@@ -643,6 +643,25 @@ enum PulseTrendDebugLaunch {
 
     /// `--trend-picker`: open the Trend View's metric picker at launch.
     static var opensPicker: Bool { CommandLine.arguments.contains("--trend-picker") }
+
+    /// `--trend-cycle-demo` (with cycle awareness on): a fixed 28-day phase pattern for the overlay, so the
+    /// strip, its legend and its note can be checked in the simulator, whose seeded skin temperature never
+    /// gives the cycle engine a usable baseline. DEBUG only; nothing in a Release build draws it.
+    static func cycleDemoPhases(endingOn today: String) -> [String: PulseTrendCyclePhase]? {
+        guard CommandLine.arguments.contains("--trend-cycle-demo") else { return nil }
+        var out: [String: PulseTrendCyclePhase] = [:]
+        for back in 0..<200 {
+            let day = PulseTrendMath.addDays(today, -back)
+            let cycleDay = ((200 - back) % 28)
+            switch cycleDay {
+            case ..<5: out[day] = .menstrual
+            case ..<12: out[day] = .follicular
+            case ..<16: out[day] = .ovulatory
+            default: out[day] = .luteal
+            }
+        }
+        return out
+    }
 
     /// `--digest-mode w|m`: the Weekly Digest's week or month.
     static var digestMode: WeeklyDigestSnapshot.Mode? {

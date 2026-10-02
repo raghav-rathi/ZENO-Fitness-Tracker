@@ -28,8 +28,13 @@ extension PulseSnapshotBuilder {
         guard let metric = PulseTrendMetric.resolve(key) else { return nil }
         let series = await trendSeries(r, metric: metric, units: units)
         guard isCurrent(r) else { return nil }
-        let phases = cycleOverlay ? await trendCyclePhases(r) : [:]
+        var phases = cycleOverlay ? await trendCyclePhases(r) : [:]
         guard isCurrent(r) else { return nil }
+        #if DEBUG
+        if cycleOverlay && phases.isEmpty, let demo = PulseTrendDebugLaunch.cycleDemoPhases(endingOn: r.day.key) {
+            phases = demo
+        }
+        #endif
         return PulseTrendPageBuilder.page(seq: r.seq, metric: metric, series: series, anchor: r.day.key,
                                           range: range, page: page, phases: phases)
     }
