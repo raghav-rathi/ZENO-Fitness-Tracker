@@ -84,7 +84,7 @@ struct PulseSleepScheduleView: View {
                                 confirmTitle: String(localized: "Save"),
                                 onConfirm: { minutes in
                                     WindDownNudge.setWakeOverride(weekday: edit.weekday, minutes: minutes)
-                                    actions.apply()
+                                    reArm()
                                     editing = nil
                                 },
                                 onCancel: { editing = nil })
@@ -119,7 +119,7 @@ struct PulseSleepScheduleView: View {
             if own != nil {
                 Button {
                     WindDownNudge.setWakeOverride(weekday: weekday, minutes: nil)
-                    actions.apply()
+                    reArm()
                 } label: {
                     Image(systemName: "arrow.uturn.backward")
                         .font(.system(size: 13, weight: .semibold))
@@ -154,12 +154,18 @@ struct PulseSleepScheduleView: View {
         scheduleOn = on
         guard !on else { return }
         for weekday in 1...7 { WindDownNudge.setWakeOverride(weekday: weekday, minutes: nil) }
-        actions.apply()
+        reArm()
     }
 
     private func toggleAlarmDay(_ weekday: Int) {
         behavior.smartAlarmWeekdays = SmartAlarmView.alarmToggledWeekday(weekday, in: behavior.smartAlarmWeekdays)
-        actions.apply()
+        reArm()
+    }
+
+    /// The existing re-arm (`AppModel.applySmartAlarm`), for an alarm that is on: with it off there is
+    /// nothing on the strap to move. The wind-down reminder reschedules itself inside `WindDownNudge`.
+    private func reArm() {
+        if behavior.smartAlarmEnabled { actions.apply() }
     }
 
     // MARK: Formatting

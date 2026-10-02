@@ -250,7 +250,9 @@ struct PulseSleepPlannerView: View {
         } else {
             behavior.smartAlarmMinutes = m
         }
-        actions.apply()
+        // Re-arm only an alarm that is on: with it off there is nothing on the strap to move, and the
+        // re-arm would send the strap a disarm it does not need.
+        if behavior.smartAlarmEnabled { actions.apply() }
     }
 
     @ViewBuilder

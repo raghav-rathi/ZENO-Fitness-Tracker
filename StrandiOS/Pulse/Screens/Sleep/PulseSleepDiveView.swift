@@ -95,7 +95,9 @@ struct PulseSleepDiveView: View {
         .task(id: "\(model.detailKey)|\(nightKey ?? "-")") {
             await load()
         }
-        .task(id: "\(snapshot?.seq ?? -1)|\(snapshot?.stress?.nightKey ?? "-")") {
+        // Keyed on the night's window, not on every refresh: a past night's heart rate does not change, and
+        // re-reading a night and the day before it on each sync would be work for nothing.
+        .task(id: snapshot?.stress) {
             await loadStress()
         }
     }
@@ -116,8 +118,14 @@ struct PulseSleepDiveView: View {
             stress = nil
             return
         }
-        if let s = await model.build({ builder, r in await builder.sleepStress(r, request: request) }) {
-            stress = s
+        // A refresh landing mid-build supersedes it (nil); this task is keyed on the night, not the refresh,
+        // so it tries again rather than leaving the card loading.
+        for _ in 0..<3 {
+            if let s = await model.build({ builder, r in await builder.sleepStress(r, request: request) }) {
+                stress = s
+                return
+            }
+            if Task.isCancelled { return }
         }
     }
 

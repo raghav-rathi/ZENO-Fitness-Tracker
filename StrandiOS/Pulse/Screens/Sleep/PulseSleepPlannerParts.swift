@@ -241,7 +241,7 @@ struct PulseSleepAlarmPanel: View {
                     .fixedSize(horizontal: false, vertical: true)
                     .frame(maxWidth: .infinity)
             }
-            PulseSleepStrapNotice()
+            PulseSleepStrapNotice(alarmOn: alarmOn)
         }
         .padding(.horizontal, PulseTheme.Layout.pageMargin)
         .padding(.top, 14)
@@ -299,22 +299,34 @@ struct PulseSleepAlarmPanel: View {
     }
 }
 
-/// "Strap battery under 20%" (§3.11 "States"): the only view in the planner that observes LiveState, so a
-/// heart-rate tick re-renders this line and nothing else.
+/// The strap's state as the alarm depends on it (§3.11 "States"): a battery under 20%, or, with the alarm on,
+/// a strap that is not connected (the arm is queued and sent when it reconnects, so it says that rather than
+/// "Saving failed"). The only view in the planner that observes LiveState, so a heart-rate tick re-renders
+/// this line and nothing else.
 struct PulseSleepStrapNotice: View {
+    let alarmOn: Bool
     @EnvironmentObject private var live: LiveState
 
     var body: some View {
         if live.activeIsWhoop, let pct = live.batteryPct, pct < 20, live.charging != true {
-            Label {
-                Text(String(localized: "Strap battery \(Int(pct.rounded()))%. Charge it before bed so the alarm can buzz."))
-            } icon: {
-                Image(systemName: "battery.25")
-            }
-            .pulseText(.rowSubline)
-            .foregroundStyle(PulseTheme.negative)
-            .frame(maxWidth: .infinity)
+            line(String(localized: "Strap battery \(Int(pct.rounded()))%. Charge it before bed so the alarm can buzz."),
+                 symbol: "battery.25")
+        } else if alarmOn, live.activeIsWhoop, !live.connected {
+            line(String(localized: "Your strap isn't connected. The alarm is set on it when it reconnects."),
+                 symbol: "antenna.radiowaves.left.and.right.slash")
         }
+    }
+
+    private func line(_ text: String, symbol: String) -> some View {
+        Label {
+            Text(text)
+        } icon: {
+            Image(systemName: symbol)
+        }
+        .pulseText(.rowSubline)
+        .foregroundStyle(PulseTheme.negative)
+        .frame(maxWidth: .infinity)
+        .fixedSize(horizontal: false, vertical: true)
     }
 }
 

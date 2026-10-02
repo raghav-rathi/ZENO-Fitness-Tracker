@@ -139,40 +139,56 @@ struct PulseSleepConsistencyCard: View {
 
     var body: some View {
         SleepDetailCard(String(localized: "Sleep consistency"), onInfo: onInfo) {
-            HStack(alignment: .bottom, spacing: 8) {
-                if let figure = card.figure {
-                    SleepFigureView(figure: figure)
-                } else {
-                    VStack(alignment: .leading, spacing: 2) {
-                        SleepEmptyFigure(text: "--%")
-                        Text(String(localized: "Calibrating"))
-                            .pulseText(.subtitle)
-                            .foregroundStyle(PulseTheme.textSecondary)
-                    }
+            // The legend sits on the baseline's line, right-aligned; at large text sizes it moves under the
+            // figure rather than truncating.
+            ViewThatFits(in: .horizontal) {
+                HStack(alignment: .bottom, spacing: 8) {
+                    figure
+                    Spacer(minLength: 8)
+                    legend.fixedSize()
                 }
-                Spacer(minLength: 8)
-                if !card.optimal.isEmpty {
-                    HStack(spacing: 7) {
-                        Path { p in
-                            p.move(to: CGPoint(x: 0, y: 1))
-                            p.addLine(to: CGPoint(x: 18, y: 1))
-                        }
-                        .stroke(PulseTheme.SleepDetail.optimalDash, style: StrokeStyle(lineWidth: 1.5, dash: [3.5, 2.5]))
-                        .frame(width: 18, height: 2)
-                        Text(String(localized: "Optimal bed/waketime"))
-                            .pulseText(.label)
-                            .foregroundStyle(PulseTheme.textSecondary)
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.8)
-                    }
-                    .padding(.bottom, 2)
-                    .accessibilityElement(children: .combine)
+                VStack(alignment: .leading, spacing: 10) {
+                    figure
+                    legend
                 }
             }
             if !card.nights.isEmpty {
                 PulseSleepConsistencyChart(card: card)
                     .padding(.top, 4)
             }
+        }
+    }
+
+    @ViewBuilder
+    private var figure: some View {
+        if let figure = card.figure {
+            SleepFigureView(figure: figure)
+        } else {
+            VStack(alignment: .leading, spacing: 2) {
+                SleepEmptyFigure(text: "--%")
+                Text(String(localized: "Calibrating"))
+                    .pulseText(.subtitle)
+                    .foregroundStyle(PulseTheme.textSecondary)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var legend: some View {
+        if !card.optimal.isEmpty {
+            HStack(spacing: 7) {
+                Path { p in
+                    p.move(to: CGPoint(x: 0, y: 1))
+                    p.addLine(to: CGPoint(x: 18, y: 1))
+                }
+                .stroke(PulseTheme.SleepDetail.optimalDash, style: StrokeStyle(lineWidth: 1.5, dash: [3.5, 2.5]))
+                .frame(width: 18, height: 2)
+                Text(String(localized: "Optimal bed/waketime"))
+                    .pulseText(.label)
+                    .foregroundStyle(PulseTheme.textSecondary)
+            }
+            .padding(.bottom, 2)
+            .accessibilityElement(children: .combine)
         }
     }
 }
