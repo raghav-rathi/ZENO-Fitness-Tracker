@@ -248,6 +248,7 @@ private struct PulseRecoveryWeeklyTrends: View {
                 PulseWeeklyTrendCard(String(localized: "Resting heart rate"), route: PulseDiveRoutes.trend("rhr")) {
                     line(week.rhr, empty: String(localized: "No resting heart rate this week"))
                 }
+                .id("pulse.weekly-rhr")
                 PulseWeeklyTrendCard(String(localized: "Respiratory rate"), route: PulseDiveRoutes.trend("resp_rate")) {
                     line(week.resp, empty: String(localized: "No respiratory rate this week"))
                 }

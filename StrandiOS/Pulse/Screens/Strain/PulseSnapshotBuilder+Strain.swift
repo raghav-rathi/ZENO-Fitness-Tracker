@@ -37,7 +37,9 @@ extension PulseSnapshotBuilder {
                 windows.append((key, w.from, w.to))
             }
         }
-        let zones = await zoneSecondsByDay(windows, zoneSet: r.profile.zoneSet)
+        // Today's window runs to now, so it is read fresh every build and never cached.
+        let zones = await zoneSecondsByDay(windows, zoneSet: r.profile.zoneSet,
+                                           liveKey: r.day.isToday ? r.day.key : nil)
         guard isCurrent(r) else { return nil }
 
         let byDay = Dictionary(r.days.map { ($0.day, $0) }, uniquingKeysWith: { _, last in last })
@@ -158,17 +160,23 @@ extension PulseSnapshotBuilder {
     // MARK: Time in zones
 
     /// Seconds in zones 1-5 per day key, for days with heart rate (a day without any is absent, never a
-    /// zero). Each day is re-read only when its heart-rate fingerprint or the zone set changed.
-    private func zoneSecondsByDay(_ windows: [(key: String, from: Int, to: Int)],
-                                  zoneSet: HRZoneSet) async -> [String: [Double]] {
+    /// zero). A finished day is re-read only when its heart-rate fingerprint or the zone set changed;
+    /// `liveKey`'s window (today's, running to now) is read every time and kept out of the cache, so its
+    /// churn never pushes the finished days out.
+    private func zoneSecondsByDay(_ windows: [(key: String, from: Int, to: Int)], zoneSet: HRZoneSet,
+                                  liveKey: String?) async -> [String: [Double]] {
         let signature = "\(zoneSet.maxHR)|\(zoneSet.restingHR ?? -1)|"
             + zoneSet.zones.map { "\($0.lower)" }.joined(separator: ",")
         var out: [String: [Double]] = [:]
         for w in windows {
             if Task.isCancelled { break }
-            let fingerprint = await repo.hrFingerprintUnion(from: w.from, to: w.to)
-            let cacheKey = "\(w.from)|\(w.to)|\(fingerprint)|\(signature)"
-            if let hit = await PulseZoneDayCache.shared.lookup(cacheKey) {
+            let live = w.key == liveKey
+            var cacheKey: String?
+            if !live {
+                let fingerprint = await repo.hrFingerprintUnion(from: w.from, to: w.to)
+                cacheKey = "\(w.from)|\(w.to)|\(fingerprint)|\(signature)"
+            }
+            if let cacheKey, let hit = await PulseZoneDayCache.shared.lookup(cacheKey) {
                 if let seconds = hit { out[w.key] = seconds }
                 continue
             }
@@ -176,7 +184,7 @@ extension PulseSnapshotBuilder {
             let seconds: [Double]? = buckets.isEmpty ? nil : StrainContributors.zoneSeconds(
                 buckets: buckets.map { StrainContributors.HRBucketMean(ts: $0.ts, bpm: $0.bpm) },
                 bucketSeconds: Self.zoneBucketSeconds, zoneSet: zoneSet)
-            await PulseZoneDayCache.shared.store(cacheKey, seconds)
+            if let cacheKey { await PulseZoneDayCache.shared.store(cacheKey, seconds) }
             if let seconds { out[w.key] = seconds }
         }
         return out
@@ -283,7 +291,7 @@ extension PulseSnapshotBuilder {
 
 /// Each day's seconds in zones, kept across refreshes while the day's heart rate is unchanged: the key
 /// carries the day window, the heart-rate fingerprint and the zone set, so new beats, a backfilled night
-/// or a changed maximum heart rate each make a new key. Holds at most `capacity` days.
+/// or a changed maximum heart rate each make a new key. Holds at most `capacity` finished days.
 actor PulseZoneDayCache {
     static let shared = PulseZoneDayCache()
 

@@ -103,8 +103,8 @@ extension PulseSnapshotBuilder {
                                           day: r.day)
         guard isCurrent(r) else { return nil }
         return RecoveryDiveSnapshot(seq: r.seq, day: r.day, dial: base.dial, carriedCaption: carried,
-                                    sourceDayKey: sourceKey, contributors: contributors, behaviors: behaviors, week: week, shaped: shaped,
-                                    summary: text.summary, coachSeed: text.seed)
+                                    sourceDayKey: sourceKey, contributors: contributors, behaviors: behaviors,
+                                    week: week, shaped: shaped, summary: text.summary, coachSeed: text.seed)
     }
 
     // MARK: What shaped it

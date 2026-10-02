@@ -165,10 +165,12 @@ private struct PulseStrainWeeklyTrends: View {
                                      legend: legend([4, 5])) {
                     zones(week.upperZones)
                 }
+                .id("pulse.weekly-upper")
                 PulseWeeklyTrendCard(String(localized: "Steps"), route: week.stepsRoute) {
                     PulseBarChart(data: week.steps, highlightID: week.highlightID, height: PulseWeeklyChart.height,
                                   emptyMessage: String(localized: "No steps this week"))
                 }
+                .id("pulse.weekly-steps")
                 PulseWeeklyTrendCard(String(localized: "Calories"), route: PulseDiveRoutes.trend(week.caloriesMetric)) {
                     PulseBarChart(data: week.calories, highlightID: week.highlightID, height: PulseWeeklyChart.height,
                                   emptyMessage: String(localized: "No calories this week"))

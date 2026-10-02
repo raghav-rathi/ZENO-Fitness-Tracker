@@ -38,7 +38,8 @@ struct PulseDiveContributor: Identifiable, Equatable {
 /// row. A row with a route opens its Trend View.
 struct PulseDiveCallout: View {
     let rows: [PulseDiveContributor]
-    /// "Today", or the day the dive shows ("Wed, Aug 19") on a past day.
+    /// The night the values are from: "Today", the day itself on a past day ("Wed, Aug 19"), or a carried
+    /// night's date.
     let dayLabel: String
 
     var body: some View {
