@@ -286,10 +286,11 @@ struct PulseStressChart: View {
 // MARK: Strain & Recovery, a week
 
 /// The STRAIN & RECOVERY card's chart (reviews/06, completeness-critic/13): Strain on the left axis
-/// (0 / 7 / 14 / 21 in strain blue) as a 50% blue line with hollow markers and labels below; Recovery on the
+/// (0 / 7 / 14 / 21 in strain blue) as a 50% blue line with hollow markers and blue labels; Recovery on the
 /// right axis (0% / 33% / 66% / 100%, coloured red / red / yellow / green) as a white-25% line with markers
-/// and labels coloured by zone, above. Missing days are skipped and the lines connect across them; the
-/// selected day's column is highlighted.
+/// and labels coloured by zone. A day's two labels point away from each other: the higher marker's label
+/// above it, the lower one's below (Recovery above when they tie, or a day has one marker). Missing days are
+/// skipped and the lines connect across them; the selected day's column is highlighted.
 struct PulseStrainRecoveryChart: View {
     struct Day: Identifiable, Equatable {
         /// The day key.
@@ -316,7 +317,7 @@ struct PulseStrainRecoveryChart: View {
                     .lineStyle(StrokeStyle(lineWidth: 2))
                 PointMark(x: .value("Day", day.id), y: .value("Strain", day.strain ?? 0))
                     .symbol { marker(PulseTheme.strain) }
-                    .annotation(position: .bottom, spacing: 3) {
+                    .annotation(position: strainPlotsHigher(day) ? .top : .bottom, spacing: 3) {
                         Text(PulseFormat.oneDecimal(day.strain ?? 0))
                             .font(PulseType.numeral(12))
                             .foregroundStyle(PulseTheme.strain)
@@ -329,7 +330,7 @@ struct PulseStrainRecoveryChart: View {
                     .lineStyle(StrokeStyle(lineWidth: 2))
                 PointMark(x: .value("Day", day.id), y: .value("Recovery", r * 0.21))
                     .symbol { marker(PulseTheme.recovery(percent: r)) }
-                    .annotation(position: .top, spacing: 3) {
+                    .annotation(position: strainPlotsHigher(day) ? .bottom : .top, spacing: 3) {
                         Text("\(PulseDisplay.displayedPercent(r))%")
                             .font(PulseType.numeral(12))
                             .foregroundStyle(PulseTheme.recoveryText(PulseDisplay.recoveryBand(percent: r)))
@@ -395,6 +396,14 @@ struct PulseStrainRecoveryChart: View {
             .strokeBorder(color, lineWidth: 2)
             .background(Circle().fill(PulseTheme.cardSolidMiddle))
             .frame(width: 9, height: 9)
+    }
+
+    /// Whether the day's Strain marker sits above its Recovery marker (both on the 0–21 scale). Only then
+    /// does the Strain label go on top and the Recovery label underneath; labels placed by series alone
+    /// ran into each other wherever Strain crossed above Recovery ("15.0" under "50%").
+    private func strainPlotsHigher(_ day: Day) -> Bool {
+        guard let strain = day.strain, let recovery = day.recovery else { return false }
+        return strain > recovery * 0.21
     }
 }
 #endif
