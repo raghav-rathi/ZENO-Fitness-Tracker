@@ -208,18 +208,19 @@ struct PulseLookingAheadCard: View {
 
     var body: some View {
         PulseLink(PulseRoute.calibrationTimeline.forExistingEntryPoint) {
-            HStack(alignment: .center, spacing: PulseTheme.Space.m) {
-                VStack(alignment: .leading, spacing: PulseTheme.Space.s) {
-                    PulseCardTitle(String(localized: "Calibration Timeline"), accessory: .trailingChevron)
+            // The title row spans the card ("›" at its right edge); the ring sits under the "›".
+            VStack(alignment: .leading, spacing: PulseTheme.Space.xs) {
+                PulseCardTitle(String(localized: "Calibration Timeline"), accessory: .trailingChevron)
+                HStack(alignment: .center, spacing: PulseTheme.Space.m) {
                     Text(progress.of == Baselines.minNightsSeed
                          ? String(localized: "Wear your strap to bed nightly and check back here: Recovery scores after \(progress.of) nights.")
                          : String(localized: "Wear your strap to bed nightly and check back here to track your sleeps and unlock new insights."))
                         .pulseText(.body)
                         .foregroundStyle(PulseTheme.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    PulseGoalRing(kind: .count(done: progress.done, target: progress.of), diameter: 54)
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                PulseGoalRing(kind: .count(done: progress.done, target: progress.of), diameter: 54)
             }
             .padding(PulseTheme.Layout.cardPadding + 4)
             .frame(maxWidth: .infinity, alignment: .leading)

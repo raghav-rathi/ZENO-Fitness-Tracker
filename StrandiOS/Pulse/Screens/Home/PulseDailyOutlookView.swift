@@ -95,14 +95,18 @@ enum PulseDailyOutlook {
         if let target = home.target, !target.fromCarriedRecovery {
             let goal = PulseFormat.oneDecimal(target.targetValue)
             let range = "\(PulseFormat.oneDecimal(target.range.lowerBound))-\(PulseFormat.oneDecimal(target.range.upperBound))"
-            if evening, let strain = home.strain.value {
-                recommendations.append(String(localized: "Today's Strain reached **\(PulseFormat.oneDecimal(strain))** against a target of **\(goal)** (optimal **\(range)**)."))
+            let strain = home.strain.value ?? 0
+            let now = PulseFormat.oneDecimal(strain)
+            if evening {
+                recommendations.append(String(localized: "Today's Strain reached **\(now)** against a target of **\(goal)** (optimal **\(range)**)."))
+            } else if strain > target.range.upperBound {
+                recommendations.append(String(localized: "Your Strain is already **\(now)**, past your optimal range of **\(range)**. Keep the rest of the day easy."))
+            } else if strain >= target.targetValue {
+                recommendations.append(String(localized: "You've reached today's Strain target of **\(goal)** at **\(now)**; your optimal range tops out at **\(PulseFormat.oneDecimal(target.range.upperBound))**."))
+            } else if strain > 0 {
+                recommendations.append(String(localized: "Aim for a Strain of **\(goal)** today, inside your optimal range of **\(range)**. You're at **\(now)** so far."))
             } else {
-                var line = String(localized: "Aim for a Strain of **\(goal)** today, inside your optimal range of **\(range)**.")
-                if let strain = home.strain.value, strain > 0 {
-                    line += " " + String(localized: "You're at **\(PulseFormat.oneDecimal(strain))** so far.")
-                }
-                recommendations.append(line)
+                recommendations.append(String(localized: "Aim for a Strain of **\(goal)** today, inside your optimal range of **\(range)**."))
             }
         }
 

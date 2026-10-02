@@ -203,11 +203,12 @@ struct PulseDashboardMetricRow: View {
     var caption: String?
 
     var body: some View {
-        HStack(spacing: PulseTheme.Space.s) {
+        // The icon 14 pt in, the name at 44 pt (completeness-critic/16).
+        HStack(spacing: PulseTheme.Space.xs) {
             Image(systemName: item.symbol)
                 .font(.system(size: 18, weight: .light))
                 .foregroundStyle(PulseTheme.textTertiary)
-                .frame(width: 24)
+                .frame(width: 22)
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
                 PulseWordWrapText(item.title, style: .cardTitle)
@@ -234,16 +235,17 @@ struct PulseDashboardMetricRow: View {
                                 .lineLimit(1)
                         }
                     }
+                    // WHOOP sits the glyph just above the value's baseline, not mid-height.
                     PulseTrendGlyph(trend: value.trend ?? PulseTrend(direction: .flat, polarity: .neutral))
                         .opacity(value.trend == nil ? 0 : 1)
-                        .alignmentGuide(.firstTextBaseline) { d in d[.bottom] + 5 }
+                        .alignmentGuide(.firstTextBaseline) { d in d[.bottom] + 1.5 }
                 }
                 .fixedSize()
             } else {
                 PulseChevron(color: PulseTheme.textPrimary, size: 16)
             }
         }
-        .padding(.leading, PulseTheme.Layout.cardPadding)
+        .padding(.leading, PulseTheme.Space.s + 2)
         .padding(.trailing, PulseTheme.Space.s)
         .padding(.vertical, PulseTheme.Space.xs)
         .frame(maxWidth: .infinity, minHeight: PulseTheme.Row.dashboard, alignment: .leading)

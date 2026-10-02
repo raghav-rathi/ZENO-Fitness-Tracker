@@ -50,12 +50,14 @@ struct PulseCoachingStack: View {
                 .id(top.id)
                 .transition(reduceMotion ? .opacity : .asymmetric(insertion: .opacity,
                                                                   removal: .opacity.combined(with: .offset(y: -8))))
-                // The next card peeks 12 pt below, inset 16 pt each side.
+                // The next card peeks 12 pt below, inset 16 pt each side: only its bottom edge shows, so it
+                // never reads through the translucent card above it.
                 .background(alignment: .bottom) {
                     if cards.count > 1 {
-                        RoundedRectangle(cornerRadius: PulseTheme.Radius.card, style: .circular)
+                        UnevenRoundedRectangle(bottomLeadingRadius: PulseTheme.Radius.card,
+                                               bottomTrailingRadius: PulseTheme.Radius.card, style: .circular)
                             .fill(PulseTheme.coachingPeek)
-                            .frame(height: 40)
+                            .frame(height: Self.peek)
                             .padding(.horizontal, PulseTheme.Space.m)
                             .offset(y: Self.peek)
                             .accessibilityHidden(true)
@@ -118,17 +120,18 @@ struct PulseCoachingStack: View {
     /// ✓ over the number of cards left: completes the top card for the day.
     private func counter(_ model: PulseCoachingCardModel) -> some View {
         Button { onComplete(model) } label: {
-            VStack(spacing: 4) {
-                Image(systemName: "checkmark").font(.system(size: 14, weight: .semibold))
+            // 24 × 46 pt, 8 pt in from the card's top-right corner (profile-community-2026/34).
+            VStack(spacing: 7) {
+                Image(systemName: "checkmark").font(.system(size: 15, weight: .semibold))
                 Text(verbatim: "\(cards.count)")
-                    .font(PulseType.numeral(13))
+                    .font(PulseType.numeral(14))
                     .foregroundStyle(PulseTheme.textTertiary)
             }
             .foregroundStyle(PulseTheme.textPrimary)
-            .frame(width: 28, height: 42)
+            .frame(width: 24, height: 46)
             .background(RoundedRectangle(cornerRadius: PulseTheme.Radius.toggle, style: .circular)
                 .fill(PulseTheme.tagFill))
-            .padding(PulseTheme.Space.s)
+            .padding(PulseTheme.Space.xs)
             .contentShape(Rectangle())
         }
         .buttonStyle(PulsePressStyle())
@@ -191,6 +194,9 @@ private struct PulseCoachingStackContent: View, Equatable {
     @AppStorage("pulse.home.coaching.done") private var completed = ""
     /// The release whose notes the What's New card already showed.
     @AppStorage("pulse.home.whatsNewSeen") private var whatsNewSeen = ""
+    /// The release the app's own What's New sheet last showed (it pops by itself after an update), so the
+    /// card only stands in when that sheet has not been seen.
+    @AppStorage("noop.lastSeenChangelogVersion") private var lastSeenChangelog = ""
     // The strap alarm's own keys (BehaviorStore): this morning's alarm for the "already awake" card.
     @AppStorage("behavior.smartAlarmEnabled") private var alarmOn = false
     @AppStorage("behavior.smartAlarmMinutes") private var alarmMinutes = 7 * 60
@@ -218,7 +224,8 @@ private struct PulseCoachingStackContent: View, Equatable {
         var inputs = base
         inputs.illness = illness != nil
         inputs.alarm = alarmCheck
-        inputs.whatsNew = !AppChangelog.currentVersion.isEmpty && whatsNewSeen != AppChangelog.currentVersion
+        let release = AppChangelog.currentVersion
+        inputs.whatsNew = !release.isEmpty && whatsNewSeen != release && lastSeenChangelog != release
         let done = completedToday
         return HomeCoachingRules.cards(inputs)
             .filter { !done.contains($0.id) }

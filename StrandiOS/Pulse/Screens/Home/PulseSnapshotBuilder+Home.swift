@@ -176,8 +176,10 @@ extension PulseSnapshotBuilder {
         let unit: String? = s.unit == "%" || s.unit.contains("°") ? s.unit : nil
         let trend = s.baselineDelta.map { PulseTrend(delta: $0, polarity: item.polarity) }
             ?? s.comparison.map { c in PulseTrend(direction: Self.direction(c.direction), polarity: item.polarity) }
-        return PulseDashboardValue(value: s.value, unit: unit, trend: trend,
-                                   baseline: s.isRunningTotal ? String(localized: "So far today") : s.baseline,
+        // A percentage's baseline keeps its "%", as the dashboard's own percent rows print it ("42%").
+        let baseline = s.isRunningTotal ? String(localized: "So far today")
+            : s.baseline.map { s.unit == "%" ? $0 + "%" : $0 }
+        return PulseDashboardValue(value: s.value, unit: unit, trend: trend, baseline: baseline,
                                    caption: s.caption, fallback: .tab(s.route))
     }
 

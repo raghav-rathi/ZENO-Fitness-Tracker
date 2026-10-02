@@ -75,6 +75,9 @@ struct PulseHomeView: View {
         .task(id: "\(model.detailKey)|\(homeVersion)|\(dashboardItems.map(\.rawValue).joined(separator: ","))") {
             await loadExtras()
         }
+        #if DEBUG
+        .task(id: currentExtras != nil) { PulseHomeDebug.openOnce(home: model.home, extras: currentExtras, navigator: navigator) }
+        #endif
     }
 
     /// Build Home's own facts for the snapshot on screen (off the main actor), keeping the last ones when
@@ -265,15 +268,36 @@ enum PulseHomeSpacing {
     static let stackTop: CGFloat = 26
     /// From the dial labels to the monitor tiles when no card is due (reviews/r41).
     static let tilesTop: CGFloat = 26
-    /// From the stack's peek to the monitor tiles (profile-community-2026/34: 22 pt).
-    static let tilesAfterStack: CGFloat = 22
+    /// From the stack's peek to the monitor tiles (profile-community-2026/34: 20.5 pt).
+    static let tilesAfterStack: CGFloat = 20
 }
 
 // MARK: - DEBUG
 
 /// DEBUG `--pulse-dashboard <id,id,…>`: show these dashboard items, for a capture, without touching the
-/// stored layout. No-op in Release.
+/// stored layout. `--pulse-home-open outlook`: open the local Daily Outlook once Home has loaded. No-op in
+/// Release.
 enum PulseHomeDebug {
+    #if DEBUG
+    private static var opened = false
+
+    @MainActor
+    static func openOnce(home: HomeSnapshot?, extras: HomeExtrasSnapshot?, navigator: PulseNavigator) {
+        let args = CommandLine.arguments
+        guard !opened, let home, let extras, let i = args.firstIndex(of: "--pulse-home-open"), i + 1 < args.count else {
+            return
+        }
+        opened = true
+        switch args[i + 1] {
+        case "outlook", "review":
+            let content = PulseDailyOutlook.compose(home: home, facts: extras.outlook, evening: args[i + 1] == "review")
+            navigator.open(PulseDailyOutlookRoute(content: content).route)
+        default:
+            break
+        }
+    }
+    #endif
+
     static var dashboard: [PulseDashboardItem]? {
         #if DEBUG
         let args = CommandLine.arguments
