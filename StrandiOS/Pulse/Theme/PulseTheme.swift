@@ -3,314 +3,242 @@ import SwiftUI
 import StrandDesign
 import StrandAnalytics
 
-// MARK: - Pulse
+// MARK: - Pulse theme
 //
-// Pulse is ZENO's WHOOP-style iPhone interface: Home · Health · Coach · More, three score dials, deep
-// dives behind each dial, and a near-black visual system. It is a separate layer over the same data the
-// classic shell reads. Everything it renders comes from immutable snapshots built off the main actor
-// (`PulseSnapshotBuilder`) and published by one small model (`PulseModel`); its views never query the
-// store. Upstream screens are reused by linking to them, never forked.
+// Pulse is ZENO's WHOOP-structured iPhone interface. Every colour, size, radius and timing it draws with
+// is a token in Theme/, taken from docs/zeno/WHOOP_UI_SPEC.md §2 and docs/zeno/DESIGN_RULES.md (DR):
 //
-// This file holds the vocabulary and the visual tokens. They are Pulse's own on purpose: the classic
-// shell keeps `StrandPalette`, and a shared token changed here would silently re-colour every upstream
-// screen as well.
+//   PulseTheme.swift     page, surfaces, text, semantic data colours, status tints (this file)
+//   PulsePalettes.swift  HR zones, sleep stages, stress scale, menstrual phases, delta chips, plan,
+//                        journal, streak and sleep-detail swatches
+//   PulseGradients.swift gradients plus the AI, activity-flow, onboarding, tab-bar and coach tokens
+//   PulseType.swift      the type scale (SF Pro; numerals bold condensed with tabular digits)
+//   PulseLayout.swift    spacing, radii, dial and bar geometry
+//   PulseMotion.swift    animation timings and the Reduce Motion rule
+//
+// The tokens are Pulse's own on purpose: the classic shell keeps `StrandPalette`, and a shared token
+// changed here would silently re-colour every classic screen too. Screens and components never write a
+// hex value or a font size of their own; when a value is missing, it is added here first.
+//
+// Pulse is dark only. Depth comes from WHITE overlays on a fixed slate gradient (a card is white 10%, a
+// button inside it another 10%), never from solid greys, borders or shadows.
 
-/// The three headline scores, named once. Every Pulse label, dial and accessibility string that names a
-/// score goes through `displayName`, so the interface cannot drift into calling one thing two names
-/// (the classic shell's Charge / Recovery / "Rest HR" problem).
-enum PulseScore: String, CaseIterable, Identifiable, Hashable {
-    /// Home order, as WHOOP lays out its dials: Sleep, Recovery, Strain.
-    case sleep, recovery, strain
-
-    var id: String { rawValue }
-
-    var displayName: String {
-        switch self {
-        case .sleep: return String(localized: "Sleep")
-        case .recovery: return String(localized: "Recovery")
-        case .strain: return String(localized: "Strain")
-        }
-    }
-
-    /// The score's fixed colour. Recovery has none of its own: it is always drawn in its band colour
-    /// (`PulseTheme.recovery(_:)`), so this returns the green only as a neutral fallback.
-    var tint: Color {
-        switch self {
-        case .sleep: return PulseTheme.sleep
-        case .recovery: return PulseTheme.recoveryGreen
-        case .strain: return PulseTheme.strain
-        }
-    }
-
-    var symbol: String {
-        switch self {
-        case .sleep: return "moon.fill"
-        case .recovery: return "heart.fill"
-        case .strain: return "flame.fill"
-        }
-    }
-}
-
-/// Pulse's colours, type and geometry.
 enum PulseTheme {
 
-    // MARK: Surfaces
+    // MARK: Page (§2.1 "Page", DR §1.1)
 
-    /// Top of the page gradient.
-    static let backgroundTop = Color(hex: "#101518")
-    /// Bottom of the page gradient.
-    static let backgroundBottom = Color(hex: "#000000")
-    /// Cards sit one step lighter than the page.
-    static let card = Color(hex: "#161C20")
-    /// A raised element inside a card (a chip, a pressed row).
-    static let cardRaised = Color(hex: "#1F272C")
-    /// Hairline card borders and row separators.
-    static let hairline = Color.white.opacity(0.09)
-    /// The thin full-circle track behind a dial arc, and the empty part of a bar.
-    static let track = Color.white.opacity(0.12)
+    /// The page gradient, top to bottom. It is viewport-fixed: draw it BEHIND a scroll view
+    /// (`PulseBackground`), never inside one, so cards lighten toward the top exactly as WHOOP's do.
+    static let pageStops: [Gradient.Stop] = [
+        .init(color: Color(hex: "#283339"), location: 0.00),
+        .init(color: Color(hex: "#1E262B"), location: 0.23),
+        .init(color: Color(hex: "#13181C"), location: 0.53),
+        .init(color: Color(hex: "#101518"), location: 0.76),
+        .init(color: Color(hex: "#0E1213"), location: 1.00),
+    ]
+    /// The gradient's first stop; also the navigation bar's fill once content scrolls under it.
+    static let pageTop = Color(hex: "#283339")
+    /// The gradient's last stop.
+    static let pageBottom = Color(hex: "#0E1213")
+    /// The near-black page of the Healthspan detail and the 2026 Health tab top, where the age orb's
+    /// glow has to read (§2.1 exceptions).
+    static let pageNearBlack = Color(hex: "#060607")
+    /// The strip under the floating tab bar: the one place a tab root goes (almost) pure black.
+    static let barStrip = Color(hex: "#010101")
+    /// The bottom scrim's end colour: content fades to this over `PulseTheme.Layout.scrimHeight`.
+    static let scrim = Color.black.opacity(0.95)
 
-    // MARK: Text
-    //
-    // Measured against `card` (#161C20): primary ~17:1, secondary ~10:1, tertiary ~6.4:1. All clear the
-    // 4.5:1 floor for body text, including tertiary, which the classic grey (3.5:1) did not.
+    // MARK: Surfaces (§2.1 "Surfaces", DR §1.2)
+
+    /// Cards, tiles, rows, the dial track, dividers, the chart "today" band.
+    static let card = Color.white.opacity(0.10)
+    /// The dimmer "Last Night's Sleep" fill: the HOURS OF SLEEP card and its four detail cards only.
+    static let detail = Color.white.opacity(0.045)
+    /// A surface inside a card (in-card buttons, activity rows, a selected segment): another 10%.
+    static let nested = Color.white.opacity(0.10)
+    /// Legend wells and segmented-control troughs.
+    static let well = Color.black.opacity(0.50)
+    /// Chart gridlines drawn on a card.
+    static let gridOnCard = Color.white.opacity(0.05)
+    /// Chart gridlines drawn straight on the page.
+    static let gridOnPage = Color.white.opacity(0.08)
+    /// Dashed connectors and secondary series lines.
+    static let dash = Color.white.opacity(0.25)
+    /// The Strain dial's optimal-range band, drawn on the track under the arc.
+    static let targetBand = Color.white.opacity(0.27)
+    /// The disc a dial's interior fills with while it is pressed.
+    static let pressDisc = Color.white.opacity(0.40)
+    /// A dial's full-circle track and the empty part of a bar. Same width as the arc it sits under.
+    static let track = Color.white.opacity(0.10)
+    /// Row dividers and hairlines (1 pt).
+    static let divider = Color.white.opacity(0.10)
+    /// The coaching card, a shade darker than a standard card.
+    static let coachingCard = Color.white.opacity(0.075)
+    /// The second coaching card peeking out under the first.
+    static let coachingPeek = Color(hex: "#1B1F22")
+    /// The pure-black well behind the status banners and the new-member "Ask a question" well.
+    static let bannerWell = Color.black
+    /// Opaque fallbacks for a card, only where an overlay is impossible (top / middle / lower third).
+    static let cardSolidTop = Color(hex: "#2D3236")
+    static let cardSolidMiddle = Color(hex: "#2B2F33")
+    static let cardSolidBottom = Color(hex: "#292C2E")
+
+    // MARK: Lists and chrome surfaces (§2.6 items 22, 23, 30, 35, 36)
+
+    /// More / settings row cards (2026), top and bottom of their vertical gradient.
+    static let rowCardTop = Color(hex: "#2D3035")
+    static let rowCardBottom = Color(hex: "#292D30")
+    /// The 28 pt outline icon at the left of a More row.
+    static let rowIcon = Color(hex: "#6C7074")
+    /// A More row's optional sub-line.
+    static let rowSubline = Color(hex: "#BCBCC0")
+    /// UPPERCASE list section headers ("ACCOUNT & SETTINGS").
+    static let listSectionHeader = Color(hex: "#C4C4C4")
+    /// The row card with a subtitle (Behavior Insights compact row).
+    static let subtitleRowCard = Color(hex: "#282C2C")
+    static let subtitleRowIcon = Color(hex: "#999DA0")
+    static let subtitleRowText = Color(hex: "#C8C9CB")
+    /// The deep-dive achievement chip.
+    static let achievementChip = Color(hex: "#282D33")
+    /// Filter chips: unselected fill (selected is white with black text).
+    static let filterChip = Color(hex: "#363D45")
+    /// The wheel-picker sheet and its selection band; a CONFIRM button while invalid.
+    static let wheelSheet = Color(hex: "#182023")
+    static let wheelBand = Color(hex: "#26292E")
+    static let buttonInvalid = Color(hex: "#424649")
+    /// Centred dialog cards, top and bottom of their gradient, over black.
+    static let dialogTop = Color(hex: "#27343C")
+    static let dialogBottom = Color(hex: "#1B2228")
+    /// The dashed border of the coaching stack's error box and its grey text.
+    static let errorBoxBorder = Color(hex: "#30383C")
+    static let errorBoxText = Color(hex: "#888C90")
+    /// The 1 pt border of an outlined (locked) card.
+    static let outlinedBorder = Color.white.opacity(0.18)
+    /// The plain Get Started card (every card after the first, gradient-bordered one).
+    static let getStartedPlain = Color(hex: "#1D2124")
+    /// The date pager's inner pill (white ≈18%).
+    static let pagerPill = Color.white.opacity(0.18)
+    /// The "✕" square the action-menu "+" morphs into.
+    static let menuCloseSquare = Color(hex: "#2E3236")
+    /// The action popover, top and bottom of its vertical gradient, and the dim behind it.
+    static let menuTop = Color(hex: "#464D56")
+    static let menuBottom = Color(hex: "#32383D")
+    static let menuDim = Color(hex: "#14171C").opacity(0.55)
+
+    // MARK: Text (§2.1 "Text", DR §1.3)
 
     static let textPrimary = Color.white
-    static let textSecondary = Color.white.opacity(0.74)
-    static let textTertiary = Color.white.opacity(0.58)
+    /// Text on in-card buttons.
+    static let textButton = Color.white.opacity(0.85)
+    static let textSecondary = Color.white.opacity(0.70)
+    /// Chevrons, baselines, axis labels, inactive tabs.
+    static let textTertiary = Color.white.opacity(0.50)
+    static let textDisabled = Color.white.opacity(0.40)
 
-    // MARK: Scores (WHOOP's published brand values; this build is private to its owner)
+    // MARK: Semantic data colours (§2.1, DR §1.4). One meaning per hue; data only, never large surfaces.
 
-    static let recoveryGreen = Color(hex: "#16EC06")
-    static let recoveryYellow = Color(hex: "#FFDE00")
-    static let recoveryRed = Color(hex: "#FF0026")
-    /// The brand red measures 4.47:1 on a card, a hair under the text floor. Arcs and bars keep the
-    /// brand value; text drawn in red uses this lighter red (5.4:1) instead.
-    static let recoveryRedText = Color(hex: "#FF4A5C")
+    /// Recovery 67–100%.
+    static let recoveryHigh = Color(hex: "#16EC06")
+    /// Recovery 34–66%.
+    static let recoveryMid = Color(hex: "#FFDE00")
+    /// Recovery 0–33% on arcs and bars.
+    static let recoveryLow = Color(hex: "#FF0026")
+    /// Recovery-red TEXT and "VERY ELEVATED": the brand red fails 4.5:1 on a card, this passes.
+    static let recoveryLowText = Color(hex: "#FF4A5C")
+    /// Strain and activities.
     static let strain = Color(hex: "#0093E7")
+    /// Sleep, sleep chips, the Sleep dial.
     static let sleep = Color(hex: "#7BA1BB")
-    /// Interactive chrome: buttons, links, the selected tab.
-    static let accent = Color(hex: "#00F19F")
-    /// Ink placed ON an accent fill.
-    static let onAccent = Color(hex: "#04140E")
-    /// A value outside its typical range. Yellow reads as "look at this" without claiming an emergency.
-    static let attention = recoveryYellow
+    /// Neutral data, outline buttons, LOW stress, light-strain chips.
+    static let recoveryBlue = Color(hex: "#67AEE6")
+    /// Recovery activities (sauna, meditation, breathwork): the pre-start HR circle.
+    static let recoveryActivity = Color(hex: "#7EB2EB")
+    /// Recovery activities: the Home activity chip.
+    static let recoveryActivityChip = Color(hex: "#79ACE1")
+    /// Favourable: ▲▼ that are good, Optimal, Within range, plan progress, primary CTA.
+    static let positive = Color(hex: "#00F19F")
+    /// Unfavourable: ▲▼ that are bad, Poor, ALARM OFF, HIGH stress, out of range.
+    static let negative = Color(hex: "#FFA722")
+    /// No meaningful change: grey ▲ / ●.
+    static let neutral = Color.white.opacity(0.50)
+    /// The "Sufficient" segment and dash.
+    static let sufficient = Color(hex: "#848586")
+    /// The grey ● that replaces an arrow when today equals the baseline.
+    static let baselineDot = Color(hex: "#8C8C90")
 
-    /// The recovery band's colour, for arcs, bars and fills.
+    /// A Recovery band's colour for arcs, bars and fills.
     static func recovery(_ band: PulseDisplay.RecoveryBand) -> Color {
         switch band {
-        case .green: return recoveryGreen
-        case .yellow: return recoveryYellow
-        case .red: return recoveryRed
+        case .green: return recoveryHigh
+        case .yellow: return recoveryMid
+        case .red: return recoveryLow
         }
     }
 
-    /// The recovery band's colour for TEXT (red swaps to its legible variant).
+    /// A Recovery band's colour for TEXT (red swaps to its legible variant).
     static func recoveryText(_ band: PulseDisplay.RecoveryBand) -> Color {
-        band == .red ? recoveryRedText : recovery(band)
+        band == .red ? recoveryLowText : recovery(band)
     }
 
-    /// Heart-rate zone colours, zone 1 to 5, cool to hot.
-    static let zones: [Color] = [
-        Color(hex: "#7E8A94"),
-        Color(hex: "#0093E7"),
-        Color(hex: "#16C47F"),
-        Color(hex: "#FFB020"),
-        Color(hex: "#FF4A5C"),
-    ]
-
-    static func zone(_ number: Int) -> Color {
-        zones[max(1, min(5, number)) - 1]
+    /// The colour of a Recovery percentage, judged on the whole percent a dial prints.
+    static func recovery(percent: Double) -> Color {
+        recovery(PulseDisplay.recoveryBand(percent: percent))
     }
 
-    /// Sleep-stage colours, chosen to sit beside the sleep blue-grey.
-    static func stage(_ stage: SleepStage) -> Color {
-        switch stage {
-        case .awake: return Color(hex: "#C9D1D9")
-        case .light: return Color(hex: "#7BA1BB")
-        case .deep: return Color(hex: "#4F6BFF")
-        case .rem: return Color(hex: "#A98BFF")
-        }
-    }
+    // MARK: Status tints (§2.1 "Status tints": 24 pt badge squares and chips)
 
-    // MARK: Geometry
+    /// A status badge or chip's fill and the glyph colour it pairs with.
+    enum Tint: CaseIterable {
+        case teal, red, blue, orange, orangeHigh, grey
 
-    static let pagePadding: CGFloat = 16
-    static let cardRadius: CGFloat = 18
-    static let cardPadding: CGFloat = 16
-    static let sectionSpacing: CGFloat = 22
-    static let minTapTarget: CGFloat = 44
-
-    // MARK: Type
-
-    /// Big condensed bold numerals with tabular digits: the WHOOP read, without its licensed faces.
-    static func numeral(_ size: CGFloat, weight: Font.Weight = .bold) -> Font {
-        .system(size: size, weight: weight).width(.condensed).monospacedDigit()
-    }
-
-    /// Small uppercase tracked labels. A text style, so it follows Dynamic Type.
-    static let label = Font.caption.weight(.semibold)
-    static let labelTracking: CGFloat = 1.1
-}
-
-// MARK: - Shared pieces
-
-/// The page background: the near-black gradient, edge to edge.
-struct PulseBackground: View {
-    var body: some View {
-        LinearGradient(colors: [PulseTheme.backgroundTop, PulseTheme.backgroundBottom],
-                       startPoint: .top, endPoint: .bottom)
-            .ignoresSafeArea()
-    }
-}
-
-/// A card: one step lighter than the page, hairline border, continuous corners.
-struct PulseCard<Content: View>: View {
-    var padding: CGFloat = PulseTheme.cardPadding
-    @ViewBuilder var content: () -> Content
-
-    var body: some View {
-        content()
-            .padding(padding)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(PulseCardSurface())
-    }
-}
-
-/// The card's fill and border on their own, for rows that are buttons or links themselves.
-struct PulseCardSurface: View {
-    var radius: CGFloat = PulseTheme.cardRadius
-    var fill: Color = PulseTheme.card
-
-    var body: some View {
-        RoundedRectangle(cornerRadius: radius, style: .continuous)
-            .fill(fill)
-            .overlay(
-                RoundedRectangle(cornerRadius: radius, style: .continuous)
-                    .strokeBorder(PulseTheme.hairline, lineWidth: 1)
-            )
-    }
-}
-
-/// A small uppercase tracked label.
-struct PulseLabel: View {
-    let text: String
-    var color: Color = PulseTheme.textTertiary
-    @Environment(\.dynamicTypeSize) private var typeSize
-
-    init(_ text: String, color: Color = PulseTheme.textTertiary) {
-        self.text = text
-        self.color = color
-    }
-
-    var body: some View {
-        Text(text.uppercased())
-            .font(PulseTheme.label)
-            .tracking(PulseTheme.labelTracking)
-            .foregroundStyle(color)
-            // One line, shrinking a little if it must; at accessibility sizes it wraps instead of
-            // truncating ("RESPIRAT…").
-            .lineLimit(typeSize.isAccessibilitySize ? 2 : 1)
-            .minimumScaleFactor(0.8)
-    }
-}
-
-/// A section title with an optional trailing label.
-struct PulseSectionHeader: View {
-    let title: String
-    var trailing: String?
-
-    var body: some View {
-        HStack(alignment: .firstTextBaseline) {
-            PulseLabel(title, color: PulseTheme.textSecondary)
-                .accessibilityAddTraits(.isHeader)
-            Spacer(minLength: 8)
-            if let trailing {
-                Text(trailing)
-                    .font(.caption)
-                    .foregroundStyle(PulseTheme.textTertiary)
+        /// The square's or chip's fill.
+        var fill: Color {
+            switch self {
+            case .teal: return Color(hex: "#224A41")
+            case .red: return Color(hex: "#4C2B34")
+            case .blue: return Color(hex: "#354550")
+            case .orange: return Color(hex: "#493F2D")
+            case .orangeHigh: return Color(hex: "#4E402F")
+            case .grey: return Color.white.opacity(0.10)
             }
         }
-        .padding(.horizontal, 4)
-    }
-}
 
-/// Press feedback without animation loops: a brief dim while the finger is down.
-struct PulsePressStyle: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .opacity(configuration.isPressed ? 0.62 : 1)
-            .contentShape(Rectangle())
-    }
-}
-
-/// A trailing disclosure chevron for tappable rows.
-struct PulseChevron: View {
-    var body: some View {
-        Image(systemName: "chevron.right")
-            .font(.footnote.weight(.semibold))
-            .foregroundStyle(PulseTheme.textTertiary)
-            .accessibilityHidden(true)
-    }
-}
-
-/// A compact text chip (e.g. "Today", a band word).
-struct PulseChip: View {
-    let text: String
-    var tint: Color = PulseTheme.textSecondary
-    var filled = false
-
-    var body: some View {
-        Text(text)
-            .font(.caption.weight(.semibold))
-            .foregroundStyle(filled ? PulseTheme.onAccent : tint)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 5)
-            .background(
-                Capsule(style: .continuous)
-                    .fill(filled ? tint : PulseTheme.cardRaised)
-            )
-            .overlay(
-                Capsule(style: .continuous)
-                    .strokeBorder(filled ? Color.clear : PulseTheme.hairline, lineWidth: 1)
-            )
-    }
-}
-
-extension View {
-    /// DEBUG `--pulse-scroll <anchor>`: once `ready`, scroll to the tagged section so a screenshot can
-    /// capture it (simctl cannot swipe). Compiles to nothing in Release.
-    @ViewBuilder
-    func pulseDebugScroll(_ proxy: ScrollViewProxy, ready: Bool) -> some View {
-        #if DEBUG
-        self.task(id: ready) {
-            guard ready, let anchor = PulseDebugLaunch.scrollAnchor else { return }
-            try? await Task.sleep(nanoseconds: 900_000_000)
-            proxy.scrollTo(anchor, anchor: .top)
-        }
-        #else
-        self
-        #endif
-    }
-
-    /// A near-black band behind the status bar on the tab roots (which hide the navigation bar), so
-    /// content scrolled up under the clock does not collide with it.
-    func pulseStatusBarBackdrop() -> some View {
-        safeAreaInset(edge: .top, spacing: 0) {
-            Color.clear
-                .frame(height: 0)
-                .background(PulseTheme.backgroundTop.ignoresSafeArea(edges: .top))
+        /// The ✓, "!", "–" or number drawn on it.
+        var glyph: Color {
+            switch self {
+            case .teal: return PulseTheme.positive
+            case .red: return PulseTheme.recoveryLowText
+            case .blue: return PulseTheme.recoveryBlue
+            case .orange: return PulseTheme.negative
+            case .orangeHigh: return Color(hex: "#FCA820")
+            case .grey: return PulseTheme.textTertiary
+            }
         }
     }
 
-    /// The standard Pulse page: gradient background, forced dark. The navigation bar stays clear at
-    /// rest and takes the page's top colour once content scrolls under it, so a pushed page's title and
-    /// back button never sit on top of scrolled cards.
-    func pulsePage() -> some View {
-        self
-            .scrollContentBackground(.hidden)
-            .background(PulseBackground())
-            .toolbarBackground(PulseTheme.backgroundTop, for: .navigationBar)
-            .environment(\.colorScheme, .dark)
-    }
+    // MARK: Interface chrome
+
+    /// The tint for system controls inside Pulse (back chevrons, default buttons): white, like WHOOP's.
+    static let chromeTint = Color.white
+    /// Interactive emphasis in data contexts (the primary CTA colour). Same hue as `positive`.
+    static let accent = positive
+    /// Ink placed ON an `accent` fill.
+    static let onAccent = Color(hex: "#04140E")
+
+    // MARK: Compatibility names
+    //
+    // The first Pulse screens were written against these names. They now resolve to the tokens above so
+    // those screens restyle with the theme; new code uses the names above.
+
+    static let backgroundTop = pageTop
+    static let backgroundBottom = pageBottom
+    static let cardRaised = nested
+    static let hairline = divider
+    static let recoveryGreen = recoveryHigh
+    static let recoveryYellow = recoveryMid
+    static let recoveryRed = recoveryLow
+    static let recoveryRedText = recoveryLowText
+    /// A value outside its typical range (orange, the spec's "out of range").
+    static let attention = negative
 }
 #endif

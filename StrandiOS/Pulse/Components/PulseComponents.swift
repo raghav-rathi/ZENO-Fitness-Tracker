@@ -387,6 +387,65 @@ struct PulseActionButtonLabel: View {
     }
 }
 
+// MARK: - Chip and page helpers (moved from the first theme file)
+
+/// A compact text chip (e.g. "Today", a band word): a nested capsule, no border.
+struct PulseChip: View {
+    let text: String
+    var tint: Color = PulseTheme.textSecondary
+    var filled = false
+
+    var body: some View {
+        Text(text)
+            .pulseText(.secondary)
+            .foregroundStyle(filled ? PulseTheme.onAccent : tint)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 5)
+            .background(
+                Capsule(style: .continuous)
+                    .fill(filled ? tint : PulseTheme.nested)
+            )
+    }
+}
+
+extension View {
+    /// DEBUG `--pulse-scroll <anchor>`: once `ready`, scroll to the tagged section so a screenshot can
+    /// capture it (simctl cannot swipe). Compiles to nothing in Release.
+    @ViewBuilder
+    func pulseDebugScroll(_ proxy: ScrollViewProxy, ready: Bool) -> some View {
+        #if DEBUG
+        self.task(id: ready) {
+            guard ready, let anchor = PulseDebugLaunch.scrollAnchor else { return }
+            try? await Task.sleep(nanoseconds: 900_000_000)
+            proxy.scrollTo(anchor, anchor: .top)
+        }
+        #else
+        self
+        #endif
+    }
+
+    /// A band in the page's top colour behind the status bar on the tab roots that hide the navigation
+    /// bar, so content scrolled up under the clock does not collide with it.
+    func pulseStatusBarBackdrop() -> some View {
+        safeAreaInset(edge: .top, spacing: 0) {
+            Color.clear
+                .frame(height: 0)
+                .background(PulseTheme.pageTop.ignoresSafeArea(edges: .top))
+        }
+    }
+
+    /// The standard Pulse page: the fixed gradient behind, forced dark. The navigation bar stays clear at
+    /// rest and takes the page's top colour once content scrolls under it, so a pushed page's title and
+    /// back button never sit on top of scrolled cards.
+    func pulsePage() -> some View {
+        self
+            .scrollContentBackground(.hidden)
+            .background(PulseBackground())
+            .toolbarBackground(PulseTheme.pageTop, for: .navigationBar)
+            .environment(\.colorScheme, .dark)
+    }
+}
+
 // MARK: - Live leaves
 //
 // Each leaf below is the ONLY view that observes `LiveState` (64 published properties, several of them
