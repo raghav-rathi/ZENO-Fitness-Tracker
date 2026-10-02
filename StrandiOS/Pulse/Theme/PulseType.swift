@@ -77,6 +77,8 @@ enum PulseTextStyle: CaseIterable {
     case legend
     /// 13 Bold condensed: the streak pill's day count and the strap's battery figure.
     case headerNumeral
+    /// 13 Bold UPPERCASE +1.3 (≈10%): an action-menu row ("START ACTIVITY").
+    case menuLabel
     /// 22 Bold condensed: Tonight's Sleep times (reviews/r41, completeness-critic/25: digits 15 pt tall).
     case sleepTime
 
@@ -170,6 +172,7 @@ enum PulseTextStyle: CaseIterable {
         case .subtitle: return Spec(size: 15, weight: .regular, condensed: false, monospacedDigits: false, uppercase: false, tracking: 0, relativeTo: .subheadline)
         case .legend: return Spec(size: 12, weight: .regular, condensed: false, monospacedDigits: false, uppercase: false, tracking: 0, relativeTo: .caption)
         case .headerNumeral: return Spec(size: 13, weight: .bold, condensed: true, monospacedDigits: true, uppercase: false, tracking: 0, relativeTo: nil)
+        case .menuLabel: return Spec(size: 13, weight: .bold, condensed: false, monospacedDigits: false, uppercase: true, tracking: 1.3, relativeTo: .footnote)
         case .sleepTime: return Spec(size: 22, weight: .bold, condensed: true, monospacedDigits: true, uppercase: false, tracking: 0, relativeTo: nil)
         case .largeValue: return Spec(size: 34, weight: .bold, condensed: true, monospacedDigits: true, uppercase: false, tracking: 0, relativeTo: nil)
         case .activityStrain: return Spec(size: 40, weight: .bold, condensed: true, monospacedDigits: true, uppercase: false, tracking: 0, relativeTo: nil)

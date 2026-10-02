@@ -36,13 +36,20 @@ struct PulseDialContent: Equatable {
     var caption: String?
     /// The whole dial as one VoiceOver sentence: name and value.
     var accessibilityLabel: String
-    /// What VoiceOver reads after the label: everything else the dial draws (the caption, Strain's
-    /// target and optimal range). Screens append to it for what they add (`spoken(_:)`).
-    var accessibilityValue: String?
+    /// What else the dial draws that VoiceOver must hear, besides the caption (Strain's target and
+    /// optimal range, a screen's Poor / Sufficient / Optimal reading).
+    var spokenDetails: [String]
+
+    /// What VoiceOver reads after the label: the details, then the caption as it is NOW (a screen may set
+    /// its own caption, like the Recovery dive's band line, after building the content).
+    var accessibilityValue: String? {
+        let parts = spokenDetails + [caption].compactMap { $0 }
+        return parts.isEmpty ? nil : parts.joined(separator: ", ")
+    }
 
     init(label: String, valueText: String, unitText: String? = nil, fraction: Double, color: Color,
          band: ClosedRange<Double>? = nil, tick: Double? = nil, isPlaceholder: Bool = false,
-         caption: String? = nil, accessibilityLabel: String? = nil, accessibilityValue: String? = nil) {
+         caption: String? = nil, accessibilityLabel: String? = nil, spokenDetails: [String] = []) {
         self.label = label
         self.valueText = valueText
         self.unitText = unitText
@@ -53,15 +60,15 @@ struct PulseDialContent: Equatable {
         self.isPlaceholder = isPlaceholder
         self.caption = caption
         self.accessibilityLabel = accessibilityLabel ?? "\(label), \(valueText)\(unitText ?? "")"
-        self.accessibilityValue = accessibilityValue ?? caption
+        self.spokenDetails = spokenDetails
     }
 
-    /// This content with `extra` appended to what VoiceOver reads after the label (a band line, the
-    /// Poor / Sufficient / Optimal reading a screen draws under the ring).
+    /// This content with `extra` added to what VoiceOver reads after the label (the Poor / Sufficient /
+    /// Optimal reading a screen draws under the ring).
     func spoken(_ extra: String?) -> PulseDialContent {
         guard let extra, !extra.isEmpty else { return self }
         var copy = self
-        copy.accessibilityValue = [accessibilityValue, extra].compactMap { $0 }.joined(separator: ", ")
+        copy.spokenDetails.append(extra)
         return copy
     }
 
@@ -83,26 +90,24 @@ struct PulseDialContent: Equatable {
                        color: Color = PulseTheme.strain, caption: String? = nil) -> PulseDialContent {
         let band = optimalRange.map { max(0, $0.lowerBound / 21)...min(1, $0.upperBound / 21) }
         let tick = target.map { max(0, min(1, $0 / 21)) }
-        // VoiceOver hears what the ring draws: the target tick and the optimal band, then the caption.
+        // VoiceOver hears what the ring draws: the target tick and the optimal band (then the caption).
         func one(_ v: Double) -> String { String(format: "%.1f", locale: AppLanguage.activeLocale, v) }
         var spoken: [String] = []
         if let target { spoken.append(String(localized: "target \(one(target))")) }
         if let optimalRange {
             spoken.append(String(localized: "optimal \(one(optimalRange.lowerBound)) to \(one(optimalRange.upperBound))"))
         }
-        if let caption { spoken.append(caption) }
-        let spokenValue = spoken.isEmpty ? nil : spoken.joined(separator: ", ")
         guard let value, value.isFinite else {
             return PulseDialContent(label: label, valueText: "--", fraction: 0, color: color, band: band,
                                     tick: tick, isPlaceholder: true, caption: caption,
                                     accessibilityLabel: String(localized: "\(label), no score yet"),
-                                    accessibilityValue: spokenValue)
+                                    spokenDetails: spoken)
         }
         let text = one(min(21, max(0, value)))
         return PulseDialContent(label: label, valueText: text, fraction: value / 21, color: color,
                                 band: band, tick: tick, caption: caption,
                                 accessibilityLabel: String(localized: "\(label), \(text) out of 21"),
-                                accessibilityValue: spokenValue)
+                                spokenDetails: spoken)
     }
 }
 

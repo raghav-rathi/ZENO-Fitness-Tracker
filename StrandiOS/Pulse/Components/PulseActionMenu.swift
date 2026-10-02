@@ -188,6 +188,8 @@ struct PulseActionMenuHost: View {
         }
         .padding(.vertical, 8)
         .fixedSize(horizontal: true, vertical: false)
+        // A popover hugging its longest row: past xLarge "COMPLETE YOUR JOURNAL" would outgrow the screen.
+        .dynamicTypeSize(...DynamicTypeSize.xLarge)
         .background(RoundedRectangle(cornerRadius: PulseTheme.Radius.menu, style: .continuous)
             .fill(LinearGradient(colors: [PulseTheme.menuTop, PulseTheme.menuBottom], startPoint: .top,
                                  endPoint: .bottom)))
@@ -232,11 +234,10 @@ struct PulseActionMenuRowLabel: View {
                 .frame(width: 28, height: 28)
                 .accessibilityHidden(true)
             Text(title)
-                .font(.system(size: 13, weight: .bold))
-                .tracking(1.3)
-                .textCase(.uppercase)
+                .pulseText(.menuLabel)
                 .foregroundStyle(PulseTheme.textPrimary)
                 .lineLimit(1)
+                .minimumScaleFactor(0.8)
         }
         .padding(.horizontal, 20)
         .frame(minHeight: 52, alignment: .leading)

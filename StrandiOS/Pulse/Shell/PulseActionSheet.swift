@@ -32,7 +32,8 @@ struct PulseActionSheet: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(LinearGradient(colors: [PulseTheme.menuTop, PulseTheme.menuBottom], startPoint: .top,
                                    endPoint: .bottom).ignoresSafeArea())
-        .presentationDetents([.medium])
+        .dynamicTypeSize(...DynamicTypeSize.xxLarge)
+        .presentationDetents([.medium, .large])
         .presentationDragIndicator(.visible)
         .environment(\.colorScheme, .dark)
     }

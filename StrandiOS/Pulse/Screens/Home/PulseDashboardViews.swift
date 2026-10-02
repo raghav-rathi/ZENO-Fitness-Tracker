@@ -37,7 +37,18 @@ enum PulseDashboardViews {
 
         /// The Trend View once it is rebuilt, else the metric's current detail screen.
         private func route(_ stat: PulseKeyStat) -> PulseRoute {
-            PulseRoute.trendView(metric: stat.id).isRebuilt ? .trendView(metric: stat.id) : .tab(stat.route)
+            let trend = PulseRoute.trendView(metric: Self.catalogKey(stat))
+            return trend.isRebuilt ? trend : .tab(stat.route)
+        }
+
+        /// The metric's catalog key (what the Trend View takes): "resp_rate", not the stat's short id.
+        private static func catalogKey(_ stat: PulseKeyStat) -> String {
+            switch stat.route {
+            case .metric(let key): return key
+            case .metricSourced(let key, _): return key
+            case .steps: return "steps"
+            default: return stat.id
+            }
         }
 
         private func row(_ stat: PulseKeyStat) -> PulseMetricRow {

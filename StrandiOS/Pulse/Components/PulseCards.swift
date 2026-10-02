@@ -7,7 +7,7 @@ import SwiftUI
 
 // MARK: Monitor tile (§2.6 item 4, §3.1 item 6)
 
-/// A HEALTH MONITOR › / STRESS MONITOR › tile (Home, the Health tab): the title with "›", then 12 pt below,
+/// A HEALTH MONITOR › / STRESS MONITOR › tile (Home, the Health tab), 92 pt tall: the title with "›", then 12 pt below,
 /// a 24 pt status badge beside the status word (11 pt Bold caps, semantic colour) over a secondary line
 /// (12 pt, 70%). While calibrating it shows a grey "–" and "Pending" (§2.9: tiles always show in ZENO).
 ///
@@ -55,7 +55,8 @@ struct PulseMonitorTile: View {
             }
         }
         .padding(16)
-        .frame(maxWidth: .infinity, minHeight: 88, alignment: .topLeading)
+        // 92 pt at the default size (reviews/r41: 298.3–390.7 pt), growing with the text.
+        .frame(maxWidth: .infinity, minHeight: 92, alignment: .topLeading)
         .pulseCardBackground()
         .contentShape(Rectangle())
         .accessibilityElement(children: .ignore)
@@ -503,7 +504,7 @@ struct PulseDialogCard: View {
 
     var body: some View {
         ZStack {
-            Color.black.opacity(0.85).ignoresSafeArea()
+            PulseTheme.dialogScrim.ignoresSafeArea()
             VStack(spacing: 16) {
                 HStack {
                     Spacer()

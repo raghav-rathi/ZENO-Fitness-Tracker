@@ -136,9 +136,10 @@ enum PulseTheme {
     static let wheelSheet = Color(hex: "#182023")
     static let wheelBand = Color(hex: "#26292E")
     static let buttonInvalid = Color(hex: "#424649")
-    /// Centred dialog cards, top and bottom of their gradient, over black.
+    /// Centred dialog cards, top and bottom of their gradient, over black (85%: the unlock scrim's).
     static let dialogTop = Color(hex: "#27343C")
     static let dialogBottom = Color(hex: "#1B2228")
+    static let dialogScrim = Color.black.opacity(0.85)
     /// The dashed border of the coaching stack's error box and its grey text.
     static let errorBoxBorder = Color(hex: "#30383C")
     static let errorBoxText = Color(hex: "#888C90")
