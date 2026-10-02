@@ -68,9 +68,11 @@ private struct PulseStrainDiveContent: View {
                 .padding(.top, 22)
                 .id("pulse.contributors")
 
+            // deep-dives-2026/57: the insight card sits 19 pt under the legend well, the callout's own
+            // 16 pt bottom inset plus 3.
             PulseDiveInsight(text: s.insight, cta: String(localized: "Explore your strain insights"),
                              seed: s.coachSeed)
-                .padding(.top, PulseTheme.Layout.stackGap)
+                .padding(.top, 3)
 
             PulseStrainActivitiesSection(activities: s.activities, isToday: s.day.isToday)
                 .padding(.top, PulseTheme.Layout.sectionGap)
