@@ -29,15 +29,23 @@ enum PulseTheme {
 
     /// The page gradient, top to bottom. It is viewport-fixed: draw it BEHIND a scroll view
     /// (`PulseBackground`), never inside one, so cards lighten toward the top exactly as WHOOP's do.
+    ///
+    /// The stops are sampled on 2026 device captures (reviews/r02, completeness-critic/13 and 25,
+    /// deep-dives-2026/56: the same values within a level). DR §1.1's #283339 → #1E262B upper half reads
+    /// 2–3 levels darker and greener than every 2026 capture; from 0.53 down the two agree. See
+    /// ARCHITECTURE.md §9.
     static let pageStops: [Gradient.Stop] = [
-        .init(color: Color(hex: "#283339"), location: 0.00),
-        .init(color: Color(hex: "#1E262B"), location: 0.23),
-        .init(color: Color(hex: "#13181C"), location: 0.53),
-        .init(color: Color(hex: "#101518"), location: 0.76),
+        .init(color: Color(hex: "#2A3139"), location: 0.00),
+        .init(color: Color(hex: "#262D35"), location: 0.10),
+        .init(color: Color(hex: "#22282F"), location: 0.20),
+        .init(color: Color(hex: "#1E2327"), location: 0.30),
+        .init(color: Color(hex: "#191E22"), location: 0.40),
+        .init(color: Color(hex: "#15181D"), location: 0.53),
+        .init(color: Color(hex: "#111518"), location: 0.76),
         .init(color: Color(hex: "#0E1213"), location: 1.00),
     ]
-    /// The gradient's first stop; also the navigation bar's fill once content scrolls under it.
-    static let pageTop = Color(hex: "#283339")
+    /// The gradient's first stop.
+    static let pageTop = Color(hex: "#2A3139")
     /// The gradient's last stop.
     static let pageBottom = Color(hex: "#0E1213")
     /// The near-black page of the Healthspan detail and the 2026 Health tab top, where the age orb's
@@ -45,8 +53,10 @@ enum PulseTheme {
     static let pageNearBlack = Color(hex: "#060607")
     /// The strip under the floating tab bar: the one place a tab root goes (almost) pure black.
     static let barStrip = Color(hex: "#010101")
-    /// The bottom scrim's end colour: content fades to this over `PulseTheme.Layout.scrimHeight`.
-    static let scrim = Color.black.opacity(0.95)
+    /// The bottom scrim's end colour: content fades to this over the `PulseTheme.Layout.scrimHeight`
+    /// above the floating tab bar. WHOOP's content is still 35–60% bright at the capsule's top edge
+    /// (reviews/r02, completeness-critic/13), so the fade stops at black 60%, not the spec's 95%.
+    static let scrim = Color.black.opacity(0.6)
 
     // MARK: Surfaces (§2.1 "Surfaces", DR §1.2)
 
@@ -64,8 +74,11 @@ enum PulseTheme {
     static let gridOnPage = Color.white.opacity(0.08)
     /// Dashed connectors and secondary series lines.
     static let dash = Color.white.opacity(0.25)
-    /// The Strain dial's optimal-range band, drawn on the track under the arc.
+    /// The Strain dial's optimal-range band as it reads on the page: white 27% (#5C6063–#6C7073).
     static let targetBand = Color.white.opacity(0.27)
+    /// The band's own fill, drawn OVER the 10% track so the two composite to `targetBand`:
+    /// 1 − (1 − 0.10)(1 − 0.19) ≈ 0.27.
+    static let targetBandOverTrack = Color.white.opacity(0.19)
     /// The disc a dial's interior fills with while it is pressed.
     static let pressDisc = Color.white.opacity(0.40)
     /// A dial's full-circle track and the empty part of a bar. Same width as the arc it sits under.
@@ -100,6 +113,23 @@ enum PulseTheme {
     static let subtitleRowText = Color(hex: "#C8C9CB")
     /// The deep-dive achievement chip.
     static let achievementChip = Color(hex: "#282D33")
+    /// A pre-added activity's outlined chip: a faint fill and a thin grey border.
+    static let preAddedChip = Color.white.opacity(0.04)
+    static let preAddedChipBorder = Color.white.opacity(0.30)
+    /// A small tag's fill ("BETA", "NEW").
+    static let tagFill = Color.white.opacity(0.12)
+    /// The inactive segments of the Poor / Sufficient / Optimal mini bar.
+    static let segmentOff = Color.white.opacity(0.12)
+    /// The typical-range band behind a Trend View line and its legend swatch.
+    static let typicalBand = Color.white.opacity(0.08)
+    static let typicalSwatch = Color.white.opacity(0.25)
+    /// The hatched track's stripes (the empty part of zone, stage and impact bars).
+    static let hatch = Color.white.opacity(0.07)
+    /// A chart's dashed average line and the "AVG." pill.
+    static let averageLine = Color.white.opacity(0.8)
+    /// The contributor callout's radial glow at its pointer and its top-lit 1 pt rim.
+    static let calloutGlow = Color.white.opacity(0.10)
+    static let calloutRim = Color.white.opacity(0.08)
     /// Filter chips: unselected fill (selected is white with black text).
     static let filterChip = Color(hex: "#363D45")
     /// The wheel-picker sheet and its selection band; a CONFIRM button while invalid.
@@ -116,8 +146,20 @@ enum PulseTheme {
     static let outlinedBorder = Color.white.opacity(0.18)
     /// The plain Get Started card (every card after the first, gradient-bordered one).
     static let getStartedPlain = Color(hex: "#1D2124")
-    /// The date pager's inner pill (white ≈18%).
-    static let pagerPill = Color.white.opacity(0.18)
+    /// The date pager's outer capsule: white ≈5% on the page (#30383B on the page top, reviews/r41).
+    static let pagerCapsule = Color.white.opacity(0.05)
+    /// The date pager's inner pill, drawn ON the outer capsule: another 10%, ≈14.5% in all (#454C54).
+    static let pagerPill = Color.white.opacity(0.10)
+    /// The Home streak pill under the avatar: the same white 5% as the pager's capsule (#30383B).
+    static let streakPill = Color.white.opacity(0.05)
+    /// The avatar's fallback disc when there is no photo and no name (a person outline on it).
+    static let avatarFallback = Color.white.opacity(0.10)
+    /// Skeleton blocks while a screen loads (DR §8): white 10%, no shimmer.
+    static let skeleton = Color.white.opacity(0.10)
+    /// The white 1.5 pt strap outline in the Home header and its status dot's teal.
+    static let strapOutline = Color.white
+    /// The battery figure beside the strap glyph: white ≈60% (#AAAFB3 on reviews/r41).
+    static let batteryText = Color.white.opacity(0.60)
     /// The "✕" square the action-menu "+" morphs into.
     static let menuCloseSquare = Color(hex: "#2E3236")
     /// The Weekly Trends highlight column behind the latest day.

@@ -160,7 +160,7 @@ struct PulseDeltaChip: View {
                     .frame(width: 7, height: 6)
             }
             Text(text)
-                .font(.system(size: 11, weight: .bold).monospacedDigit())
+                .pulseText(.chipStrong)
         }
         .foregroundStyle(colors.text)
         .padding(.horizontal, 6)

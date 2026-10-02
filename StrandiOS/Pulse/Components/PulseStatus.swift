@@ -83,8 +83,8 @@ struct PulseStatusChip: View {
 
     var body: some View {
         HStack(spacing: 4) {
-            Text(verbatim: glyph).font(.system(size: 11, weight: .bold))
-            Text(text).font(.system(size: 11, weight: .semibold))
+            Text(verbatim: glyph).pulseText(.chipStrong)
+            Text(text).pulseText(.chip)
         }
         .foregroundStyle(colors.text)
         .padding(.horizontal, 8)
@@ -116,7 +116,7 @@ struct PulseTag: View {
                 if outlined {
                     shape.strokeBorder(PulseTheme.recoveryBlue, lineWidth: 1)
                 } else {
-                    shape.fill(Color.white.opacity(0.12))
+                    shape.fill(PulseTheme.tagFill)
                 }
             }
     }
@@ -134,7 +134,7 @@ struct PulseMiniSegments: View {
         HStack(spacing: 2) {
             ForEach(0..<3, id: \.self) { i in
                 RoundedRectangle(cornerRadius: 1, style: .circular)
-                    .fill(i == active ? Self.colors[i] : Color.white.opacity(0.12))
+                    .fill(i == active ? Self.colors[i] : PulseTheme.segmentOff)
                     .frame(width: 20, height: 4)
             }
         }
@@ -167,7 +167,7 @@ struct PulseAchievementChip: View {
                 .foregroundStyle(tint)
                 .frame(width: 18, height: 18)
             Text("\(count)")
-                .font(.system(size: 15, weight: .bold).monospacedDigit())
+                .font(PulseType.numeral(15, hero: true))
                 .foregroundStyle(PulseTheme.textPrimary)
         }
         .padding(.horizontal, 10)
@@ -188,10 +188,11 @@ struct PulseFilterChip: View {
     var body: some View {
         Button(action: action) {
             Text(title)
-                .font(.system(size: 15, weight: .medium))
+                .pulseText(.filter)
                 .foregroundStyle(isSelected ? Color.black : PulseTheme.textPrimary)
                 .padding(.horizontal, 14)
-                .frame(height: 34)
+                .padding(.vertical, 6)
+                .frame(minHeight: 34)
                 .background(RoundedRectangle(cornerRadius: PulseTheme.Radius.card, style: .circular)
                     .fill(isSelected ? Color.white : PulseTheme.filterChip))
         }

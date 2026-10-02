@@ -323,24 +323,13 @@ extension View {
         #endif
     }
 
-    /// A band in the page's top colour behind the status bar on the tab roots that hide the navigation
-    /// bar, so content scrolled up under the clock does not collide with it.
-    func pulseStatusBarBackdrop() -> some View {
-        safeAreaInset(edge: .top, spacing: 0) {
-            Color.clear
-                .frame(height: 0)
-                .background(PulseTheme.pageTop.ignoresSafeArea(edges: .top))
-        }
-    }
-
-    /// The standard Pulse page: the fixed gradient behind, forced dark. The navigation bar stays clear at
-    /// rest and takes the page's top colour once content scrolls under it, so a pushed page's title and
-    /// back button never sit on top of scrolled cards.
+    /// A page that keeps the SYSTEM navigation bar (a sheet's own stack): the fixed gradient behind, the
+    /// bar transparent over it, forced dark. Pulse screens use `PulseScreenScaffold` instead.
     func pulsePage() -> some View {
         self
             .scrollContentBackground(.hidden)
             .background(PulseBackground())
-            .toolbarBackground(PulseTheme.pageTop, for: .navigationBar)
+            .toolbarBackground(.hidden, for: .navigationBar)
             .environment(\.colorScheme, .dark)
     }
 }
@@ -400,12 +389,15 @@ struct PulseStressSection: View {
 }
 // MARK: - Detail loading
 
-/// A loading placeholder for a dive whose snapshot is still building.
+/// A loading placeholder for a dive whose snapshot is still building: the dive's skeleton after 200 ms,
+/// never a spinner (DR §8). New screens use `PulseLoadingGate` / `PulseSkeleton` directly.
 struct PulseDetailLoading: View {
     var body: some View {
-        ProgressView()
-            .tint(PulseTheme.textSecondary)
-            .frame(maxWidth: .infinity, minHeight: 240)
+        PulseLoadingGate(isLoading: true) {
+            EmptyView()
+        } skeleton: {
+            PulseSkeleton.dive
+        }
     }
 }
 

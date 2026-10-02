@@ -181,15 +181,24 @@ extension PulseTheme {
     // MARK: Floating tab bar (§1.1; material fallback because iOS 26 glass is unavailable here)
 
     enum TabBar {
-        /// The capsule's vertical fill at `fillOpacity` (sampled #252A30 → #1B2024 on 2026 captures).
+        /// The capsule's vertical fill, opaque: #252A30 → #191E23 (reviews/r02; completeness-critic/13
+        /// #262B31 → #1A1F23). At 92% over the near-black strip it read 3–4 levels too dark.
         static let fill = Gradient(colors: [Color(hex: "#252A30"), Color(hex: "#191E23")])
-        static let fillOpacity = 0.92
-        /// The capsule's 1 pt rim, lit from the top.
-        static let rim = Gradient(colors: [Color.white.opacity(0.10), Color.white.opacity(0.03)])
+        static let fillOpacity = 1.0
+        /// The capsule has no outline rim. Glass lights it from the LEADING end only: a specular
+        /// highlight at the left end and along the top-left (white ≈6%), gone by ≈40% of the width,
+        /// nothing on the right or bottom (completeness-critic/25: left end #353A3D; top edge +12–15
+        /// levels from x 45 to 90 pt, gone by x ≈150).
+        static let highlight = Gradient(stops: [
+            .init(color: Color.white.opacity(0.06), location: 0.0),
+            .init(color: Color.white.opacity(0.03), location: 0.2),
+            .init(color: Color.white.opacity(0.0), location: 0.4),
+        ])
         /// The soft glow under the selected item, strongest at the capsule's bottom edge.
         static let selectedGlow = Color.white.opacity(0.13)
         static let selected = Color.white
-        static let unselected = Color.white.opacity(0.50)
+        /// Unselected items: #969A9D–#A0A4A7 on 2026 captures, white ≈55% on the fill.
+        static let unselected = Color.white.opacity(0.55)
     }
 
     // MARK: Coach button, avatar and summary pill (§1.1, §1.2)
@@ -198,11 +207,22 @@ extension PulseTheme {
         /// The squircle's fill, top-leading to bottom-trailing (sampled on 2026 device captures; the
         /// spec's #171728 → #121A25 reads darker than any capture).
         static let buttonFill = Gradient(colors: [Color(hex: "#2C2B3C"), Color(hex: "#20252F")])
-        /// The squircle's 1 pt indigo rim, lit from the top.
-        static let buttonRim = Gradient(colors: [Color(hex: "#433F6E"), Color(hex: "#232838")])
-        /// The summary pill's translucent fill and its soft violet glow.
-        static let pillFill = Color(hex: "#2A2D3A").opacity(0.94)
-        static let pillGlow = Color(hex: "#6E5BFF").opacity(0.28)
+        /// The squircle's 1 pt rim, lit from the top-leading corner only (completeness-critic/13: top
+        /// #3B3A59, left #3B3960, nothing on the right or bottom).
+        static let buttonRim = Gradient(stops: [
+            .init(color: Color(hex: "#4A4775"), location: 0.0),
+            .init(color: Color(hex: "#3B3A5C").opacity(0.6), location: 0.35),
+            .init(color: Color(hex: "#3B3A5C").opacity(0.0), location: 0.62),
+        ])
+        /// The lit indigo orb inside the monogram ring: lighter at the top, dark at the bottom
+        /// (inside-top #303A62–#353E5F, centre #212936–#24293C, inside-bottom #0F141D–#1F2734).
+        static let orb = Gradient(colors: [Color(hex: "#353E5F"), Color(hex: "#252B3E"), Color(hex: "#1E2736")])
+        /// The faint indigo halo just outside the ring.
+        static let halo = Color(hex: "#6E5BFF").opacity(0.16)
+        /// The summary pill: a horizontal gradient from the avatar end (#2E2D3F) to #252C34, with a
+        /// top rim (#393E51), and no outer glow (deep-dives-2026/56).
+        static let pillFill = Gradient(colors: [Color(hex: "#2E2D3F"), Color(hex: "#252C34")])
+        static let pillRim = Gradient(colors: [Color(hex: "#393E51"), Color(hex: "#393E51").opacity(0)])
         /// The floating "Ask ZENO anything" composer.
         static let composerFill = Color(hex: "#20202C")
         static let composerPlaceholder = Color(hex: "#9797A1")

@@ -18,22 +18,22 @@ struct PulseHealthView: View {
         PulseScreenScaffold(title: String(localized: "Health"), role: .tabRoot,
                             spacing: PulseTheme.Layout.healthStackGap,
                             refresh: { await model.pullToRefresh() }, ready: model.health != nil) {
-            if let health = model.health {
-                PulseHealthMonitor(vitals: health.vitals)
-                    .id("pulse.monitor")
-                if let stress = health.stress {
-                    PulseStressSection(stress: stress, onBreathe: { onAction(.breathe) })
-                        .id("pulse.stress")
+            PulseLoadingGate(isLoading: model.health == nil) {
+                if let health = model.health {
+                    PulseHealthMonitor(vitals: health.vitals)
+                        .id("pulse.monitor")
+                    if let stress = health.stress {
+                        PulseStressSection(stress: stress, onBreathe: { onAction(.breathe) })
+                            .id("pulse.stress")
+                    }
+                    PulseHealthspanSection(health: health)
+                        .id("pulse.healthspan")
+                    MenstrualCycleHomeCard()
+                    PulseHealthLinks(health: health)
+                        .id("pulse.records")
                 }
-                PulseHealthspanSection(health: health)
-                    .id("pulse.healthspan")
-                MenstrualCycleHomeCard()
-                PulseHealthLinks(health: health)
-                    .id("pulse.records")
-            } else {
-                ProgressView()
-                    .tint(PulseTheme.textSecondary)
-                    .frame(maxWidth: .infinity, minHeight: 200)
+            } skeleton: {
+                PulseSkeleton.cards([280, 200, 160])
             }
         }
         .task(id: model.healthKey) { await model.loadHealth() }

@@ -34,6 +34,8 @@ struct PulsePrefs: Equatable {
     var stressPersonalBaseline = false
     /// Tomorrow's wake time from the wind-down reminder when it is on, minutes after midnight.
     var alarmWakeMinute: Int?
+    /// The strap's silent wake alarm when it is armed for tomorrow, minutes after midnight.
+    var strapAlarmMinute: Int?
     /// The journal prompt's switch (Settings, shared with the classic Today).
     var journalReminder = true
 }
@@ -132,6 +134,11 @@ actor PulseSnapshotBuilder {
     /// False once a newer refresh has begun: the build's data is stale and it should stop.
     func isCurrent(_ r: PulseRequest) -> Bool {
         r.seq == cacheSeq && !Task.isCancelled
+    }
+
+    /// Runs an extension build on this actor (`PulseModel.build`), so none of it touches the main actor.
+    func run<S>(_ r: PulseRequest, _ work: @Sendable (isolated PulseSnapshotBuilder, PulseRequest) async -> S?) async -> S? {
+        await work(self, r)
     }
 
     func restSeries() async -> [(day: String, value: Double)] {
@@ -438,8 +445,16 @@ actor PulseSnapshotBuilder {
         let tonight = r.day.isToday ? await tonightPlan(r, groups: groups, habitual: habitual) : nil
         let stats = await keyStats(r, row: row)
         let stress = await stressSummary(r)
-        let journal = r.day.isToday && r.prefs.journalReminder ? await journalStrip(now: r.now) : nil
+        // The journal strip ends on the selected day; it stays on a past day (§2.9).
+        let journal = r.prefs.journalReminder ? await journalStrip(endingOn: r.day.date, offset: r.day.offset) : nil
+        let monitor = r.day.isToday ? monitorSummary(r) : nil
         guard isCurrent(r) else { return nil }
+
+        let todayKey = Repository.localDayKey(r.now)
+        let streak = r.day.isToday
+            ? StreakCalculator.streaks(dayKeys: r.days.map(\.day), qualified: r.days.map { $0.recovery != nil },
+                                       today: todayKey).current
+            : nil
 
         return HomeSnapshot(
             seq: r.seq,
@@ -454,16 +469,57 @@ actor PulseSnapshotBuilder {
             tonight: tonight,
             stats: stats,
             stress: stress,
-            journal: journal)
+            journal: journal,
+            streak: streak,
+            monitor: monitor,
+            week: week(r, liveStrain: strain),
+            scoredDays: r.days.reduce(0) { $0 + ($1.recovery != nil ? 1 : 0) })
     }
 
-    /// The last seven LOCAL calendar days (as the classic journal strip keys them) and which have a
-    /// native journal entry. Not cached: logging an entry does not bump `refreshSeq`, and the read is
-    /// one small indexed query.
-    func journalStrip(now: Date) async -> PulseJournalStrip {
+    /// The seven days ending on the selected one, oldest first: each day's stored Strain (0–21) and
+    /// Recovery, with today's live Strain in place of the stored one.
+    func week(_ r: PulseRequest, liveStrain: Double?) -> [PulseWeekDay] {
+        let byDay = Dictionary(r.days.map { ($0.day, $0) }, uniquingKeysWith: { _, last in last })
+        return PulseDisplay.trailingDayKeys(endingOn: r.day.key, count: 7).map { key in
+            let row = byDay[key]
+            let stored = row?.strain.map { UnitFormatter.effortValue($0, scale: .whoop) }
+            return PulseWeekDay(id: key, strain: key == r.day.key ? (liveStrain ?? stored) : stored,
+                                recovery: row?.recovery)
+        }
+    }
+
+    /// Today's vitals judged against their typical ranges, as the Health Monitor tile counts them: the same
+    /// readings and bands the Health tab draws (`BodyVitalSigns`, `VitalBands`).
+    func monitorSummary(_ r: PulseRequest) -> PulseMonitorSummary {
+        let unit: TemperatureUnit = r.prefs.fahrenheit ? .fahrenheit : .celsius
+        let readings = BodyVitalSigns.readings(sourceRows: r.vitalRows, temperatureUnit: unit, now: r.now,
+                                               skinTempPreferred: r.prefs.skinTempPreferred)
+            .filter { $0.key != "spo2raw" && !($0.key == "spo2" && $0.value == nil) }
+        let judged = readings.filter { $0.banding.band != .noData }
+        let out = judged.filter { $0.banding.band == .outOfRange }
+        return PulseMonitorSummary(inRange: judged.count - out.count, judged: judged.count,
+                                   outOfRange: out.map { Self.vitalName($0.key) })
+    }
+
+    /// Pulse's names for the vitals, the ones Recovery and the Health tab use.
+    static func vitalName(_ key: String) -> String {
+        switch key {
+        case "resp": return String(localized: "Respiratory rate")
+        case "spo2": return String(localized: "Blood oxygen")
+        case "rhr": return String(localized: "Resting heart rate")
+        case "hrv": return String(localized: "Heart rate variability")
+        case "skin": return String(localized: "Skin temperature")
+        default: return key
+        }
+    }
+
+    /// The seven LOCAL calendar days ending on `date` (as the classic journal strip keys them) and which
+    /// have a native journal entry; `offset` is how many days back `date` is (the journal opens on it).
+    /// Not cached: logging an entry does not bump `refreshSeq`, and the read is one small indexed query.
+    func journalStrip(endingOn date: Date, offset: Int) async -> PulseJournalStrip {
         let cal = Calendar.current
         let days = (0..<7).reversed().map { n -> (key: String, offset: Int) in
-            (Repository.localDayKey(cal.date(byAdding: .day, value: -n, to: now) ?? now), n)
+            (Repository.localDayKey(cal.date(byAdding: .day, value: -n, to: date) ?? date), offset + n)
         }
         let logged = await repo.nativeJournalDays(from: days.first?.key ?? "", to: days.last?.key ?? "")
         return PulseJournalStrip(days: days.map {
@@ -481,7 +537,10 @@ actor PulseSnapshotBuilder {
         let cal = Calendar.current
         let wakeMinute: Int
         let source: PulseTonight.WakeSource
-        if let alarm = r.prefs.alarmWakeMinute {
+        if let strapAlarm = r.prefs.strapAlarmMinute {
+            wakeMinute = strapAlarm
+            source = .strapAlarm
+        } else if let alarm = r.prefs.alarmWakeMinute {
             wakeMinute = alarm
             source = .alarm
         } else {
@@ -525,19 +584,24 @@ actor PulseSnapshotBuilder {
                       unit: String, history: [(day: String, value: Double)], route: TabRoute,
                       dayKey: String, flatPercent: Double = 2, runningTotal: Bool = false) -> PulseKeyStat {
         let inProgress = runningTotal && value?.day == dayKey
-        let comparison = inProgress ? nil : value.flatMap { v in
+        let compared = inProgress ? nil : value.flatMap { v in
             PulseDisplay.compare(value: v.value, history: history, dayKey: v.day, flatPercent: flatPercent)
-        }.map { PulseStatText.comparison($0, unit: unit, absoluteText: text) }
+        }
+        let comparison = compared.map { PulseStatText.comparison($0, unit: unit, absoluteText: text) }
         let byDay = Dictionary(history.map { ($0.day, $0.value) }, uniquingKeysWith: { _, last in last })
         let spark = PulseDisplay.trailingDayKeys(endingOn: dayKey, count: 14).compactMap { byDay[$0] }
         let caption = inProgress ? nil : value.flatMap { v in
             v.day == dayKey ? nil : TodayView.carriedCaption(priorDayKey: v.day, todayKey: dayKey)
         }
+        let reference = compared?.reference
+        let delta: Double? = value.flatMap { v in
+            reference.map { ref in text(v.value) == text(ref) ? 0 : v.value - ref }
+        }
         return PulseKeyStat(id: id, title: title, icon: icon,
                             value: value.map { text($0.value) } ?? "–",
                             unit: value == nil ? "" : unit,
                             caption: caption, comparison: comparison, spark: spark, route: route,
-                            isRunningTotal: inProgress)
+                            isRunningTotal: inProgress, baseline: reference.map(text), baselineDelta: delta)
     }
 
     private func keyStats(_ r: PulseRequest, row: DailyMetric?) async -> [PulseKeyStat] {
@@ -753,7 +817,8 @@ actor PulseSnapshotBuilder {
                 id: id, title: title,
                 value: value.map(text) ?? "–",
                 unit: value == nil ? "" : unit,
-                averageText: c.map { String(localized: "30-day avg \(PulseFormat.withUnit(text($0.reference), unit))") },
+                // The bare 30-day average under the value, as WHOOP prints it ("93", "75%").
+                averageText: c.map { Self.baselineText(text($0.reference), unit: unit) },
                 comparison: c.map { PulseStatText.comparison($0, unit: unit, absoluteText: text) },
                 route: route)
         }
@@ -772,7 +837,8 @@ actor PulseSnapshotBuilder {
             // figure and its arrow cannot disagree at a half.
             return PulseContributor(
                 id: id, title: title, value: text(c.reference + c.delta), unit: unit,
-                averageText: String(localized: "Baseline \(PulseFormat.withUnit(text(c.reference), unit))"),
+                // The bare baseline under the value, as WHOOP prints it ("79", not "Baseline 79 ms").
+                averageText: Self.baselineText(text(c.reference), unit: unit),
                 comparison: PulseStatText.baselineComparison(c),
                 route: route)
         }
@@ -851,6 +917,11 @@ actor PulseSnapshotBuilder {
                                 contributors: contributors, context: context,
                                 drivers: drivers, confidence: confidence,
                                 history: history)
+    }
+
+    /// A contributor's baseline line: the bare number, keeping only a "%" (WHOOP's "75%" / "93").
+    static func baselineText(_ number: String, unit: String) -> String {
+        unit == "%" ? number + "%" : number
     }
 
     // MARK: - Strain

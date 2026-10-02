@@ -8,19 +8,21 @@ import StrandDesign
 /// Owned by group "more-profile", which rebuilds it to the spec's 2026 order (TOOLS, ACCOUNT &
 /// SETTINGS, SUPPORT, ADVANCED, INTERFACE, version line). The sections below are today's.
 struct PulseMoreView: View {
-    @EnvironmentObject private var repo: Repository
+    @Environment(PulseModel.self) private var model
     @Environment(\.pulseCoach) private var coach
+    @Environment(\.pulseNavigator) private var navigator
     @AppStorage("pulse.enabled") private var pulseEnabled = true
-    @State private var showReport = false
+    /// The guided session is BETA and switchable, like its Liquid Today entry.
+    @AppStorage(LiveSessionPrefs.betaKey) private var liveSessionsBeta = true
     @State private var confirmClassic = false
 
     var body: some View {
         PulseScreenScaffold(title: String(localized: "More"), role: .tabRoot, spacing: 0,
-                            refresh: { await repo.refresh() }) {
+                            refresh: { await model.refresh() }) {
             section(String(localized: "Performance")) {
                 row(String(localized: "Trends"), "chart.line.uptrend.xyaxis", .trends)
                 row(String(localized: "Weekly digest"), "calendar", .weeklyDigest)
-                Button { showReport = true } label: {
+                Button { navigator.present(.classic(.report)) } label: {
                     PulseListRow(symbol: "doc.richtext", title: String(localized: "Report"))
                 }
                 .buttonStyle(PulsePressStyle())
@@ -44,6 +46,14 @@ struct PulseMoreView: View {
                 row(String(localized: "Live"), "waveform.path.ecg", .live)
                 row(String(localized: "Breathe"), "wind", .breathe)
                 row(String(localized: "Intervals"), "timer", .intervals)
+                if liveSessionsBeta {
+                    // Moved here from the ＋ menu (§1.3: guided session goes to More › Tools).
+                    Button { navigator.present(.guidedSession) } label: {
+                        PulseListRow(symbol: "shield.lefthalf.filled", title: String(localized: "Guided session"),
+                                     subtitle: String(localized: "Silent strap coaching against today's Recovery · beta"))
+                    }
+                    .buttonStyle(PulsePressStyle())
+                }
             }
             section(String(localized: "Strap & alarms")) {
                 row(String(localized: "Devices"), "sensor.tag.radiowaves.forward", .devices)
@@ -81,9 +91,6 @@ struct PulseMoreView: View {
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.horizontal, 4)
             }
-        }
-        .sheet(isPresented: $showReport) {
-            TrendsReportSheet(days: repo.days)
         }
         .confirmationDialog(String(localized: "Switch to the classic interface?"),
                             isPresented: $confirmClassic, titleVisibility: .visible) {

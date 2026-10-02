@@ -11,12 +11,12 @@ struct PulseTrendsTabView: View {
     /// instead of pushing the classic Trends screen onto it.
     static let isRebuilt = false
 
-    @State private var showReport = false
-    @EnvironmentObject private var repo: Repository
+    @Environment(PulseModel.self) private var model
+    @Environment(\.pulseNavigator) private var navigator
 
     var body: some View {
         PulseScreenScaffold(title: String(localized: "Trends"), role: .tabRoot,
-                            refresh: { await repo.refresh() }) {
+                            refresh: { await model.refresh() }) {
             PulseCard {
                 VStack(alignment: .leading, spacing: 10) {
                     Image(systemName: "chart.line.uptrend.xyaxis")
@@ -41,15 +41,13 @@ struct PulseTrendsTabView: View {
                 link(String(localized: "What moves you"), "wand.and.sparkles", .classic(.insightsHub))
                 link(String(localized: "Explore"), "square.grid.2x2", .classic(.explore))
                 link(String(localized: "Compare"), "rectangle.split.2x1", .classic(.compare))
+                link(String(localized: "Training load"), "chart.line.uptrend.xyaxis", .trainingLoad)
                 link(String(localized: "Tomorrow's Recovery"), "brain.head.profile", .classic(.intelligence))
-                Button { showReport = true } label: {
+                Button { navigator.present(.classic(.report)) } label: {
                     PulseListRow(symbol: "doc.richtext", title: String(localized: "Report"))
                 }
                 .buttonStyle(PulsePressStyle())
             }
-        }
-        .sheet(isPresented: $showReport) {
-            TrendsReportSheet(days: repo.days)
         }
     }
 

@@ -69,19 +69,20 @@ struct PulseCallout<Content: View>: View {
         .padding(.bottom, 16)
         .frame(maxWidth: .infinity)
         .background(
-            shape.fill(RadialGradient(colors: [Color.white.opacity(0.10), Color.white.opacity(0.0)],
+            shape.fill(RadialGradient(colors: [PulseTheme.calloutGlow, PulseTheme.calloutGlow.opacity(0)],
                                       center: UnitPoint(x: notchPosition, y: 0),
                                       startRadius: 0, endRadius: 190)))
         .overlay(
-            shape.stroke(LinearGradient(colors: [Color.white.opacity(0.08), Color.white.opacity(0.0)],
+            shape.stroke(LinearGradient(colors: [PulseTheme.calloutRim, PulseTheme.calloutRim.opacity(0)],
                                         startPoint: .top, endPoint: .bottom),
                          lineWidth: 1))
     }
 }
 
-/// One contributor row inside a `PulseCallout` (53 pt pitch): a 20 pt icon at 50%, an 11 pt UPPERCASE
-/// label, then at the right the value (17 pt Bold condensed) over its 30-day baseline (13 pt, 50%) and
-/// the trend glyph. Sleep's rows show the Poor / Sufficient / Optimal segments instead of a baseline.
+/// One contributor row inside a `PulseCallout` (66 pt pitch, 2026): a 20 pt icon at 50%, an 11 pt UPPERCASE
+/// label, then at the right the value (21 pt Bold condensed; a unit, if any, small and tertiary) over its
+/// 30-day baseline as a bare number (13 pt, 50%, right-aligned) and the trend glyph. Sleep's rows show the
+/// Poor / Sufficient / Optimal segments instead of a baseline.
 struct PulseCalloutRow: View {
     let symbol: String
     let title: String
@@ -100,18 +101,15 @@ struct PulseCalloutRow: View {
                 .frame(width: 20)
                 .padding(.trailing, 9)
                 .accessibilityHidden(true)
-            Text(title)
-                .pulseText(.label)
+            PulseWordWrapText(title, style: .label)
                 .foregroundStyle(PulseTheme.textPrimary)
-                .lineLimit(2)
-                .minimumScaleFactor(0.85)
             Spacer(minLength: 8)
             if let segments {
                 PulseMiniSegments(active: segments)
                     .padding(.trailing, 14)
             }
             VStack(alignment: .trailing, spacing: 1) {
-                PulseValueText(value: value, unit: unit, style: .rowValue, unitStyle: .tileUnit)
+                PulseValueText(value: value, unit: unit, style: .calloutValue, unitStyle: .tileUnit)
                 if let baseline {
                     Text(baseline)
                         .pulseText(.baseline)
@@ -168,7 +166,7 @@ struct PulseLegendTodayVsBaseline: View {
             }
             (Text(String(localized: "Today")).fontWeight(.semibold).foregroundColor(PulseTheme.textPrimary)
              + Text(" ") + Text(String(localized: "vs. \(period)")).foregroundColor(PulseTheme.textSecondary))
-                .font(.system(size: 12))
+                .pulseText(.legend)
         }
         .accessibilityElement(children: .combine)
     }
@@ -188,7 +186,7 @@ struct PulseLegendPoorSufficientOptimal: View {
     private func item(_ color: Color, _ title: String) -> some View {
         HStack(spacing: 6) {
             RoundedRectangle(cornerRadius: 1).fill(color).frame(width: 12, height: 3)
-            Text(title).font(.system(size: 12)).foregroundStyle(PulseTheme.textSecondary)
+            Text(title).pulseText(.legend).foregroundStyle(PulseTheme.textSecondary)
         }
     }
 }
@@ -222,7 +220,7 @@ struct PulseNotchedWellRow: View {
     var body: some View {
         HStack(spacing: 8) {
             RoundedRectangle(cornerRadius: 2, style: .circular).fill(swatch).frame(width: 10, height: 10)
-            Text(title).font(.system(size: 15, weight: .medium)).foregroundStyle(PulseTheme.textPrimary)
+            Text(title).pulseText(.filter).foregroundStyle(PulseTheme.textPrimary)
             Spacer(minLength: 8)
             Text(value).font(PulseType.font(.rowValue)).foregroundStyle(PulseTheme.textPrimary)
         }

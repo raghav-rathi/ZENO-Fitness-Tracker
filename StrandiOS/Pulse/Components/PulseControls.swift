@@ -67,7 +67,8 @@ struct PulseSegmentedControl<Value: Hashable>: View {
                         .foregroundStyle(selected ? PulseTheme.textPrimary : PulseTheme.textTertiary)
                         .lineLimit(1)
                         .minimumScaleFactor(0.8)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .padding(.vertical, 6)
+                        .frame(maxWidth: .infinity, minHeight: PulseTheme.Row.segmented - 6)
                         .background { indicator(selected) }
                         .contentShape(Rectangle())
                 }
@@ -76,7 +77,7 @@ struct PulseSegmentedControl<Value: Hashable>: View {
             }
         }
         .padding(style == .well ? 3 : 0)
-        .frame(height: PulseTheme.Row.segmented)
+        .frame(minHeight: PulseTheme.Row.segmented)
         .background {
             if style == .well {
                 RoundedRectangle(cornerRadius: PulseTheme.Radius.control, style: .circular).fill(PulseTheme.well)
@@ -109,9 +110,10 @@ struct PulseSegmentedControl<Value: Hashable>: View {
     }
 }
 
-/// The date pager: an outer white-10% capsule with "‹", an inner lighter pill holding the label
-/// ("TODAY", "WED, MAY 27"; 11 pt Bold caps), and "›" (white 40% and disabled on today). Tapping the
-/// label opens the calendar sheet. The Stress Monitor, Healthspan and the Sleep dive reuse it.
+/// The date pager: an outer white-5% capsule with "‹", an inner pill another 10% lighter holding the label
+/// ("TODAY", "WED, MAY 27"; 11 pt Bold caps), and "›" (white 40% and disabled on today), 30 pt tall
+/// (reviews/r41: outer ≈137 × 30, inner ≈81 × 30, ≈14.5% in all). Tapping the label opens the calendar
+/// sheet. The Stress Monitor and Healthspan reuse it.
 struct PulseDayPager: View {
     let title: String
     var canGoBack: Bool = true
@@ -131,7 +133,7 @@ struct PulseDayPager: View {
                     .foregroundStyle(PulseTheme.textPrimary)
                     .lineLimit(1)
                     .padding(.horizontal, 14)
-                    .frame(minWidth: 84, minHeight: 32)
+                    .frame(minWidth: 81, minHeight: 30)
                     .background(RoundedRectangle(cornerRadius: PulseTheme.Radius.card, style: .circular)
                         .fill(PulseTheme.pagerPill))
                     .contentShape(Rectangle())
@@ -142,8 +144,9 @@ struct PulseDayPager: View {
             .accessibilityHint(onTitleTap == nil ? "" : String(localized: "Opens a calendar"))
             chevron("chevron.right", enabled: canGoForward, label: String(localized: "Next"), action: onForward)
         }
-        .frame(height: 32)
-        .background(Capsule(style: .circular).fill(PulseTheme.card))
+        .frame(height: 30)
+        .background(Capsule(style: .circular).fill(PulseTheme.pagerCapsule))
+        .dynamicTypeSize(...DynamicTypeSize.xxLarge)
     }
 
     private func chevron(_ symbol: String, enabled: Bool, label: String, action: @escaping () -> Void) -> some View {
@@ -151,8 +154,8 @@ struct PulseDayPager: View {
             Image(systemName: symbol)
                 .font(.system(size: 13, weight: .bold))
                 .foregroundStyle(enabled ? PulseTheme.textPrimary : PulseTheme.textDisabled)
-                .frame(width: 30, height: 32)
-                .contentShape(Rectangle().inset(by: -6))
+                .frame(width: 28, height: 30)
+                .contentShape(Rectangle().inset(by: -7))
         }
         .buttonStyle(PulsePressStyle())
         .disabled(!enabled)

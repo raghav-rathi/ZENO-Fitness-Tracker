@@ -46,7 +46,7 @@ struct PulseListRow: View {
                     .lineLimit(2)
                 if let subtitle {
                     Text(subtitle)
-                        .font(.system(size: 13))
+                        .pulseText(.rowSubline)
                         .foregroundStyle(PulseTheme.rowSubline)
                         .lineLimit(2)
                 }
@@ -176,14 +176,14 @@ struct PulseActivityChip: View {
         case .sleep, .unscoredSleep: return PulseTheme.sleep
         case .strain, .pending: return PulseTheme.strain
         case .recovery: return PulseTheme.recoveryActivityChip
-        case .preAdded: return Color.white.opacity(0.04)
+        case .preAdded: return PulseTheme.preAddedChip
         }
     }
 
     var body: some View {
         HStack(spacing: 8) {
             Image(systemName: symbol)
-                .font(.system(size: 17, weight: .semibold))
+                .font(.system(size: kind == .sleep || kind == .unscoredSleep ? 19 : 17, weight: .semibold))
             switch kind {
             case .unscoredSleep, .preAdded:
                 Image(systemName: "chart.bar.xaxis")
@@ -205,7 +205,7 @@ struct PulseActivityChip: View {
         .background {
             let shape = RoundedRectangle(cornerRadius: PulseTheme.Radius.well, style: .circular)
             if kind == .preAdded {
-                shape.fill(fill).overlay(shape.strokeBorder(Color.white.opacity(0.3), lineWidth: 1))
+                shape.fill(fill).overlay(shape.strokeBorder(PulseTheme.preAddedChipBorder, lineWidth: 1))
             } else {
                 shape.fill(fill)
             }
@@ -214,8 +214,9 @@ struct PulseActivityChip: View {
 }
 
 /// A Today's Activities row: nested fill (radius 10, ≈56 pt), the chip, the UPPERCASE name (up to two
-/// lines), the start and end times stacked at the right (12 pt, 70%), then a 2 × 24 pt bar in the
-/// activity colour (white for sleep; dotted for an activity that has not happened yet).
+/// lines, never split inside a word), the start and end times stacked at the right (Bold condensed 12 pt,
+/// 70%, 6 pt apart), then 9 pt on, a 2 × 28 pt bar in the activity colour (sleep blue for sleep and naps,
+/// strain blue for activities) with a white dot at each end; dotted for an activity not yet happened.
 struct PulseActivityRow: View {
     let chip: PulseActivityChip
     let name: String
@@ -228,38 +229,52 @@ struct PulseActivityRow: View {
     var body: some View {
         HStack(spacing: 12) {
             chip
-            Text(name)
-                .pulseText(.cardTitle)
+            PulseWordWrapText(name, style: .cardTitle)
                 .foregroundStyle(PulseTheme.textPrimary)
-                .lineLimit(2)
-                .minimumScaleFactor(0.85)
             Spacer(minLength: 6)
-            VStack(alignment: .trailing, spacing: 4) {
+            VStack(alignment: .trailing, spacing: 6) {
                 Text(start)
                 Text(end)
             }
-            .font(.system(size: 12, weight: .medium).monospacedDigit())
+            .font(PulseType.numeral(12))
             .foregroundStyle(PulseTheme.textSecondary)
             .lineLimit(1)
-            Group {
-                if dottedBar {
-                    Path { p in
-                        p.move(to: CGPoint(x: 1, y: 0))
-                        p.addLine(to: CGPoint(x: 1, y: 24))
-                    }
-                    .stroke(barColor, style: StrokeStyle(lineWidth: 2, dash: [2, 2]))
-                } else {
-                    Rectangle().fill(barColor)
-                }
-            }
-            .frame(width: 2, height: 24)
-            .accessibilityHidden(true)
+            PulseActivityEndBar(color: barColor, dotted: dottedBar)
+                .padding(.leading, -3)
         }
         .padding(8)
         .frame(maxWidth: .infinity, minHeight: PulseTheme.Row.activity, alignment: .leading)
         .background(RoundedRectangle(cornerRadius: PulseTheme.Radius.control, style: .circular).fill(PulseTheme.nested))
         .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
+    }
+}
+
+/// The 2 × 28 pt bar at the end of an activity row, in the activity's colour with white round dots at both
+/// ends (completeness-critic/02, 25; help-center/68).
+struct PulseActivityEndBar: View {
+    var color: Color
+    var dotted = false
+
+    var body: some View {
+        ZStack {
+            if dotted {
+                Path { p in
+                    p.move(to: CGPoint(x: 1, y: 2))
+                    p.addLine(to: CGPoint(x: 1, y: 26))
+                }
+                .stroke(color, style: StrokeStyle(lineWidth: 2, dash: [2, 2]))
+            } else {
+                Capsule().fill(color)
+            }
+            VStack {
+                Circle().fill(Color.white).frame(width: 2, height: 2)
+                Spacer(minLength: 0)
+                Circle().fill(Color.white).frame(width: 2, height: 2)
+            }
+        }
+        .frame(width: 2, height: 28)
+        .accessibilityHidden(true)
     }
 }
 
@@ -280,7 +295,7 @@ struct PulseSubtitleRowCard: View {
             VStack(alignment: .leading, spacing: 4) {
                 PulseCardTitle(title, accessory: .chevron)
                 Text(subtitle)
-                    .font(.system(size: 15))
+                    .pulseText(.subtitle)
                     .foregroundStyle(PulseTheme.subtitleRowText)
                     .lineLimit(2)
             }

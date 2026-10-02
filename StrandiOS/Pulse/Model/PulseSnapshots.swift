@@ -188,6 +188,8 @@ struct PulseNap: Identifiable, Equatable {
 /// Tonight's plan: need and the bedtime that meets it.
 struct PulseTonight: Equatable {
     enum WakeSource: Equatable {
+        /// The strap's silent wake alarm, armed for tomorrow: "● ALARM ON · EXACT TIME".
+        case strapAlarm
         /// The wake time set for the wind-down reminder.
         case alarm
         /// The median wake time of recent nights.
@@ -210,6 +212,9 @@ struct PulseTonight: Equatable {
     let bedtime: Date
     let wake: Date
     let wakeSource: WakeSource
+
+    /// True while the strap's wake alarm is armed for this wake time.
+    var alarmOn: Bool { wakeSource == .strapAlarm }
 }
 
 /// A workout on the selected day.
@@ -266,6 +271,31 @@ struct PulseKeyStat: Identifiable, Equatable {
     /// Today's still-accumulating count (steps, calories): shown as "So far today" in place of a
     /// comparison, since a partial day against full-day averages would always read as a drop.
     var isRunningTotal: Bool = false
+    /// The 30-day average the comparison is against, formatted as the value is ("46", "7,466"), for the
+    /// My Dashboard row's baseline line; nil while there is no average or no comparison.
+    var baseline: String? = nil
+    /// Value minus that average, zero when the two PRINT the same (§2.6 item 9: any difference that shows
+    /// is coloured good / bad; a grey dot only when the figures match).
+    var baselineDelta: Double? = nil
+}
+
+/// The Health Monitor tile: how many of today's judged vitals sit inside their typical range.
+struct PulseMonitorSummary: Equatable {
+    let inRange: Int
+    let judged: Int
+    /// The vitals outside their range, by name ("Skin temperature").
+    let outOfRange: [String]
+
+    /// Nothing judged yet (calibrating, no readings): the tile shows "Pending".
+    var isPending: Bool { judged == 0 }
+}
+
+/// One day of the STRAIN & RECOVERY chart: Strain on 0–21 and Recovery in percent, either missing.
+struct PulseWeekDay: Identifiable, Equatable {
+    /// The day key.
+    let id: String
+    let strain: Double?
+    let recovery: Double?
 }
 
 /// The day's stress read.
@@ -315,10 +345,20 @@ struct HomeSnapshot: Equatable {
     let naps: [PulseNap]
     let workouts: [PulseWorkoutItem]
     let tonight: PulseTonight?
+    /// The values My Dashboard's rows show (HRV, resting HR, …), each against its 30-day average.
     let stats: [PulseKeyStat]
     let stress: PulseStressSummary?
-    /// Today only, and only while the journal reminder is switched on.
+    /// The seven days ending on the selected one, while the journal reminder is switched on.
     let journal: PulseJournalStrip?
+    /// Today's day streak (consecutive days with a Recovery score); nil on a past day.
+    let streak: Int?
+    /// The Health Monitor tile, today only.
+    let monitor: PulseMonitorSummary?
+    /// The seven days ending on the selected one, oldest first, for STRAIN & RECOVERY.
+    let week: [PulseWeekDay]
+    /// Days with a Recovery score in the history: under 3 and no Coach provider, no outlook can be made,
+    /// so My Day shows the Ask row instead of the coach pill.
+    let scoredDays: Int
 
     var dials: [PulseDialData] { [sleep, recovery, strain] }
 }
@@ -331,6 +371,7 @@ struct PulseContributor: Identifiable, Equatable {
     let title: String
     let value: String
     let unit: String
+    /// The baseline under the value: the bare number ("79", "75%"), or a short caption ("vs your baseline").
     let averageText: String?
     let comparison: PulseComparison?
     let route: TabRoute?
@@ -539,6 +580,28 @@ enum PulseFormat {
 
     /// A clock time for a real instant, in the device zone, honouring the Clock format setting.
     static func clock(_ date: Date) -> String { AppClock.hourMinute(date) }
+
+    /// The same clock time without its AM / PM ("9:32", "23:32"), for the big Tonight's Sleep times
+    /// (WHOOP prints none; VoiceOver still hears `clock(_:)`).
+    static func clockNoMeridiem(_ date: Date) -> String {
+        lock.lock(); defer { lock.unlock() }
+        let use24 = AppClock.uses24Hour
+        if let cached = noMeridiemFormatter, cached.uses24 == use24 {
+            return cached.formatter.string(from: date)
+        }
+        let f = DateFormatter()
+        f.locale = AppClock.formattingLocale
+        f.setLocalizedDateFormatFromTemplate(use24 ? "Hmm" : "hmm")
+        // Drop the day-period field and the space around it.
+        f.dateFormat = f.dateFormat
+            .replacingOccurrences(of: "a", with: "")
+            .replacingOccurrences(of: "B", with: "")
+            .trimmingCharacters(in: .whitespaces)
+        noMeridiemFormatter = (use24, f)
+        return f.string(from: date)
+    }
+
+    private static var noMeridiemFormatter: (uses24: Bool, formatter: DateFormatter)?
 
     /// A short label for a DAY KEY ("12 Jul"), formatted at UTC midnight, the instant the key was parsed
     /// at, so it names the key's own day in every time zone.

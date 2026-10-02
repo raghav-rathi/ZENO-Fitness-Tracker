@@ -12,10 +12,24 @@ import StrandAnalytics
 /// Weekly Trends, the inline insight card). Until then that route hosts this screen.
 struct PulseStrainView: View {
     @Environment(PulseModel.self) private var model
+    @Environment(\.pulseNavigator) private var navigator
+
+    /// The coach summary pill: the local insight sentence until the Coach writes one (§1.2 [Z]).
+    private var coach: PulseCoachAccessory {
+        guard let s = model.strain, s.day.offset == model.dayOffset, let value = s.dial.value else { return .button }
+        var text = String(localized: "Strain is **\(PulseFormat.oneDecimal(value))**")
+        if let target = s.target, !target.fromCarriedRecovery {
+            text += ", " + String(localized: "against today's optimal range of **\(target.rangeText)**: \(target.progressText.lowercased()).")
+        } else {
+            text += "."
+        }
+        return .pill(summary: text)
+    }
 
     var body: some View {
         PulseScreenScaffold(title: PulseFormat.navDayTitle(offset: model.dayOffset, date: model.selectedLogicalDate),
-                            coach: .button, ready: model.strain != nil) {
+                            trailing: .info { navigator.open(.classic(.scoringGuide)) },
+                            coach: coach, ready: model.strain != nil) {
             if let s = model.strain, s.day.offset == model.dayOffset {
                 content(s)
             } else {
@@ -29,7 +43,7 @@ struct PulseStrainView: View {
     private func content(_ s: StrainSnapshot) -> some View {
         PulseHeroRing(content: s.dial.dialContent(target: s.target))
             .frame(maxWidth: .infinity)
-            .padding(.top, 8)
+            .padding(.top, 5)
             .padding(.bottom, 8)
 
         if let target = s.target {

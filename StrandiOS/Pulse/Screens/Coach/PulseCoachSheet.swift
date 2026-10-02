@@ -11,7 +11,9 @@ import StrandDesign
 struct PulseCoachSheet: View {
     var seed: String?
 
-    @EnvironmentObject private var coach: AICoachEngine
+    /// Whether a provider is configured comes from the shell's debounced probe, so the sheet does not
+    /// observe the engine (it publishes on every streamed token, and `isConfigured` reads the Keychain).
+    @Environment(\.pulseCoach) private var coach
 
     var body: some View {
         NavigationStack {
@@ -20,7 +22,7 @@ struct PulseCoachSheet: View {
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbarBackground(.hidden, for: .navigationBar)
         }
-        .presentationDetents(coach.isConfigured ? [.medium, .large] : [.large])
+        .presentationDetents(coach.availability == .ready ? [.medium, .large] : [.large])
         .presentationDragIndicator(.visible)
     }
 }

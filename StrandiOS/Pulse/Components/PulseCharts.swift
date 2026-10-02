@@ -261,18 +261,18 @@ struct PulseLineChart: View {
         return VStack(alignment: .trailing, spacing: 8) {
             if typicalRange != nil {
                 HStack(spacing: 6) {
-                    RoundedRectangle(cornerRadius: 2).fill(Color.white.opacity(0.25)).frame(width: 10, height: 10)
+                    RoundedRectangle(cornerRadius: 2).fill(PulseTheme.typicalSwatch).frame(width: 10, height: 10)
                     Text(String(localized: "Typical range")).pulseText(.label).foregroundStyle(PulseTheme.textSecondary)
                 }
             }
             Chart {
                 if let average {
                     RuleMark(y: .value("Average", average))
-                        .foregroundStyle(Color.white.opacity(0.8))
+                        .foregroundStyle(PulseTheme.averageLine)
                         .lineStyle(StrokeStyle(lineWidth: 1, dash: [4, 3]))
                         .annotation(position: .overlay, alignment: .leading) {
                             Text(String(localized: "Avg."))
-                                .font(.system(size: 11, weight: .bold))
+                                .font(PulseType.font(.chipStrong))
                                 .textCase(.uppercase)
                                 .foregroundStyle(Color.black)
                                 .padding(.horizontal, 5)
@@ -355,7 +355,7 @@ private struct PulseChartBand: View {
                let bottom = proxy.position(forY: range.lowerBound) {
                 let plot = geo[anchor]
                 Rectangle()
-                    .fill(Color.white.opacity(0.08))
+                    .fill(PulseTheme.typicalBand)
                     .frame(width: plot.width, height: max(1, bottom - top))
                     .position(x: plot.midX, y: plot.minY + (top + bottom) / 2)
             }
@@ -448,7 +448,7 @@ struct PulseStackedBarChart: View {
 
 /// 45° lines, 1 pt, every 4 pt, white 7%: the empty part of zone, stage, stress-level and impact bars.
 struct PulseHatchedTrack: View {
-    var color: Color = Color.white.opacity(0.07)
+    var color: Color = PulseTheme.hatch
     var spacing: CGFloat = 4
     var cornerRadius: CGFloat = PulseTheme.Radius.badge
 

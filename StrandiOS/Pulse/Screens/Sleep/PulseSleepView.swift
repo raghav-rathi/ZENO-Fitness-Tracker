@@ -3,22 +3,55 @@ import SwiftUI
 import StrandDesign
 import StrandAnalytics
 
-/// The current Pulse Sleep dive (WHOOP_UI_SPEC §3.3 in the new theme) for one night: the night pager,
-/// the 260 pt Sleep Performance ring, its contributors in the notched callout, the hypnogram and stages,
-/// sleeping heart rate and breathing, and naps. ‹ › move between nights and rebuild EVERYTHING on the
-/// screen from that night (the classic Sleep screen only moves its hero and stages).
+/// The current Pulse Sleep dive (WHOOP_UI_SPEC §3.3 in the new theme) for one night: the 260 pt Sleep
+/// Performance ring, its contributors in the notched callout, the hypnogram and stages, sleeping heart rate
+/// and breathing, and naps, with the coach summary pill floating at the bottom. The night steps in the bar's
+/// title ("‹ TODAY ›", §1.7 [Z]), so the ring sits where WHOOP's does; ‹ › rebuild EVERYTHING on the screen
+/// from that night (the classic Sleep screen only moves its hero and stages).
 ///
 /// Owned by group "sleep", which rebuilds it as `PulseSleepDiveView` (Last Night's Sleep detail cards,
 /// Weekly Trends, the coach summary pill). Until then that route hosts this screen.
 struct PulseSleepView: View {
     @Environment(PulseModel.self) private var model
+    @Environment(\.pulseNavigator) private var navigator
     /// Open on Home's night once per visit; a later reappearance (back from a pushed screen) keeps the
     /// night the wearer navigated to.
     @State private var opened = false
 
+    /// Home's day, which the title mirrors until the wearer steps to another night.
+    private var homeTitle: String {
+        PulseFormat.navDayTitle(offset: model.dayOffset, date: model.selectedLogicalDate)
+    }
+
+    private var pager: PulseNavTitlePager? {
+        guard let s = model.sleep else { return nil }
+        let title: String
+        if let key = s.wakeDayKey, key != model.home?.day.key {
+            // A night is named by the day it ended on: a DAY KEY, so it is formatted at UTC.
+            title = PulseFormat.navDayTitle(dayKey: key)
+        } else {
+            title = homeTitle
+        }
+        return PulseNavTitlePager(title: title, canGoBack: s.hasOlder, canGoForward: s.hasNewer,
+                                  onBack: { model.stepNight(1) }, onForward: { model.stepNight(-1) })
+    }
+
+    /// The coach summary pill: the local insight sentence until the Coach writes one (§1.2 [Z]).
+    private var coach: PulseCoachAccessory {
+        guard let s = model.sleep, let performance = s.dial.value else { return .button }
+        var text = String(localized: "Your sleep performance was **\(PulseDisplay.displayedPercent(performance))%**")
+        if let asleep = s.asleepMin, let need = s.needMin {
+            text += ": " + String(localized: "\(PulseFormat.duration(minutes: asleep)) asleep against the \(PulseFormat.duration(minutes: need)) you needed.")
+        } else {
+            text += "."
+        }
+        return .pill(summary: text)
+    }
+
     var body: some View {
-        PulseScreenScaffold(title: PulseFormat.navDayTitle(offset: model.dayOffset, date: model.selectedLogicalDate),
-                            coach: .button, ready: model.sleep != nil) {
+        PulseScreenScaffold(title: homeTitle, titlePager: pager,
+                            trailing: .info { navigator.open(.classic(.scoringGuide)) },
+                            coach: coach, ready: model.sleep != nil) {
             if let s = model.sleep {
                 content(s)
             } else {
@@ -37,22 +70,13 @@ struct PulseSleepView: View {
 
     @ViewBuilder
     private func content(_ s: SleepSnapshot) -> some View {
-        PulseNightNavigator(snapshot: s,
-                            onOlder: { model.stepNight(1) },
-                            onNewer: { model.stepNight(-1) })
-
-        VStack(spacing: 10) {
-            PulseHeroRing(content: s.dial.dialContent(label: String(localized: "Sleep performance"))) {
-                PulseMiniSegments(active: PulseSleepBand.index(percent: s.dial.value))
-                .padding(.top, 2)
-            }
-            if let asleep = s.asleepMin, let need = s.needMin {
-                Text(String(localized: "\(PulseFormat.duration(minutes: asleep)) asleep · \(PulseFormat.duration(minutes: need)) needed"))
-                    .pulseText(.body)
-                    .foregroundStyle(PulseTheme.textSecondary)
-            }
+        let band = PulseSleepBand.index(percent: s.dial.value)
+        PulseHeroRing(content: s.dial.dialContent(label: String(localized: "Sleep performance")),
+                      accessoryAccessibility: band.map(PulseSleepBand.name)) {
+            PulseMiniSegments(active: band)
         }
         .frame(maxWidth: .infinity)
+        .padding(.top, 5)
 
         PulseSleepContributors(rows: s.contributors)
             .id("pulse.contributors")
@@ -118,34 +142,6 @@ struct PulseSleepView: View {
             PulseActionButtonLabel(title: String(localized: "Open the full Sleep screen"), symbol: "bed.double")
         }
         .buttonStyle(PulsePressStyle())
-    }
-}
-
-/// "‹ LAST NIGHT ›" (§1.7 [Z]): the shared day pager, stepping night by night, with the night's window
-/// under it.
-struct PulseNightNavigator: View {
-    let snapshot: SleepSnapshot
-    let onOlder: () -> Void
-    let onNewer: () -> Void
-
-    private var title: String {
-        guard let key = snapshot.wakeDayKey else { return String(localized: "No nights yet") }
-        if snapshot.nightIndex == 0 { return String(localized: "Last night") }
-        // A night is named by the day it ended on: a DAY KEY, so it is formatted at UTC.
-        return PulseFormat.navDayTitle(dayKey: key)
-    }
-
-    var body: some View {
-        VStack(spacing: 8) {
-            PulseDayPager(title: title, canGoBack: snapshot.hasOlder, canGoForward: snapshot.hasNewer,
-                          onBack: onOlder, onForward: onNewer)
-            if let onset = snapshot.onset, let wake = snapshot.wake {
-                Text("\(PulseFormat.clock(onset)) – \(PulseFormat.clock(wake))")
-                    .pulseText(.secondary)
-                    .foregroundStyle(PulseTheme.textTertiary)
-            }
-        }
-        .frame(maxWidth: .infinity)
     }
 }
 

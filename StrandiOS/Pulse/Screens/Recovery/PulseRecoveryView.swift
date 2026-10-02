@@ -11,15 +11,29 @@ import StrandAnalytics
 /// Behavior Insights, the achievement chip). Until then that route hosts this screen.
 struct PulseRecoveryView: View {
     @Environment(PulseModel.self) private var model
+    @Environment(\.pulseNavigator) private var navigator
     #if DEBUG
     @State private var range = PulseDebugLaunch.historyRange ?? 30
     #else
     @State private var range = 30
     #endif
 
+    /// The coach summary pill: the local insight sentence until the Coach writes one (§1.2 [Z]).
+    private var coach: PulseCoachAccessory {
+        guard let s = model.recovery, s.day.offset == model.dayOffset, let value = s.dial.value else { return .button }
+        var text = String(localized: "Recovery is **\(PulseDisplay.displayedPercent(value))%**")
+        if let hrv = s.contributors.first(where: { $0.id == "hrv" }), hrv.value != "–", let base = hrv.averageText {
+            text += ": " + String(localized: "heart rate variability \(hrv.value) \(hrv.unit) against a baseline of \(base).")
+        } else {
+            text += "."
+        }
+        return .pill(summary: text)
+    }
+
     var body: some View {
         PulseScreenScaffold(title: PulseFormat.navDayTitle(offset: model.dayOffset, date: model.selectedLogicalDate),
-                            coach: .button, ready: model.recovery != nil) {
+                            trailing: .info { navigator.open(.classic(.scoringGuide)) },
+                            coach: coach, ready: model.recovery != nil) {
             if let s = model.recovery, s.day.offset == model.dayOffset {
                 content(s)
             } else {
@@ -83,7 +97,7 @@ struct PulseRecoveryHero: View {
     var body: some View {
         PulseHeroRing(content: content)
             .frame(maxWidth: .infinity)
-            .padding(.top, 8)
+            .padding(.top, 5)
     }
 
     private func bandLine(_ band: PulseDisplay.RecoveryBand) -> String {

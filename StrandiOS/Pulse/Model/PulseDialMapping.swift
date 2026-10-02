@@ -42,6 +42,15 @@ extension PulseStrainTarget {
 
 /// Sleep's Poor / Sufficient / Optimal reading, as `PulseMiniSegments` lights it.
 enum PulseSleepBand {
+    /// The reading's word, as VoiceOver says it.
+    static func name(_ index: Int) -> String {
+        switch index {
+        case 0: return String(localized: "Poor")
+        case 1: return String(localized: "Sufficient")
+        default: return String(localized: "Optimal")
+        }
+    }
+
     /// 0 Poor (under 70%), 1 Sufficient (70–84%), 2 Optimal (85% and up), judged on the whole percent
     /// printed; nil without a value.
     static func index(percent: Double?) -> Int? {

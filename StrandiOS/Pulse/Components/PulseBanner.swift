@@ -80,12 +80,10 @@ struct PulseStatusBanner: View {
             Spacer(minLength: 8)
             VStack(alignment: .trailing, spacing: 1) {
                 Text(String(localized: "Synced to"))
-                    .font(.system(size: 10, weight: .bold))
-                    .textCase(.uppercase)
-                    .tracking(0.8)
+                    .pulseText(.label)
                     .foregroundStyle(PulseTheme.textPrimary)
                 Text(time)
-                    .font(.system(size: 11, weight: .bold).monospacedDigit())
+                    .pulseText(.chipStrong)
                     .foregroundStyle(PulseTheme.syncedTeal)
             }
             Image(systemName: "checkmark")
@@ -98,7 +96,7 @@ struct PulseStatusBanner: View {
             Spacer(minLength: 8)
             if let progress {
                 Text("\(Int((max(0, min(1, progress)) * 100).rounded()))%")
-                    .font(.system(size: 11, weight: .bold).monospacedDigit())
+                    .pulseText(.chipStrong)
                     .foregroundStyle(PulseTheme.positive)
             }
         case .offWrist:

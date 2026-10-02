@@ -287,19 +287,22 @@ final class PulseModel {
     // MARK: Builds for extension snapshots
 
     /// Run a snapshot build a screen group defines in its own `PulseSnapshotBuilder` extension, for
-    /// Home's selected day (or `dayOffset`), off the main actor. Returns nil when the build was
-    /// superseded (a newer refresh or another day landed while it ran), so keep what is on screen:
+    /// Home's selected day (or `dayOffset`). Returns nil when the build was superseded (a newer refresh or
+    /// another day landed while it ran), so keep what is on screen:
     ///
     ///     .task(id: model.detailKey) {
     ///         if let s = await model.build({ builder, request in await builder.weeklyDigest(request) }) {
     ///             snapshot = s
     ///         }
     ///     }
+    ///
+    /// `work` is isolated to the builder actor (its first parameter), so ALL of it runs off the main actor,
+    /// synchronous code included, even though the closure is written inside a main-actor view.
     func build<S>(dayOffset: Int? = nil,
-                  _ work: (PulseSnapshotBuilder, PulseRequest) async -> S?) async -> S? {
+                  _ work: @escaping @Sendable (isolated PulseSnapshotBuilder, PulseRequest) async -> S?) async -> S? {
         let offset = dayOffset ?? self.dayOffset
         guard let builder, let req = request(dayOffset: offset) else { return nil }
-        let result = await work(builder, req)
+        let result = await builder.run(req, work)
         guard !Task.isCancelled, req.seq == seq, offset == (dayOffset ?? self.dayOffset) else { return nil }
         return result
     }

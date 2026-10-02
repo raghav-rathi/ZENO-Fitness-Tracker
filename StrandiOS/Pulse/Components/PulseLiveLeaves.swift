@@ -9,8 +9,9 @@ import StrandDesign
 // so a heart-rate tick re-renders one chip and nothing around it.
 
 /// The Home header's strap status (WHOOP_UI_SPEC §1.4, right): the battery figure ("65%", 13 pt Bold
-/// condensed, red when low, "⚡" while charging) and a strap glyph whose 6 pt dot is teal while connected
-/// and grey when not. Tapping it opens the strap screen (`action`, or NavRouter's Devices request).
+/// condensed, white 60%, red when low, "⚡" while charging) 6.5 pt left of a white strap outline whose
+/// 6.5 pt dot is teal while connected and grey when not. Tapping it opens the strap screen (`action`, or
+/// NavRouter's Devices request).
 struct PulseStrapChip: View {
     var action: (() -> Void)?
 
@@ -50,7 +51,7 @@ private struct PulseStrapChipContent: View, Equatable {
     private static let lowBattery = 15.0
 
     var body: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: 6.5) {
             if syncing {
                 Image(systemName: "arrow.triangle.2.circlepath")
                     .font(.system(size: 11, weight: .bold))
@@ -58,7 +59,7 @@ private struct PulseStrapChipContent: View, Equatable {
             }
             if let text {
                 Text(text)
-                    .font(PulseType.numeral(13))
+                    .font(PulseType.font(.headerNumeral))
                     .foregroundStyle(textColor)
             }
             PulseStrapGlyph(connected: connected)
@@ -82,7 +83,7 @@ private struct PulseStrapChipContent: View, Equatable {
         if case .charge(let pct, let charging, _) = display, !charging, pct <= Self.lowBattery {
             return PulseTheme.recoveryLowText
         }
-        return PulseTheme.textSecondary
+        return PulseTheme.batteryText
     }
 
     private var accessibility: String {
@@ -100,31 +101,29 @@ private struct PulseStrapChipContent: View, Equatable {
     }
 }
 
-/// An outline strap with its status dot: teal while connected, grey otherwise. ZENO's own glyph.
+/// The strap glyph with its status dot (≈17 × 22 pt with the dot): ZENO's own band outline, 1.5 pt white,
+/// and a 6.5 pt dot overlapping its top-right corner, teal while connected and grey otherwise.
 struct PulseStrapGlyph: View {
     let connected: Bool
 
     var body: some View {
         ZStack(alignment: .topTrailing) {
-            RoundedRectangle(cornerRadius: 4, style: .continuous)
-                .strokeBorder(PulseTheme.textSecondary, lineWidth: 1.6)
+            PulseStrapShape()
+                .stroke(PulseTheme.strapOutline, style: StrokeStyle(lineWidth: 1.5, lineCap: .round, lineJoin: .round))
                 .frame(width: 13, height: 20)
-                .overlay(
-                    Capsule().fill(PulseTheme.textSecondary).frame(width: 5, height: 1.6),
-                    alignment: .center)
                 .padding(.top, 2)
-                .padding(.trailing, 3)
+                .padding(.trailing, 4)
             Circle()
                 .fill(connected ? PulseTheme.positive : PulseTheme.textDisabled)
-                .frame(width: 6, height: 6)
-                .overlay(Circle().strokeBorder(PulseTheme.pageTop, lineWidth: 1))
+                .frame(width: 6.5, height: 6.5)
         }
-        .frame(width: 18, height: 24)
+        .frame(width: 17, height: 22)
         .accessibilityHidden(true)
     }
 }
 
-/// The live heart-rate chip, present only while the strap is streaming.
+/// The live heart-rate chip, present only while the strap is streaming. It left the Home header (§1.4:
+/// live HR lives in the Health Monitor strip); the health group places it there.
 struct PulseLiveHRChip: View {
     @EnvironmentObject private var live: LiveState
 

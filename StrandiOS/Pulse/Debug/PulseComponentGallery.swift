@@ -7,21 +7,26 @@ struct PulseComponentGallery: View {
     @State private var range: PulseRange = .week
     @State private var tab = "STATUS"
     @State private var toggle = true
+    @State private var wheel = 7
 
     var body: some View {
         NavigationStack {
             PulseScreenScaffold(title: "Component gallery", spacing: 24) {
                 // `--pulse-scroll gallery-<section>` jumps to a section.
                 dials.id("pulse.gallery-dials")
+                header.id("pulse.gallery-header")
                 surfaces.id("pulse.gallery-cards")
                 headers.id("pulse.gallery-headers")
                 rows.id("pulse.gallery-rows")
                 trendsAndStatus.id("pulse.gallery-status")
                 banners.id("pulse.gallery-banners")
+                featureCards.id("pulse.gallery-feature")
                 callout.id("pulse.gallery-callout")
                 controls.id("pulse.gallery-controls")
                 buttons.id("pulse.gallery-buttons")
                 charts.id("pulse.gallery-charts")
+                dayCharts.id("pulse.gallery-daycharts")
+                overlays.id("pulse.gallery-overlays")
                 coach.id("pulse.gallery-coach")
             }
             .environment(\.pulseModalRoot, true)
@@ -45,17 +50,21 @@ struct PulseComponentGallery: View {
                 PulseScoreDial(content: .strain(label: "Strain", value: 4.3, optimalRange: 8.3...12.3, target: 10.3))
             }
             HStack(alignment: .top, spacing: 12) {
-                PulseScoreDial(content: .percent(label: "Recovery", percent: nil, color: PulseTheme.textTertiary,
-                                                 caption: "Calibrating"))
+                // Through the model's mapping, exactly as Home draws a calibrating Recovery.
+                PulseScoreDial(content: PulseDialData(score: .recovery, value: nil,
+                                                      state: .calibrating(nights: 2, of: 4)).dialContent())
                 PulseScoreDial(content: .strain(label: "Strain", value: 0.2, optimalRange: 9.1...13.1, target: 11.1))
                 PulseScoreDial(content: .strain(label: "Strain", value: 16.8, optimalRange: 14...18, target: 16))
             }
             .frame(maxWidth: .infinity)
             title("Deep-dive ring · 260 / 15")
-            PulseHeroRing(content: .percent(label: "Sleep performance", percent: 100, color: PulseTheme.sleep)) {
+            PulseHeroRing(content: .percent(label: "Sleep performance", percent: 100, color: PulseTheme.sleep),
+                          accessoryAccessibility: "Optimal") {
                 PulseMiniSegments(active: 2)
             }
             .frame(maxWidth: .infinity)
+            PulseHeroRing(content: .strain(label: "Strain", value: 20.7, optimalRange: 14...18, target: 16))
+                .frame(maxWidth: .infinity)
             title("Mini rings · 24 / 2")
             PulseMiniRingRow(items: [
                 .init(id: "s", content: .percent(label: "Sleep", percent: 71, color: PulseTheme.sleep), action: {}),
@@ -69,7 +78,189 @@ struct PulseComponentGallery: View {
                 PulseCoachAvatar()
                 PulseStrapGlyph(connected: true)
                 PulseStrapGlyph(connected: false)
+                PulseStrapVibrateGlyph().foregroundStyle(PulseTheme.textSecondary)
             }
+        }
+    }
+
+    // MARK: Header pieces
+
+    private var header: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            title("Header · avatar, streak, pager")
+            HStack(spacing: 16) {
+                ZStack(alignment: .leading) {
+                    PulseStreakPill(days: 105).padding(.leading, PulseTheme.Header.avatar / 2)
+                    PulseAvatar(imageData: nil, name: nil)
+                        .background(Circle().fill(PulseTheme.pageTop).padding(-1.5))
+                }
+                PulseAvatar(imageData: nil, name: "Iris Wong")
+                PulseStreakPill(days: 372)
+                PulseStreakPill(days: 1607)
+            }
+            HStack {
+                Spacer()
+                PulseDayPager(title: "Today", canGoBack: true, canGoForward: false, onBack: {}, onForward: {}, onTitleTap: {})
+                Spacer()
+            }
+            title("Navigation bar")
+            PulseNavBar(title: "Today", leading: .back, trailing: .info {}, onLeading: {})
+                .padding(.horizontal, -16)
+            PulseNavBar(title: nil, titlePager: PulseNavTitlePager(title: "Wed, Sep 30", canGoBack: true,
+                                                                   canGoForward: true, onBack: {}, onForward: {}),
+                        leading: .back,
+                        trailing: .achievement(symbol: "hexagon.fill", tint: PulseTheme.sleep, count: 796, action: {}),
+                        onLeading: {})
+                .padding(.horizontal, -16)
+        }
+    }
+
+    // MARK: Feature cards
+
+    private var featureCards: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            title("Monitor tiles")
+            HStack(alignment: .top, spacing: 12) {
+                PulseMonitorTile(title: "Health Monitor",
+                                 status: .init(badge: .check, tint: .teal, word: "Within range",
+                                               wordColor: PulseTheme.positive, detail: "5/5 Metrics"))
+                PulseMonitorTile(title: "Stress Monitor",
+                                 status: .init(badge: .value("1.0"), tint: .teal, word: "Medium",
+                                               wordColor: PulseTheme.Stress.medium, detail: "9:14 PM"))
+            }
+            .fixedSize(horizontal: false, vertical: true)
+            HStack(alignment: .top, spacing: 12) {
+                PulseMonitorTile(title: "Health Monitor",
+                                 status: .init(badge: .alert, tint: .orange, word: "Out of range",
+                                               wordColor: PulseTheme.negative, detail: "Skin temperature"))
+                PulseMonitorTile(title: "Stress Monitor", status: .pending)
+            }
+            .fixedSize(horizontal: false, vertical: true)
+            title("Coach pill and Ask row")
+            PulseCoachPill(kind: .morning, title: "Your Daily Outlook") {}
+            PulseCoachPill(kind: .evening, title: "Your Day In Review") {}
+            PulseCoachPill(kind: .morning, title: "Your Daily Outlook", isRead: true) {}
+            PulseAskRow {}
+            title("Insight card")
+            PulseInsightCard(text: "You've worked extra hard today and have exceeded a balanced level of Strain.",
+                             cta: "Break down my strain") {}
+            title("Zone rows")
+            PulseZoneRowCard(zone: 4, range: "162-171 BPM", share: 0.22, duration: "0:12:48", typical: 0.1...0.3)
+            PulseZoneRowCard(zone: 5, range: "172+ BPM", share: 0, duration: "0:00:00")
+            title("Impact bars")
+            PulseImpactBar(fraction: 0.6, effect: .helps, valueText: "+8%")
+            PulseImpactBar(fraction: -0.35, effect: .hurts, valueText: "-3%")
+            PulseImpactBar(fraction: 0.15, effect: .notSignificant, valueText: "+2%", large: true)
+            title("Day circles and goal rings")
+            PulseCard {
+                PulseDayCircleRow(days: [
+                    .init(id: "1", label: "Thu", state: .logged), .init(id: "2", label: "Fri", state: .logged),
+                    .init(id: "3", label: "Sat", state: .notLogged), .init(id: "4", label: "Sun", state: .logged),
+                    .init(id: "5", label: "Mon", state: .notLogged), .init(id: "6", label: "Tue", state: .logged),
+                    .init(id: "7", label: "Wed", state: .pending, isCurrent: true),
+                ])
+            }
+            PulseCard {
+                PulseDayCircleRow(days: [
+                    .init(id: "1", label: "Mon", state: .done), .init(id: "2", label: "Tue", state: .rest),
+                    .init(id: "3", label: "Wed", state: .done, isCurrent: true), .init(id: "4", label: "Thu", state: .future),
+                    .init(id: "5", label: "Fri", state: .future), .init(id: "6", label: "Sat", state: .future),
+                    .init(id: "7", label: "Sun", state: .future),
+                ])
+            }
+            HStack(spacing: 16) {
+                PulseGoalRing(kind: .count(done: 5, target: 7))
+                PulseGoalRing(kind: .count(done: 4, target: 4))
+                PulseGoalRing(kind: .value(text: "0:27", fraction: 0.6))
+                PulseGoalRing(kind: .value(text: "269.4", fraction: 1))
+            }
+            title("Skeleton")
+            VStack(spacing: 12) {
+                PulseSkeletonBlock(height: 88)
+                HStack(spacing: 12) {
+                    PulseSkeletonBlock(height: 48)
+                    PulseSkeletonBlock(height: 48)
+                }
+            }
+        }
+    }
+
+    // MARK: Day charts
+
+    private var dayCharts: some View {
+        let start = Calendar.current.startOfDay(for: Date())
+        let hr = (0..<60).map { i -> PulseTimeValue in
+            let t = start.addingTimeInterval(TimeInterval(7 * 3600 + i * 60))
+            let v = i == 30 ? nil : 110 + 40 * sin(Double(i) / 9)
+            return PulseTimeValue(date: t, value: v)
+        }
+        let stress = (0..<24).map { i -> PulseTimeValue in
+            PulseTimeValue(date: start.addingTimeInterval(TimeInterval(i * 3600 + 1800)),
+                           value: i == 6 ? nil : 1.2 + 0.9 * sin(Double(i) / 3.2))
+        }
+        let week = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].enumerated().map { i, label in
+            PulseStrainRecoveryChart.Day(id: "d\(i)", label: label, sublabel: "\(26 + i)",
+                                         strain: [4.0, 13.2, 13.7, 13.8, 11.3, nil, 2.7][i],
+                                         recovery: [85, 82, 76, 48, 25, nil, 24][i])
+        }
+        return VStack(alignment: .leading, spacing: 12) {
+            title("Heart-rate area")
+            PulseCard {
+                PulseHRAreaChart(points: hr, window: hr[5].date...hr[54].date, color: PulseTheme.strain,
+                                 startLabel: "7:05 AM", endLabel: "7:54 AM", startSymbol: "play.fill",
+                                 endSymbol: "stop.fill")
+            }
+            title("Stress · 24 h")
+            PulseCard {
+                PulseStressChart(points: stress,
+                                 periods: [PulseChartPeriod(id: "s", start: start, end: start.addingTimeInterval(7 * 3600),
+                                                            kind: .sleep, symbol: "moon.fill"),
+                                           PulseChartPeriod(id: "a", start: start.addingTimeInterval(17.5 * 3600),
+                                                            end: start.addingTimeInterval(18.3 * 3600),
+                                                            kind: .activity, symbol: "figure.run")],
+                                 now: start.addingTimeInterval(23.5 * 3600),
+                                 xLabels: ["12:00 AM", "8:00 AM", "4:00 PM", "11:30 PM"])
+            }
+            title("Strain & Recovery")
+            PulseChartCard("Strain & Recovery", accessory: .info) {
+                PulseStrainRecoveryChart(days: week, highlightID: "d6")
+            }
+        }
+    }
+
+    // MARK: Overlays (drawn inline here)
+
+    private var overlays: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            title("Action menu rows")
+            VStack(alignment: .leading, spacing: 0) {
+                ForEach(PulseActionMenuItem.allCases) { item in
+                    PulseActionMenuRowLabel(title: item.title, symbol: item.symbol)
+                }
+            }
+            .padding(.vertical, 8)
+            .background(RoundedRectangle(cornerRadius: PulseTheme.Radius.menu, style: .continuous)
+                .fill(LinearGradient(colors: [PulseTheme.menuTop, PulseTheme.menuBottom], startPoint: .top, endPoint: .bottom)))
+            HStack(spacing: 16) {
+                PulsePlusSquare()
+                PulsePlusSquare(isClose: true)
+            }
+            title("Dialog card")
+            PulseDialogCard(title: "Overlapping activities",
+                            message: "This activity overlaps another one. Edit the times and try again.",
+                            primaryTitle: "Got it", primary: {}, secondaryTitle: "Try again", secondary: {},
+                            onClose: {})
+                .frame(height: 330)
+                .clipShape(RoundedRectangle(cornerRadius: 12))
+            title("Error page")
+            PulseErrorPage(message: "Something went wrong. Check your strap and try again.", onRetry: {}, onClose: {})
+                .frame(height: 420)
+                .clipShape(RoundedRectangle(cornerRadius: 12))
+            title("Wheel picker sheet")
+            PulseWheelPickerSheet(title: "Days per week", options: Array(1...7), selection: $wheel,
+                                  label: { "\($0) days" }, onConfirm: {}, onCancel: {})
+                .frame(height: 360)
+                .clipShape(RoundedRectangle(cornerRadius: 20))
         }
     }
 
@@ -263,10 +454,12 @@ struct PulseComponentGallery: View {
     private var buttons: some View {
         VStack(alignment: .leading, spacing: 12) {
             title("Buttons")
-            HStack(spacing: 12) {
+            PulseButtonRow {
                 Button {} label: { Label("Add activity", systemImage: "plus") }.buttonStyle(.pulseNested)
                 Button {} label: { Label("Start activity", systemImage: "stopwatch") }.buttonStyle(.pulseNested)
             }
+            Button {} label: { Label("Behavior insights", systemImage: "lightbulb") }
+                .buttonStyle(.pulseNested(fill: PulseTheme.Journal.insightsButton))
             Button("Save") {}.buttonStyle(.pulseOutline())
             Button("Add sleep") {}.buttonStyle(.pulseOutlineWhite)
             Button("Save journal") {}.buttonStyle(.pulseFilledWhite)

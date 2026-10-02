@@ -18,6 +18,15 @@ import WhoopStore
 // Existing entry points (NavRouter requests, Home Screen quick actions, the old Home rows) keep opening the
 // classic screen they opened before until the owning group flips its screen's `isRebuilt` flag, then they
 // open the rebuilt route: `PulseRoute.forExistingEntryPoint`. Groups never edit this file.
+//
+// A group that needs a destination of its own (Edit Profile, Behavior Details, Edit Activity, AI Settings,
+// …) declares it in its own folder as a `PulseScreenRoute` and opens it with `route` (the open
+// `.screen` case below), so it never edits this file either:
+//
+//     struct EditProfileRoute: PulseScreenRoute {
+//         var view: some View { PulseEditProfileView() }
+//     }
+//     PulseLink(EditProfileRoute().route) { PulseListRow(title: "Edit profile") }
 
 /// How a destination is presented (§1.6).
 enum PulsePresentation: Equatable {
@@ -27,6 +36,40 @@ enum PulsePresentation: Equatable {
     case sheet
     /// A full-screen modal with its own stack, "✕".
     case fullScreen
+}
+
+/// A destination a screen group declares in its own folder, so it never edits this file. Open it with
+/// `route`; `presentation` defaults to a push.
+protocol PulseScreenRoute: Hashable {
+    associatedtype Screen: View
+    /// How it opens (§1.6).
+    var presentation: PulsePresentation { get }
+    /// The screen it shows (build it from `PulseScreenScaffold` like any Pulse screen).
+    @MainActor @ViewBuilder var view: Screen { get }
+}
+
+extension PulseScreenRoute {
+    var presentation: PulsePresentation { .push }
+    /// This destination as a `PulseRoute`, for `PulseLink`, `navigator.open` and the rest.
+    var route: PulseRoute { .screen(AnyPulseScreen(self)) }
+}
+
+/// A type-erased `PulseScreenRoute`: equal when the routes are equal, so a path can hold it.
+struct AnyPulseScreen: Hashable {
+    let base: AnyHashable
+    let presentation: PulsePresentation
+    private let make: @MainActor () -> AnyView
+
+    init<R: PulseScreenRoute>(_ route: R) {
+        base = AnyHashable(route)
+        presentation = route.presentation
+        make = { AnyView(route.view) }
+    }
+
+    @MainActor var view: AnyView { make() }
+
+    static func == (lhs: AnyPulseScreen, rhs: AnyPulseScreen) -> Bool { lhs.base == rhs.base }
+    func hash(into hasher: inout Hasher) { hasher.combine(base) }
 }
 
 /// Every destination in Pulse.
@@ -92,6 +135,20 @@ enum PulseRoute: Hashable {
     /// The expanded day heart-rate timeline (⤢ on TODAY'S ACTIVITIES).
     case dayTimeline
 
+    // MARK: More and Trends rows from the §1.8 map (groups "more-profile", "trends")
+    /// More › PRIVACY & DATA ("Everything stays on this iPhone"; backup, restore, delete).
+    case privacyData
+    /// More › REPORT A PROBLEM.
+    case reportProblem
+    /// More › FIRST WEEK WITH ZENO: the checklist page (§3.31).
+    case firstWeek
+    /// Trends › TRAINING LOAD (CTL / ATL / TSB).
+    case trainingLoad
+
+    // MARK: A group's own destination
+    /// Any destination a group declares as a `PulseScreenRoute` in its own folder (open with `.route`).
+    case screen(AnyPulseScreen)
+
     // MARK: Existing screens
     /// The silent-guardian Live Session (beta), full screen.
     case guidedSession
@@ -119,6 +176,8 @@ enum PulseRoute: Hashable {
             return .sheet
         case .weeklyPlan(let editing):
             return editing ? .sheet : .push
+        case .screen(let screen):
+            return screen.presentation
         default:
             return .push
         }
@@ -135,7 +194,7 @@ enum PulseRoute: Hashable {
     // MARK: The one mapping
 
     /// The view a route shows. Pushed and presented routes both come through here.
-    @ViewBuilder
+    @MainActor @ViewBuilder
     var destination: some View {
         switch self {
         case .sleepDive: PulseSleepDiveView()
@@ -170,32 +229,61 @@ enum PulseRoute: Hashable {
         case .yearInReview: PulseYearInReviewView()
         case .challenges: PulseChallengesView()
         case .dayTimeline: PulseDayTimelineView()
+        case .privacyData: PulsePrivacyDataView()
+        case .reportProblem: PulseReportProblemView()
+        case .firstWeek: PulseFirstWeekView()
+        case .trainingLoad: PulseTrainingLoadView()
+        case .screen(let screen): screen.view
         case .guidedSession: PulseGuidedSessionHost()
         case .classic(let screen): PulseClassicScreen { screen.view }
-        case .tab(let route): PulseClassicScreen { route.pulseView }
+        case .tab(let route): PulseClassicScreen { route.destinationView }
         }
     }
+
 
     // MARK: Existing entry points
 
     /// Whether the screen behind this route has been rebuilt. Each group flips the static `isRebuilt` on
-    /// its own screen type; routes without a classic fallback are always "rebuilt".
+    /// its own screen type. Exhaustive on purpose (no `default`): a new route must say where its flag
+    /// lives, so an entry point can never open a placeholder while a working classic screen exists.
     var isRebuilt: Bool {
         switch self {
+        // Working Pulse screens today, with no classic fallback.
+        case .sleepDive, .recoveryDive, .strainDive, .coach: return true
+        case .customizeDashboard: return PulseCustomizeDashboardView.isRebuilt
+        case .calibrationTimeline: return PulseCalibrationTimelineView.isRebuilt
         case .sleepPlanner: return PulseSleepPlannerView.isRebuilt
         case .trendView: return PulseTrendView.isRebuilt
         case .weeklyDigest: return PulseWeeklyDigestView.isRebuilt
         case .activityDetail: return PulseActivityDetailView.isRebuilt
         case .startActivity: return PulseStartActivityView.isRebuilt
+        case .addActivity: return PulseAddActivityView.isRebuilt
+        case .activityPicker: return PulseActivityPickerView.isRebuilt
+        case .healthspan: return PulseHealthspanView.isRebuilt
+        case .healthMonitor: return PulseHealthMonitorView.isRebuilt
         case .stressMonitor: return PulseStressMonitorView.isRebuilt
         case .appSettings: return PulseAppSettingsView.isRebuilt
         case .deviceSettings: return PulseDeviceSettingsView.isRebuilt
         case .profile: return PulseProfileView.isRebuilt
+        case .levels: return PulseLevelsView.isRebuilt
+        case .achievements: return PulseAchievementsView.isRebuilt
+        case .dayStreak: return PulseStreakView.isRebuilt
         case .journal: return PulseJournalView.isRebuilt
         case .behaviorInsights: return PulseBehaviorInsightsView.isRebuilt
+        case .weeklyPlan: return PulseWeeklyPlanView.isRebuilt
+        case .cycleInsights: return PulseCycleInsightsView.isRebuilt
+        case .memory: return PulseMemoryView.isRebuilt
+        case .onboarding: return PulseOnboardingView.isRebuilt
         case .strengthTrainer: return PulseStrengthTrainerView.isRebuilt
+        case .yearInReview: return PulseYearInReviewView.isRebuilt
+        case .challenges: return PulseChallengesView.isRebuilt
         case .dayTimeline: return PulseDayTimelineView.isRebuilt
-        default: return true
+        case .privacyData: return PulsePrivacyDataView.isRebuilt
+        case .reportProblem: return PulseReportProblemView.isRebuilt
+        case .firstWeek: return PulseFirstWeekView.isRebuilt
+        case .trainingLoad: return PulseTrainingLoadView.isRebuilt
+        // A group's own route, the guided session and the classic screens are what they are.
+        case .screen, .guidedSession, .classic, .tab: return true
         }
     }
 
@@ -218,6 +306,10 @@ enum PulseRoute: Hashable {
         case .behaviorInsights: return .classic(.insightsHub)
         case .strengthTrainer: return .classic(.liftLog)
         case .dayTimeline: return .tab(.fullDayChart)
+        case .privacyData: return .classic(.backupSync)
+        case .reportProblem: return .classic(.testCentre)
+        case .firstWeek: return .classic(.scoringGuide)
+        case .trainingLoad: return .classic(.trends)
         default: return nil
         }
     }
@@ -227,6 +319,18 @@ enum PulseRoute: Hashable {
     var forExistingEntryPoint: PulseRoute {
         guard !isRebuilt, let fallback = classicFallback else { return self }
         return fallback
+    }
+}
+
+extension NavigationPath {
+    /// Push a Pulse route. A shared metric route goes on as the raw `TabRoute`, which
+    /// `tabRouteDestinations()` maps, so the route has one mapping, not two; everything else as itself.
+    mutating func appendPulse(_ route: PulseRoute) {
+        if case .tab(let tab) = route {
+            append(tab)
+        } else {
+            append(route)
+        }
     }
 }
 
@@ -276,7 +380,8 @@ enum PulseClassicDestination: Hashable {
         case .testCentre: TestCentreView()
         case .limitations: NoopLimitationsView()
         case .miBand: XiaomiBandView()
-        case .rhythm: RhythmHost()
+        // Its consent gate's "Not now" closes it, pushed or presented.
+        case .rhythm: PulseDismissHost { dismiss in RhythmHost(onClose: dismiss) }
         case .intelligence: IntelligenceView()
         case .fusedRecord: FusedRecordHost()
         case .powerSaving: PowerSavingView()
@@ -285,36 +390,6 @@ enum PulseClassicDestination: Hashable {
         case .classicHealth: HealthView()
         case .stress: StressView()
         case .labBook: LabBookView()
-        }
-    }
-}
-
-extension TabRoute {
-    /// The view the classic shell maps this route to (`tabRouteDestinations()`), for `PulseRoute.tab`.
-    @ViewBuilder var pulseView: some View {
-        switch self {
-        case .fullDayChart: FullDayChartView()
-        case .metric(let key):
-            if let m = MetricCatalog.all.first(where: { $0.key == key }) {
-                MetricDetailView(metric: m)
-            } else {
-                HealthView()
-            }
-        case .metricSourced(let key, let source):
-            if let m = MetricCatalog.metric(key: key, source: source) ?? MetricCatalog.all.first(where: { $0.key == key }) {
-                MetricDetailView(metric: m)
-            } else {
-                HealthView()
-            }
-        case .metricExplorer: MetricExplorerView()
-        case .workouts: WorkoutsView()
-        case .dataSources: DataSourcesView()
-        case .stress: StressView()
-        case .sleep: SleepView()
-        case .health: HealthView()
-        case .hydration: HydrationView()
-        case .coupled: CoupledView()
-        case .steps(let day): StepsView(day: day)
         }
     }
 }
@@ -362,8 +437,8 @@ private struct PulseGuidedSessionHost: View {
 
 extension View {
     /// Register every value push a Pulse stack can carry: every `PulseRoute`, and the shared `TabRoute`
-    /// values classic screens push themselves. Once per stack, never twice (a second registration
-    /// double-pushes, #38). A pushed destination is never a modal root.
+    /// values (pushed raw by `PulseRoute.tab`, and by classic screens themselves). Once per stack, never
+    /// twice (a second registration double-pushes, #38). A pushed destination is never a modal root.
     func pulseDestinations() -> some View {
         self
             .tabRouteDestinations()
@@ -396,7 +471,8 @@ extension PulseRoute {
             ("cycle-insights", .cycleInsights), ("coach", .coach(seed: nil)), ("memory", .memory),
             ("onboarding", .onboarding), ("strength-trainer", .strengthTrainer),
             ("year-in-review", .yearInReview), ("challenges", .challenges), ("day-timeline", .dayTimeline),
-            ("guided-session", .guidedSession),
+            ("privacy-data", .privacyData), ("report-problem", .reportProblem), ("first-week", .firstWeek),
+            ("training-load", .trainingLoad), ("guided-session", .guidedSession),
         ]
         let classic: [(String, PulseClassicDestination)] = [
             ("trends", .trends), ("weekly-digest", .weeklyDigest), ("report", .report),
@@ -433,10 +509,10 @@ extension PulseRoute {
         switch self {
         case .healthspan, .healthMonitor, .stressMonitor, .cycleInsights:
             return .health
-        case .trendView, .weeklyDigest:
+        case .trendView, .weeklyDigest, .trainingLoad:
             return .trends
         case .appSettings, .deviceSettings, .profile, .levels, .achievements, .dayStreak, .memory, .classic,
-             .challenges, .yearInReview:
+             .challenges, .yearInReview, .privacyData, .reportProblem, .firstWeek:
             return .more
         default:
             return .home

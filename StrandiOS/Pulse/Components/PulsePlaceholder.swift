@@ -59,10 +59,13 @@ struct PulsePlaceholderScreen: View {
                         .pulseText(.body)
                         .foregroundStyle(PulseTheme.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
+                    #if DEBUG
+                    // Internal only: the spec section and the group rebuilding it, never in Release.
                     Text(verbatim: "WHOOP_UI_SPEC \(spec) · \(group)")
                         .pulseText(.secondary)
                         .foregroundStyle(PulseTheme.textTertiary)
                         .padding(.top, 2)
+                    #endif
                 }
             }
             if !links.isEmpty {

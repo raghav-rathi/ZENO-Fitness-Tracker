@@ -8,10 +8,13 @@ import SwiftUI
 //   - the viewport-fixed gradient BEHIND the scroll view;
 //   - 16 pt page margins;
 //   - the navigation header (centred UPPERCASE title, "‹" or "✕", one trailing accessory), or none (Home);
-//   - on a tab root: the bottom scrim (content fades to black over 28 pt above the floating tab bar, the
-//     strip under the bar near-black) and enough bottom inset that the last card clears the bar;
-//   - on a pushed screen: the floating Coach button or summary pill, and the 80 pt bottom inset rule
-//     (every screen that shows them keeps 80 pt clear, so they never cover a row's accessory);
+//   - once content scrolls under the bar (or the status bar), the page gradient behind it with a soft
+//     fade below, never a flat band (`PulseTopBackdrop`);
+//   - on a tab root: the bottom scrim (content fades to black 60% over 28 pt above the floating tab bar,
+//     the strip under the bar solid #010101) and enough bottom inset that the last card clears the bar;
+//   - on a pushed screen: the floating Coach button or summary pill, in the tab root's exact spot, and the
+//     80 pt bottom inset rule (every screen that shows them keeps 80 pt clear, so they never cover a row's
+//     accessory);
 //   - pull to refresh, scroll-to-top on a tab re-tap, and the DEBUG `--pulse-scroll` anchors.
 //
 //     PulseScreenScaffold(title: "HEALTH MONITOR", coach: .button) {
@@ -34,6 +37,9 @@ struct PulseChromeMetrics: Equatable {
     /// The distance from the screen's bottom edge to the capsule's top edge (where the scrim ends).
     var barTopFromScreenBottom: CGFloat = PulseTheme.TabBarMetrics.bottomOffset(safeAreaBottom: 34)
         + PulseTheme.TabBarMetrics.height
+    /// The distance from the screen's bottom edge to the capsule's bottom edge: the floating Coach button
+    /// and summary pill on a pushed screen sit on the same line.
+    var barBottomFromScreenBottom: CGFloat = PulseTheme.TabBarMetrics.bottomOffset(safeAreaBottom: 34)
 }
 
 private struct PulseChromeMetricsKey: EnvironmentKey {
@@ -52,8 +58,24 @@ enum PulseScrollSpace {
     static let name = "pulse.scroll"
 }
 
+/// How far the page gradient behind a pinned top reaches once content scrolls under it.
+enum PulseTopBackdropStyle: Equatable {
+    /// To the bar's bottom (or the status bar's), then a 24 pt fade.
+    case automatic
+    /// A pinned row below the bar: opaque `extra` further, then fading over `fade` (Home's sticky rings).
+    case extended(extra: CGFloat, fade: CGFloat)
+}
+
+private struct PulseScrollTopKey: PreferenceKey {
+    static var defaultValue: CGFloat? = nil
+    static func reduce(value: inout CGFloat?, nextValue: () -> CGFloat?) {
+        value = nextValue() ?? value
+    }
+}
+
 struct PulseScreenScaffold<Content: View>: View {
     let title: String?
+    let titlePager: PulseNavTitlePager?
     let role: PulseScreenRole
     let trailing: PulseNavTrailing
     let coach: PulseCoachAccessory
@@ -65,16 +87,22 @@ struct PulseScreenScaffold<Content: View>: View {
     let topPadding: CGFloat
     let refresh: (() async -> Void)?
     let ready: Bool
+    let topBackdrop: PulseTopBackdropStyle
     @ViewBuilder let content: () -> Content
 
     @Environment(\.scrollToTopSignal) private var scrollToTopSignal
     @Environment(\.pulseChrome) private var chrome
     @Environment(\.pulseCoach) private var coachContext
+    /// The content's top edge at rest, in the scroll view's space (its first reported position).
+    @State private var restTop: CGFloat?
+    /// True while content sits under the bar (or the status bar on Home): the top backdrop shows.
+    @State private var scrolledUnder = false
 
     private static var topID: String { "pulse.top" }
 
     /// - Parameters:
     ///   - title: the centred UPPERCASE navigation title; nil shows no title.
+    ///   - titlePager: "‹ TITLE ›" in the bar's centre instead of a plain title (the Sleep dive's nights).
     ///   - role: `.tabRoot` or `.pushed`.
     ///   - trailing: the navigation bar's right accessory (ⓘ, achievement chip, ⚙ …).
     ///   - coach: what floats at the bottom of a pushed screen (`.button`, `.pill(summary:)`).
@@ -84,7 +112,9 @@ struct PulseScreenScaffold<Content: View>: View {
     ///   - spacing: the gap between top-level blocks.
     ///   - refresh: pull-to-refresh action, if the screen supports it.
     ///   - ready: whether the content has loaded (gates the DEBUG `--pulse-scroll` jump).
+    ///   - topBackdrop: how far the page gradient behind the top reaches once content scrolls under it.
     init(title: String? = nil,
+         titlePager: PulseNavTitlePager? = nil,
          role: PulseScreenRole = .pushed,
          trailing: PulseNavTrailing = .none,
          coach: PulseCoachAccessory = .none,
@@ -93,11 +123,13 @@ struct PulseScreenScaffold<Content: View>: View {
          showsNavigationBar: Bool = true,
          spacing: CGFloat = PulseTheme.Layout.stackGap,
          horizontalPadding: CGFloat = PulseTheme.Layout.pageMargin,
-         topPadding: CGFloat = 8,
+         topPadding: CGFloat = PulseTheme.Layout.stackGap,
          refresh: (() async -> Void)? = nil,
          ready: Bool = true,
+         topBackdrop: PulseTopBackdropStyle = .automatic,
          @ViewBuilder content: @escaping () -> Content) {
         self.title = title
+        self.titlePager = titlePager
         self.role = role
         self.trailing = trailing
         self.coach = coach
@@ -109,6 +141,7 @@ struct PulseScreenScaffold<Content: View>: View {
         self.topPadding = topPadding
         self.refresh = refresh
         self.ready = ready
+        self.topBackdrop = topBackdrop
         self.content = content
     }
 
@@ -126,13 +159,22 @@ struct PulseScreenScaffold<Content: View>: View {
     var body: some View {
         ScrollViewReader { proxy in
             ScrollView {
-                VStack(alignment: .leading, spacing: spacing) {
-                    Color.clear.frame(height: 0).id(Self.topID)
-                    content()
-                    Color.clear.frame(height: max(0, bottomInset - spacing)).id("pulse.bottom")
+                VStack(alignment: .leading, spacing: 0) {
+                    // The top marker: the scroll-to-top target, and where the content's top edge is.
+                    Color.clear
+                        .frame(height: 0)
+                        .id(Self.topID)
+                        .background(GeometryReader { geo in
+                            Color.clear.preference(key: PulseScrollTopKey.self,
+                                                   value: geo.frame(in: .named(PulseScrollSpace.name)).minY)
+                        })
+                    VStack(alignment: .leading, spacing: spacing) {
+                        content()
+                        Color.clear.frame(height: max(0, bottomInset - spacing)).id("pulse.bottom")
+                    }
+                    .padding(.horizontal, horizontalPadding)
+                    .padding(.top, topPadding)
                 }
-                .padding(.horizontal, horizontalPadding)
-                .padding(.top, topPadding)
             }
             .coordinateSpace(name: PulseScrollSpace.name)
             .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
@@ -140,17 +182,39 @@ struct PulseScreenScaffold<Content: View>: View {
             .onChange(of: scrollToTopSignal) { _, _ in
                 withAnimation(.easeOut(duration: 0.3)) { proxy.scrollTo(Self.topID, anchor: .top) }
             }
+            .onPreferenceChange(PulseScrollTopKey.self) { top in
+                guard let top else { return }
+                if restTop == nil { restTop = top }
+                let under = top < (restTop ?? top) - 1
+                if under != scrolledUnder { scrolledUnder = under }
+            }
             .pulseDebugScroll(proxy, ready: ready)
         }
         .background(PulseBackground(style: background))
+        .overlay(alignment: .top) {
+            backdrop
+                .opacity(scrolledUnder || topBackdrop != .automatic ? 1 : 0)
+                .animation(PulseMotion.chrome, value: scrolledUnder)
+        }
         .overlay {
             if role == .tabRoot { PulseTabBarScrim() }
         }
-        .overlay(alignment: .bottom) {
+        .overlay {
             if role == .pushed { PulseFloatingCoach(accessory: coach, seed: coachSeed) }
         }
-        .modifier(PulseScaffoldChrome(title: title, trailing: trailing, showsNavigationBar: showsNavigationBar))
+        .modifier(PulseScaffoldChrome(title: title, titlePager: titlePager, trailing: trailing,
+                                      showsNavigationBar: showsNavigationBar, showsBack: role == .pushed))
         .environment(\.colorScheme, .dark)
+    }
+
+    @ViewBuilder
+    private var backdrop: some View {
+        switch topBackdrop {
+        case .automatic:
+            PulseTopBackdrop(style: background)
+        case .extended(let extra, let fade):
+            PulseTopBackdrop(style: background, extra: extra, fade: fade)
+        }
     }
 }
 
@@ -168,12 +232,14 @@ private struct PulseRefreshModifier: ViewModifier {
 
 private struct PulseScaffoldChrome: ViewModifier {
     let title: String?
+    let titlePager: PulseNavTitlePager?
     let trailing: PulseNavTrailing
     let showsNavigationBar: Bool
+    let showsBack: Bool
 
     func body(content: Content) -> some View {
         if showsNavigationBar {
-            content.pulseNavHeader(title, trailing: trailing)
+            content.pulseNavHeader(title, titlePager: titlePager, trailing: trailing, showsBack: showsBack)
         } else {
             content.toolbar(.hidden, for: .navigationBar)
         }
@@ -182,8 +248,8 @@ private struct PulseScaffoldChrome: ViewModifier {
 
 // MARK: - Bottom scrim
 
-/// The scrim under the floating tab bar: clear → black 95% over the 28 pt above the capsule, then a
-/// near-black strip down to the screen's bottom edge. It never takes touches.
+/// The scrim under the floating tab bar: clear → black 60% over the 28 pt above the capsule, then the solid
+/// #010101 strip beside and below it, down to the screen's bottom edge (DR §1.1). It never takes touches.
 struct PulseTabBarScrim: View {
     @Environment(\.pulseChrome) private var chrome
 
@@ -192,7 +258,7 @@ struct PulseTabBarScrim: View {
             Spacer(minLength: 0)
             LinearGradient(colors: [PulseTheme.scrim.opacity(0), PulseTheme.scrim], startPoint: .top, endPoint: .bottom)
                 .frame(height: PulseTheme.Layout.scrimHeight)
-            PulseTheme.barStrip.opacity(0.97)
+            PulseTheme.barStrip
                 .frame(height: chrome.barTopFromScreenBottom)
         }
         .ignoresSafeArea(edges: .bottom)

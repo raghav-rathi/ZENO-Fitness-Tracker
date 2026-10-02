@@ -91,15 +91,24 @@ extension PulseTheme {
     // MARK: Stress (sampled along the gauge in appstore/ios69-10)
 
     enum Stress {
-        /// The scale's stops, LOW (0.0) to HIGH (3.0), at their positions along the 0–3 axis.
-        static let stops: [Gradient.Stop] = [
-            .init(color: Color(hex: "#67AEE6"), location: 0.00),
-            .init(color: Color(hex: "#5FB3E1"), location: 0.27),
-            .init(color: Color(hex: "#01F19F"), location: 0.41),
-            .init(color: Color(hex: "#00F19F"), location: 0.59),
-            .init(color: Color(hex: "#E0B031"), location: 0.77),
-            .init(color: Color(hex: "#FFA722"), location: 1.00),
+        /// The sampled scale, ONE table: each stop's position along the 0–3 axis and its colour. The gauge
+        /// spans −112.5° … +112.5°, so a stop at angle θ sits at (θ + 112.5) / 225: −60° → 0.233,
+        /// −20° → 0.411, +20° → 0.589, +60° → 0.767.
+        private static let table: [(location: Double, rgb: (Double, Double, Double))] = [
+            (0.000, (0x67, 0xAE, 0xE6)),
+            (0.233, (0x5F, 0xB3, 0xE1)),
+            (0.411, (0x01, 0xF1, 0x9F)),
+            (0.589, (0x00, 0xF1, 0x9F)),
+            (0.767, (0xE0, 0xB0, 0x31)),
+            (1.000, (0xFF, 0xA7, 0x22)),
         ]
+
+        private static func color(_ rgb: (Double, Double, Double)) -> Color {
+            Color(.sRGB, red: rgb.0 / 255, green: rgb.1 / 255, blue: rgb.2 / 255, opacity: 1)
+        }
+
+        /// The scale's stops, LOW (0.0) to HIGH (3.0), at their positions along the 0–3 axis.
+        static let stops: [Gradient.Stop] = table.map { .init(color: color($0.rgb), location: $0.location) }
         static let low = Color(hex: "#67AEE6")
         static let medium = Color(hex: "#00F19F")
         static let high = Color(hex: "#FFA722")
@@ -139,22 +148,14 @@ extension PulseTheme {
             }
         }
 
-        /// The scale's colour at `value` (0...3), interpolated between the sampled stops.
+        /// The scale's colour at `value` (0...3), interpolated between the sampled stops of `table`.
         static func color(for value: Double) -> Color {
-            let t = max(0, min(1, value / 3.0))
-            let hexes: [(Double, (Double, Double, Double))] = [
-                (0.00, (0x67, 0xAE, 0xE6)), (0.27, (0x5F, 0xB3, 0xE1)), (0.41, (0x01, 0xF1, 0x9F)),
-                (0.59, (0x00, 0xF1, 0x9F)), (0.77, (0xE0, 0xB0, 0x31)), (1.00, (0xFF, 0xA7, 0x22)),
-            ]
-            for i in 1..<hexes.count where t <= hexes[i].0 {
-                let (t0, a) = hexes[i - 1]
-                let (t1, b) = hexes[i]
+            let t = max(0, min(1, value.isFinite ? value / 3.0 : 0))
+            for i in 1..<table.count where t <= table[i].location {
+                let (t0, a) = table[i - 1]
+                let (t1, b) = table[i]
                 let f = t1 > t0 ? (t - t0) / (t1 - t0) : 0
-                return Color(.sRGB,
-                             red: (a.0 + (b.0 - a.0) * f) / 255,
-                             green: (a.1 + (b.1 - a.1) * f) / 255,
-                             blue: (a.2 + (b.2 - a.2) * f) / 255,
-                             opacity: 1)
+                return color((a.0 + (b.0 - a.0) * f, a.1 + (b.1 - a.1) * f, a.2 + (b.2 - a.2) * f))
             }
             return high
         }
@@ -218,6 +219,8 @@ extension PulseTheme {
         static let notSignificant = Color(hex: "#949498")
         /// The hatched track's stripes behind the bar.
         static let hatch = Color(hex: "#44484C")
+        /// The dark ring around the centre dot.
+        static let dotRing = Color(hex: "#26292E")
     }
 
     // MARK: My Plan (§3.1 item 9, §2.5 "Plan goal counters")

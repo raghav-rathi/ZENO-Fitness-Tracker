@@ -10,8 +10,8 @@ import SwiftUI
 // The track is white 10% and as wide as the arc. Arcs start at 12 o'clock and run clockwise, with FLAT
 // ends rounded by about a fifth of the stroke (not round caps). A full circle is 100% for Sleep and
 // Recovery and 21 for Strain. The Strain dial adds the day's optimal range as a light band on the track
-// UNDER the arc, and the Strain Target as a 1 pt white tick at full stroke height OVER it; neither is
-// drawn before Recovery has scored.
+// UNDER the arc (it reads white 27% on the page: white 19% over the 10% track), and the Strain Target as a
+// 2 pt white tick at full stroke height OVER it; neither is drawn before Recovery has scored.
 //
 // Data in: `PulseDialContent`, a plain value. Map a snapshot to it in Model/ (see `PulseDialData`).
 
@@ -34,12 +34,15 @@ struct PulseDialContent: Equatable {
     var isPlaceholder: Bool
     /// An optional state line under the label ("CALIBRATING", whose night a carried value is).
     var caption: String?
-    /// The whole dial as one VoiceOver sentence.
+    /// The whole dial as one VoiceOver sentence: name and value.
     var accessibilityLabel: String
+    /// What VoiceOver reads after the label: everything else the dial draws (the caption, Strain's
+    /// target and optimal range). Screens append to it for what they add (`spoken(_:)`).
+    var accessibilityValue: String?
 
     init(label: String, valueText: String, unitText: String? = nil, fraction: Double, color: Color,
          band: ClosedRange<Double>? = nil, tick: Double? = nil, isPlaceholder: Bool = false,
-         caption: String? = nil, accessibilityLabel: String? = nil) {
+         caption: String? = nil, accessibilityLabel: String? = nil, accessibilityValue: String? = nil) {
         self.label = label
         self.valueText = valueText
         self.unitText = unitText
@@ -50,6 +53,16 @@ struct PulseDialContent: Equatable {
         self.isPlaceholder = isPlaceholder
         self.caption = caption
         self.accessibilityLabel = accessibilityLabel ?? "\(label), \(valueText)\(unitText ?? "")"
+        self.accessibilityValue = accessibilityValue ?? caption
+    }
+
+    /// This content with `extra` appended to what VoiceOver reads after the label (a band line, the
+    /// Poor / Sufficient / Optimal reading a screen draws under the ring).
+    func spoken(_ extra: String?) -> PulseDialContent {
+        guard let extra, !extra.isEmpty else { return self }
+        var copy = self
+        copy.accessibilityValue = [accessibilityValue, extra].compactMap { $0 }.joined(separator: ", ")
+        return copy
     }
 
     /// A percent dial (Sleep, Recovery). `percent` nil draws "--%" with an empty arc.
@@ -70,15 +83,26 @@ struct PulseDialContent: Equatable {
                        color: Color = PulseTheme.strain, caption: String? = nil) -> PulseDialContent {
         let band = optimalRange.map { max(0, $0.lowerBound / 21)...min(1, $0.upperBound / 21) }
         let tick = target.map { max(0, min(1, $0 / 21)) }
+        // VoiceOver hears what the ring draws: the target tick and the optimal band, then the caption.
+        func one(_ v: Double) -> String { String(format: "%.1f", locale: AppLanguage.activeLocale, v) }
+        var spoken: [String] = []
+        if let target { spoken.append(String(localized: "target \(one(target))")) }
+        if let optimalRange {
+            spoken.append(String(localized: "optimal \(one(optimalRange.lowerBound)) to \(one(optimalRange.upperBound))"))
+        }
+        if let caption { spoken.append(caption) }
+        let spokenValue = spoken.isEmpty ? nil : spoken.joined(separator: ", ")
         guard let value, value.isFinite else {
             return PulseDialContent(label: label, valueText: "--", fraction: 0, color: color, band: band,
                                     tick: tick, isPlaceholder: true, caption: caption,
-                                    accessibilityLabel: String(localized: "\(label), no score yet"))
+                                    accessibilityLabel: String(localized: "\(label), no score yet"),
+                                    accessibilityValue: spokenValue)
         }
-        let text = String(format: "%.1f", locale: AppLanguage.activeLocale, min(21, max(0, value)))
+        let text = one(min(21, max(0, value)))
         return PulseDialContent(label: label, valueText: text, fraction: value / 21, color: color,
                                 band: band, tick: tick, caption: caption,
-                                accessibilityLabel: String(localized: "\(label), \(text) out of 21"))
+                                accessibilityLabel: String(localized: "\(label), \(text) out of 21"),
+                                accessibilityValue: spokenValue)
     }
 }
 
@@ -228,9 +252,10 @@ struct PulseRing: View {
             Circle()
                 .strokeBorder(trackColor, lineWidth: thickness)
             if let band, band.upperBound > band.lowerBound {
+                // Over the track, so the two composite to the band's 27% on the page.
                 PulseRingSegment(start: band.lowerBound, end: band.upperBound, thickness: thickness,
                                  cornerRadius: corner)
-                    .fill(PulseTheme.targetBand)
+                    .fill(PulseTheme.targetBandOverTrack)
             }
             PulseRingSegment(start: 0, end: shown, thickness: thickness, cornerRadius: corner,
                              minimumLength: PulseTheme.Dial.minimumArc)
@@ -297,16 +322,27 @@ private struct PulseDialPressDisc: View {
 
 /// A Home score dial: the 88 pt ring with its value inside and "LABEL ›" 12 pt below.
 ///
-///     NavigationLink(value: route) { PulseScoreDial(content: dial) }
+///     NavigationLink(value: route) { PulseScoreDial(content: dial, labelSize: size, labelWidth: column) }
 ///         .buttonStyle(PulseDialButtonStyle())
+///
+/// The label never grows wider than its column (`labelWidth`) and takes the size the ROW picks
+/// (`labelSize`, from `PulseScoreDial.sharedLabelSize`), so three labels always render at one size and the
+/// rings keep their positions at every Dynamic Type size. The value inside the ring is fixed.
 struct PulseScoreDial: View {
     let content: PulseDialContent
     /// Keep room for a caption line so a row whose neighbour has one stays aligned.
     var reservesCaption = false
     var diameter: CGFloat = PulseTheme.Dial.homeDiameter
     var thickness: CGFloat = PulseTheme.Dial.homeStroke
+    /// The label's point size; nil uses the `.label` style's own (scaled) size.
+    var labelSize: CGFloat?
+    /// The widest the label and caption may be: the dial's column.
+    var labelWidth: CGFloat = PulseTheme.Dial.homeColumn
+
+    @ScaledMetric(relativeTo: .caption2) private var scaledLabel: CGFloat = PulseTextStyle.label.spec.size
 
     var body: some View {
+        let size = labelSize ?? scaledLabel
         VStack(spacing: PulseTheme.Dial.labelGap) {
             ZStack {
                 PulseDialPressDisc(diameter: diameter, thickness: thickness)
@@ -317,28 +353,29 @@ struct PulseScoreDial: View {
             .frame(width: diameter, height: diameter)
 
             VStack(spacing: 4) {
-                HStack(spacing: 4) {
+                HStack(spacing: size * 0.36) {
                     Text(content.label)
-                        .pulseText(.label)
+                        .font(PulseTextStyle.label.spec.font(size: size))
+                        .tracking(PulseTextStyle.label.spec.tracking * size / PulseTextStyle.label.spec.size)
+                        .textCase(.uppercase)
                         .foregroundStyle(PulseTheme.textPrimary)
                         .lineLimit(1)
-                        .minimumScaleFactor(0.8)
-                    PulseChevron(size: 10)
+                        .minimumScaleFactor(0.6)
+                    PulseChevron(size: size * 0.9)
                 }
+                .frame(maxWidth: labelWidth)
                 if content.caption != nil || reservesCaption {
-                    Text(content.caption ?? " ")
-                        .pulseText(.secondary)
+                    PulseWordWrapText(content.caption ?? " ", style: .label, alignment: .center)
                         .foregroundStyle(PulseTheme.textTertiary)
-                        .multilineTextAlignment(.center)
-                        .lineLimit(2)
-                        .minimumScaleFactor(0.85)
+                        .frame(maxWidth: labelWidth)
+                        .dynamicTypeSize(...DynamicTypeSize.xxLarge)
                         .opacity(content.caption == nil ? 0 : 1)
                 }
             }
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(content.accessibilityLabel)
-        .accessibilityAddTraits(.isButton)
+        .accessibilityValue(content.accessibilityValue ?? "")
     }
 
     private var value: some View {
@@ -355,26 +392,46 @@ struct PulseScoreDial: View {
         .minimumScaleFactor(0.6)
         .padding(.horizontal, thickness + 6)
     }
+
+    /// The ONE label size for a row of dials: the preferred (Dynamic Type) size, shrunk just enough that
+    /// the widest "LABEL ›" fits its column. Every dial in the row takes it, so no label renders smaller
+    /// than its neighbours.
+    static func sharedLabelSize(labels: [String], preferred: CGFloat, columnWidth: CGFloat) -> CGFloat {
+        guard preferred > 0, columnWidth > 0 else { return preferred }
+        let widest = labels.map { label in
+            PulseTextMetrics.width(label, style: .label, size: preferred) + preferred * 0.36 + preferred * 0.9 * 0.62
+        }.max() ?? 0
+        let available = columnWidth - 4
+        guard widest > available else { return preferred }
+        return max(8, (preferred * available / widest).rounded(.down))
+    }
 }
 
 // MARK: - Deep-dive ring (260 / 15)
 
-/// The deep dive's hero ring: ZENO's mark, the score (58 pt + 32 pt unit), the label, and an optional
-/// accessory under the label (the Sleep dive's Poor / Sufficient / Optimal segments).
+/// The deep dive's hero ring: ZENO's mark, the score (70 pt + 40 pt unit, Bold condensed), the label
+/// (12.5 pt caps, wrapping to two lines past 116 pt, "SLEEP / PERFORMANCE"), and an optional accessory under
+/// it (the Sleep dive's Poor / Sufficient / Optimal segments).
 ///
-///     PulseHeroRing(content: dial) { PulseMiniSegments(active: 2) }
+///     PulseHeroRing(content: dial, accessoryAccessibility: "Optimal") { PulseMiniSegments(active: 2) }
+///
+/// Everything inside the ring is FIXED size: the ring cannot grow, so Dynamic Type stops at the default
+/// size here (the score's details are repeated, scalable, in the callout below it).
 struct PulseHeroRing<Accessory: View>: View {
     let content: PulseDialContent
     var diameter: CGFloat = PulseTheme.Dial.heroDiameter
     var thickness: CGFloat = PulseTheme.Dial.heroStroke
+    /// What VoiceOver reads for the accessory (the segments' "Optimal").
+    var accessoryAccessibility: String?
     @ViewBuilder var accessory: () -> Accessory
 
     init(content: PulseDialContent, diameter: CGFloat = PulseTheme.Dial.heroDiameter,
-         thickness: CGFloat = PulseTheme.Dial.heroStroke,
+         thickness: CGFloat = PulseTheme.Dial.heroStroke, accessoryAccessibility: String? = nil,
          @ViewBuilder accessory: @escaping () -> Accessory) {
         self.content = content
         self.diameter = diameter
         self.thickness = thickness
+        self.accessoryAccessibility = accessoryAccessibility
         self.accessory = accessory
     }
 
@@ -383,9 +440,8 @@ struct PulseHeroRing<Accessory: View>: View {
             PulseDialPressDisc(diameter: diameter, thickness: thickness)
             PulseRing(fraction: content.fraction, color: content.color, diameter: diameter,
                       thickness: thickness, band: content.band, tick: content.tick)
-            VStack(spacing: 6) {
+            VStack(spacing: 0) {
                 PulseZenoWordmark(color: PulseTheme.textTertiary)
-                    .padding(.bottom, 2)
                 HStack(alignment: .firstTextBaseline, spacing: 0) {
                     Text(content.valueText)
                         .font(PulseType.font(.heroScore))
@@ -397,25 +453,26 @@ struct PulseHeroRing<Accessory: View>: View {
                 .foregroundStyle(content.isPlaceholder ? PulseTheme.textDisabled : PulseTheme.textPrimary)
                 .lineLimit(1)
                 .minimumScaleFactor(0.6)
-                Text(content.label)
-                    .pulseText(.label)
+                PulseWordWrapText(content.label, style: .heroLabel, alignment: .center, lineSpacing: 2.5)
                     .foregroundStyle(PulseTheme.textPrimary)
-                    .multilineTextAlignment(.center)
-                    .lineLimit(2)
+                    .frame(maxWidth: PulseTheme.Dial.heroLabelMaxWidth)
+                    .padding(.top, 3)
                 if let caption = content.caption {
-                    Text(caption)
-                        .pulseText(.secondary)
+                    PulseWordWrapText(caption, style: .secondary, alignment: .center)
                         .foregroundStyle(PulseTheme.textTertiary)
-                        .multilineTextAlignment(.center)
-                        .lineLimit(2)
+                        .frame(maxWidth: diameter - thickness * 2 - 48)
+                        .padding(.top, 6)
                 }
                 accessory()
+                    .padding(.top, 14)
             }
+            .dynamicTypeSize(...DynamicTypeSize.large)
             .padding(.horizontal, thickness + 24)
         }
         .frame(width: diameter, height: diameter)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(content.accessibilityLabel)
+        .accessibilityValue(content.spoken(accessoryAccessibility).accessibilityValue ?? "")
     }
 }
 
@@ -440,6 +497,9 @@ struct PulseMiniRing: View {
 
 /// The compact sticky header WHOOP pins under the status bar once the dials scroll off (§1.4): three
 /// mini rings, each followed by its label, on the page gradient with no card. Tapping one opens its dive.
+///
+/// Three equal columns between the page margins; each ring-and-label group sits ≈12 pt left of its
+/// column's centre (journal-plan-2026/32: rings at 31.7 / 141.7 / ≈275 pt, labels ending 99 / 237 / 350).
 struct PulseMiniRingRow: View {
     struct Item: Identifiable {
         let id: String
@@ -459,16 +519,19 @@ struct PulseMiniRingRow: View {
                             .pulseText(.label)
                             .foregroundStyle(PulseTheme.textPrimary)
                             .lineLimit(1)
-                            .minimumScaleFactor(0.8)
+                            .minimumScaleFactor(0.7)
                     }
+                    .padding(.trailing, 24)
                     .frame(maxWidth: .infinity, minHeight: PulseTheme.Layout.minTapTarget)
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(PulsePressStyle())
                 .accessibilityLabel(item.content.accessibilityLabel)
+                .accessibilityValue(item.content.accessibilityValue ?? "")
             }
         }
         .padding(.horizontal, PulseTheme.Layout.pageMargin)
+        .dynamicTypeSize(...DynamicTypeSize.xxLarge)
     }
 }
 #endif

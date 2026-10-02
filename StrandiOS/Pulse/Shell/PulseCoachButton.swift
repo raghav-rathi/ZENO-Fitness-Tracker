@@ -5,10 +5,12 @@ import SwiftUI
 //
 // The Coach lives behind ONE floating button, never a tab:
 //   - on a tab root it sits right of the tab capsule (64 × 64 squircle, 12 pt gap, 12 pt from the edge);
-//   - on deep dives, Trend View, monitors, Activity Details and the like it floats alone, 16 pt from the
-//     right and bottom safe edges (`PulseScreenScaffold(coach: .button)`);
-//   - on the Sleep / Recovery / Strain dives and Activity Details a summary pill can stand in for it
-//     (`coach: .pill(text)`): two lines summarising the page, "⌃" opening the Coach sheet.
+//   - on deep dives, Trend View, monitors, Activity Details and the like it floats alone in EXACTLY the same
+//     spot (12 pt from the right edge, its bottom on the capsule's line, 28 pt above the screen edge), so
+//     it never jumps on push (`PulseScreenScaffold(coach: .button)`, deep-dives-2026/57, reviews/r119);
+//   - on the Sleep / Recovery / Strain dives and Activity Details a summary pill stands in for it
+//     (`coach: .pill(text)`): two lines summarising the page, "⌃" opening the Coach sheet, 12 pt side
+//     margins on the same bottom line (deep-dives-2026/56).
 // Coach switched on with a provider: it opens the Coach sheet. On but unconfigured: Coach setup. Off: every
 // coach surface disappears and the tab capsule stretches to full width.
 
@@ -23,10 +25,19 @@ enum PulseCoachAvailability: Equatable {
 }
 
 /// The Coach's availability and the action that opens it, injected by the shell.
-struct PulseCoachContext {
+///
+/// Equal when the availability and the owner (`identity`) are: `open` always reaches the owner's current
+/// state, so readers re-render only when the availability really changes.
+struct PulseCoachContext: Equatable {
     var availability: PulseCoachAvailability = .off
     /// Open the Coach sheet (or setup), optionally seeded with the page's context.
     var open: (_ seed: String?) -> Void = { _ in }
+    /// Who answers `open`: the shell, or one modal host.
+    var identity: ObjectIdentifier?
+
+    static func == (lhs: PulseCoachContext, rhs: PulseCoachContext) -> Bool {
+        lhs.availability == rhs.availability && lhs.identity != nil && lhs.identity == rhs.identity
+    }
 }
 
 private struct PulseCoachContextKey: EnvironmentKey {
@@ -51,22 +62,22 @@ enum PulseCoachAccessory: Equatable {
     case pill(summary: String)
 }
 
-/// The Coach button: a 64 pt indigo squircle (radius ≈22) with ZENO's monogram inside a violet → blue
-/// ring. The same look floats on pushed screens at 60 pt.
+/// The Coach button: a 64 pt indigo squircle (radius 24) lit from its top-leading edge, with ZENO's
+/// monogram on a lit indigo orb inside a thin violet → blue ring (32 pt, 1.33 pt).
 struct PulseCoachButton: View {
     var size: CGFloat = PulseTheme.TabBarMetrics.coachSize
     let action: () -> Void
 
     var body: some View {
+        let scale = size / PulseTheme.TabBarMetrics.coachSize
+        let shape = RoundedRectangle(cornerRadius: PulseTheme.Radius.coachButton * scale, style: .continuous)
         Button(action: action) {
             ZStack {
-                RoundedRectangle(cornerRadius: PulseTheme.Radius.coachButton * size / 64, style: .continuous)
-                    .fill(LinearGradient(gradient: PulseTheme.Coach.buttonFill, startPoint: .topLeading,
-                                         endPoint: .bottomTrailing))
-                RoundedRectangle(cornerRadius: PulseTheme.Radius.coachButton * size / 64, style: .continuous)
-                    .strokeBorder(LinearGradient(gradient: PulseTheme.Coach.buttonRim, startPoint: .top,
-                                                 endPoint: .bottom), lineWidth: 1)
-                PulseCoachAvatar(size: PulseTheme.TabBarMetrics.coachRing * size / 64)
+                shape.fill(LinearGradient(gradient: PulseTheme.Coach.buttonFill, startPoint: .topLeading,
+                                          endPoint: .bottomTrailing))
+                shape.strokeBorder(LinearGradient(gradient: PulseTheme.Coach.buttonRim, startPoint: .topLeading,
+                                                  endPoint: .bottomTrailing), lineWidth: 1)
+                PulseCoachAvatar(size: PulseTheme.TabBarMetrics.coachRing * scale)
             }
             .frame(width: size, height: size)
             .contentShape(Rectangle())
@@ -87,26 +98,36 @@ private struct PulseCoachPressStyle: ButtonStyle {
     }
 }
 
-/// The floating coach summary pill (2026): ≈64 pt, radius 20, translucent slate with a soft violet glow;
-/// the coach avatar at the left, two lines of 15 pt white text, and "⌃" at the right that expands into the
-/// Coach sheet. Markdown bold renders as bold (WHOOP shows the raw asterisks; ZENO does not).
+/// The floating coach summary pill (2026): ≈64 pt, radius 22, a horizontal gradient from the avatar end
+/// (#2E2D3F) to #252C34 with a faint top rim and no outer glow; the 32 pt coach avatar at the left, two lines
+/// of 15 pt white text, and "⌃" at the right that expands into the Coach sheet. Markdown bold renders as
+/// bold (WHOOP shows the raw asterisks; ZENO does not).
 struct PulseCoachSummaryPill: View {
     let summary: String
     let onExpand: () -> Void
 
+    @ScaledMetric(relativeTo: .subheadline) private var textSize: CGFloat = PulseTextStyle.rowText.spec.size
+
+    /// The summary with its **bold** runs set in an explicit bold font: a run's own font is the only one
+    /// a styled `Text` keeps (the style's Medium would otherwise flatten the emphasis).
     private var attributed: AttributedString {
-        (try? AttributedString(markdown: summary,
-                               options: AttributedString.MarkdownParsingOptions(
-                                interpretedSyntax: .inlineOnlyPreservingWhitespace)))
+        var text = (try? AttributedString(markdown: summary,
+                                          options: AttributedString.MarkdownParsingOptions(
+                                            interpretedSyntax: .inlineOnlyPreservingWhitespace)))
             ?? AttributedString(summary)
+        let runs = text.runs.map { ($0.range, $0.inlinePresentationIntent?.contains(.stronglyEmphasized) == true) }
+        for (range, strong) in runs {
+            text[range].font = .system(size: textSize, weight: strong ? .bold : PulseTextStyle.rowText.spec.weight)
+        }
+        return text
     }
 
     var body: some View {
+        let shape = RoundedRectangle(cornerRadius: PulseTheme.Radius.coachPill, style: .continuous)
         Button(action: onExpand) {
             HStack(spacing: 12) {
-                PulseCoachAvatar(size: 36)
+                PulseCoachAvatar(size: 32)
                 Text(attributed)
-                    .pulseText(.rowText)
                     .foregroundStyle(PulseTheme.textPrimary)
                     .lineLimit(2)
                     .multilineTextAlignment(.leading)
@@ -116,19 +137,16 @@ struct PulseCoachSummaryPill: View {
                     .foregroundStyle(PulseTheme.textSecondary)
                     .accessibilityHidden(true)
             }
-            .padding(.horizontal, 14)
+            .padding(.horizontal, 16)
             .frame(minHeight: 64)
-            .background {
-                RoundedRectangle(cornerRadius: PulseTheme.Radius.menu, style: .continuous)
-                    .fill(PulseTheme.Coach.pillFill)
-                    .shadow(color: PulseTheme.Coach.pillGlow, radius: 18, x: 0, y: 0)
-            }
-            .overlay(
-                RoundedRectangle(cornerRadius: PulseTheme.Radius.menu, style: .continuous)
-                    .strokeBorder(Color.white.opacity(0.06), lineWidth: 1))
+            .background(shape.fill(LinearGradient(gradient: PulseTheme.Coach.pillFill, startPoint: .leading,
+                                                  endPoint: .trailing)))
+            .overlay(shape.strokeBorder(LinearGradient(gradient: PulseTheme.Coach.pillRim, startPoint: .top,
+                                                       endPoint: .bottom), lineWidth: 1))
             .contentShape(Rectangle())
         }
         .buttonStyle(PulsePressStyle())
+        .dynamicTypeSize(...DynamicTypeSize.xxLarge)
         .accessibilityHint(String(localized: "Opens Coach"))
     }
 }
@@ -155,31 +173,37 @@ struct PulseCoachAnalyzingPill: View {
 }
 
 /// The coach accessory a pushed screen floats at its bottom edge, honouring the Coach's availability.
-/// `PulseScreenScaffold(coach:)` places it; screens rarely use it directly.
+/// `PulseScreenScaffold(coach:)` places it; screens rarely use it directly. Both forms ignore the bottom
+/// safe area and sit on the tab capsule's line (`PulseChromeMetrics.barBottomFromScreenBottom`).
 struct PulseFloatingCoach: View {
     let accessory: PulseCoachAccessory
     /// The page context handed to the Coach when it opens from here.
     var seed: String?
 
     @Environment(\.pulseCoach) private var coach
+    @Environment(\.pulseChrome) private var chrome
 
     var body: some View {
-        if coach.availability != .off {
-            switch accessory {
-            case .none:
-                EmptyView()
-            case .button:
-                HStack {
-                    Spacer()
-                    PulseCoachButton(size: PulseTheme.TabBarMetrics.floatingCoachSize) { coach.open(seed) }
+        if coach.availability != .off && accessory != .none {
+            // A flexible column, so ignoring the bottom safe area really reaches the screen's edge.
+            VStack(spacing: 0) {
+                Spacer(minLength: 0)
+                switch accessory {
+                case .none:
+                    EmptyView()
+                case .button:
+                    HStack {
+                        Spacer(minLength: 0)
+                        PulseCoachButton(size: PulseTheme.TabBarMetrics.floatingCoachSize) { coach.open(seed) }
+                    }
+                    .padding(.trailing, PulseTheme.TabBarMetrics.floatingCoachInset)
+                case .pill(let summary):
+                    PulseCoachSummaryPill(summary: summary) { coach.open(seed ?? summary) }
+                        .padding(.horizontal, PulseTheme.TabBarMetrics.pillSideMargin)
                 }
-                .padding(.horizontal, PulseTheme.TabBarMetrics.floatingCoachInset)
-                .padding(.bottom, PulseTheme.TabBarMetrics.floatingCoachInset)
-            case .pill(let summary):
-                PulseCoachSummaryPill(summary: summary) { coach.open(seed ?? summary) }
-                    .padding(.horizontal, PulseTheme.Layout.pageMargin)
-                    .padding(.bottom, 8)
             }
+            .padding(.bottom, chrome.barBottomFromScreenBottom)
+            .ignoresSafeArea(.container, edges: .bottom)
         }
     }
 }

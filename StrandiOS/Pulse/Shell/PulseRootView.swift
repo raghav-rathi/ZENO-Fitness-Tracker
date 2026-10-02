@@ -63,6 +63,11 @@ struct PulseRootView: View {
     @State private var coachConfigured = false
     /// The bottom safe-area inset, measured, so the floating chrome sits right on every device.
     @State private var bottomSafeArea: CGFloat = 34
+    /// The "+" the action menu is open from (its frame in window coordinates), or nil while closed.
+    @State private var actionMenuAnchor: CGRect?
+    /// Names this shell as the owner of the navigator, coach and menu contexts it hands down, so they
+    /// compare equal across re-renders and their readers are not invalidated on every push or sheet.
+    @State private var token = PulseIdentityToken()
     #if DEBUG
     /// DEBUG `--pulse-gallery`.
     @State private var showGallery = false
@@ -74,14 +79,23 @@ struct PulseRootView: View {
     }
 
     private var coachContext: PulseCoachContext {
-        PulseCoachContext(availability: coachAvailability, open: { seed in openCoach(seed: seed) })
+        PulseCoachContext(availability: coachAvailability, open: { seed in openCoach(seed: seed) },
+                          identity: ObjectIdentifier(token))
     }
 
     /// How screens open routes: pushes go onto the selected tab's path, modal routes into the shell's
-    /// sheet or cover slot.
+    /// sheet or cover slot. Its closures reach this view's state through @State's stable storage, so the
+    /// value compares equal across re-renders (`identity`).
     private var navigator: PulseNavigator {
         PulseNavigator(open: { open($0) }, push: { push($0) }, present: { present($0) },
-                       quickAction: { perform($0) })
+                       quickAction: { perform($0) }, identity: ObjectIdentifier(token))
+    }
+
+    /// Opens the action menu anchored to the "+" that asked.
+    private var actionMenu: PulseActionMenuContext {
+        PulseActionMenuContext(open: { anchor in
+            withAnimation(PulseMotion.menu) { actionMenuAnchor = anchor }
+        }, identity: ObjectIdentifier(token))
     }
 
     /// The capsule's bottom edge above the screen's bottom edge.
@@ -97,7 +111,8 @@ struct PulseRootView: View {
     private var chromeMetrics: PulseChromeMetrics {
         PulseChromeMetrics(
             tabRootBottomInset: max(0, barTopFromScreenBottom + PulseTheme.Layout.scrimHeight - bottomSafeArea),
-            barTopFromScreenBottom: barTopFromScreenBottom)
+            barTopFromScreenBottom: barTopFromScreenBottom,
+            barBottomFromScreenBottom: barBottomFromScreenBottom)
     }
 
     /// True while the selected tab shows its root, which is when the capsule and Coach button show.
@@ -139,6 +154,17 @@ struct PulseRootView: View {
                 .transition(.opacity)
             }
         }
+        .overlay {
+            // The action menu, above everything (the tab bar included), anchored to its "+".
+            if let anchor = actionMenuAnchor {
+                PulseActionMenuHost(anchor: anchor, onPick: { item in
+                    closeActionMenu()
+                    if let action = item.quickAction { perform(action) }
+                }, onClose: closeActionMenu)
+                .transition(.opacity)
+            }
+        }
+        .onChange(of: selectedTab) { _, _ in closeActionMenu() }
         .ignoresSafeArea(.keyboard, edges: .bottom)
         .animation(PulseMotion.chrome, value: selectedTabAtRoot)
         .animation(PulseMotion.chrome, value: coachAvailability)
@@ -157,6 +183,7 @@ struct PulseRootView: View {
         .environment(\.pulseChrome, chromeMetrics)
         .environment(\.pulseCoach, coachContext)
         .environment(\.pulseNavigator, navigator)
+        .environment(\.pulseActionMenu, actionMenu)
         .tint(PulseTheme.chromeTint)
         .environment(model)
         .background(PulseAttacher(model: model))
@@ -258,7 +285,17 @@ struct PulseRootView: View {
     }
 
     private func push(_ route: PulseRoute) {
-        path(selectedTab).wrappedValue.append(route)
+        // The Coach is a sheet with its own stack: pushing it would nest one NavigationStack in another.
+        if case .coach(let seed) = route {
+            openCoach(seed: seed)
+            return
+        }
+        path(selectedTab).wrappedValue.appendPulse(route)
+    }
+
+    private func closeActionMenu() {
+        guard actionMenuAnchor != nil else { return }
+        withAnimation(PulseMotion.menu) { actionMenuAnchor = nil }
     }
 
     /// Present `route` in its own stack: full-screen routes in the cover slot, everything else as a sheet.
@@ -305,10 +342,6 @@ struct PulseRootView: View {
                     // cleanly rather than racing its own dismissal (the classic shell's idiom).
                     sheet = nil
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { perform(picked) }
-                },
-                onGuidedSession: {
-                    sheet = nil
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { present(.guidedSession) }
                 },
                 onClose: { sheet = nil })
         case .route(let route):
@@ -369,7 +402,7 @@ struct PulseRootView: View {
         } else if let tab = PulseDebugLaunch.tab {
             selectedTab = tab
         }
-        if let route = PulseDebugLaunch.push { homePath.append(route) }
+        if let route = PulseDebugLaunch.push { homePath.appendPulse(route) }
         if let route = PulseDebugLaunch.presentedRoute { present(route) }
         if PulseDebugLaunch.showsGallery { showGallery = true }
         switch PulseDebugLaunch.sheet {
@@ -425,6 +458,9 @@ struct PulseAttacher: View {
     @AppStorage("windDown.enabled") private var windDownEnabled = false
     @AppStorage("windDown.wakeMinutes") private var windDownWake = 7 * 60
     @AppStorage("windDown.perDayWakeMinutes") private var windDownPerDay = Data()
+    // The strap's silent wake alarm (BehaviorStore's keys): Tonight's Sleep says ALARM ON / OFF from them.
+    @AppStorage("behavior.smartAlarmEnabled") private var strapAlarmOn = false
+    @AppStorage("behavior.smartAlarmMinutes") private var strapAlarmMinutes = 7 * 60
 
     private var prefs: PulsePrefs {
         let system = UnitSystem(rawValue: unitSystemRaw) ?? .metric
@@ -435,10 +471,17 @@ struct PulseAttacher: View {
         p.effortMethod = banisterEffort ? .banister : .edwards
         p.stressPersonalBaseline = stressPersonalBaseline
         p.journalReminder = journalReminder
+        let tomorrow = Calendar.current.date(byAdding: .day, value: 1, to: Date()) ?? Date()
+        let tomorrowWeekday = Calendar.current.component(.weekday, from: tomorrow)
         if windDownEnabled {
-            let tomorrow = Calendar.current.date(byAdding: .day, value: 1, to: Date()) ?? Date()
-            p.alarmWakeMinute = WindDownNudge.wakeMinutes(
-                forWeekday: Calendar.current.component(.weekday, from: tomorrow))
+            p.alarmWakeMinute = WindDownNudge.wakeMinutes(forWeekday: tomorrowWeekday)
+        }
+        if strapAlarmOn {
+            // An empty weekday set means every day (BehaviorStore's backward-compatible default).
+            let weekdays = UserDefaults.standard.array(forKey: "behavior.smartAlarmWeekdays") as? [Int] ?? []
+            if weekdays.isEmpty || weekdays.contains(tomorrowWeekday) {
+                p.strapAlarmMinute = strapAlarmMinutes
+            }
         }
         return p
     }
