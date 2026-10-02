@@ -79,7 +79,7 @@ private struct PulseRecoveryDiveContent: View {
                 .padding(.top, 5)
 
             PulseDiveCallout(rows: s.contributors, dayLabel: legendDay)
-                .padding(.top, 18)
+                .padding(.top, 22)
                 .id("pulse.contributors")
 
             if case .calibrating(let nights, let of) = s.dial.state {
@@ -157,24 +157,29 @@ private struct PulseRecoveryBehaviorCard: View {
         .buttonStyle(PulsePressStyle())
     }
 
+    /// Measured on deep-dives-2026/17b (the same 402 pt screen): the title's caps 8 pt tall and centred
+    /// 26 pt under the card's top, the 13 pt body's lines 17.5 pt apart from 57 pt down, the chips 15 pt
+    /// under it.
     private var expanded: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 10) {
+            HStack(spacing: 9) {
                 Image(systemName: "lightbulb.max")
-                    .font(.system(size: 19, weight: .light))
+                    .font(.system(size: 18, weight: .light))
                     .foregroundStyle(PulseTheme.subtitleRowIcon)
+                    .frame(width: 19, height: 20)
                     .accessibilityHidden(true)
-                PulseWordWrapText(String(localized: "Behavior Insights"), style: .menuLabel)
+                PulseWordWrapText(String(localized: "Behavior Insights"), style: .cardTitle)
                     .foregroundStyle(PulseTheme.textPrimary)
                     .accessibilityAddTraits(.isHeader)
                 Spacer(minLength: 8)
                 PulseChevron()
             }
             Text(String(localized: "Some of your behaviors from yesterday may have affected your Recovery score today."))
-                .pulseText(.subtitle)
+                .pulseText(.rowSubline)
+                .lineSpacing(2)
                 .foregroundStyle(PulseTheme.subtitleRowText)
                 .fixedSize(horizontal: false, vertical: true)
-                .padding(.top, 12)
+                .padding(.top, 13)
             PulseWordFlow(alignment: .leading, spacing: 8, lineSpacing: 8) {
                 ForEach(behaviors) { behavior in
                     PulseBehaviorChip(title: behavior.title, effect: behavior.effect)
@@ -182,7 +187,7 @@ private struct PulseRecoveryBehaviorCard: View {
                         .accessibilityLabel(behavior.spoken)
                 }
             }
-            .padding(.top, 16)
+            .padding(.top, 15)
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -204,7 +209,7 @@ private struct PulseRecoveryWeeklyTrends: View {
             VStack(spacing: PulseTheme.Layout.stackGap) {
                 PulseWeeklyTrendCard(String(localized: "Recovery"), route: PulseDiveRoutes.trend("recovery")) {
                     PulseBarChart(data: week.recovery, yDomain: 0...100, gridValues: [0, 33, 66, 100],
-                                  highlightID: week.highlightID,
+                                  highlightID: week.highlightID, height: PulseWeeklyChart.height,
                                   emptyMessage: String(localized: "No Recovery scored this week"))
                 }
                 PulseWeeklyTrendCard(String(localized: "Heart rate variability"), route: PulseDiveRoutes.trend("hrv")) {
@@ -222,7 +227,7 @@ private struct PulseRecoveryWeeklyTrends: View {
 
     private func line(_ data: [PulseChartDatum], empty: String) -> some View {
         PulseLineChart(data: data, color: PulseTheme.recoveryBlue, highlightID: week.highlightID,
-                       emptyMessage: empty)
+                       height: PulseWeeklyChart.height, emptyMessage: empty)
     }
 }
 

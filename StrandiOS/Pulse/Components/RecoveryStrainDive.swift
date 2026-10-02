@@ -31,8 +31,11 @@ struct PulseDiveContributor: Identifiable, Equatable {
     let spoken: String
 }
 
-/// The deep dive's callout under the ring: the contributor rows (66 pt pitch, inset dividers) and the
-/// legend well. A row with a route opens its Trend View.
+/// The deep dive's callout under the ring: the contributor rows and the legend well, placed as the 2026
+/// captures measure them (deep-dives-2026/17b, same 402 pt screen): the first row's centre 52 pt under the
+/// pointer's tip, a 66 pt pitch with the inset dividers drawn over the row boundary rather than between
+/// rows, values and arrows ending 24 pt inside the callout's edge, and the legend 58 pt under the last
+/// row. A row with a route opens its Trend View.
 struct PulseDiveCallout: View {
     let rows: [PulseDiveContributor]
     /// "Today", or the day the dive shows ("Wed, Aug 19") on a past day.
@@ -40,15 +43,20 @@ struct PulseDiveCallout: View {
 
     var body: some View {
         PulseCallout {
+            Color.clear.frame(height: 12)
             ForEach(Array(rows.enumerated()), id: \.element.id) { index, row in
                 link(row)
-                if index < rows.count - 1 {
-                    PulseDivider(leadingInset: 16, trailingInset: 16)
-                }
+                    .padding(.trailing, 6)
+                    .overlay(alignment: .bottom) {
+                        if index < rows.count - 1 {
+                            PulseDivider(leadingInset: 16, trailingInset: 16)
+                        }
+                    }
             }
             PulseLegendWell {
                 PulseDiveLegend(dayLabel: dayLabel)
             }
+            .padding(.top, -4)
         }
     }
 
@@ -106,6 +114,10 @@ struct PulseDiveCarriedLine: View {
 
 /// A Weekly Trends card (§2.7): the UPPERCASE title with "›" at the right, an optional series legend
 /// under it at the right, then the chart. The whole card opens the metric's Trend View.
+///
+/// Proportions from deep-dives-2026/16 and 16b: the title's caps centred ≈24 pt under the card's top, the
+/// plot's top gridline ≈34 pt under them, a 197 pt plot (`PulseWeeklyChart.height` is the chart frame that
+/// leaves the plot that tall above its two-line day labels) and ≈18 pt under the labels.
 struct PulseWeeklyTrendCard<Chart: View>: View {
     let title: String
     let route: PulseRoute?
@@ -139,15 +151,20 @@ struct PulseWeeklyTrendCard<Chart: View>: View {
                     .padding(.top, 10)
             }
             chart()
-                .padding(.top, legend.isEmpty ? 22 : 12)
+                .padding(.top, legend.isEmpty ? 27 : 14)
         }
         .padding(.horizontal, 16)
-        .padding(.top, 19)
-        .padding(.bottom, 12)
+        .padding(.top, 16)
+        .padding(.bottom, 18)
         .frame(maxWidth: .infinity, alignment: .leading)
         .pulseCardBackground()
         .contentShape(Rectangle())
     }
+}
+
+enum PulseWeeklyChart {
+    /// The chart frame a Weekly Trends card gives its chart: a 197 pt plot plus the day labels under it.
+    static let height: CGFloat = 230
 }
 
 /// One series in a Weekly Trends legend ("■ ZONE 1").
@@ -201,7 +218,7 @@ enum PulseDiveRoutes {
 
 /// A behaviour chip on the Recovery dive's BEHAVIOR INSIGHTS card (deep-dives-2026/17b, 17d): teal text
 /// and ▲ on a teal tint when it has gone with a higher Recovery, orange and ▼ when with a lower one, grey
-/// when no effect stands out. Radius 8, 34 pt tall.
+/// when no effect stands out. Radius 8, 32 pt tall, 14 pt text.
 struct PulseBehaviorChip: View {
     enum Effect: Equatable {
         case helps, hurts, neutral
@@ -227,13 +244,13 @@ struct PulseBehaviorChip: View {
                     .accessibilityHidden(true)
             }
             Text(title)
-                .pulseText(.filter)
+                .pulseText(.body)
                 .foregroundStyle(colors.text)
                 .lineLimit(1)
                 .minimumScaleFactor(0.75)
         }
         .padding(.horizontal, 12)
-        .frame(minHeight: 34)
+        .frame(minHeight: 32)
         .background(RoundedRectangle(cornerRadius: PulseTheme.Radius.well, style: .circular).fill(colors.fill))
     }
 }

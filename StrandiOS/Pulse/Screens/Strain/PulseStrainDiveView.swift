@@ -65,7 +65,7 @@ private struct PulseStrainDiveContent: View {
                 .padding(.top, 5)
 
             PulseDiveCallout(rows: s.contributors, dayLabel: legendDay)
-                .padding(.top, 18)
+                .padding(.top, 22)
                 .id("pulse.contributors")
 
             PulseDiveInsight(text: s.insight, cta: String(localized: "Explore your strain insights"),
@@ -154,7 +154,7 @@ private struct PulseStrainWeeklyTrends: View {
             VStack(spacing: PulseTheme.Layout.stackGap) {
                 PulseWeeklyTrendCard(String(localized: "Strain"), route: PulseDiveRoutes.trend("strain")) {
                     PulseBarChart(data: week.strain, yDomain: 0...21, gridValues: [0, 7, 14, 21],
-                                  highlightID: week.highlightID,
+                                  highlightID: week.highlightID, height: PulseWeeklyChart.height,
                                   emptyMessage: String(localized: "No Strain recorded this week"))
                 }
                 PulseWeeklyTrendCard(String(localized: "HR zones 1-3"), route: PulseDiveRoutes.trend("hr_zones13_min"),
@@ -166,11 +166,11 @@ private struct PulseStrainWeeklyTrends: View {
                     zones(week.upperZones)
                 }
                 PulseWeeklyTrendCard(String(localized: "Steps"), route: week.stepsRoute) {
-                    PulseBarChart(data: week.steps, highlightID: week.highlightID,
+                    PulseBarChart(data: week.steps, highlightID: week.highlightID, height: PulseWeeklyChart.height,
                                   emptyMessage: String(localized: "No steps this week"))
                 }
                 PulseWeeklyTrendCard(String(localized: "Calories"), route: PulseDiveRoutes.trend(week.caloriesMetric)) {
-                    PulseBarChart(data: week.calories, highlightID: week.highlightID,
+                    PulseBarChart(data: week.calories, highlightID: week.highlightID, height: PulseWeeklyChart.height,
                                   emptyMessage: String(localized: "No calories this week"))
                 }
             }
@@ -184,7 +184,7 @@ private struct PulseStrainWeeklyTrends: View {
     @ViewBuilder
     private func zones(_ columns: [PulseStackedBarChart.Column]) -> some View {
         if columns.contains(where: { !$0.segments.isEmpty }) {
-            PulseStackedBarChart(columns: columns, highlightID: week.highlightID)
+            PulseStackedBarChart(columns: columns, highlightID: week.highlightID, height: PulseWeeklyChart.height)
                 .accessibilityLabel(columns.compactMap { column in
                     column.totalLabel.map { "\(column.label) \(column.sublabel ?? ""): \($0)" }
                 }.joined(separator: ", "))
@@ -192,7 +192,7 @@ private struct PulseStrainWeeklyTrends: View {
             Text(String(localized: "No heart rate recorded this week"))
                 .pulseText(.body)
                 .foregroundStyle(PulseTheme.textSecondary)
-                .frame(maxWidth: .infinity, minHeight: 197)
+                .frame(maxWidth: .infinity, minHeight: PulseWeeklyChart.height)
         }
     }
 }
