@@ -281,9 +281,19 @@ private struct PulseTrendPage: View {
             Text(item.label)
                 .pulseText(.label)
                 .foregroundStyle(PulseTheme.textSecondary)
-            PulseValueText(value: item.value, unit: item.unit.isEmpty ? nil : item.unit, style: .largeValue,
-                           unitStyle: .subtitle, color: item.valueColor, unitColor: PulseTheme.textPrimary)
-                .padding(.top, 4)
+            // WHOOP sets the unit bold, about 0.6 of the value and a space apart ("74 %", "50 ms").
+            HStack(alignment: .firstTextBaseline, spacing: 5) {
+                Text(item.value)
+                    .pulseText(.largeValue)
+                    .foregroundStyle(item.valueColor)
+                if !item.unit.isEmpty {
+                    Text(item.unit)
+                        .pulseText(.dialUnit)
+                        .foregroundStyle(PulseTheme.textPrimary)
+                }
+            }
+            .lineLimit(1)
+            .padding(.top, 4)
             if let chip = item.chip {
                 PulseDeltaChip(text: chip.text, trend: chip.trend)
                     .padding(.top, 10)
@@ -310,7 +320,7 @@ private struct PulseTrendPage: View {
     }
 
     private var rangeColumn: some View {
-        VStack(alignment: .trailing, spacing: 14) {
+        VStack(alignment: .trailing, spacing: 22) {
             PulseSegmentedControl(options: snapshot.metric.ranges, selection: $range) { $0.segmentTitle }
                 .frame(width: PulseTheme.Trends.rangeColumnWidth)
                 .accessibilityLabel(String(localized: "Range"))
@@ -391,7 +401,7 @@ private struct PulseTrendPage: View {
                     .frame(width: 26)
                     .accessibilityHidden(true)
                 Text(title)
-                    .pulseText(.menuLabel)
+                    .pulseText(.navTitle)
                     .foregroundStyle(PulseTheme.textPrimary)
                     .lineLimit(2)
                 Spacer(minLength: 8)
@@ -514,13 +524,14 @@ struct PulseTrendBreakdownView: View {
                     .accessibilityLabel("\(row.amount) \(row.name) \(row.range)")
                 }
             }
-            .padding(.top, 10)
+            .padding(.top, 6)
         }
     }
 }
 
 #if DEBUG
-/// DEBUG launch flags for captures: `--trend-range w|m|6m|1y|all` and `--trend-page N`.
+/// DEBUG launch flags for captures: `--trend-range w|m|6m|1y|all`, `--trend-page N` (also the digest's
+/// page) and `--digest-mode w|m`.
 enum PulseTrendDebugLaunch {
     private static func value(_ flag: String) -> String? {
         let args = CommandLine.arguments
@@ -540,6 +551,15 @@ enum PulseTrendDebugLaunch {
     }
 
     static var page: Int? { value("--trend-page").flatMap(Int.init) }
+
+    /// `--digest-mode w|m`: the Weekly Digest's week or month.
+    static var digestMode: WeeklyDigestSnapshot.Mode? {
+        switch value("--digest-mode")?.lowercased() {
+        case "w": return .week
+        case "m": return .month
+        default: return nil
+        }
+    }
 }
 #endif
 #endif

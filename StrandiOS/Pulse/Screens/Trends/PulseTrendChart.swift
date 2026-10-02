@@ -54,11 +54,15 @@ struct PulseTrendChart: View {
         let count: Int
         let domain: ClosedRange<Double>
 
-        var pitch: CGFloat { count > 0 ? plot.width / CGFloat(count) : plot.width }
+        /// The columns sit inside the gridlines with this much room at each end (deep-dives-2026/47).
+        let inset: CGFloat
 
-        func x(_ index: Int) -> CGFloat { plot.minX + (CGFloat(index) + 0.5) * pitch }
+        var columnsWidth: CGFloat { max(1, plot.width - 2 * inset) }
+        var pitch: CGFloat { count > 0 ? columnsWidth / CGFloat(count) : columnsWidth }
+
+        func x(_ index: Int) -> CGFloat { plot.minX + inset + (CGFloat(index) + 0.5) * pitch }
         /// The left edge of column `index` (its slot, not its bar).
-        func edge(_ index: Int) -> CGFloat { plot.minX + CGFloat(index) * pitch }
+        func edge(_ index: Int) -> CGFloat { plot.minX + inset + CGFloat(index) * pitch }
 
         func y(_ value: Double) -> CGFloat {
             let span = domain.upperBound - domain.lowerBound
@@ -77,7 +81,8 @@ struct PulseTrendChart: View {
         let plotLeft = labelWidth > 0 ? ceil(labelWidth) + 10 : 0
         let plot = CGRect(x: plotLeft, y: Self.headroom, width: max(1, size.width - plotLeft),
                           height: Self.plotHeight)
-        let frame = Frame(plot: plot, count: model.columns.count, domain: model.yDomain)
+        let frame = Frame(plot: plot, count: model.columns.count, domain: model.yDomain,
+                          inset: model.columns.count <= 12 ? 8 : 2)
 
         drawGrid(&context, frame, font: axisFont)
         if let typical = model.typical { drawTypical(&context, frame, typical) }
@@ -225,10 +230,14 @@ struct PulseTrendChart: View {
         } else {
             marked = []
         }
+        // Over the typical band a label sits on a small dark plate, as WHOOP sets "47" inside the band.
+        let band = model.typical.map { r in
+            CGRect(x: f.plot.minX, y: f.y(r.upperBound), width: f.plot.width, height: max(2, f.y(r.lowerBound) - f.y(r.upperBound)))
+        }
         for m in marked {
             drawMarker(&context, at: m.point, color: color)
             if let label = model.columns[m.index].label {
-                drawValueLabel(&context, label, color: color, at: CGPoint(x: m.point.x, y: m.point.y - 8))
+                drawValueLabel(&context, label, color: color, at: CGPoint(x: m.point.x, y: m.point.y - 8), plateOver: band)
             }
         }
     }
@@ -267,11 +276,18 @@ struct PulseTrendChart: View {
         context.stroke(Path(ellipseIn: rect.insetBy(dx: 1, dy: 1)), with: .color(color), lineWidth: 2)
     }
 
-    /// A value over a column or point, bottom-centred on `point`, kept inside the chart's top.
-    private func drawValueLabel(_ context: inout GraphicsContext, _ text: String, color: Color, at point: CGPoint) {
-        let resolved = context.resolve(Text(text).font(PulseType.numeral(14)).foregroundColor(color))
+    /// A value over a column or point, bottom-centred on `point`, kept inside the chart's top. Where it
+    /// would sit on `plateOver` (the typical band) it gets a dark plate so it stays legible.
+    private func drawValueLabel(_ context: inout GraphicsContext, _ text: String, color: Color, at point: CGPoint,
+                                plateOver: CGRect? = nil) {
+        let resolved = context.resolve(Text(text).font(PulseType.numeral(15)).foregroundColor(color))
         let size = resolved.measure(in: CGSize(width: 120, height: 30))
         let y = max(size.height, point.y)
+        let rect = CGRect(x: point.x - size.width / 2, y: y - size.height, width: size.width, height: size.height)
+        if let plate = plateOver, plate.intersects(rect) {
+            context.fill(Path(roundedRect: rect.insetBy(dx: -3, dy: -1), cornerRadius: 3),
+                         with: .color(PulseTheme.pageBottom.opacity(0.85)))
+        }
         context.draw(resolved, at: CGPoint(x: point.x, y: y), anchor: .bottom)
     }
 
@@ -299,8 +315,10 @@ struct PulseTrendChart: View {
     // MARK: X labels
 
     private func drawXLabels(_ context: inout GraphicsContext, _ f: Frame, size: CGSize) {
-        let top = f.plot.maxY + (model.phases.isEmpty ? 8 : Self.phaseStrip + 8)
-        let font = PulseType.font(.legend)
+        let top = f.plot.maxY + (model.phases.isEmpty ? 6 : Self.phaseStrip + 6)
+        // WHOOP's x labels: the weekday or month in 11 pt semibold, the date under it in bold numerals.
+        let font = PulseType.font(.chip)
+        let numberFont = PulseType.font(.axis)
         for label in model.xLabels {
             let x = model.dimmed ? f.edge(label.index) : f.x(label.index)
             let line1 = context.resolve(Text(label.line1).font(font).foregroundColor(PulseTheme.textTertiary))
@@ -309,8 +327,8 @@ struct PulseTrendChart: View {
             let cx = min(max(x, f.plot.minX + width / 2), size.width - width / 2)
             context.draw(line1, at: CGPoint(x: cx, y: top), anchor: .top)
             if let second = label.line2 {
-                let line2 = context.resolve(Text(second).font(font).foregroundColor(PulseTheme.textTertiary))
-                context.draw(line2, at: CGPoint(x: cx, y: top + 15), anchor: .top)
+                let line2 = context.resolve(Text(second).font(numberFont).foregroundColor(PulseTheme.textTertiary))
+                context.draw(line2, at: CGPoint(x: cx, y: top + 14), anchor: .top)
             }
         }
     }

@@ -173,9 +173,8 @@ enum PulseTrendPageBuilder {
         func insight(current: Double?, previous: Double?) -> String? {
             let name = metric.sentenceName
             guard let current else {
-                return series.hasData
-                    ? String(localized: "No \(name) readings in this period.")
-                    : String(localized: "No \(name) readings yet. They appear here once your strap or an import records them.")
+                guard series.hasData else { return emptyHint }
+                return String(localized: "No \(name) readings in this period.")
             }
             let value = spoken(current)
             if case .hoursVsNeed = metric.chart {
@@ -201,13 +200,15 @@ enum PulseTrendPageBuilder {
                     return String(localized: "Your average \(name) during this 7-day period was \(value). Its typical range needs a week of readings from the month before.")
                 }
                 let lo = format.text(typical.lowerBound), hi = format.text(typical.upperBound)
+                // A signed range reads badly with a dash between the signs ("-0.2 - +0.2").
+                let span = typical.lowerBound < 0 ? String(localized: "\(lo) to \(hi)") : "\(lo) - \(hi)"
                 switch PulseTrendMath.relation(format.printed(current), to: format.printed(typical.lowerBound)...format.printed(typical.upperBound)) {
                 case .above:
-                    return String(localized: "Your average \(name) during this 7-day period was above its typical range (\(lo) - \(hi)) at the time.")
+                    return String(localized: "Your average \(name) during this 7-day period was above its typical range (\(span)) at the time.")
                 case .within:
-                    return String(localized: "Your average \(name) during this 7-day period was within its typical range (\(lo) - \(hi)) at the time.")
+                    return String(localized: "Your average \(name) during this 7-day period was within its typical range (\(span)) at the time.")
                 case .below:
-                    return String(localized: "Your average \(name) during this 7-day period was below its typical range (\(lo) - \(hi)) at the time.")
+                    return String(localized: "Your average \(name) during this 7-day period was below its typical range (\(span)) at the time.")
                 }
             }
             if isWeeklyTotal {
@@ -262,6 +263,23 @@ enum PulseTrendPageBuilder {
             case (_, .above): return String(localized: "Your average \(name) over this period (\(value)) was above your previous 12-month average of \(r).")
             case (_, .below): return String(localized: "Your average \(name) over this period (\(value)) was below your previous 12-month average of \(r).")
             case (_, .within): return String(localized: "Your average \(name) over this period (\(value)) was consistent with your previous 12-month average of \(r).")
+            }
+        }
+
+        /// What to say before a metric has any reading, naming where its readings come from.
+        private var emptyHint: String {
+            let name = metric.sentenceName
+            switch metric.source {
+            case .explore(_, let source) where source == "apple-health":
+                return String(localized: "No \(name) readings yet. They appear here once Apple Health shares them with ZENO.")
+            case .explore(_, let source) where source != "my-whoop":
+                return String(localized: "No \(name) readings yet. They appear here once they are imported.")
+            case .zones, .strength:
+                return String(localized: "No \(name) yet. It appears here once you log an activity.")
+            case .steps:
+                return String(localized: "No steps yet. They appear here once your iPhone, Apple Health or your strap counts them.")
+            default:
+                return String(localized: "No \(name) readings yet. They appear here once your strap or an import records them.")
             }
         }
 
@@ -320,11 +338,13 @@ enum PulseTrendPageBuilder {
             let segs = isLong ? segments() : []
             visible += segs.map(\.value)
             let scale = yScale(values: visible, typical: typical, average: showsAverage ? average : nil)
+            // Recovery and stress colour each bar by its band; their faint long-range line is neutral.
+            let perValueColour = metric.key == "recovery" || metric.key == "stress"
             return PulseTrendChartModel(
                 mode: mode, columns: columns, yDomain: scale.domain, yTicks: scale.ticks,
                 xLabels: dayLabels(keys),
                 barWidth: isWeek ? 16 : 7,
-                partColors: partColors, lineColor: metric.color,
+                partColors: partColors, lineColor: perValueColour ? PulseTheme.textSecondary : metric.color,
                 secondaryColor: mode == .dualLine ? PulseTheme.positive : nil,
                 average: showsAverage ? average : nil, typical: typical,
                 segments: segs, dimmed: isLong,
@@ -336,14 +356,23 @@ enum PulseTrendPageBuilder {
 
         /// M and the long ranges of a minute metric: one stacked column per complete week.
         private func weeklyChart(average: Double?) -> PulseTrendChartModel {
-            let weeks = PulseTrendMath.weeklyTotals(series.points, in: window)
+            // Every complete week of the window, counted back from its end, so the axis spans the whole
+            // window; a week without a reading is a gap.
+            let totals = PulseTrendMath.weeklyTotals(series.points, in: window)
             let partWeeks = series.parts.map { PulseTrendMath.weeklyTotals($0, in: window) }
             let isLong = range.drawsSegments
+            let weekCount = window.dayCount / 7
+            let weeks: [PulseTrendMath.WeekTotal] = (0..<weekCount).reversed().map { k in
+                let end = PulseTrendMath.addDays(window.end, -7 * k)
+                return totals.first { $0.end == end }
+                    ?? PulseTrendMath.WeekTotal(start: PulseTrendMath.addDays(end, -6), end: end, total: 0, count: 0)
+            }
             let columns: [PulseTrendChartModel.Column] = weeks.map { week in
                 let parts = partWeeks.map { pw in pw.first(where: { $0.end == week.end })?.total ?? 0 }
+                let value: Double? = week.count > 0 ? week.total : nil
                 return PulseTrendChartModel.Column(
-                    id: week.end, value: week.total, parts: isStacked ? parts : [],
-                    color: metric.color, label: range == .month ? columnLabel(week.total) : nil)
+                    id: week.end, value: value, parts: isStacked ? parts : [],
+                    color: metric.color, label: range == .month ? value.map(columnLabel) : nil)
             }
             let segs = isLong ? segments(weekColumns: weeks) : []
             let visible = columns.compactMap(\.value) + segs.map(\.value)
@@ -607,6 +636,14 @@ enum PulseTrendPageBuilder {
                 notes.append(String(localized: "Average does not include today (\(PulseFormat.dayLabel(excludedDay, template: "MMMd")))"))
             }
             if let note = metric.note { notes.append(note) }
+            if case .zones = metric.source, let first = series.earliest {
+                // Days dropped for an activity without zones leave holes in a zero-filled series.
+                let shown = window.dayKeys.filter { $0 >= first && $0 <= anchor }
+                let present = Set(PulseTrendMath.points(series.points, in: window).map(\.day))
+                if shown.contains(where: { !present.contains($0) }) {
+                    notes.append(String(localized: "Some activities in this period have no heart-rate zones, so their days are left out"))
+                }
+            }
             if series.signed {
                 notes.append(String(localized: "Shown as the change from your personal baseline"))
             }

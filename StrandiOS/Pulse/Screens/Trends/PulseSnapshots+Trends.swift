@@ -200,3 +200,123 @@ struct PulseTrendPickerItem: Equatable, Identifiable {
     let hasData: Bool
 }
 #endif
+
+#if os(iOS)
+// MARK: - Trends tab snapshot (WHOOP_UI_SPEC §3.35)
+
+/// The Trends tab: THIS WEEK, then every pillar's metric rows.
+struct TrendsTabSnapshot: Equatable {
+    /// One pillar's line in THIS WEEK: the mini ring, this week's average and its chip against last week.
+    struct WeekLine: Equatable, Identifiable {
+        let score: PulseScore
+        let ring: PulseDialContent
+        /// "86%", "11.4", "--".
+        let value: String
+        let chip: PulseTrendChip?
+        let accessibility: String
+        var id: String { score.rawValue }
+    }
+
+    /// A dashboard-style metric row: the newest value with its ▲▼ against the 30-day average, the average
+    /// under it, and a 7-day sparkline.
+    struct Row: Equatable, Identifiable {
+        /// The metric key (its Trend View).
+        let id: String
+        let title: String
+        let symbol: String
+        /// nil while the metric has no reading.
+        let value: String?
+        let unit: String
+        /// "Sep 30" for an older reading, "So far today" for a running total, "Last 7 days".
+        let caption: String?
+        let trend: PulseTrend?
+        let baseline: String?
+        /// The last seven days, oldest first; nil is a day without a reading.
+        let spark: [Double?]
+        let color: Color
+        let accessibility: String
+    }
+
+    struct Section: Equatable, Identifiable {
+        let pillar: PulseTrendPillar
+        let rows: [Row]
+        var id: String { pillar.rawValue }
+    }
+
+    let seq: Int
+    /// "Sep 28 - Oct 4".
+    let weekTitle: String
+    let week: [WeekLine]
+    /// Why a line leaves something out ("Strain leaves out today until it ends").
+    let weekNote: String?
+    let sections: [Section]
+}
+
+// MARK: - Weekly Digest snapshot (WHOOP_UI_SPEC §3.40)
+
+/// A week (Monday to Sunday) or a calendar month in review.
+struct WeeklyDigestSnapshot: Equatable {
+    enum Mode: String, CaseIterable, Hashable {
+        case week, month
+
+        var segmentTitle: String { self == .week ? "W" : "M" }
+    }
+
+    /// One of the three summary dials with its chip against the period before.
+    struct Pillar: Equatable, Identifiable {
+        let score: PulseScore
+        let content: PulseDialContent
+        let chip: PulseTrendChip?
+        let route: PulseRoute
+        var id: String { score.rawValue }
+    }
+
+    /// A Weekly Trends card reused from the deep dives.
+    struct TrendCard: Equatable, Identifiable {
+        /// The metric key.
+        let id: String
+        let title: String
+        let data: [PulseChartDatum]
+        let yDomain: ClosedRange<Double>
+        let gridValues: [Double]
+        let highlightID: String?
+        let route: PulseRoute
+    }
+
+    /// A notable day ("Best Recovery · Tue, Sep 23 · 94%").
+    struct Highlight: Equatable, Identifiable {
+        let id: String
+        let symbol: String
+        let title: String
+        let day: String
+        let value: String
+        let unit: String
+    }
+
+    /// A journal behaviour logged in the period, with its effect on Recovery over the last 90 days.
+    struct Behavior: Equatable, Identifiable {
+        /// The journal question.
+        let id: String
+        let title: String
+        /// "Logged 3 days".
+        let logged: String
+        /// nil while there are too few yes / no days to measure it.
+        let effect: PulseImpactBar.Effect?
+        let fraction: Double
+        let valueText: String
+        let note: String?
+    }
+
+    let seq: Int
+    let mode: Mode
+    let page: Int
+    let pager: PulseTrendPager
+    let hasData: Bool
+    let pillars: [Pillar]
+    let note: String?
+    let cards: [TrendCard]
+    let highlights: [Highlight]
+    let behaviors: [Behavior]
+    let insight: String
+}
+#endif

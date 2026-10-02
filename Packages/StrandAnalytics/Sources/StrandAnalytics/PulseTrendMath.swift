@@ -132,6 +132,28 @@ public enum PulseTrendMath {
         return (a - e) / days
     }
 
+    /// The Monday-to-Sunday week containing `day`, `weeksBack` weeks earlier (the Weekly Digest's week,
+    /// `WeeklyDigestEngine`'s Monday anchor). `hasOlder` says whether `earliest` reaches before it.
+    public static func weekWindow(containing day: String, weeksBack: Int = 0, earliest: String? = nil) -> Window? {
+        guard let monday = WeeklyDigestEngine.mondayOfWeek(containing: day) else { return nil }
+        let back = max(0, weeksBack)
+        let start = addDays(monday, -7 * back)
+        return Window(start: start, end: addDays(start, 6), page: back, dayCount: 7,
+                      hasOlder: earliest.map { $0 < start } ?? false)
+    }
+
+    /// The calendar month containing `day`, `monthsBack` months earlier (the monthly digest).
+    public static func monthWindow(containing day: String, monthsBack: Int = 0, earliest: String? = nil) -> Window? {
+        guard let (y, m, _) = WeeklyDigestEngine.parseYMD(day) else { return nil }
+        let back = max(0, monthsBack)
+        let index = y * 12 + (m - 1) - back
+        let year = index / 12, month = index % 12 + 1
+        let days = WeeklyDigestEngine.daysInMonth(year, month)
+        let start = WeeklyDigestEngine.formatYMD(year, month, 1)
+        return Window(start: start, end: WeeklyDigestEngine.formatYMD(year, month, days), page: back,
+                      dayCount: days, hasOlder: earliest.map { $0 < start } ?? false)
+    }
+
     /// The points inside `window`, oldest first. The input need not be sorted.
     public static func points(_ series: [Point], in window: Window) -> [Point] {
         series.filter { window.contains($0.day) && $0.value.isFinite }.sorted { $0.day < $1.day }

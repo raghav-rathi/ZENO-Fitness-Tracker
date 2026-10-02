@@ -67,6 +67,27 @@ final class PulseTrendMathTests: XCTestCase {
         XCTAssertNil(M.window(.week, anchor: "not-a-day", earliest: nil))
     }
 
+    func testDigestWeeksRunMondayToSundayAndMonthsAreCalendarMonths() {
+        // 2026-10-02 is a Friday.
+        let week = M.weekWindow(containing: "2026-10-02", earliest: "2026-09-01")
+        XCTAssertEqual(week?.start, "2026-09-28")
+        XCTAssertEqual(week?.end, "2026-10-04")
+        XCTAssertEqual(week?.hasOlder, true)
+        let before = M.weekWindow(containing: "2026-10-02", weeksBack: 1)
+        XCTAssertEqual(before?.start, "2026-09-21")
+        XCTAssertEqual(before?.end, "2026-09-27")
+        XCTAssertEqual(M.weekWindow(containing: "2026-09-28", earliest: "2026-09-28")?.hasOlder, false)
+
+        let month = M.monthWindow(containing: "2026-10-02")
+        XCTAssertEqual(month?.start, "2026-10-01")
+        XCTAssertEqual(month?.end, "2026-10-31")
+        XCTAssertEqual(month?.dayCount, 31)
+        XCTAssertEqual(M.monthWindow(containing: "2026-10-02", monthsBack: 1)?.end, "2026-09-30")
+        XCTAssertEqual(M.monthWindow(containing: "2026-10-02", monthsBack: 10)?.start, "2025-12-01")
+        XCTAssertEqual(M.monthWindow(containing: "2024-03-15", monthsBack: 1)?.dayCount, 29)
+        XCTAssertNil(M.monthWindow(containing: "2026-13-01"))
+    }
+
     // MARK: - Averages
 
     func testAverageLeavesOutTheRunningTotalsDayStillCounting() {

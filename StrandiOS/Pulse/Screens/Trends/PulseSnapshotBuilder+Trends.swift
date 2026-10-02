@@ -47,6 +47,41 @@ extension PulseSnapshotBuilder {
         return items
     }
 
+    // MARK: Trends tab
+
+    /// The Trends tab: THIS WEEK and every pillar's rows, from the same series the Trend View reads.
+    func trendsTab(_ r: PulseRequest, units: PulseTrendUnits) async -> TrendsTabSnapshot? {
+        begin(r.seq)
+        var series: [String: PulseTrendSeries] = [:]
+        for metric in PulseTrendMetric.curated {
+            series[metric.key] = await trendSeries(r, metric: metric, units: units)
+            guard isCurrent(r) else { return nil }
+        }
+        return PulseDigestBuilder.tab(seq: r.seq, today: r.day.key, series: series)
+    }
+
+    // MARK: Weekly Digest
+
+    /// The Weekly Digest (or the monthly one) `page` periods back from the current one.
+    func weeklyDigest(_ r: PulseRequest, mode: WeeklyDigestSnapshot.Mode, page: Int,
+                      units: PulseTrendUnits) async -> WeeklyDigestSnapshot? {
+        begin(r.seq)
+        let sleep = await trendSeries(r, metric: .sleepPerformance, units: units)
+        let recovery = await trendSeries(r, metric: .recovery, units: units)
+        let strain = await trendSeries(r, metric: .dayStrain, units: units)
+        let hours = await trendSeries(r, metric: .hoursVsNeed, units: units)
+        let zones13 = await trendSeries(r, metric: .zones13, units: units)
+        let zones45 = await trendSeries(r, metric: .zones45, units: units)
+        guard isCurrent(r) else { return nil }
+        // Not cached: logging a journal entry does not bump the refresh, and this is one indexed read.
+        let journal = await repo.journalEntries(days: 400)
+        guard isCurrent(r) else { return nil }
+        return PulseDigestBuilder.digest(
+            seq: r.seq, today: r.day.key, mode: mode, page: page,
+            inputs: .init(sleep: sleep, recovery: recovery, strain: strain, hours: hours, zones13: zones13,
+                          zones45: zones45, journal: journal))
+    }
+
     // MARK: Series
 
     /// `metric`'s daily series for this refresh, read once and shared.
@@ -70,8 +105,18 @@ extension PulseSnapshotBuilder {
             case .spo2: pick = { $0.spo2Pct }
             case .strain: pick = { $0.strain.map { UnitFormatter.effortValue($0, scale: .whoop) } }
             }
-            return PulseTrendSeries(points: Self.points(r.days.compactMap { d in pick(d).map { (d.day, $0) } },
-                                                        through: today))
+            var rows = r.days.compactMap { d in pick(d).map { (d.day, $0) } }
+            if field == .strain {
+                // Today's Strain through Home's resolver (the live score over the day window, floored at the
+                // stored row), so today's bar is the dial's number, not the last stored one.
+                let window = await dayWindow(r)
+                let hr = await heartRate(dayKey: today, from: window.from, to: window.to, isToday: true)
+                if let live = strainValue(r, row: displayRow(r), hr: hr) {
+                    rows.removeAll { $0.0 == today }
+                    rows.append((today, live))
+                }
+            }
+            return PulseTrendSeries(points: Self.points(rows, through: today))
 
         case .sleepPerformance:
             // `sleepPerformance(dayKey:rest:days:)` for every day: the stored point, else the night's Rest
@@ -151,17 +196,22 @@ extension PulseSnapshotBuilder {
             let rows = await workoutRows()
             var perZone: [Int: [String: Double]] = [:]
             var firstDay: String?
+            // A day with an activity that carries no zones has UNKNOWN zone time, not zero: it is left out.
+            var unknown = Set<String>()
             for w in rows {
-                guard let pct = WorkoutZones.percents(w.zonesJSON) else { continue }
                 let minutes = (w.durationS ?? Double(w.endTs - w.startTs)) / 60
                 guard minutes > 0 else { continue }
                 let day = Repository.localDayKey(Date(timeIntervalSince1970: TimeInterval(w.startTs)))
+                guard let pct = WorkoutZones.percents(w.zonesJSON) else {
+                    unknown.insert(day)
+                    continue
+                }
                 firstDay = min(firstDay ?? day, day)
                 for z in zones where (1...5).contains(z) {
                     perZone[z, default: [:]][day, default: 0] += minutes * pct[z - 1] / 100
                 }
             }
-            return Self.zeroFilled(parts: zones.map { perZone[$0] ?? [:] }, firstDay: firstDay, r: r)
+            return Self.zeroFilled(parts: zones.map { perZone[$0] ?? [:] }, firstDay: firstDay, r: r, unknown: unknown)
 
         case .strength:
             let rows = await workoutRows()
@@ -250,12 +300,13 @@ extension PulseSnapshotBuilder {
     /// Minutes derived from logged activities, one value for EVERY day from the history's first day to
     /// today: a day without an activity has no zone or strength time (WHOOP prints "0:00"), a true zero
     /// rather than a missing reading. The total is the headline; `parts` keeps each zone.
-    static func zeroFilled(parts: [[String: Double]], firstDay: String?, r: PulseRequest) -> PulseTrendSeries {
+    static func zeroFilled(parts: [[String: Double]], firstDay: String?, r: PulseRequest,
+                           unknown: Set<String> = []) -> PulseTrendSeries {
         let today = r.day.key
         let firstRow = r.days.map(\.day).min()
         guard let start = [firstDay, firstRow].compactMap({ $0 }).min(), start <= today,
               let count = PulseTrendMath.daysBetween(start, today) else { return PulseTrendSeries() }
-        let keys = (0...count).map { PulseTrendMath.addDays(start, $0) }
+        let keys = (0...count).map { PulseTrendMath.addDays(start, $0) }.filter { !unknown.contains($0) }
         let partPoints = parts.map { part in keys.map { PulseTrendMath.Point(day: $0, value: part[$0] ?? 0) } }
         let totals = keys.enumerated().map { i, k in
             PulseTrendMath.Point(day: k, value: partPoints.reduce(0) { $0 + $1[i].value })
