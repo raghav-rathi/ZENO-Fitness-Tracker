@@ -129,15 +129,11 @@ struct PulseAvatarButton: View {
 
 // MARK: - Dials
 
-/// Sleep · Recovery · Strain (§2.5), each opening its deep dive, in three EQUAL columns between the page
-/// margins (WHOOP's row: the outer rings stay put on every screen width), with ONE label size for all three.
-/// The same row shows the loading state, so the arcs sweep once when the first snapshot lands and never
-/// again on the way back from a dive.
+/// Sleep · Recovery · Strain (§2.5), each opening its deep dive, in three equal columns between the page
+/// margins with one label size (`PulseDialColumns`). The same row shows the loading state, so the arcs
+/// sweep once when the first snapshot lands and never again on the way back from a dive.
 struct PulseDialsRow: View {
     let home: HomeSnapshot?
-
-    @ScaledMetric(relativeTo: .caption2) private var preferredLabel: CGFloat = PulseTextStyle.label.spec.size
-    @State private var width: CGFloat = 361
 
     private var contents: [(score: PulseScore, content: PulseDialContent)] {
         guard let home else {
@@ -153,34 +149,8 @@ struct PulseDialsRow: View {
 
     var body: some View {
         let dials = contents
-        let column = width / 3
-        let labelSize = PulseScoreDial.sharedLabelSize(labels: dials.map(\.content.label),
-                                                       preferred: preferredLabel, columnWidth: column)
-        let reserves = dials.contains { $0.content.caption != nil }
-        HStack(alignment: .top, spacing: 0) {
-            ForEach(dials, id: \.score) { dial in
-                NavigationLink(value: PulseRoute.dive(dial.score)) {
-                    PulseScoreDial(content: dial.content, reservesCaption: reserves, labelSize: labelSize,
-                                   labelWidth: column)
-                }
-                .buttonStyle(PulseDialButtonStyle())
-                .frame(maxWidth: .infinity)
-                .accessibilityHint(String(localized: "Opens \(dial.score.displayName) details"))
-            }
-        }
-        .frame(maxWidth: .infinity)
-        .background(GeometryReader { geo in
-            Color.clear.preference(key: PulseDialsWidthKey.self, value: geo.size.width)
-        })
-        .onPreferenceChange(PulseDialsWidthKey.self) { new in
-            if new > 0, abs(new - width) > 0.5 { width = new }
-        }
+        PulseDialColumns(contents: dials.map(\.content), routes: dials.map { PulseRoute.dive($0.score) })
     }
-}
-
-private struct PulseDialsWidthKey: PreferenceKey {
-    static var defaultValue: CGFloat = 0
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = max(value, nextValue()) }
 }
 
 // MARK: - Content

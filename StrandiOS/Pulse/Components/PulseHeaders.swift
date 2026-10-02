@@ -164,13 +164,15 @@ struct PulseListSectionHeader: View {
 
     var body: some View {
         HStack(spacing: 10) {
-            Text(title)
-                .pulseText(.cardTitle)
+            // Never wider than the row: past one line it wraps between words (a fixed-size title pushed
+            // the whole page sideways at accessibility sizes).
+            PulseWordWrapText(title, style: .cardTitle)
                 .foregroundStyle(PulseTheme.listSectionHeader)
-                .fixedSize()
+                .layoutPriority(1)
                 .accessibilityAddTraits(.isHeader)
             Rectangle()
                 .fill(PulseTheme.divider)
+                .frame(minWidth: 16, maxWidth: .infinity)
                 .frame(height: 1)
                 .accessibilityHidden(true)
         }

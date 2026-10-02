@@ -37,11 +37,8 @@ struct PulseMonitorTile: View {
                 PulseStatusBadge(status.badge, tint: status.tint)
                 VStack(alignment: .leading, spacing: 1) {
                     if let word = status.word {
-                        Text(word)
-                            .pulseText(.label)
+                        PulseWordWrapText(word, style: .label)
                             .foregroundStyle(status.wordColor)
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.8)
                         if let detail = status.detail {
                             Text(detail)
                                 .pulseText(.secondary)
@@ -363,6 +360,8 @@ struct PulseDayCircleRow: View {
                 .accessibilityValue(spoken(day.state))
             }
         }
+        // Seven columns of three-letter labels: past xxLarge they would run into each other.
+        .dynamicTypeSize(...DynamicTypeSize.xxLarge)
     }
 
     private func cell(_ day: Day) -> some View {

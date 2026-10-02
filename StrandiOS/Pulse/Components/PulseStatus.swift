@@ -166,7 +166,7 @@ struct PulseAchievementChip: View {
                 .font(.system(size: 14, weight: .semibold))
                 .foregroundStyle(tint)
                 .frame(width: 18, height: 18)
-            Text("\(count)")
+            Text(verbatim: "\(count)")
                 .font(PulseType.numeral(15, hero: true))
                 .foregroundStyle(PulseTheme.textPrimary)
         }

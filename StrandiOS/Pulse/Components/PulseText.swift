@@ -88,7 +88,9 @@ struct PulseWordWrapText: View {
     }
 }
 
-/// Lays words out in lines, breaking only between them.
+/// Lays words out in lines, breaking only between them. When the widest word does not fit a line, EVERY
+/// word is offered the same fraction of its natural width, so they all shrink by one factor (each word is
+/// a `Text` with a minimum scale) and the text never mixes sizes.
 struct PulseWordFlow: Layout {
     var alignment: HorizontalAlignment = .leading
     var spacing: CGFloat = 4
@@ -100,11 +102,20 @@ struct PulseWordFlow: Layout {
         var height: CGFloat = 0
     }
 
+    /// The width each word is offered: its natural width, scaled so the widest word fits `maxWidth`.
+    private func proposals(for subviews: Subviews, maxWidth: CGFloat) -> [ProposedViewSize] {
+        let ideal = subviews.map { $0.sizeThatFits(.unspecified).width }
+        let widest = ideal.max() ?? 0
+        let scale = widest > maxWidth && widest > 0 ? maxWidth / widest : 1
+        return ideal.map { ProposedViewSize(width: $0 * scale, height: nil) }
+    }
+
     private func lines(for subviews: Subviews, maxWidth: CGFloat) -> [Line] {
         var out: [Line] = []
         var current = Line()
+        let offered = proposals(for: subviews, maxWidth: maxWidth)
         for index in subviews.indices {
-            let size = subviews[index].sizeThatFits(ProposedViewSize(width: maxWidth, height: nil))
+            let size = subviews[index].sizeThatFits(offered[index])
             let added = current.indices.isEmpty ? size.width : current.width + spacing + size.width
             if !current.indices.isEmpty && added > maxWidth {
                 out.append(current)
@@ -137,13 +148,14 @@ struct PulseWordFlow: Layout {
         for row in rows.prefix(rowIndex) { y += row.height + lineSpacing }
         let row = rows[rowIndex]
         guard let first = row.indices.first else { return nil }
-        let size = subviews[first].sizeThatFits(ProposedViewSize(width: bounds.width, height: nil))
+        let size = subviews[first].sizeThatFits(proposals(for: subviews, maxWidth: bounds.width)[first])
         let dimensions = subviews[first].dimensions(in: ProposedViewSize(width: size.width, height: size.height))
         return y + (row.height - size.height) / 2 + dimensions[guide]
     }
 
     func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
         let rows = lines(for: subviews, maxWidth: bounds.width)
+        let offered = proposals(for: subviews, maxWidth: bounds.width)
         var y = bounds.minY
         for row in rows {
             var x: CGFloat
@@ -153,7 +165,7 @@ struct PulseWordFlow: Layout {
             default: x = bounds.minX
             }
             for index in row.indices {
-                let size = subviews[index].sizeThatFits(ProposedViewSize(width: bounds.width, height: nil))
+                let size = subviews[index].sizeThatFits(offered[index])
                 subviews[index].place(at: CGPoint(x: x, y: y + (row.height - size.height) / 2),
                                       proposal: ProposedViewSize(width: size.width, height: size.height))
                 x += size.width + spacing

@@ -407,6 +407,57 @@ struct PulseScoreDial: View {
     }
 }
 
+// MARK: - A row of Home dials
+
+/// Dials in equal columns across the width they are given (Home: the page margins), each label at ONE
+/// shared size (`PulseScoreDial.sharedLabelSize`), so the rings keep their places and the labels match at
+/// every Dynamic Type size. A dial with a route is a value link with the pressed-disc style.
+///
+///     PulseDialColumns(contents: dials, routes: [.sleepDive, .recoveryDive, .strainDive])
+struct PulseDialColumns: View {
+    let contents: [PulseDialContent]
+    /// The route each dial opens, in order; nil draws the dials alone.
+    var routes: [PulseRoute]?
+
+    @ScaledMetric(relativeTo: .caption2) private var preferredLabel: CGFloat = PulseTextStyle.label.spec.size
+    @State private var width: CGFloat = 361
+
+    var body: some View {
+        let column = width / CGFloat(max(1, contents.count))
+        let labelSize = PulseScoreDial.sharedLabelSize(labels: contents.map(\.label), preferred: preferredLabel,
+                                                       columnWidth: column)
+        let reserves = contents.contains { $0.caption != nil }
+        HStack(alignment: .top, spacing: 0) {
+            ForEach(Array(contents.enumerated()), id: \.offset) { index, content in
+                let dial = PulseScoreDial(content: content, reservesCaption: reserves, labelSize: labelSize,
+                                          labelWidth: column)
+                Group {
+                    if let route = routes?[index] {
+                        PulseLink(route) { dial }
+                            .buttonStyle(PulseDialButtonStyle())
+                            .accessibilityHint(String(localized: "Opens \(content.label) details"))
+                    } else {
+                        dial
+                    }
+                }
+                .frame(maxWidth: .infinity)
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .background(GeometryReader { geo in
+            Color.clear.preference(key: PulseDialColumnsWidthKey.self, value: geo.size.width)
+        })
+        .onPreferenceChange(PulseDialColumnsWidthKey.self) { new in
+            if new > 0, abs(new - width) > 0.5 { width = new }
+        }
+    }
+}
+
+private struct PulseDialColumnsWidthKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = max(value, nextValue()) }
+}
+
 // MARK: - Deep-dive ring (260 / 15)
 
 /// The deep dive's hero ring: ZENO's mark, the score (70 pt + 40 pt unit, Bold condensed), the label
@@ -531,7 +582,8 @@ struct PulseMiniRingRow: View {
             }
         }
         .padding(.horizontal, PulseTheme.Layout.pageMargin)
-        .dynamicTypeSize(...DynamicTypeSize.xxLarge)
+        // A compact pinned row repeating the dials (which scale): it stays at the default size.
+        .dynamicTypeSize(...DynamicTypeSize.large)
     }
 }
 #endif

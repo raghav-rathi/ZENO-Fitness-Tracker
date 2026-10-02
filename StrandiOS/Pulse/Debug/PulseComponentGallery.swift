@@ -43,20 +43,18 @@ struct PulseComponentGallery: View {
     private var dials: some View {
         VStack(alignment: .leading, spacing: 16) {
             title("Dials · 88 / 6")
-            HStack(alignment: .top, spacing: 12) {
-                PulseScoreDial(content: .percent(label: "Sleep", percent: 81, color: PulseTheme.sleep))
-                PulseScoreDial(content: .percent(label: "Recovery", percent: 51, color: PulseTheme.recoveryMid))
-                // Below the range: the band floats apart from the arc, the tick sits at the midpoint.
-                PulseScoreDial(content: .strain(label: "Strain", value: 4.3, optimalRange: 8.3...12.3, target: 10.3))
-            }
-            HStack(alignment: .top, spacing: 12) {
+            // Below the range the band floats apart from the arc; the tick sits at the midpoint.
+            PulseDialColumns(contents: [
+                .percent(label: "Sleep", percent: 81, color: PulseTheme.sleep),
+                .percent(label: "Recovery", percent: 51, color: PulseTheme.recoveryMid),
+                .strain(label: "Strain", value: 4.3, optimalRange: 8.3...12.3, target: 10.3),
+            ])
+            PulseDialColumns(contents: [
                 // Through the model's mapping, exactly as Home draws a calibrating Recovery.
-                PulseScoreDial(content: PulseDialData(score: .recovery, value: nil,
-                                                      state: .calibrating(nights: 2, of: 4)).dialContent())
-                PulseScoreDial(content: .strain(label: "Strain", value: 0.2, optimalRange: 9.1...13.1, target: 11.1))
-                PulseScoreDial(content: .strain(label: "Strain", value: 16.8, optimalRange: 14...18, target: 16))
-            }
-            .frame(maxWidth: .infinity)
+                PulseDialData(score: .recovery, value: nil, state: .calibrating(nights: 2, of: 4)).dialContent(),
+                .strain(label: "Strain", value: 0.2, optimalRange: 9.1...13.1, target: 11.1),
+                .strain(label: "Strain", value: 16.8, optimalRange: 14...18, target: 16),
+            ])
             title("Deep-dive ring · 260 / 15")
             PulseHeroRing(content: .percent(label: "Sleep performance", percent: 100, color: PulseTheme.sleep),
                           accessoryAccessibility: "Optimal") {

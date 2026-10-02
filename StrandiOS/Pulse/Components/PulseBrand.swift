@@ -193,11 +193,12 @@ struct PulseStreakPill: View {
             Image(systemName: "flame.fill")
                 .font(.system(size: 14, weight: .regular))
                 .foregroundStyle(PulseTheme.Streak.flame(days: days))
-            Text("\(days)")
+            Text(verbatim: "\(days)")
                 .font(PulseType.font(.headerNumeral))
                 .foregroundStyle(PulseTheme.textPrimary)
                 .pulseNumericTransition()
         }
+        .fixedSize()
         .padding(.leading, avatarSize / 2 + 16)
         .padding(.trailing, 11)
         .frame(height: avatarSize)
