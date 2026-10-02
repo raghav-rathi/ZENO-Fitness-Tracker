@@ -189,9 +189,11 @@ struct PulseDailyOutlookView: View {
                             .accessibilityHidden(true)
                         Text(Self.markdown(line))
                             .pulseText(.trendInsight)
+                            .lineSpacing(2)
                             .fixedSize(horizontal: false, vertical: true)
                     }
-                    .foregroundStyle(PulseTheme.textSecondary)
+                    // Brighter than card prose, as reviews/88 sets it; the figures are white.
+                    .foregroundStyle(PulseTheme.textButton)
                     .padding(.leading, PulseTheme.Space.s)
                 }
             }
