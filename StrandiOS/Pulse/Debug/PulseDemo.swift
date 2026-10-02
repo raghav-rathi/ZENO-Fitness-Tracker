@@ -76,6 +76,7 @@ enum PulseDemo {
 ///   `--pulse-night N`                  the Sleep dive N nights back
 ///   `--pulse-range 7|30|90`            the Recovery history's range
 ///   `--pulse-push recovery|strain|sleep`  push a deep dive onto Home
+///   `--pulse-route <name>`             open any route (names: `PulseRoute.debugCatalog`)
 ///   `--pulse-sheet actions|coach`      present the ＋ menu or the Coach sheet
 ///   `--pulse-scroll <anchor>`          scroll to a section id ("myday", "stats", "stress", "bottom", …)
 enum PulseDebugLaunch {
@@ -104,11 +105,24 @@ enum PulseDebugLaunch {
 
     static var push: PulseRoute? {
         switch value("--pulse-push") {
-        case "recovery": return .score(.recovery)
-        case "strain": return .score(.strain)
-        case "sleep": return .score(.sleep)
+        case "recovery": return .recoveryDive
+        case "strain": return .strainDive
+        case "sleep": return .sleepDive
         default: return nil
         }
+    }
+
+    /// `--pulse-route <name>`: open any route at launch, on the tab a person would reach it from (or
+    /// on `--pulse-tab`). Names are listed by `PulseRoute.debugCatalog`, e.g. sleep-dive, recovery-dive,
+    /// strain-dive, customize-dashboard, calibration-timeline, sleep-planner, trend-view (or
+    /// trend-view:<metric>), weekly-digest, activity-detail, start-activity, add-activity,
+    /// activity-picker, healthspan, health-monitor, stress-monitor, app-settings, device-settings,
+    /// profile, levels, achievements, day-streak, journal, behavior-insights, weekly-plan, edit-plan,
+    /// cycle-insights, coach, memory, onboarding, strength-trainer, year-in-review, challenges,
+    /// day-timeline, guided-session, classic-<screen> (classic-trends, classic-settings, …) and
+    /// tab-<route> (tab-steps, tab-metric:<key>, …).
+    static var route: PulseRoute? {
+        value("--pulse-route").flatMap(PulseRoute.debugNamed)
     }
 
     /// The section id to scroll to, prefixed as the views tag them.
@@ -139,7 +153,7 @@ struct PulseDemoScreen: View {
         case .strain: PulseStrainView()
         case .sleep: PulseSleepView()
         case .health: PulseHealthView(onAction: { _ in })
-        case .more: PulseMoreView(showsCoachSetup: false)
+        case .more: PulseMoreView()
         }
     }
 }

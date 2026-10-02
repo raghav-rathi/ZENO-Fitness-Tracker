@@ -252,7 +252,7 @@ struct PulseDialsRow: View {
         let reserves = dials.contains { $0.caption != nil }
         HStack(alignment: .top, spacing: 4) {
             ForEach(dials, id: \.score) { dial in
-                NavigationLink(value: PulseRoute.score(dial.score)) {
+                NavigationLink(value: PulseRoute.dive(dial.score)) {
                     PulseDial(data: dial, diameter: 102, reservesCaption: reserves)
                         .frame(maxWidth: .infinity)
                         .contentShape(Rectangle())
@@ -325,7 +325,7 @@ struct PulseMyDaySection: View {
     private func row(_ item: PulseMyDayItem) -> some View {
         switch item {
         case .night(let night, let isToday):
-            NavigationLink(value: PulseRoute.score(.sleep)) {
+            NavigationLink(value: PulseRoute.sleepDive) {
                 PulseRow(title: isToday ? String(localized: "Last night's sleep") : PulseScore.sleep.displayName,
                          subtitle: "\(PulseFormat.clock(night.onset)) – \(PulseFormat.clock(night.wake))",
                          value: PulseFormat.duration(minutes: night.asleepMin),
@@ -337,7 +337,7 @@ struct PulseMyDaySection: View {
             }
             .buttonStyle(PulsePressStyle())
         case .nap(let nap):
-            NavigationLink(value: PulseRoute.score(.sleep)) {
+            NavigationLink(value: PulseRoute.sleepDive) {
                 PulseRow(title: String(localized: "Nap"),
                          subtitle: "\(PulseFormat.clock(nap.start)) – \(PulseFormat.clock(nap.end))",
                          value: PulseFormat.duration(minutes: nap.asleepMin)) {
@@ -346,7 +346,7 @@ struct PulseMyDaySection: View {
             }
             .buttonStyle(PulsePressStyle())
         case .workout(let w):
-            NavigationLink(value: PulseRoute.workout(w.route)) {
+            PulseLink(PulseRoute.activityDetail(w.route).forExistingEntryPoint) {
                 PulseRow(title: w.title,
                          subtitle: String(localized: "\(PulseFormat.clock(w.start)) · \(w.durationMin) min"),
                          value: w.strain.map { PulseFormat.oneDecimal($0) },
@@ -358,7 +358,7 @@ struct PulseMyDaySection: View {
             }
             .buttonStyle(PulsePressStyle())
         case .tonight(let t):
-            NavigationLink(value: PulseRoute.alarms) {
+            PulseLink(PulseRoute.sleepPlanner.forExistingEntryPoint) {
                 PulseRow(title: String(localized: "Tonight"),
                          subtitle: tonightSubtitle(t),
                          value: PulseFormat.duration(minutes: t.needMin),

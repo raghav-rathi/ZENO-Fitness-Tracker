@@ -7,6 +7,10 @@ import SwiftUI
 /// Owned by group "trends". Until it is rebuilt it shows the placeholder body and links to the screens
 /// that already cover this ground, so the tab never dead-ends.
 struct PulseTrendsTabView: View {
+    /// Flip to true once the tab is rebuilt; NavRouter's "open Trends" then lands on the tab itself
+    /// instead of pushing the classic Trends screen onto it.
+    static let isRebuilt = false
+
     @State private var showReport = false
     @EnvironmentObject private var repo: Repository
 
@@ -31,12 +35,13 @@ struct PulseTrendsTabView: View {
             PulseListSectionHeader(String(localized: "Insights"))
                 .padding(.top, 8)
             VStack(spacing: PulseTheme.Row.listGap) {
-                link(String(localized: "Trends"), "chart.line.uptrend.xyaxis", .trends)
-                link(String(localized: "Weekly digest"), "calendar", .weeklyDigest)
-                link(String(localized: "What moves you"), "wand.and.sparkles", .insightsHub)
-                link(String(localized: "Explore"), "square.grid.2x2", .explore)
-                link(String(localized: "Compare"), "rectangle.split.2x1", .compare)
-                link(String(localized: "Tomorrow's Recovery"), "brain.head.profile", .intelligence)
+                link(String(localized: "Weekly Digest"), "calendar", .weeklyDigest)
+                link(String(localized: "Trend View"), "chart.xyaxis.line", .trendView(metric: "hrv"))
+                link(String(localized: "Trends"), "chart.line.uptrend.xyaxis", .classic(.trends))
+                link(String(localized: "What moves you"), "wand.and.sparkles", .classic(.insightsHub))
+                link(String(localized: "Explore"), "square.grid.2x2", .classic(.explore))
+                link(String(localized: "Compare"), "rectangle.split.2x1", .classic(.compare))
+                link(String(localized: "Tomorrow's Recovery"), "brain.head.profile", .classic(.intelligence))
                 Button { showReport = true } label: {
                     PulseListRow(symbol: "doc.richtext", title: String(localized: "Report"))
                 }
@@ -48,8 +53,8 @@ struct PulseTrendsTabView: View {
         }
     }
 
-    private func link(_ title: String, _ symbol: String, _ destination: PulseMoreDestination) -> some View {
-        NavigationLink(value: destination) {
+    private func link(_ title: String, _ symbol: String, _ route: PulseRoute) -> some View {
+        PulseLink(route) {
             PulseListRow(symbol: symbol, title: title)
         }
         .buttonStyle(PulsePressStyle())

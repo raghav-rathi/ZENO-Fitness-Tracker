@@ -90,7 +90,9 @@ private struct PulseNavHeaderModifier: ViewModifier {
             .navigationTitle(title ?? "")
             .navigationBarTitleDisplayMode(.inline)
             // The back button keeps the system chevron (and its swipe-back) without the previous title.
-            .toolbarRole(.editor)
+            .toolbarRole(modalRoot ? .automatic : .editor)
+            // A modal flow's root closes with "✕"; it never shows a back chevron.
+            .navigationBarBackButtonHidden(modalRoot)
             .toolbar {
                 if let title {
                     ToolbarItem(placement: .principal) {

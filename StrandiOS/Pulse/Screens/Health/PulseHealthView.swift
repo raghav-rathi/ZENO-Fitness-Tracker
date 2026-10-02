@@ -295,7 +295,7 @@ struct PulseHealthLinks: View {
                     }
                     .buttonStyle(PulsePressStyle())
                     PulseRowDivider()
-                    NavigationLink(value: PulseRoute.labBook) {
+                    NavigationLink(value: PulseRoute.classic(.labBook)) {
                         PulseRow(title: String(localized: "Lab Book"),
                                  subtitle: String(localized: "Your private health records")) {
                             PulseRowIcon(symbol: "books.vertical.fill", tint: PulseTheme.accent)

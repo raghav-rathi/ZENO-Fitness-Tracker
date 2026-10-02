@@ -2,66 +2,10 @@
 import SwiftUI
 import StrandDesign
 
-/// Every screen More links to, as a `Hashable` value the tab's bound path can carry (so a re-tap pops).
-enum PulseMoreDestination: Hashable {
-    // Performance
-    case trends, weeklyDigest
-    // Insights
-    case insightsHub, explore, compare, journal, coach
-    // Activity
-    case workouts, liftLog, live, breathe, intervals
-    // Devices, alarms
-    case devices, alarms
-    // Data
-    case dataSources, appleHealth, backupSync, shortcutsExport
-    // Settings
-    case settings
-    // Advanced
-    case testCentre, limitations, miBand, rhythm, intelligence, fusedRecord, powerSaving, siriShortcuts
-    case automations, classicHealth, stress, labBook
-
-    @ViewBuilder var destination: some View {
-        switch self {
-        case .trends: TrendsView()
-        case .weeklyDigest: WeeklyDigestView()
-        case .insightsHub: InsightsHubView()
-        case .explore: MetricExplorerView()
-        case .compare: CompareView()
-        case .journal: InsightsView()
-        case .coach: CoachView()
-        case .workouts: WorkoutsView()
-        case .liftLog: LiftLogView()
-        case .live: LiveView()
-        case .breathe: BreathingView()
-        case .intervals: IntervalTimerView()
-        case .devices: DevicesView()
-        case .alarms: SmartAlarmView()
-        case .dataSources: DataSourcesView()
-        case .appleHealth: AppleHealthView()
-        case .backupSync: BackupSyncView()
-        case .shortcutsExport: ShortcutExportSettingsView()
-        case .settings: SettingsView()
-        case .testCentre: TestCentreView()
-        case .limitations: NoopLimitationsView()
-        case .miBand: XiaomiBandView()
-        case .rhythm: RhythmHost()
-        case .intelligence: IntelligenceView()
-        case .fusedRecord: FusedRecordHost()
-        case .powerSaving: PowerSavingView()
-        case .siriShortcuts: SiriShortcutsSettingsView()
-        case .automations: AutomationsView()
-        case .classicHealth: HealthView()
-        case .stress: StressView()
-        case .labBook: LabBookView()
-        }
-    }
-}
-
 /// More: the rest of the app in standard grouped rows. Every screen the classic More list reached is
 /// still here, plus Devices (which the classic list never had a row for).
 struct PulseMoreView: View {
-    /// Coach is switched on but has no provider yet, so it has no tab: offer the setup screen here.
-    let showsCoachSetup: Bool
+    @Environment(\.pulseCoach) private var coach
 
     @EnvironmentObject private var repo: Repository
     @AppStorage("pulse.enabled") private var pulseEnabled = true
@@ -89,8 +33,12 @@ struct PulseMoreView: View {
                     row(String(localized: "Explore"), "square.grid.2x2.fill", .explore)
                     row(String(localized: "Compare"), "rectangle.split.2x1.fill", .compare)
                     row(String(localized: "Journal"), "square.and.pencil", .journal)
-                    if showsCoachSetup {
-                        row(String(localized: "Set up AI Coach"), "sparkles", .coach)
+                    if coach.availability == .needsSetup {
+                        // Coach is on but has no provider yet: offer its setup here too.
+                        Button { coach.open(nil) } label: {
+                            label(String(localized: "Set up AI Coach"), "sparkles", chevron: true)
+                        }
+                        .listRowBackground(PulseTheme.card)
                     }
                 } header: { header(String(localized: "Insights")) }
 
@@ -179,8 +127,8 @@ struct PulseMoreView: View {
         PulseLabel(text, color: PulseTheme.textSecondary)
     }
 
-    private func row(_ title: String, _ symbol: String, _ destination: PulseMoreDestination) -> some View {
-        NavigationLink(value: destination) {
+    private func row(_ title: String, _ symbol: String, _ destination: PulseClassicDestination) -> some View {
+        NavigationLink(value: PulseRoute.classic(destination)) {
             label(title, symbol, chevron: false)
         }
         .listRowBackground(PulseTheme.card)

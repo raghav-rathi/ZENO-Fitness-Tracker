@@ -56,7 +56,7 @@ struct PulseStrainView: View {
                         }
                     }
                     ForEach(Array(s.workouts.enumerated()), id: \.element.id) { index, w in
-                        NavigationLink(value: PulseRoute.workout(w.route)) {
+                        PulseLink(PulseRoute.activityDetail(w.route).forExistingEntryPoint) {
                             PulseRow(title: w.title,
                                      subtitle: String(localized: "\(PulseFormat.clock(w.start)) · \(w.durationMin) min\(w.kcal.map { " · \(PulseFormat.grouped($0)) kcal" } ?? "")"),
                                      value: w.strain.map { PulseFormat.oneDecimal($0) },

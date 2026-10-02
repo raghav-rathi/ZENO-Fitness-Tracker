@@ -4,76 +4,23 @@ import Combine
 import StrandDesign
 import StrandAnalytics
 
-// MARK: - Routes
+// MARK: - Shell presentations
 
-/// Pulse's own first-hop pushes. Values, not closure links, so a tab re-tap can pop them off the tab's
-/// bound path (the #135/#198 convention the classic shell keeps).
-enum PulseRoute: Hashable {
-    case score(PulseScore)
-    case workout(PulseWorkoutRoute)
-    /// The wake alarm and wind-down planner.
-    case alarms
-    case labBook
-}
-
-/// The ＋ actions and the screens they open.
-enum PulseQuickAction: String, Identifiable {
-    case menu, live, workout, liftLog, intervals, breathe, journal
-    var id: String { rawValue }
-}
-
-/// Every sheet the shell presents, through ONE `.sheet(item:)` so two can never race.
-enum PulseSheet: Identifiable {
-    case quick(PulseQuickAction)
-    case devices
-    case settings
-    case pillar(NavRouter.Destination)
+/// What the shell's ONE sheet slot can hold, so two sheets never race.
+enum PulseShellSheet: Identifiable {
+    /// The ＋ menu.
+    case actionMenu
+    /// A route presented as a sheet (its own stack; "✕" at a Pulse root, "Done" on a classic screen).
+    case route(PulseRoute)
     /// The Coach sheet, or Coach setup while no provider is configured.
     case coach(seed: String?)
 
     var id: String {
         switch self {
-        case .quick(let a): return "quick-\(a.rawValue)"
-        case .devices: return "devices"
-        case .settings: return "settings"
-        case .pillar(let d): return "pillar-\(d.rawValue)"
+        case .actionMenu: return "action-menu"
+        case .route(let route): return "route-\(String(describing: route))"
         case .coach: return "coach"
         }
-    }
-}
-
-extension View {
-    /// Register every value push a Pulse stack can carry: Pulse's own routes, the classic screens More
-    /// links to, and the shared `TabRoute` metric details. Once per stack, never twice (a second
-    /// registration double-pushes, #38).
-    func pulseDestinations() -> some View {
-        self
-            .tabRouteDestinations()
-            .navigationDestination(for: PulseRoute.self) { route in
-                switch route {
-                case .score(.recovery): PulseRecoveryView()
-                case .score(.strain): PulseStrainView()
-                case .score(.sleep): PulseSleepView()
-                case .workout(let w): PulseClassicScreen { WorkoutDetailView(row: w.row) }
-                case .alarms: PulseClassicScreen { SmartAlarmView() }
-                case .labBook: PulseClassicScreen { LabBookView() }
-                }
-            }
-            .navigationDestination(for: PulseMoreDestination.self) { route in
-                PulseClassicScreen { route.destination }
-            }
-    }
-}
-
-/// A classic screen pushed inside Pulse: its own canvas behind it, an inline transparent bar.
-struct PulseClassicScreen<Content: View>: View {
-    @ViewBuilder var content: () -> Content
-
-    var body: some View {
-        content()
-            .background(StrandPalette.surfaceBase.ignoresSafeArea())
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbarBackground(.hidden, for: .navigationBar)
     }
 }
 
@@ -109,8 +56,9 @@ struct PulseRootView: View {
     @State private var trendsPath = NavigationPath()
     @State private var morePath = NavigationPath()
     @State private var scrollTop: [PulseTab: Int] = [:]
-    @State private var sheet: PulseSheet?
-    @State private var showLiveSession = false
+    @State private var sheet: PulseShellSheet?
+    /// The one full-screen slot (Start Activity, Journal, Device Settings, the guided session…).
+    @State private var cover: PulseModal?
     /// Mirrors `AICoachEngine.isConfigured`, maintained by `PulseCoachProbe`.
     @State private var coachConfigured = false
     /// The bottom safe-area inset, measured, so the floating chrome sits right on every device.
@@ -123,6 +71,13 @@ struct PulseRootView: View {
 
     private var coachContext: PulseCoachContext {
         PulseCoachContext(availability: coachAvailability, open: { seed in openCoach(seed: seed) })
+    }
+
+    /// How screens open routes: pushes go onto the selected tab's path, modal routes into the shell's
+    /// sheet or cover slot.
+    private var navigator: PulseNavigator {
+        PulseNavigator(open: { open($0) }, push: { push($0) }, present: { present($0) },
+                       quickAction: { perform($0) })
     }
 
     /// The capsule's top edge above the screen's bottom edge.
@@ -183,6 +138,7 @@ struct PulseRootView: View {
         .sensoryFeedback(.selection, trigger: selectedTab)
         .environment(\.pulseChrome, chromeMetrics)
         .environment(\.pulseCoach, coachContext)
+        .environment(\.pulseNavigator, navigator)
         .tint(PulseTheme.chromeTint)
         .environment(model)
         .background(PulseAttacher(model: model))
@@ -190,13 +146,14 @@ struct PulseRootView: View {
         // A closed sheet may have changed what Home shows without a refresh (a journal entry, a logged
         // workout), so Home rebuilds on the way back.
         .sheet(item: $sheet, onDismiss: { model.homeMayHaveChanged() }) { sheetContent($0) }
-        .fullScreenCover(isPresented: $showLiveSession) {
-            LiveSessionView(onClose: { showLiveSession = false })
+        .fullScreenCover(item: $cover, onDismiss: { model.homeMayHaveChanged() }) { modal in
+            PulseModalHost(route: modal.route)
+                .environment(\.pulseNavigator, navigator)
         }
         .onChange(of: router.requestedDestination) { _, dest in handle(dest) }
         .onChange(of: router.quickActionsRequested) { _, requested in
             guard requested else { return }
-            presentSheet(.quick(.menu))
+            presentSheet(.actionMenu)
             router.quickActionsRequested = false
         }
         // A cold-launch Home Screen action is already pending when the shell appears; a warm one arrives
@@ -231,13 +188,13 @@ struct PulseRootView: View {
     private func root(_ tab: PulseTab) -> some View {
         switch tab {
         case .home:
-            PulseHomeView(onAction: present, onSettings: { presentSheet(.settings) })
+            PulseHomeView(onAction: perform, onSettings: { present(PulseRoute.profile.forExistingEntryPoint) })
         case .health:
-            PulseHealthView(onAction: present)
+            PulseHealthTabView()
         case .trends:
             PulseTrendsTabView()
         case .more:
-            PulseMoreView(showsCoachSetup: coachAvailability == .needsSetup)
+            PulseMoreView()
         }
     }
 
@@ -260,13 +217,45 @@ struct PulseRootView: View {
         }
     }
 
-    // MARK: Sheets
+    // MARK: Opening routes
 
-    private func present(_ action: PulseQuickAction) {
-        presentSheet(.quick(action))
+    private func open(_ route: PulseRoute) {
+        switch route {
+        case .coach(let seed):
+            openCoach(seed: seed)
+        default:
+            if route.presentation == .push { push(route) } else { present(route) }
+        }
     }
 
-    private func presentSheet(_ new: PulseSheet) {
+    private func push(_ route: PulseRoute) {
+        path(selectedTab).wrappedValue.append(route)
+    }
+
+    /// Present `route` in its own stack: full-screen routes in the cover slot, everything else as a sheet.
+    private func present(_ route: PulseRoute) {
+        switch route {
+        case .coach(let seed):
+            openCoach(seed: seed)
+        default:
+            if route.presentation == .fullScreen {
+                cover = PulseModal(route: route)
+            } else {
+                presentSheet(.route(route))
+            }
+        }
+    }
+
+    /// A ＋ action: the menu itself, or the screen it opens (presented, as the classic shell does).
+    private func perform(_ action: PulseQuickAction) {
+        if let route = action.route {
+            present(route)
+        } else {
+            presentSheet(.actionMenu)
+        }
+    }
+
+    private func presentSheet(_ new: PulseShellSheet) {
         withAnimation(PulseMotion.sheet) { sheet = new }
     }
 
@@ -278,117 +267,83 @@ struct PulseRootView: View {
     }
 
     @ViewBuilder
-    private func sheetContent(_ s: PulseSheet) -> some View {
+    private func sheetContent(_ s: PulseShellSheet) -> some View {
         switch s {
-        case .quick(.menu):
+        case .actionMenu:
             PulseActionSheet(
                 onPick: { picked in
                     // Swap the menu for the chosen screen on the next runloop so the sheet re-presents
                     // cleanly rather than racing its own dismissal (the classic shell's idiom).
                     sheet = nil
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-                        presentSheet(.quick(picked))
-                    }
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { perform(picked) }
                 },
                 onGuidedSession: {
                     sheet = nil
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { showLiveSession = true }
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { present(.guidedSession) }
                 },
                 onClose: { sheet = nil })
-        case .quick(.live): sheetScreen { LiveView() }
-        case .quick(.workout): sheetScreen { WorkoutsView() }
-        case .quick(.liftLog): sheetScreen { LiftLogView() }
-        case .quick(.intervals): sheetScreen { IntervalTimerView() }
-        case .quick(.breathe): sheetScreen { BreathingView() }
-        case .quick(.journal): sheetScreen { InsightsView() }
-        case .devices: sheetScreen { DevicesView() }
-        case .settings: sheetScreen { SettingsView() }
-        case .pillar(let dest):
-            sheetScreen(registersTabRoutes: true) { pillarScreen(dest) }
+        case .route(let route):
+            PulseModalHost(route: route)
+                .environment(\.pulseNavigator, navigator)
         case .coach(let seed):
             PulseCoachSheet(seed: seed)
         }
     }
 
-    /// A presented classic screen in its own stack with a Done button, the chrome the classic shell gives
-    /// the same screens. The pillar hosts also register `TabRoute` (their fallbacks push those values).
-    private func sheetScreen<V: View>(registersTabRoutes: Bool = false,
-                                      @ViewBuilder _ view: () -> V) -> some View {
-        NavigationStack {
-            Group {
-                if registersTabRoutes {
-                    view().tabRouteDestinations()
-                } else {
-                    view()
-                }
-            }
-            .background(StrandPalette.surfaceBase.ignoresSafeArea())
-            .navigationBarTitleDisplayMode(.inline)
-            // #1027: these screens draw a full-bleed sky under a transparent bar; an opaque bar clips it.
-            .toolbarBackground(.hidden, for: .navigationBar)
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button(String(localized: "Done")) { sheet = nil }
-                        .foregroundStyle(PulseTheme.accent)
-                }
-            }
-        }
-    }
-
-    @ViewBuilder
-    private func pillarScreen(_ dest: NavRouter.Destination) -> some View {
-        switch dest {
-        case .insightsHub: InsightsHubView()
-        case .labBook: LabBookView()
-        case .fusedRecord: FusedRecordHost()
-        case .rhythm: RhythmHost(onClose: { sheet = nil })
-        case .devices: DevicesView()
-        case .trends: TrendsView()
-        // These are routed elsewhere by `handle(_:)`; the cases keep the switch exhaustive.
-        case .activeWorkout: LiveView()
-        case .liveSession: LiveView()
-        case .journal: InsightsView()
-        case .coach: CoachView()
-        case .alarms: SmartAlarmView()
-        }
-    }
-
     // MARK: Router
 
+    /// Every NavRouter request. Each opens what it opened before (a classic sheet) until the screen that
+    /// replaces it is rebuilt, then the rebuilt route (`forExistingEntryPoint`).
     private func handle(_ dest: NavRouter.Destination?) {
         guard let dest else { return }
         defer { router.requestedDestination = nil }
         switch dest {
         case .devices:
-            presentSheet(.devices)
-        case .insightsHub, .labBook, .fusedRecord, .rhythm, .alarms:
-            presentSheet(.pillar(dest))
+            present(PulseRoute.deviceSettings.forExistingEntryPoint)
+        case .insightsHub:
+            present(.classic(.insightsHub))
+        case .labBook:
+            present(.classic(.labBook))
+        case .fusedRecord:
+            present(.classic(.fusedRecord))
+        case .rhythm:
+            present(.classic(.rhythm))
+        case .alarms:
+            present(PulseRoute.sleepPlanner.forExistingEntryPoint)
         case .coach:
             // On with a provider: the Coach sheet. On without one: Coach setup. Off: drop the request,
             // the honest answer for a feature the wearer turned off.
             openCoach(seed: nil)
         case .trends:
-            // The Trends tab, with the full Trends screen pushed (where a "new data" reading deep-links).
+            // The Trends tab; until it is rebuilt, with the full Trends screen pushed (where a "new data"
+            // reading deep-links).
             selectedTab = .trends
             trendsPath = NavigationPath()
-            trendsPath.append(PulseMoreDestination.trends)
+            if !PulseTrendsTabView.isRebuilt { trendsPath.append(PulseRoute.classic(.trends)) }
         case .activeWorkout:
             // LiveView consumes the router's one-shot flag and opens the running workout.
-            presentSheet(.quick(.live))
+            present(.classic(.live))
         case .liveSession:
-            showLiveSession = true
+            present(.guidedSession)
         case .journal:
-            presentSheet(.quick(.journal))
+            // The classic journal reads `router.pendingJournalDayOffset` itself; the rebuilt one gets it here.
+            present(PulseRoute.journal(dayOffset: router.pendingJournalDayOffset).forExistingEntryPoint)
         }
     }
 
-    /// DEBUG `--pulse-tab` / `--pulse-push` / `--pulse-sheet` (see `PulseDebugLaunch`). No-op in Release.
+    /// DEBUG `--pulse-tab` / `--pulse-route` / `--pulse-push` / `--pulse-sheet` (see `PulseDebugLaunch`).
+    /// No-op in Release.
     private func applyDebugLaunchState() {
         #if DEBUG
-        if let tab = PulseDebugLaunch.tab { selectedTab = tab }
+        if let route = PulseDebugLaunch.route {
+            selectedTab = PulseDebugLaunch.tab ?? route.debugTab
+            open(route)
+        } else if let tab = PulseDebugLaunch.tab {
+            selectedTab = tab
+        }
         if let route = PulseDebugLaunch.push { homePath.append(route) }
         switch PulseDebugLaunch.sheet {
-        case "actions": sheet = .quick(.menu)
+        case "actions": sheet = .actionMenu
         case "coach": openCoach(seed: nil)
         default: break
         }
@@ -406,7 +361,7 @@ struct PulseRootView: View {
         case .breathe: .breathe
         }
         homeScreenQuickActions.consume(action)
-        presentSheet(.quick(destination))
+        perform(destination)
     }
 }
 
