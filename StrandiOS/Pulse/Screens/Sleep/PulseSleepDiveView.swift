@@ -148,6 +148,7 @@ struct PulseSleepDiveView: View {
         .padding(.top, 5)
 
         PulseSleepContributorCallout(rows: contributors(s))
+            .padding(.top, 5)
             .id("pulse.contributors")
 
         lastNightHeader(s)
@@ -238,7 +239,9 @@ struct PulseSleepDiveView: View {
             .pulseText(.secondary)
             .padding(.horizontal, 4)
         }
-        .padding(.top, PulseTheme.Layout.sectionGap - PulseTheme.Layout.stackGap)
+        // The title centres 44–46 pt under the legend well (deep-dives-2026/56, 56b): the callout's own
+        // bottom padding and the page's gap already make that.
+        .padding(.top, 2)
     }
 
     /// ZENO's extras after Weekly Trends (§3.3 item 9): naps, then sleeping heart rate and breathing.
@@ -297,7 +300,9 @@ struct PulseSleepContributorCallout: View {
                     }
                 }
             }
+            // The well sits right under the last row (deep-dives-2026/56: ≈3 pt), not the shared 12.
             PulseLegendWell { PulseLegendPoorSufficientOptimal() }
+                .padding(.top, -9)
         }
     }
 
@@ -358,7 +363,8 @@ struct PulseSleepContributorRowView: View {
         }
         .padding(.leading, 20)
         .padding(.trailing, 20)
-        .frame(minHeight: PulseTheme.Row.contributorPitch)
+        // 65.5 pt from row to row with the hairline between (deep-dives-2026/56).
+        .frame(minHeight: PulseTheme.Row.contributorPitch - 1)
         .contentShape(Rectangle())
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(row.title)

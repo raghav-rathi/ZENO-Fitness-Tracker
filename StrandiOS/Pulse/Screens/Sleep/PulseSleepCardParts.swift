@@ -168,8 +168,10 @@ struct SleepShareBar: View {
                     .fill(color)
                     .frame(width: fraction > 0 ? max(4, w * CGFloat(min(1, fraction))) : 0)
                 if let typical {
+                    // The box stands a little proud of the bar, as WHOOP's does (deep-dives-2026/12).
                     PulseTypicalRangeBox()
-                        .frame(width: max(4, w * CGFloat(typical.upperBound - typical.lowerBound)))
+                        .frame(width: max(6, w * CGFloat(typical.upperBound - typical.lowerBound)),
+                               height: height + 8)
                         .offset(x: w * CGFloat(typical.lowerBound))
                 }
             }

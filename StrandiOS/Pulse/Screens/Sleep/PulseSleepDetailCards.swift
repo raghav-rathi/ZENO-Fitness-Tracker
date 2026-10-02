@@ -117,7 +117,8 @@ struct PulseSleepHoursVsNeededCard: View {
                         .pulseText(.rowValue)
                         .foregroundStyle(row.dimmed ? PulseTheme.textSecondary : PulseTheme.textPrimary)
                 }
-                .frame(minHeight: 23)
+                // 23 pt from row to row with the well's own 4 pt spacing (deep-dives-2026/18).
+                .frame(minHeight: 19)
                 .accessibilityElement(children: .combine)
             }
         }
@@ -180,7 +181,9 @@ struct PulseSleepConsistencyCard: View {
 /// bed and wake times in pills, and the dashed optimal bed and wake curves across the whole plot.
 struct PulseSleepConsistencyChart: View {
     let card: SleepConsistencyCard
-    var height: CGFloat = 196
+
+    /// 40 pt per four-hour gridline step, as WHOOP spaces them (deep-dives-2026/03, 18), plus the x labels.
+    private var height: CGFloat { CGFloat(max(card.lines.count - 1, 2)) * 40 + 30 }
 
     var body: some View {
         // Positions are minutes after noon; the y axis is drawn negated so the evening sits on top.

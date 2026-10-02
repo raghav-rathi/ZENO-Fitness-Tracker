@@ -52,7 +52,7 @@ struct PulseSleepLastNightCard: View {
                 .padding(.top, 16)
                 .accessibilityElement(children: .combine)
 
-                VStack(spacing: 16) {
+                VStack(spacing: 24) {
                     ForEach(night.stages) { line in
                         PulseSleepStageRowView(line: line, selected: selected, selectable: night.hasTimeline) {
                             withAnimation(PulseMotion.resolved(PulseMotion.crossFade, reduceMotion: reduceMotion)) {
@@ -131,7 +131,7 @@ struct PulseSleepStageRowView: View {
 
     var body: some View {
         Button(action: onTap) {
-            VStack(alignment: .leading, spacing: 9) {
+            VStack(alignment: .leading, spacing: 11) {
                 HStack(spacing: 10) {
                     radio
                     Text(line.title)
@@ -146,10 +146,11 @@ struct PulseSleepStageRowView: View {
                         .foregroundStyle(PulseTheme.textPrimary)
                 }
                 if selected == nil {
-                    SleepShareBar(fraction: line.share, color: line.stage.pulseColor, typical: line.typical)
+                    SleepShareBar(fraction: line.share, color: line.stage.pulseColor, typical: line.typical,
+                                  height: 16)
                 } else {
                     SleepBarcode(segments: line.segments,
-                                 color: isSelected ? line.stage.pulseColor : PulseTheme.textTertiary)
+                                 color: isSelected ? line.stage.pulseColor : PulseTheme.textTertiary, height: 16)
                 }
             }
             .contentShape(Rectangle())

@@ -299,18 +299,15 @@ extension PulseSnapshotBuilder {
                            end: onset.addingTimeInterval($0.end))
         }
 
-        // The y axis WHOOP prints: 30 / 50 / 70 / 90 … (20 bpm steps from 30), up past the highest bucket.
+        // The y axis WHOOP prints: 30 / 50 / 70 / 90 … in 20 bpm steps from 30, the last label at or under
+        // the highest bucket, the plot running a little past it (deep-dives-2026/12, 15).
         let bpms = hr.map(\.bpm)
         let low = bpms.min() ?? 50
         let high = bpms.max() ?? 90
         let start = low < 32 ? floor((low - 2) / 20) * 20 + 10 : 30
-        var yValues: [Double] = []
-        var y = start
-        repeat {
-            yValues.append(y)
-            y += 20
-        } while (yValues.last ?? 0) < high
-        let yDomain = (start - 4)...((yValues.last ?? 90) + 4)
+        var yValues: [Double] = [start]
+        while let last = yValues.last, last + 20 <= max(high, start + 60) { yValues.append(last + 20) }
+        let yDomain = (start - 4)...max(high + 6, (yValues.last ?? 90) + 8)
 
         // Latency only for a night whose bounds were set by hand: a detected night has none to show. The
         // night's own blocks are the ones overlapping it (a nap on the same day is not).

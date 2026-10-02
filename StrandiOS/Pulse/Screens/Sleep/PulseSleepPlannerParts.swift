@@ -12,9 +12,12 @@ import StrandAnalytics
 struct PulseSleepTimeline: View {
     let plan: PulseSleepPlan
 
-    /// The bar's ends as fractions of the width (reviews/r134, help-center/86: 17% and 83%).
-    private static let bedFraction: CGFloat = 0.17
-    private static let wakeFraction: CGFloat = 0.83
+    /// The bar's ends as fractions of the content width: 17% and 84% of the SCREEN on reviews/r134 and
+    /// help-center/86, inside the 16 pt margins.
+    private static let bedFraction: CGFloat = 0.14
+    private static let wakeFraction: CGFloat = 0.865
+    /// The two times sit this far toward the centre from their ticks (both references: 15–17 pt).
+    private static let timeInset: CGFloat = 16
 
     private let timesHeight: CGFloat = 78
     private let barTop: CGFloat = 118
@@ -29,10 +32,10 @@ struct PulseSleepTimeline: View {
                 // The two times, centred over their ticks but kept inside the margins.
                 timeBlock(plan.bedtime, caption: String(localized: "Suggested time to bed"))
                     .frame(width: 150)
-                    .position(x: min(max(bedX, 75 + 8), w - 75 - 8), y: timesHeight / 2)
+                    .position(x: min(max(bedX + Self.timeInset, 75), w - 75), y: timesHeight / 2)
                 timeBlock(plan.wake, caption: String(localized: "Your wake time"))
                     .frame(width: 150)
-                    .position(x: min(max(wakeX, 75 + 8), w - 75 - 8), y: timesHeight / 2)
+                    .position(x: min(max(wakeX - Self.timeInset, 75), w - 75), y: timesHeight / 2)
 
                 dropLine(x: bedX, from: timesHeight + 4, to: barTop)
                 dropLine(x: wakeX, from: timesHeight + 4, to: plan.alarmFires ? barTop - 30 : barTop)
@@ -72,7 +75,7 @@ struct PulseSleepTimeline: View {
                 }
             }
         }
-        .frame(height: barTop + barHeight + 74)
+        .frame(height: barTop + barHeight + 86)
         .padding(.horizontal, PulseTheme.Layout.pageMargin)
         .dynamicTypeSize(...DynamicTypeSize.xLarge)
         .accessibilityElement(children: .contain)
@@ -124,8 +127,9 @@ struct PulseSleepTimeline: View {
         }
         let left = x(bed)
         let right = x(wake)
+        // The bracket's sides drop ≈40 pt under the bar (reviews/r134, help-center/86).
         let top = barTop + barHeight + 6
-        let bottom = top + 22
+        let bottom = top + 34
         // The label sits centred on the part of the bracket that is on screen.
         let visibleLeft = max(left, -PulseTheme.Layout.pageMargin)
         let visibleRight = min(right, width + PulseTheme.Layout.pageMargin)
@@ -245,7 +249,8 @@ struct PulseSleepAlarmPanel: View {
         .background(
             UnevenRoundedRectangle(topLeadingRadius: PulseTheme.Planner.panelRadius,
                                    topTrailingRadius: PulseTheme.Planner.panelRadius, style: .continuous)
-                .fill(PulseTheme.Planner.panel)
+                .fill(LinearGradient(colors: [PulseTheme.Planner.panelTop, PulseTheme.Planner.panelBottom],
+                                     startPoint: .top, endPoint: .bottom))
                 .ignoresSafeArea(edges: .bottom))
         .dynamicTypeSize(...DynamicTypeSize.xxLarge)
     }

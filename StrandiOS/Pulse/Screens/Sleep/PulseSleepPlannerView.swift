@@ -102,11 +102,12 @@ struct PulseSleepPlannerView: View {
             }
             .padding(.top, 14)
             .padding(.horizontal, 32)
-            .frame(minHeight: 96, alignment: .top)
+            // WHOOP's upper zone runs to ≈42% of the screen, the headline floating high in it (reviews/r134).
+            .frame(minHeight: 112, alignment: .top)
             Text(String(localized: "Tomorrow I want to"))
                 .pulseText(.label)
                 .foregroundStyle(PulseTheme.textTertiary)
-                .padding(.top, 34)
+                .padding(.top, 44)
                 .padding(.bottom, 8 + PulseSleepGoalCapsule.height / 2)
         }
         .frame(maxWidth: .infinity)
@@ -171,13 +172,7 @@ struct PulseSleepPlannerView: View {
             VStack(spacing: 6) {
                 ZStack {
                     Circle().strokeBorder(Color.white, lineWidth: 1.5)
-                    Image(systemName: "calendar")
-                        .font(.system(size: 17, weight: .regular))
-                        .foregroundStyle(Color.white)
-                    Image(systemName: "moon.fill")
-                        .font(.system(size: 7, weight: .bold))
-                        .foregroundStyle(Color.white)
-                        .offset(x: 2.5, y: 3)
+                    PulseSleepScheduleGlyph()
                 }
                 .frame(width: 40, height: 40)
                 Text(on ? String(localized: "On") : String(localized: "Off"))
@@ -221,11 +216,11 @@ struct PulseSleepPlannerView: View {
             Color.clear.frame(height: PulseSleepGoalCapsule.height / 2)
             if let plan {
                 PulseSleepTimeline(plan: plan)
-                    .padding(.top, 44)
+                    .padding(.top, 60)
             } else {
                 PulseSkeletonBlock(height: 150)
                     .padding(.horizontal, PulseTheme.Layout.pageMargin)
-                    .padding(.top, 44)
+                    .padding(.top, 60)
             }
         }
         .padding(.bottom, 24)
@@ -348,6 +343,33 @@ struct PulseSleepPlannerMark: View {
     }
 }
 
+/// My Schedule's glyph: a calendar page with a crescent moon in it (ZENO's own drawing).
+struct PulseSleepScheduleGlyph: View {
+    var body: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 3, style: .continuous)
+                .strokeBorder(Color.white, lineWidth: 1.4)
+                .frame(width: 18, height: 16)
+                .offset(y: 1)
+            Rectangle()
+                .fill(Color.white)
+                .frame(width: 17, height: 1.4)
+                .offset(y: -3)
+            HStack(spacing: 7) {
+                Capsule().fill(Color.white).frame(width: 1.6, height: 4.5)
+                Capsule().fill(Color.white).frame(width: 1.6, height: 4.5)
+            }
+            .offset(y: -7.5)
+            Image(systemName: "moon.fill")
+                .font(.system(size: 7.5, weight: .semibold))
+                .foregroundStyle(Color.white)
+                .offset(x: 1.5, y: 3.5)
+        }
+        .frame(width: 22, height: 22)
+        .accessibilityHidden(true)
+    }
+}
+
 /// The centred 20 pt Semibold headline, never split inside a word.
 struct PulseWordWrapHeadline: View {
     let text: String
@@ -377,7 +399,7 @@ struct PulseSleepGoalCapsule: View {
                 .foregroundStyle(PulseTheme.textPrimary)
                 .lineLimit(1)
                 .padding(.horizontal, 26)
-                .frame(minWidth: 150, minHeight: Self.height)
+                .frame(minWidth: 132, minHeight: Self.height)
                 .background(Capsule(style: .circular).fill(PulseTheme.Planner.capsuleFill))
                 .overlay(Capsule(style: .circular).strokeBorder(Color.white, lineWidth: 1.5))
                 .contentShape(Capsule())
