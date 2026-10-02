@@ -11,6 +11,7 @@ struct PulseHealthView: View {
 
     @Environment(PulseModel.self) private var model
     @Environment(\.scrollToTopSignal) private var scrollToTopSignal
+    @Environment(\.pulseChrome) private var chrome
     private static let topID = "pulse.health.top"
 
     var body: some View {
@@ -40,7 +41,7 @@ struct PulseHealthView: View {
                             .tint(PulseTheme.textSecondary)
                             .frame(maxWidth: .infinity, minHeight: 200)
                     }
-                    Color.clear.frame(height: 76).id("pulse.bottom")
+                    Color.clear.frame(height: chrome.tabRootBottomInset).id("pulse.bottom")
                 }
                 .padding(.horizontal, PulseTheme.pagePadding)
             }
@@ -52,9 +53,7 @@ struct PulseHealthView: View {
             .pulseDebugScroll(proxy, ready: model.health != nil)
         }
         .task(id: model.healthKey) { await model.loadHealth() }
-        .overlay(alignment: .bottom) {
-            PulseFloatingPlus { onAction(.menu) }
-        }
+        .pulseTabBarScrim()
         .pulsePage()
         .toolbar(.hidden, for: .navigationBar)
     }

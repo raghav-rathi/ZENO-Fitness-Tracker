@@ -71,12 +71,12 @@ enum PulseDemo {
 
 /// DEBUG launch arguments that put the shell in a given state at launch, so every Pulse state can be
 /// captured by `simctl` (which cannot tap or swipe):
-///   `--pulse-tab home|health|more`     the selected tab
+///   `--pulse-tab home|health|trends|more`  the selected tab
 ///   `--pulse-day N`                    Home N days back
 ///   `--pulse-night N`                  the Sleep dive N nights back
 ///   `--pulse-range 7|30|90`            the Recovery history's range
 ///   `--pulse-push recovery|strain|sleep`  push a deep dive onto Home
-///   `--pulse-sheet actions`            present the ＋ menu
+///   `--pulse-sheet actions|coach`      present the ＋ menu or the Coach sheet
 ///   `--pulse-scroll <anchor>`          scroll to a section id ("myday", "stats", "stress", "bottom", …)
 enum PulseDebugLaunch {
     private static func value(_ flag: String) -> String? {
@@ -86,14 +86,11 @@ enum PulseDebugLaunch {
     }
 
     static var tab: PulseTab? {
-        switch value("--pulse-tab") {
-        case "home": return .home
-        case "health": return .health
-        case "coach": return .coach
-        case "more": return .more
-        default: return nil
-        }
+        value("--pulse-tab").flatMap(PulseTab.init(rawValue:))
     }
+
+    /// `--pulse-sheet actions|coach`: present the ＋ menu or the Coach sheet at launch.
+    static var sheet: String? { value("--pulse-sheet") }
 
     static var dayOffset: Int? { value("--pulse-day").flatMap(Int.init) }
 
@@ -113,8 +110,6 @@ enum PulseDebugLaunch {
         default: return nil
         }
     }
-
-    static var showsActions: Bool { value("--pulse-sheet") == "actions" }
 
     /// The section id to scroll to, prefixed as the views tag them.
     static var scrollAnchor: String? { value("--pulse-scroll").map { "pulse.\($0)" } }

@@ -6,11 +6,6 @@ import StrandAnalytics
 
 // MARK: - Routes
 
-/// Pulse's tabs. Coach exists only while the AI Coach is switched on AND a provider is configured.
-enum PulseTab: Hashable {
-    case home, health, coach, more
-}
-
 /// Pulse's own first-hop pushes. Values, not closure links, so a tab re-tap can pop them off the tab's
 /// bound path (the #135/#198 convention the classic shell keeps).
 enum PulseRoute: Hashable {
@@ -33,6 +28,8 @@ enum PulseSheet: Identifiable {
     case devices
     case settings
     case pillar(NavRouter.Destination)
+    /// The Coach sheet, or Coach setup while no provider is configured.
+    case coach(seed: String?)
 
     var id: String {
         switch self {
@@ -40,13 +37,15 @@ enum PulseSheet: Identifiable {
         case .devices: return "devices"
         case .settings: return "settings"
         case .pillar(let d): return "pillar-\(d.rawValue)"
+        case .coach: return "coach"
         }
     }
 }
 
 extension View {
-    /// Register every value push a Pulse tab stack can carry: Pulse's own routes and the shared
-    /// `TabRoute` metric details. Once per stack, never twice (a second registration double-pushes, #38).
+    /// Register every value push a Pulse stack can carry: Pulse's own routes, the classic screens More
+    /// links to, and the shared `TabRoute` metric details. Once per stack, never twice (a second
+    /// registration double-pushes, #38).
     func pulseDestinations() -> some View {
         self
             .tabRouteDestinations()
@@ -59,6 +58,9 @@ extension View {
                 case .alarms: PulseClassicScreen { SmartAlarmView() }
                 case .labBook: PulseClassicScreen { LabBookView() }
                 }
+            }
+            .navigationDestination(for: PulseMoreDestination.self) { route in
+                PulseClassicScreen { route.destination }
             }
     }
 }
@@ -77,14 +79,20 @@ struct PulseClassicScreen<Content: View>: View {
 
 // MARK: - Root
 
-/// The Pulse shell: Home · Health · Coach · More, one NavigationStack per tab.
+/// The Pulse shell: Home · Health · Trends · More in a floating capsule, the Coach button beside it, one
+/// NavigationStack per tab.
 ///
-/// Mirrors what `RootTabView` provides the rest of the app: pop-to-root and scroll-to-top on a tab
-/// re-tap, every `NavRouter` request, the Home Screen quick actions (held until the launch gates clear),
-/// the gym-session bar and sheet, the launch refresh and the backup catch-up. It observes only the router,
-/// the quick-action delegate, the scene phase and the Coach switch; the repository, the live strap state,
-/// the Coach engine and the gym session are each observed by a small leaf so their frequent publishes
-/// never re-render the TabView.
+/// A native `TabView` with its system bar hidden keeps each tab's lifecycle (a tab that is not showing
+/// gets onDisappear, so a screen that streams while visible stops), and the capsule is drawn over it.
+/// The capsule and the Coach button show on a tab's root and leave when something is pushed; a pushed
+/// screen floats its own Coach button through `PulseScreenScaffold(coach:)`.
+///
+/// Everything the classic `RootTabView` gives the rest of the app is kept: pop-to-root then scroll-to-top
+/// on a tab re-tap, every `NavRouter` request, the Home Screen quick actions (held until the launch gates
+/// clear), the gym-session bar and sheet, the launch refresh and the backup catch-up. It observes only the
+/// router, the quick-action delegate, the scene phase and the Coach switch; the repository, the live strap
+/// state, the Coach engine and the gym session are each observed by a small leaf so their frequent
+/// publishes never re-render the shell.
 struct PulseRootView: View {
     /// External entry points wait until the mandatory first-run gates have completed (see RootTabView).
     let homeScreenQuickActionsEnabled: Bool
@@ -98,63 +106,92 @@ struct PulseRootView: View {
     @State private var selectedTab: PulseTab = .home
     @State private var homePath = NavigationPath()
     @State private var healthPath = NavigationPath()
-    @State private var coachPath = NavigationPath()
+    @State private var trendsPath = NavigationPath()
     @State private var morePath = NavigationPath()
     @State private var scrollTop: [PulseTab: Int] = [:]
     @State private var sheet: PulseSheet?
     @State private var showLiveSession = false
     /// Mirrors `AICoachEngine.isConfigured`, maintained by `PulseCoachProbe`.
     @State private var coachConfigured = false
+    /// The bottom safe-area inset, measured, so the floating chrome sits right on every device.
+    @State private var bottomSafeArea: CGFloat = 34
 
-    private var coachAvailable: Bool { coachEnabled && coachConfigured }
+    private var coachAvailability: PulseCoachAvailability {
+        guard coachEnabled else { return .off }
+        return coachConfigured ? .ready : .needsSetup
+    }
 
-    /// Calm easing at the sheet-present duration the classic shell uses.
-    private static let sheetEase = Animation.timingCurve(0.22, 1, 0.36, 1, duration: 0.42)
+    private var coachContext: PulseCoachContext {
+        PulseCoachContext(availability: coachAvailability, open: { seed in openCoach(seed: seed) })
+    }
 
-    /// Taps on the already-selected tab arrive through the setter, which is what lets the native tab bar
-    /// keep the pop-to-root / scroll-to-top convention with no custom hit-testing over it.
-    private var tabSelection: Binding<PulseTab> {
-        Binding(
-            get: { selectedTab },
-            set: { tag in
-                if tag == selectedTab { reselect(tag) } else { selectedTab = tag }
-            })
+    /// The capsule's top edge above the screen's bottom edge.
+    private var barTopFromScreenBottom: CGFloat {
+        PulseTheme.TabBarMetrics.bottomOffset + PulseTheme.TabBarMetrics.height
+    }
+
+    private var chromeMetrics: PulseChromeMetrics {
+        PulseChromeMetrics(
+            tabRootBottomInset: max(0, barTopFromScreenBottom + PulseTheme.Layout.scrimHeight - bottomSafeArea),
+            barTopFromScreenBottom: barTopFromScreenBottom)
+    }
+
+    /// True while the selected tab shows its root, which is when the capsule and Coach button show.
+    private var selectedTabAtRoot: Bool {
+        switch selectedTab {
+        case .home: return homePath.isEmpty
+        case .health: return healthPath.isEmpty
+        case .trends: return trendsPath.isEmpty
+        case .more: return morePath.isEmpty
+        }
     }
 
     var body: some View {
-        TabView(selection: tabSelection) {
-            tab(.home, "Home", "house.fill", path: $homePath) {
-                PulseHomeView(onAction: present, onSettings: { presentSheet(.settings) })
-            }
-            tab(.health, "Health", "heart.text.square.fill", path: $healthPath) {
-                PulseHealthView(onAction: present)
-            }
-            if coachAvailable {
-                tab(.coach, "Coach", "sparkles", path: $coachPath) {
-                    CoachView()
-                        .background(StrandPalette.surfaceBase.ignoresSafeArea())
-                        .toolbar(.hidden, for: .navigationBar)
+        TabView(selection: $selectedTab) {
+            ForEach(PulseTab.allCases) { tab in
+                NavigationStack(path: path(tab)) {
+                    root(tab)
+                        .pulseDestinations()
                 }
-            }
-            tab(.more, "More", "ellipsis", path: $morePath) {
-                PulseMoreView(showsCoachSetup: coachEnabled && !coachConfigured)
+                // Only THIS tab's token changes on its re-tap, so the other tabs keep their positions.
+                .environment(\.scrollToTopSignal, scrollTop[tab, default: 0])
+                .toolbar(.hidden, for: .tabBar)
+                .tag(tab)
             }
         }
-        .tint(PulseTheme.accent)
+        .modifier(PulseLiftSessionChrome(
+            bottomPadding: selectedTabAtRoot ? max(8, barTopFromScreenBottom - bottomSafeArea + 8) : 8))
+        .overlay(alignment: .bottom) {
+            if selectedTabAtRoot {
+                PulseBottomChrome(tabs: PulseTab.allCases, selection: selectedTab, coach: coachAvailability,
+                                  onSelect: select, onCoach: { openCoach(seed: nil) })
+                    .padding(.bottom, PulseTheme.TabBarMetrics.bottomOffset)
+                    .ignoresSafeArea(.container, edges: .bottom)
+                    .transition(.opacity)
+            }
+        }
+        .ignoresSafeArea(.keyboard, edges: .bottom)
+        .animation(PulseMotion.chrome, value: selectedTabAtRoot)
+        .animation(PulseMotion.chrome, value: coachAvailability)
+        .background(
+            GeometryReader { geo in
+                Color.clear.preference(key: PulseBottomSafeAreaKey.self, value: geo.safeAreaInsets.bottom)
+            })
+        .onPreferenceChange(PulseBottomSafeAreaKey.self) { inset in
+            if bottomSafeArea != inset { bottomSafeArea = inset }
+        }
+        .sensoryFeedback(.selection, trigger: selectedTab)
+        .environment(\.pulseChrome, chromeMetrics)
+        .environment(\.pulseCoach, coachContext)
+        .tint(PulseTheme.chromeTint)
         .environment(model)
         .background(PulseAttacher(model: model))
         .background(PulseCoachProbe(configured: $coachConfigured))
-        .modifier(PulseLiftSessionChrome())
         // A closed sheet may have changed what Home shows without a refresh (a journal entry, a logged
         // workout), so Home rebuilds on the way back.
         .sheet(item: $sheet, onDismiss: { model.homeMayHaveChanged() }) { sheetContent($0) }
         .fullScreenCover(isPresented: $showLiveSession) {
             LiveSessionView(onClose: { showLiveSession = false })
-        }
-        // Switching Coach off (or losing its key) while standing on it would leave the selection on a
-        // tag no tab claims, which renders as an empty tab. Send that wearer Home, only in that case.
-        .onChange(of: coachAvailable) { _, available in
-            if !available && selectedTab == .coach { selectedTab = .home }
         }
         .onChange(of: router.requestedDestination) { _, dest in handle(dest) }
         .onChange(of: router.quickActionsRequested) { _, requested in
@@ -181,37 +218,45 @@ struct PulseRootView: View {
 
     // MARK: Tabs
 
-    private func tab<Content: View>(_ tag: PulseTab, _ title: LocalizedStringKey, _ icon: String,
-                                    path: Binding<NavigationPath>,
-                                    @ViewBuilder content: () -> Content) -> some View {
-        NavigationStack(path: path) {
-            content()
-                .pulseDestinations()
-        }
-        // Only THIS tab's token changes on its re-tap, so the other tabs keep their scroll positions.
-        .environment(\.scrollToTopSignal, scrollTop[tag, default: 0])
-        .toolbarBackground(PulseTheme.backgroundBottom, for: .tabBar)
-        .toolbarBackground(.visible, for: .tabBar)
-        .tabItem { Label(title, systemImage: icon) }
-        .tag(tag)
-    }
-
-    /// A re-tap refreshes, then pops a pushed stack to its root, or scrolls a root already there to the top.
-    private func reselect(_ tag: PulseTab) {
-        Task { await model.refresh() }
-        switch tag {
-        case .home: popOrScroll(&homePath, tag)
-        case .health: popOrScroll(&healthPath, tag)
-        case .coach: popOrScroll(&coachPath, tag)
-        case .more: popOrScroll(&morePath, tag)
+    private func path(_ tab: PulseTab) -> Binding<NavigationPath> {
+        switch tab {
+        case .home: return $homePath
+        case .health: return $healthPath
+        case .trends: return $trendsPath
+        case .more: return $morePath
         }
     }
 
-    private func popOrScroll(_ path: inout NavigationPath, _ tag: PulseTab) {
-        if !path.isEmpty {
-            path = NavigationPath()
+    @ViewBuilder
+    private func root(_ tab: PulseTab) -> some View {
+        switch tab {
+        case .home:
+            PulseHomeView(onAction: present, onSettings: { presentSheet(.settings) })
+        case .health:
+            PulseHealthView(onAction: present)
+        case .trends:
+            PulseTrendsTabView()
+        case .more:
+            PulseMoreView(showsCoachSetup: coachAvailability == .needsSetup)
+        }
+    }
+
+    /// A tap on a tab: switch to it, or, on the tab already showing, refresh and then pop to its root or
+    /// scroll a root already there back to the top.
+    private func select(_ tab: PulseTab) {
+        if tab == selectedTab {
+            reselect(tab)
         } else {
-            scrollTop[tag, default: 0] += 1
+            selectedTab = tab
+        }
+    }
+
+    private func reselect(_ tab: PulseTab) {
+        Task { await model.refresh() }
+        if path(tab).wrappedValue.isEmpty {
+            scrollTop[tab, default: 0] += 1
+        } else {
+            path(tab).wrappedValue = NavigationPath()
         }
     }
 
@@ -222,7 +267,14 @@ struct PulseRootView: View {
     }
 
     private func presentSheet(_ new: PulseSheet) {
-        withAnimation(Self.sheetEase) { sheet = new }
+        withAnimation(PulseMotion.sheet) { sheet = new }
+    }
+
+    /// The Coach button and every coach entry point: the Coach sheet when a provider is configured, Coach
+    /// setup when it is not, nothing when Coach is switched off.
+    private func openCoach(seed: String?) {
+        guard coachAvailability != .off else { return }
+        presentSheet(.coach(seed: seed))
     }
 
     @ViewBuilder
@@ -253,11 +305,13 @@ struct PulseRootView: View {
         case .settings: sheetScreen { SettingsView() }
         case .pillar(let dest):
             sheetScreen(registersTabRoutes: true) { pillarScreen(dest) }
+        case .coach(let seed):
+            PulseCoachSheet(seed: seed)
         }
     }
 
-    /// A presented screen in its own stack with a Done button, the chrome the classic shell gives the
-    /// same screens. The pillar hosts also register `TabRoute` (their fallbacks push those values).
+    /// A presented classic screen in its own stack with a Done button, the chrome the classic shell gives
+    /// the same screens. The pillar hosts also register `TabRoute` (their fallbacks push those values).
     private func sheetScreen<V: View>(registersTabRoutes: Bool = false,
                                       @ViewBuilder _ view: () -> V) -> some View {
         NavigationStack {
@@ -290,7 +344,7 @@ struct PulseRootView: View {
         case .rhythm: RhythmHost(onClose: { sheet = nil })
         case .devices: DevicesView()
         case .trends: TrendsView()
-        // These three are routed elsewhere by `handle(_:)`; the cases keep the switch exhaustive.
+        // These are routed elsewhere by `handle(_:)`; the cases keep the switch exhaustive.
         case .activeWorkout: LiveView()
         case .liveSession: LiveView()
         case .journal: InsightsView()
@@ -310,18 +364,14 @@ struct PulseRootView: View {
         case .insightsHub, .labBook, .fusedRecord, .rhythm, .alarms:
             presentSheet(.pillar(dest))
         case .coach:
-            if coachAvailable {
-                selectedTab = .coach
-            } else if coachEnabled {
-                // Switched on but not set up yet: open Coach where it can be configured.
-                presentSheet(.pillar(.coach))
-            }
-            // Switched off: drop the request, the honest answer for a feature the wearer turned off.
+            // On with a provider: the Coach sheet. On without one: Coach setup. Off: drop the request,
+            // the honest answer for a feature the wearer turned off.
+            openCoach(seed: nil)
         case .trends:
-            // Trends lives in More here, not in its own tab.
-            selectedTab = .more
-            morePath = NavigationPath()
-            morePath.append(PulseMoreDestination.trends)
+            // The Trends tab, with the full Trends screen pushed (where a "new data" reading deep-links).
+            selectedTab = .trends
+            trendsPath = NavigationPath()
+            trendsPath.append(PulseMoreDestination.trends)
         case .activeWorkout:
             // LiveView consumes the router's one-shot flag and opens the running workout.
             presentSheet(.quick(.live))
@@ -337,7 +387,11 @@ struct PulseRootView: View {
         #if DEBUG
         if let tab = PulseDebugLaunch.tab { selectedTab = tab }
         if let route = PulseDebugLaunch.push { homePath.append(route) }
-        if PulseDebugLaunch.showsActions { sheet = .quick(.menu) }
+        switch PulseDebugLaunch.sheet {
+        case "actions": sheet = .quick(.menu)
+        case "coach": openCoach(seed: nil)
+        default: break
+        }
         #endif
     }
 
@@ -353,6 +407,13 @@ struct PulseRootView: View {
         }
         homeScreenQuickActions.consume(action)
         presentSheet(.quick(destination))
+    }
+}
+
+private struct PulseBottomSafeAreaKey: PreferenceKey {
+    static var defaultValue: CGFloat = 34
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = nextValue()
     }
 }
 
@@ -437,9 +498,11 @@ private struct PulseCoachProbe: View {
     }
 }
 
-/// The running gym session, reachable from any tab: its bar above the tab bar and its sheet. A modifier
-/// so the session's frequent publishes re-render this chrome, not the tabs inside it.
+/// The running gym session, reachable from any tab: its bar above the floating tab bar and its sheet. A
+/// modifier so the session's frequent publishes re-render this chrome, not the tabs inside it.
 private struct PulseLiftSessionChrome: ViewModifier {
+    /// Room under the bar: the capsule's height above the bottom safe edge while it shows.
+    let bottomPadding: CGFloat
     @EnvironmentObject private var liftSession: LiftSessionController
 
     func body(content: Content) -> some View {
@@ -448,8 +511,7 @@ private struct PulseLiftSessionChrome: ViewModifier {
                 if liftSession.isActive {
                     LiftSessionBar()
                         .padding(.horizontal, 14)
-                        // Clear the tab bar with the same constant every classic screen uses.
-                        .padding(.bottom, NoopMetrics.tabBarClearance)
+                        .padding(.bottom, bottomPadding)
                         .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
             }

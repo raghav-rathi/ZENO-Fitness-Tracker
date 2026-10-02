@@ -14,6 +14,7 @@ struct PulseHomeView: View {
 
     @Environment(PulseModel.self) private var model
     @Environment(\.scrollToTopSignal) private var scrollToTopSignal
+    @Environment(\.pulseChrome) private var chrome
     private static let topID = "pulse.home.top"
 
     var body: some View {
@@ -23,8 +24,8 @@ struct PulseHomeView: View {
                     Color.clear.frame(height: 0).id(Self.topID)
                     PulseHomeHeader(onSettings: onSettings, onPlus: { onAction(.menu) })
                     PulseHomeContent(onAction: onAction)
-                    // Room for the floating ＋ so the last card is never under it.
-                    Color.clear.frame(height: 76).id("pulse.bottom")
+                    // Room for the floating tab bar so the last card is never under it.
+                    Color.clear.frame(height: chrome.tabRootBottomInset).id("pulse.bottom")
                 }
                 .padding(.horizontal, PulseTheme.pagePadding)
             }
@@ -37,9 +38,7 @@ struct PulseHomeView: View {
             }
             .pulseDebugScroll(proxy, ready: model.home != nil)
         }
-        .overlay(alignment: .bottom) {
-            PulseFloatingPlus { onAction(.menu) }
-        }
+        .pulseTabBarScrim()
         .sensoryFeedback(.selection, trigger: model.dayOffset)
         .pulsePage()
         .toolbar(.hidden, for: .navigationBar)
@@ -199,28 +198,6 @@ struct PulseCalendarSheet: View {
         }
         .presentationDetents([.medium, .large])
         .environment(\.colorScheme, .dark)
-    }
-}
-
-/// The centred floating ＋ above the tab bar. It sits inside the tab's own content, whose safe area
-/// already ends at the top of the tab bar, so it needs no knowledge of the bar's height on any OS.
-struct PulseFloatingPlus: View {
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            Image(systemName: "plus")
-                .font(.title2.weight(.bold))
-                .foregroundStyle(PulseTheme.onAccent)
-                .frame(width: 56, height: 56)
-                .background(Circle().fill(PulseTheme.accent))
-                .shadow(color: .black.opacity(0.45), radius: 10, y: 4)
-                .contentShape(Circle())
-        }
-        .buttonStyle(PulsePressStyle())
-        .padding(.bottom, 10)
-        .accessibilityLabel(String(localized: "Start an activity"))
-        .accessibilityHint(String(localized: "Workout, lift, intervals, breathe, journal and more"))
     }
 }
 

@@ -66,6 +66,7 @@ struct PulseMoreView: View {
     @EnvironmentObject private var repo: Repository
     @AppStorage("pulse.enabled") private var pulseEnabled = true
     @Environment(\.scrollToTopSignal) private var scrollToTopSignal
+    @Environment(\.pulseChrome) private var chrome
     @State private var showReport = false
     @State private var confirmClassic = false
     private static let topID = "pulse.more.top"
@@ -148,18 +149,14 @@ struct PulseMoreView: View {
             }
             .listStyle(.insetGrouped)
             .scrollContentBackground(.hidden)
+            // Clear the floating tab bar: the list scrolls under it and its scrim.
+            .contentMargins(.bottom, chrome.tabRootBottomInset, for: .scrollContent)
             .navigationTitle(String(localized: "More"))
             .navigationBarTitleDisplayMode(.large)
             .onChange(of: scrollToTopSignal) { _, _ in
                 withAnimation(.easeOut(duration: 0.3)) { proxy.scrollTo(Self.topID, anchor: .top) }
             }
             .pulseDebugScroll(proxy, ready: true)
-        }
-        .navigationDestination(for: PulseMoreDestination.self) { route in
-            route.destination
-                .background(StrandPalette.surfaceBase.ignoresSafeArea())
-                .navigationBarTitleDisplayMode(.inline)
-                .toolbarBackground(.hidden, for: .navigationBar)
         }
         .refreshable { await repo.refresh() }
         .sheet(isPresented: $showReport) {
@@ -173,6 +170,7 @@ struct PulseMoreView: View {
             Text(String(localized: "Your data and settings stay as they are. You can switch back from Settings."))
         }
         .background(PulseBackground())
+        .pulseTabBarScrim()
         .toolbarBackground(PulseTheme.backgroundTop, for: .navigationBar)
         .environment(\.colorScheme, .dark)
     }
