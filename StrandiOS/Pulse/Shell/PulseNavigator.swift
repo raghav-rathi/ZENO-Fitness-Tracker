@@ -80,11 +80,14 @@ enum PulseQuickAction: String, Identifiable {
 
 /// A route presented modally: its own NavigationStack and path, its root marked as a modal root (so a
 /// Pulse screen shows "✕"), "Done" for a classic screen, and a navigator that pushes inside the modal.
+/// The shell cannot present over its own modal, so the Coach sheet opens from here while one is up.
 struct PulseModalHost: View {
     let route: PulseRoute
 
     @State private var path = NavigationPath()
+    @State private var coachSheet: PulseCoachSeed?
     @Environment(\.pulseNavigator) private var parent
+    @Environment(\.pulseCoach) private var parentCoach
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -93,11 +96,27 @@ struct PulseModalHost: View {
                 .pulseDestinations()
         }
         .environment(\.pulseNavigator, PulseNavigator(
-            open: { path.append($0) },
-            push: { path.append($0) },
-            present: { path.append($0) },
+            open: { open($0) },
+            push: { open($0) },
+            present: { open($0) },
             quickAction: parent.quickAction))
+        .environment(\.pulseCoach, PulseCoachContext(availability: parentCoach.availability,
+                                                     open: { seed in openCoach(seed) }))
+        .sheet(item: $coachSheet) { PulseCoachSheet(seed: $0.seed) }
         .tint(PulseTheme.chromeTint)
+    }
+
+    private func open(_ route: PulseRoute) {
+        if case .coach(let seed) = route {
+            openCoach(seed)
+        } else {
+            path.append(route)
+        }
+    }
+
+    private func openCoach(_ seed: String?) {
+        guard parentCoach.availability != .off else { return }
+        coachSheet = PulseCoachSeed(seed: seed)
     }
 
     @ViewBuilder
@@ -115,6 +134,12 @@ struct PulseModalHost: View {
                 .environment(\.pulseModalRoot, true)
         }
     }
+}
+
+/// The Coach sheet's presentation, identified once per opening.
+struct PulseCoachSeed: Identifiable {
+    let id = UUID()
+    let seed: String?
 }
 
 /// A sheet or cover the shell presents. Identified by route, so presenting the same route twice is one

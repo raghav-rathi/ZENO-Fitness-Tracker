@@ -379,6 +379,7 @@ DEBUG builds read these launch arguments (`Debug/PulseDemo.swift`; nothing ships
 | `--pulse-tab home\|health\|trends\|more` | Select a tab |
 | `--pulse-route <name>` | Open any route at launch on its natural tab; names in `PulseRoute.debugCatalog` (`sleep-dive`, `trend-view:rhr`, `classic-settings`, `tab-steps`, …) |
 | `--pulse-push recovery\|strain\|sleep` | Push a dive onto Home |
+| `--pulse-present <name>` | Present any route modally in its own stack ("✕" at its root), whatever its usual presentation |
 | `--pulse-sheet actions\|coach` | Present the ＋ menu or the Coach sheet |
 | `--pulse-scroll <anchor>` | Scroll to `.id("pulse.<anchor>")` once loaded (`myday`, `stats`, `stress`, `journal`, `contributors`, `history`, `stages`, `monitor`, `bottom`, `gallery-charts`, …) |
 | `--pulse-day N` / `--pulse-night N` / `--pulse-range 7\|30\|90` | Home N days back / the Sleep dive N nights back / the Recovery history range |

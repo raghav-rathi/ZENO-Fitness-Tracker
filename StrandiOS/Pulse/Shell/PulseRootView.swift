@@ -152,7 +152,7 @@ struct PulseRootView: View {
         .sensoryFeedback(.selection, trigger: selectedTab)
         #if DEBUG
         .background(
-            Color.clear.fullScreenCover(isPresented: $showGallery) { PulseComponentGallery() })
+            Color.clear.fullScreenCover(isPresented: $showGallery) { shellEnvironment(PulseComponentGallery()) })
         #endif
         .environment(\.pulseChrome, chromeMetrics)
         .environment(\.pulseCoach, coachContext)
@@ -163,10 +163,11 @@ struct PulseRootView: View {
         .background(PulseCoachProbe(configured: $coachConfigured))
         // A closed sheet may have changed what Home shows without a refresh (a journal entry, a logged
         // workout), so Home rebuilds on the way back.
-        .sheet(item: $sheet, onDismiss: { model.homeMayHaveChanged() }) { sheetContent($0) }
+        // Presented content does not inherit the environment set above (it hangs off this point of the
+        // tree), so each presentation gets the shell's environment explicitly.
+        .sheet(item: $sheet, onDismiss: { model.homeMayHaveChanged() }) { shellEnvironment(sheetContent($0)) }
         .fullScreenCover(item: $cover, onDismiss: { model.homeMayHaveChanged() }) { modal in
-            PulseModalHost(route: modal.route)
-                .environment(\.pulseNavigator, navigator)
+            shellEnvironment(PulseModalHost(route: modal.route))
         }
         .onChange(of: router.requestedDestination) { _, dest in handle(dest) }
         .onChange(of: router.quickActionsRequested) { _, requested in
@@ -189,6 +190,16 @@ struct PulseRootView: View {
         .onChange(of: scenePhase) { _, phase in
             if phase == .active { model.sceneBecameActive() }
         }
+    }
+
+    /// The environment every Pulse screen expects, for content the shell presents.
+    private func shellEnvironment<V: View>(_ content: V) -> some View {
+        content
+            .environment(model)
+            .environment(\.pulseChrome, chromeMetrics)
+            .environment(\.pulseCoach, coachContext)
+            .environment(\.pulseNavigator, navigator)
+            .tint(PulseTheme.chromeTint)
     }
 
     // MARK: Tabs
@@ -302,7 +313,6 @@ struct PulseRootView: View {
                 onClose: { sheet = nil })
         case .route(let route):
             PulseModalHost(route: route)
-                .environment(\.pulseNavigator, navigator)
         case .coach(let seed):
             PulseCoachSheet(seed: seed)
         }
@@ -360,6 +370,7 @@ struct PulseRootView: View {
             selectedTab = tab
         }
         if let route = PulseDebugLaunch.push { homePath.append(route) }
+        if let route = PulseDebugLaunch.presentedRoute { present(route) }
         if PulseDebugLaunch.showsGallery { showGallery = true }
         switch PulseDebugLaunch.sheet {
         case "actions": sheet = .actionMenu

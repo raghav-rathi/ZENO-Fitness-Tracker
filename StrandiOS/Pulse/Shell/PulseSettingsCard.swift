@@ -31,7 +31,7 @@ struct PulseInterfaceSettingsCard: View {
                 }
                 .toggleStyle(.switch)
                 .tint(StrandPalette.accent)
-                Text(String(localized: "Home, Health, Coach and More, with Sleep, Recovery and Strain dials and a deep dive behind each. Always dark. The same data as the classic tabs."))
+                Text(String(localized: "Home, Health, Trends and More with a floating Coach button, Sleep, Recovery and Strain dials and a deep dive behind each. Always dark. The same data as the classic tabs."))
                     .font(StrandFont.caption)
                     .foregroundStyle(StrandPalette.textTertiary)
                     .fixedSize(horizontal: false, vertical: true)
