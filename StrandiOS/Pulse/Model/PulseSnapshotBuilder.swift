@@ -49,6 +49,12 @@ struct PulseProfile: Equatable {
 
 /// Builds Pulse's snapshots OFF the main actor.
 ///
+/// Screen groups add their own snapshots in an extension file in their folder
+/// (`PulseSnapshotBuilder+<Group>.swift`), reusing the readers and resolvers below (`restSeries()`,
+/// `workoutRows()`, `nightGroups(_:)`, `dayWindow(_:)`, `chargeDisplay(_:row:)`, …), the per-refresh
+/// `cached(_:load:)` slot, and `begin(_:)` / `isCurrent(_:)` to stop when superseded. A screen runs one
+/// through `PulseModel.build(_:)`. See StrandiOS/Pulse/ARCHITECTURE.md.
+///
 /// An actor, so its work runs on the cooperative pool rather than the main thread: the day's heart-rate
 /// read, `StrainScorer` over it (the classic Today runs that on the main actor on every swipe), the
 /// cumulative-strain prefixes, the sleep-night merge, the baselines and the 30-day comparisons all happen
@@ -59,7 +65,7 @@ struct PulseProfile: Equatable {
 /// re-reads nothing that a refresh has not changed. A build checks for cancellation after each await and
 /// returns nil when superseded, so a fast run of swipes does not queue a build per day.
 actor PulseSnapshotBuilder {
-    private let repo: Repository
+    let repo: Repository
 
     init(repo: Repository) {
         self.repo = repo
@@ -92,6 +98,8 @@ actor PulseSnapshotBuilder {
 
     private var cacheSeq = Int.min
     private var cache = Cache()
+    /// Values extension files cache for the current refresh, by key (`cached(_:load:)`).
+    private var extensionCache: [String: Any] = [:]
 
     /// Point the cache at `seq`, dropping everything read for an earlier refresh.
     ///
@@ -100,18 +108,33 @@ actor PulseSnapshotBuilder {
     /// against `cacheSeq`, and `isCurrent` lets a superseded build stop rather than publish: without
     /// that, a launch-time build over the still-empty day list wrote "no stress score" into the fresh
     /// refresh's cache, and Home showed a dash for the rest of that refresh.
-    private func begin(_ seq: Int) {
+    func begin(_ seq: Int) {
         guard seq > cacheSeq else { return }
         cacheSeq = seq
         cache = Cache()
+        extensionCache = [:]
+    }
+
+    /// A value read once per refresh and shared by every build until the next one, for extension files:
+    ///
+    ///     let plans = await cached("plan.goals") { await repo.planGoals() }
+    ///
+    /// Keys are namespaced by the caller ("<group>.<what>"). A load begun under an older refresh is
+    /// returned to its caller but not stored, exactly like the built-in readers.
+    func cached<T>(_ key: String, load: () async -> T) async -> T {
+        if let value = extensionCache[key] as? T { return value }
+        let seq = cacheSeq
+        let value = await load()
+        if seq == cacheSeq { extensionCache[key] = value }
+        return value
     }
 
     /// False once a newer refresh has begun: the build's data is stale and it should stop.
-    private func isCurrent(_ r: PulseRequest) -> Bool {
+    func isCurrent(_ r: PulseRequest) -> Bool {
         r.seq == cacheSeq && !Task.isCancelled
     }
 
-    private func restSeries() async -> [(day: String, value: Double)] {
+    func restSeries() async -> [(day: String, value: Double)] {
         if let v = cache.rest { return v }
         let seq = cacheSeq
         let v = await repo.exploreSeries(key: "sleep_performance", source: "my-whoop")
@@ -119,7 +142,7 @@ actor PulseSnapshotBuilder {
         return v
     }
 
-    private func stressStoredSeries() async -> [(day: String, value: Double)] {
+    func stressStoredSeries() async -> [(day: String, value: Double)] {
         if let v = cache.stressStored { return v }
         let seq = cacheSeq
         let v = await repo.series(key: "stress", source: "my-whoop")
@@ -127,7 +150,7 @@ actor PulseSnapshotBuilder {
         return v
     }
 
-    private func onsetMarkers() async -> [(day: String, value: Double)] {
+    func onsetMarkers() async -> [(day: String, value: Double)] {
         if let v = cache.markers { return v }
         let seq = cacheSeq
         let v = await repo.exploreSeries(key: DayCycleIntelligenceIntegration.onsetKey, source: "my-whoop")
@@ -135,7 +158,7 @@ actor PulseSnapshotBuilder {
         return v
     }
 
-    private func appleRows() async -> [AppleDaily] {
+    func appleRows() async -> [AppleDaily] {
         if let v = cache.apple { return v }
         let seq = cacheSeq
         let v = await repo.appleDailyRows()
@@ -143,7 +166,7 @@ actor PulseSnapshotBuilder {
         return v
     }
 
-    private func workoutRows() async -> [WorkoutRow] {
+    func workoutRows() async -> [WorkoutRow] {
         if let v = cache.workouts { return v }
         let seq = cacheSeq
         let v = await repo.workoutRows()
@@ -151,7 +174,7 @@ actor PulseSnapshotBuilder {
         return v
     }
 
-    private func habitualMidsleep() async -> Int? {
+    func habitualMidsleep() async -> Int? {
         if cache.habitualLoaded { return cache.habitual }
         let seq = cacheSeq
         let v = await repo.habitualMidsleepSec()
@@ -161,7 +184,7 @@ actor PulseSnapshotBuilder {
 
     /// Every sleep block grouped by the local day it ends on, newest day first: the SAME grouping the
     /// Sleep tab browses (`SleepModel.navDays`), so a night here is the night there.
-    private func nightGroups(_ r: PulseRequest) async -> [[CachedSleepSession]] {
+    func nightGroups(_ r: PulseRequest) async -> [[CachedSleepSession]] {
         if let v = cache.nights { return v }
         let seq = cacheSeq
         var sessions = cache.sessions
@@ -197,7 +220,7 @@ actor PulseSnapshotBuilder {
     /// without a refresh necessarily following (`refresh()` publishes only when the daily caches
     /// change). Keying today on a five-minute bucket of the window's end lets a foreground rebuild pick
     /// up new beats while a burst of rebuilds still shares one read.
-    private func heartRate(dayKey: String, from: Int, to: Int, isToday: Bool) async -> [HRSample] {
+    func heartRate(dayKey: String, from: Int, to: Int, isToday: Bool) async -> [HRSample] {
         let key = isToday ? "\(dayKey)|\(from)|\(to / 300)" : "\(dayKey)|\(from)"
         if let v = cache.hr[key] { return v }
         let seq = cacheSeq
@@ -215,14 +238,14 @@ actor PulseSnapshotBuilder {
 
     /// The day's own row. For today the model keyed the request with the repository's resolved today
     /// row (its pre-04:00 local-day carve-out included), so this finds that same row.
-    private func displayRow(_ r: PulseRequest) -> DailyMetric? {
+    func displayRow(_ r: PulseRequest) -> DailyMetric? {
         r.days.last(where: { $0.day == r.day.key })
     }
 
     /// The window a day's Effort is scored over, resolved exactly as the Liquid Today resolves it: the
     /// day-cycle onset markers when that mode is on, else calendar midnight to now (today) or to the
     /// next midnight (a past day).
-    private func dayWindow(_ r: PulseRequest) async -> (from: Int, to: Int) {
+    func dayWindow(_ r: PulseRequest) async -> (from: Int, to: Int) {
         let cal = Calendar.current
         let dayStart = cal.startOfDay(for: r.day.date)
         let nextStart = cal.date(byAdding: .day, value: 1, to: dayStart) ?? dayStart
@@ -237,7 +260,7 @@ actor PulseSnapshotBuilder {
 
     /// Recovery for the day, through the SAME resolver the Liquid Today hero uses (#543 carry, the honest
     /// calibrating state), so the two shells cannot show different recoveries for one morning.
-    private func chargeDisplay(_ r: PulseRequest, row: DailyMetric?) -> (LiquidTodayView.ChargeDisplay, DailyMetric?) {
+    func chargeDisplay(_ r: PulseRequest, row: DailyMetric?) -> (LiquidTodayView.ChargeDisplay, DailyMetric?) {
         let tkey = row?.day ?? r.day.key
         let calibration = r.day.isToday
             ? RecoveryScorer.calibrationNights(nightlyHrv: r.days.map(\.avgHrv),
@@ -260,7 +283,7 @@ actor PulseSnapshotBuilder {
         return (display, source)
     }
 
-    private func recoveryDial(_ display: LiquidTodayView.ChargeDisplay) -> PulseDialData {
+    func recoveryDial(_ display: LiquidTodayView.ChargeDisplay) -> PulseDialData {
         switch display {
         case .scored(let pct):
             return PulseDialData(score: .recovery, value: pct, state: .scored,
@@ -280,7 +303,7 @@ actor PulseSnapshotBuilder {
     /// else the Rest composite of that day's row, the order the Sleep tab resolves it in
     /// (`SleepModel.performanceSeries`). The ONE resolver Home's dial, Home's sleep row and the Sleep
     /// dive all read, so no two of them can show different numbers for the same night.
-    private func sleepPerformance(dayKey: String, rest: [(day: String, value: Double)],
+    func sleepPerformance(dayKey: String, rest: [(day: String, value: Double)],
                                   days: [DailyMetric]) -> Double? {
         rest.last(where: { $0.day == dayKey })?.value
             ?? days.last(where: { $0.day == dayKey }).flatMap { AnalyticsEngine.Rest.composite(daily: $0) }
@@ -288,7 +311,7 @@ actor PulseSnapshotBuilder {
 
     /// The Sleep dial for the day: the night that ended on it, else (today only) the last scored night
     /// under the Liquid Today's freshness rule, labelled as carried.
-    private func sleepDial(_ r: PulseRequest, rest: [(day: String, value: Double)]) -> PulseDialData {
+    func sleepDial(_ r: PulseRequest, rest: [(day: String, value: Double)]) -> PulseDialData {
         if let own = sleepPerformance(dayKey: r.day.key, rest: rest, days: r.days) {
             return PulseDialData(score: .sleep, value: own, state: .scored)
         }
@@ -305,7 +328,7 @@ actor PulseSnapshotBuilder {
 
     /// The day's Effort on the WHOOP 0-21 axis: today's live score over the day window floored at the
     /// stored row (`StrainScorer.effectiveEffort`, the shared never-drop rule), a past day's stored row.
-    private func strainValue(_ r: PulseRequest, row: DailyMetric?, hr: [HRSample]?) -> Double? {
+    func strainValue(_ r: PulseRequest, row: DailyMetric?, hr: [HRSample]?) -> Double? {
         var live: Double?
         if r.day.isToday, let hr {
             // #2460: the manual HR-max override, then Tanaka, exactly as the stored day is scored.
@@ -317,13 +340,13 @@ actor PulseSnapshotBuilder {
             .map { UnitFormatter.effortValue($0, scale: .whoop) }
     }
 
-    private func strainDial(_ value: Double?) -> PulseDialData {
+    func strainDial(_ value: Double?) -> PulseDialData {
         PulseDialData(score: .strain, value: value, state: value == nil ? .noData : .scored)
     }
 
     /// The recommended range for the day from the recovery the dial shows, through CoupledView's
     /// approved recovery-to-strain bands. Judged on the whole percent the dial prints.
-    private func strainTarget(_ display: LiquidTodayView.ChargeDisplay, strain: Double?,
+    func strainTarget(_ display: LiquidTodayView.ChargeDisplay, strain: Double?,
                               isToday: Bool) -> PulseStrainTarget? {
         guard let pct = display.pct else { return nil }
         let shown = Double(PulseDisplay.displayedPercent(pct))
@@ -336,7 +359,7 @@ actor PulseSnapshotBuilder {
                                  current: strain, fromCarriedRecovery: carried, isToday: isToday)
     }
 
-    private func workoutItems(_ rows: [WorkoutRow], window: (from: Int, to: Int)) -> [PulseWorkoutItem] {
+    func workoutItems(_ rows: [WorkoutRow], window: (from: Int, to: Int)) -> [PulseWorkoutItem] {
         rows.filter { $0.startTs >= window.from && $0.startTs < window.to }
             .sorted { $0.startTs < $1.startTs }
             .map { w in
@@ -354,7 +377,7 @@ actor PulseSnapshotBuilder {
     }
 
     /// The group of sleep blocks that ended on `dayKey`, if any.
-    private func group(endingOn dayKey: String, in groups: [[CachedSleepSession]]) -> [CachedSleepSession]? {
+    func group(endingOn dayKey: String, in groups: [[CachedSleepSession]]) -> [CachedSleepSession]? {
         groups.first { g in
             guard let end = g.first?.endTs else { return false }
             return Repository.localDayKey(Date(timeIntervalSince1970: TimeInterval(end))) == dayKey
@@ -362,7 +385,7 @@ actor PulseSnapshotBuilder {
     }
 
     /// Blocks outside the main-night group, up to the Sleep tab's nap ceiling.
-    private func naps(in group: [CachedSleepSession], night: Night?) -> [PulseNap] {
+    func naps(in group: [CachedSleepSession], night: Night?) -> [PulseNap] {
         let main = night?.mainGroupStarts ?? []
         return group.filter { !main.contains($0.startTs) }.compactMap { b -> PulseNap? in
             let spanMin = Double(b.endTs - b.effectiveStartTs) / 60
@@ -437,7 +460,7 @@ actor PulseSnapshotBuilder {
     /// The last seven LOCAL calendar days (as the classic journal strip keys them) and which have a
     /// native journal entry. Not cached: logging an entry does not bump `refreshSeq`, and the read is
     /// one small indexed query.
-    private func journalStrip(now: Date) async -> PulseJournalStrip {
+    func journalStrip(now: Date) async -> PulseJournalStrip {
         let cal = Calendar.current
         let days = (0..<7).reversed().map { n -> (key: String, offset: Int) in
             (Repository.localDayKey(cal.date(byAdding: .day, value: -n, to: now) ?? now), n)
@@ -450,7 +473,7 @@ actor PulseSnapshotBuilder {
 
     /// Tonight's need and bedtime from the unified sleep-need model (baseline + strain + debt − naps) —
     /// the same breakdown the scoring pass stores and the wind-down reminder counts back from.
-    private func tonightPlan(_ r: PulseRequest, groups: [[CachedSleepSession]], habitual: Int?) async -> PulseTonight? {
+    func tonightPlan(_ r: PulseRequest, groups: [[CachedSleepSession]], habitual: Int?) async -> PulseTonight? {
         let breakdown = await repo.sleepNeedTonight(now: r.now)
         let need = breakdown.totalMin
         guard need > 0 else { return nil }
@@ -636,7 +659,7 @@ actor PulseSnapshotBuilder {
     /// pedometer, then a strap counter, then the strap estimate — see `StepsResolver`), so this tile, the
     /// Steps screen, its card and the classic Today can never show different counts. `history` covers the
     /// window the tile's 30-day comparison and 14-day spark read; taps open the Steps screen on that day.
-    private func stepsResolution(_ r: PulseRequest)
+    func stepsResolution(_ r: PulseRequest)
         async -> (value: Double?, history: [(day: String, value: Double)], route: TabRoute) {
         let key = r.day.key
         let from = PulseDisplay.dayKey(key, offsetBy: -Self.stepsHistoryDays) ?? key
@@ -677,7 +700,7 @@ actor PulseSnapshotBuilder {
 
     // MARK: Stress
 
-    private func stressSummary(_ r: PulseRequest) async -> PulseStressSummary? {
+    func stressSummary(_ r: PulseRequest) async -> PulseStressSummary? {
         let stored = await stressStoredSeries()
         if r.day.isToday {
             let score: Double?

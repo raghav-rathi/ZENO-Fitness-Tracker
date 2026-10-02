@@ -284,6 +284,26 @@ final class PulseModel {
         if sleep != snapshot { sleep = snapshot }
     }
 
+    // MARK: Builds for extension snapshots
+
+    /// Run a snapshot build a screen group defines in its own `PulseSnapshotBuilder` extension, for
+    /// Home's selected day (or `dayOffset`), off the main actor. Returns nil when the build was
+    /// superseded (a newer refresh or another day landed while it ran), so keep what is on screen:
+    ///
+    ///     .task(id: model.detailKey) {
+    ///         if let s = await model.build({ builder, request in await builder.weeklyDigest(request) }) {
+    ///             snapshot = s
+    ///         }
+    ///     }
+    func build<S>(dayOffset: Int? = nil,
+                  _ work: (PulseSnapshotBuilder, PulseRequest) async -> S?) async -> S? {
+        let offset = dayOffset ?? self.dayOffset
+        guard let builder, let req = request(dayOffset: offset) else { return nil }
+        let result = await work(builder, req)
+        guard !Task.isCancelled, req.seq == seq, offset == (dayOffset ?? self.dayOffset) else { return nil }
+        return result
+    }
+
     // MARK: Refresh
 
     /// Pull-to-refresh: ask the strap for its history when it can answer (the same gate the Liquid
