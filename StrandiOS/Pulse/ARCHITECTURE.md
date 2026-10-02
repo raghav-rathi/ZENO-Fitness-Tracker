@@ -401,3 +401,27 @@ Tools/zeno/shoot.sh 3F6D8EB8-27A5-4842-BAA1-AB85CCDF7242 /tmp/shots \
   "build/DD/Build/Products/Debug-iphonesimulator/NOOP Staging.app" --fresh \
   home "home --pulse-scroll stats" health trends more sleep-dive "home -noop.coachEnabled NO"
 ```
+
+## 9. Deviations from the spec, and housekeeping
+
+Measured on the reference captures, where they disagree with the spec's numbers:
+
+- **Tab capsule height above the screen edge.** The spec says ≈21 pt; reviews/02 (393 × 852 @3x) shows 29 pt
+  and a 2026 Pro Max capture 28 pt, both 5–6 pt below the bottom safe-area edge. Pulse follows the captures
+  (`TabBarMetrics.bottomOffset(safeAreaBottom:)`).
+- **Coach button fill.** The spec's `#171728 → #121A25` reads darker than every capture; Pulse uses the
+  sampled `#2C2B3C → #20252F` with an indigo rim (`PulseTheme.Coach.buttonFill`).
+- **Dial label gap.** The spec's 12–13 pt is to the label's caps; the text frame starts ≈2.5 pt above them,
+  so `Dial.labelGap` is 10.
+
+Housekeeping the next wave inherits:
+
+- Pulse's UI strings use `String(localized:)` but are not in `Strand/Resources/Localizable.xcstrings` yet
+  (true of the first Pulse screens too), so `python3 Tools/i18n_audit.py --ci <base>` lists them. Seed the
+  catalog once the rebuilt screens settle (`Tools/seed-string-catalog.py`, which reads the `.stringsdata`
+  a build emits).
+- Classic pieces still inside the current screens say Charge / Effort / Rest (the Recovery dive's
+  "What shaped it" driver rows, the Coach sheet's subtitle, classic screens behind "Use it today" links).
+  The spec's one-vocabulary rule (§0.3) applies to the rebuilt screens.
+- The hypnogram and its stage rows still use the Oura stage palette from StrandDesign; the sleep group
+  should draw stages in `PulseTheme.Stage` (both together, so the legend never disagrees with the chart).
