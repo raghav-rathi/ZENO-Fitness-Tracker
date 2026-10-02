@@ -5,7 +5,7 @@ import StrandAnalytics
 
 /// Sleep Planner (WHOOP_UI_SPEC §3.11), presented as a modal sheet ("✕").
 ///
-/// A two-tone page: the upper zone (white 6% over the gradient) holds the bar ("✕ · SLEEP PLANNER ? · My
+/// A two-tone page: the upper zone (a lighter slate over the gradient) holds the bar ("✕ · SLEEP PLANNER ? · My
 /// Schedule"), ZENO's mark, the headline and "TOMORROW I WANT TO"; its edge, a 1 pt rule, runs behind the
 /// goal capsule. Below: the suggested time to bed and the wake time over the TIME IN BED bar, the OPTIMAL
 /// window bracketed under it, and the alarm panel pinned at the bottom.
@@ -117,7 +117,6 @@ struct PulseSleepPlannerView: View {
                 PulseTheme.Planner.upperZone
                 PulseTheme.divider.frame(height: 1)
             }
-            .padding(.bottom, PulseSleepGoalCapsule.height / 2)
             .ignoresSafeArea(edges: .top)
         }
         .overlay(alignment: .bottom) {
