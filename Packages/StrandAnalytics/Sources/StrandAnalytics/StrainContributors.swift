@@ -166,8 +166,9 @@ public enum StrainContributors {
     /// and rounded, because the two disagree at a half. With a locale, Foundation rounds the value's
     /// shortest decimal form half-to-even: 17.95 prints "18.0" and 14.05 prints "14.0", where a C `printf`
     /// (no locale) gives "17.9" and "14.1" and a half-away rounding gives "18.0" and "14.1". Any of the
-    /// other two would let a band or a standing disagree with the number on the dial.
-    static func printedOneDecimal(_ value: Double) -> Double {
+    /// other two would let a band or a standing disagree with the number on the dial. Use it for any
+    /// arithmetic on printed figures ("2.3 below the range"), so the difference never reads "0.0".
+    public static func printedOneDecimal(_ value: Double) -> Double {
         guard value.isFinite else { return 0 }
         return Double(String(format: "%.1f", locale: Locale(identifier: "en_US_POSIX"), value)) ?? value
     }
