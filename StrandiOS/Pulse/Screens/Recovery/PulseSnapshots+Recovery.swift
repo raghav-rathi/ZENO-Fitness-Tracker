@@ -14,6 +14,8 @@ struct RecoveryDiveSnapshot: Equatable {
     let dial: PulseDialData
     /// Whose night a carried score is ("Last night · Sep 30"), shown under the bar.
     let carriedCaption: String?
+    /// The day whose row the dial and the callout read (its own, or the carried night's).
+    let sourceDayKey: String?
     /// Heart rate variability, resting heart rate, respiratory rate and sleep performance, each against
     /// its 30-day average.
     let contributors: [PulseDiveContributor]

@@ -63,9 +63,11 @@ private struct PulseRecoveryDiveContent: View {
         return content
     }
 
-    /// "Today", or the day itself on a past day ("Wed, Aug 19 vs. last 30 days").
+    /// The night the callout's values are from: "Today", the day itself on a past day ("Wed, Aug 19 vs.
+    /// last 30 days"), or a carried night's own date, so the legend never calls an earlier night today.
     private var legendDay: String {
-        s.day.isToday ? String(localized: "Today") : PulseFormat.navDayTitle(offset: s.day.offset, date: s.day.date)
+        if s.carriedCaption != nil, let key = s.sourceDayKey { return PulseFormat.navDayTitle(dayKey: key) }
+        return s.day.isToday ? String(localized: "Today") : PulseFormat.navDayTitle(offset: s.day.offset, date: s.day.date)
     }
 
     var body: some View {
@@ -148,13 +150,41 @@ private struct PulseRecoveryBehaviorCard: View {
     var body: some View {
         PulseLink(PulseRoute.behaviorInsights.forExistingEntryPoint) {
             if behaviors.isEmpty {
-                PulseSubtitleRowCard(symbol: "lightbulb", title: String(localized: "Behavior Insights"),
-                                     subtitle: String(localized: "See how your behaviors impact your recovery."))
+                compact
             } else {
                 expanded
             }
         }
         .buttonStyle(PulsePressStyle())
+    }
+
+    /// The compact row (deep-dives-2026/17c): 64 pt, the bulb 19 pt in from the edge, the title's caps
+    /// centred 22 pt down with the 12 pt subtitle under it on one line, "›" at the right.
+    private var compact: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "lightbulb.max")
+                .font(.system(size: 18, weight: .light))
+                .foregroundStyle(PulseTheme.subtitleRowIcon)
+                .frame(width: 19)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 4) {
+                PulseWordWrapText(String(localized: "Behavior Insights"), style: .cardTitle)
+                    .foregroundStyle(PulseTheme.textPrimary)
+                Text(String(localized: "See how your behaviors impact your recovery."))
+                    .pulseText(.legend)
+                    .foregroundStyle(PulseTheme.subtitleRowText)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 8)
+            PulseChevron(color: PulseTheme.textSecondary, size: 14)
+        }
+        .padding(.leading, 18)
+        .padding(.trailing, 20)
+        .padding(.vertical, 12)
+        .frame(maxWidth: .infinity, minHeight: 64, alignment: .leading)
+        .pulseCardBackground(.solid(PulseTheme.subtitleRowCard))
+        .contentShape(Rectangle())
+        .accessibilityElement(children: .combine)
     }
 
     /// Measured on deep-dives-2026/17b (the same 402 pt screen): the title's caps 8 pt tall and centred

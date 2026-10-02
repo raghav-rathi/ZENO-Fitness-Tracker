@@ -220,7 +220,7 @@ extension PulseSnapshotBuilder {
         let band: String
         switch StrainContributors.band(strain: strain) {
         case .light:
-            band = String(localized: "Strain between 0 and 9.9 is considered light, a low cardiovascular load that leaves room for more.")
+            band = String(localized: "Strain between 0 and 9.9 is considered light, meaning your cardiovascular load has been minimal.")
         case .moderate:
             band = String(localized: "Strain between 10 and 13.9 is considered moderate. Your cardiovascular load is significant but not strenuous.")
         case .strenuous:
