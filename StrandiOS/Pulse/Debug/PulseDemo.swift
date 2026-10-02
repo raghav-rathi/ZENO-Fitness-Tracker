@@ -77,6 +77,7 @@ enum PulseDemo {
 ///   `--pulse-range 7|30|90`            the Recovery history's range
 ///   `--pulse-push recovery|strain|sleep`  push a deep dive onto Home
 ///   `--pulse-route <name>`             open any route (names: `PulseRoute.debugCatalog`)
+///   `--pulse-gallery`                  present the component gallery
 ///   `--pulse-sheet actions|coach`      present the ＋ menu or the Coach sheet
 ///   `--pulse-scroll <anchor>`          scroll to a section id ("myday", "stats", "stress", "bottom", …)
 enum PulseDebugLaunch {
@@ -124,6 +125,9 @@ enum PulseDebugLaunch {
     static var route: PulseRoute? {
         value("--pulse-route").flatMap(PulseRoute.debugNamed)
     }
+
+    /// `--pulse-gallery`: present the component gallery (`PulseComponentGallery`).
+    static var showsGallery: Bool { CommandLine.arguments.contains("--pulse-gallery") }
 
     /// The section id to scroll to, prefixed as the views tag them.
     static var scrollAnchor: String? { value("--pulse-scroll").map { "pulse.\($0)" } }

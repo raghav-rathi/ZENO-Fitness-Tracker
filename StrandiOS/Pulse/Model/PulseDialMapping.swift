@@ -17,7 +17,7 @@ extension PulseDialData {
         case .calibrating:
             // §2.9: "--%" with CALIBRATING under the label; the nights count lives in Looking Ahead.
             return .percent(label: name, percent: nil, color: PulseTheme.textTertiary,
-                            caption: String(localized: "Calibrating"))
+                            caption: String(localized: "Calibrating").uppercased())
         case .noData:
             return score == .strain
                 ? .strain(label: name, value: nil, optimalRange: nil, target: nil)

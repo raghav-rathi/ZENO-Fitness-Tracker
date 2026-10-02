@@ -304,7 +304,8 @@ struct PulseLineChart: View {
                         }
                 }
             }
-            .chartXScale(domain: data.map(\.id))
+            // With an average, the first column moves right to leave the "AVG." pill its own room.
+            .chartXScale(domain: data.map(\.id), range: .plotDimension(startPadding: average == nil ? 0 : 30))
             .chartYScale(domain: domain)
             .chartYAxis {
                 AxisMarks(position: .leading, values: PulseChartAxis.gridValues(domain, count: gridlineCount)) { _ in

@@ -63,6 +63,10 @@ struct PulseRootView: View {
     @State private var coachConfigured = false
     /// The bottom safe-area inset, measured, so the floating chrome sits right on every device.
     @State private var bottomSafeArea: CGFloat = 34
+    #if DEBUG
+    /// DEBUG `--pulse-gallery`.
+    @State private var showGallery = false
+    #endif
 
     private var coachAvailability: PulseCoachAvailability {
         guard coachEnabled else { return .off }
@@ -136,6 +140,10 @@ struct PulseRootView: View {
             if bottomSafeArea != inset { bottomSafeArea = inset }
         }
         .sensoryFeedback(.selection, trigger: selectedTab)
+        #if DEBUG
+        .background(
+            Color.clear.fullScreenCover(isPresented: $showGallery) { PulseComponentGallery() })
+        #endif
         .environment(\.pulseChrome, chromeMetrics)
         .environment(\.pulseCoach, coachContext)
         .environment(\.pulseNavigator, navigator)
@@ -342,6 +350,7 @@ struct PulseRootView: View {
             selectedTab = tab
         }
         if let route = PulseDebugLaunch.push { homePath.append(route) }
+        if PulseDebugLaunch.showsGallery { showGallery = true }
         switch PulseDebugLaunch.sheet {
         case "actions": sheet = .actionMenu
         case "coach": openCoach(seed: nil)
