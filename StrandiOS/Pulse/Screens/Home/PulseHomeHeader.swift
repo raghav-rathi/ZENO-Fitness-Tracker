@@ -18,7 +18,7 @@ struct PulseHomeHeader: View {
             HStack(spacing: 0) {
                 ZStack(alignment: .leading) {
                     if let streak = model.home?.streak, model.home?.day.isToday == true, streak > 0 {
-                        Button { navigator.open(PulseRoute.dayStreak.forExistingEntryPoint) } label: {
+                        Button { openKeepingClassicModal(PulseRoute.dayStreak.forExistingEntryPoint) } label: {
                             PulseStreakPill(days: streak)
                                 .contentShape(Rectangle())
                         }
@@ -27,10 +27,11 @@ struct PulseHomeHeader: View {
                         .accessibilityHint(String(localized: "Opens your day streak"))
                         .transition(.opacity)
                     }
-                    PulseAvatarButton { navigator.open(PulseRoute.profile.forExistingEntryPoint) }
+                    PulseAvatarButton { openKeepingClassicModal(PulseRoute.profile.forExistingEntryPoint) }
                 }
                 Spacer(minLength: 0)
-                PulseStrapChip { navigator.open(PulseRoute.deviceSettings.forExistingEntryPoint) }
+                // Device Settings is a full-screen modal (§1.6); its classic stand-in opens as a sheet.
+                PulseStrapChip { navigator.present(PulseRoute.deviceSettings.forExistingEntryPoint) }
                     .padding(.trailing, PulseTheme.Header.strapTrailing - PulseTheme.Layout.pageMargin)
             }
             PulseDayPager(title: PulseFormat.navDayTitle(offset: model.dayOffset, date: model.selectedLogicalDate),
@@ -41,10 +42,16 @@ struct PulseHomeHeader: View {
                           onTitleTap: { showCalendar = true })
         }
         .frame(height: PulseTheme.Header.homeRow)
-        .animation(PulseMotion.chrome, value: model.home?.day.isToday)
+        .pulseAnimation(PulseMotion.chrome, value: model.home?.day.isToday)
         .sheet(isPresented: $showCalendar) {
             PulseCalendarSheet()
         }
+    }
+
+    /// Opens a rebuilt Pulse screen the way the spec presents it (Profile and Day Streak push), and its
+    /// classic stand-in modally with "Done", as the header always opened it.
+    private func openKeepingClassicModal(_ route: PulseRoute) {
+        if route.isClassic { navigator.present(route) } else { navigator.open(route) }
     }
 }
 
@@ -135,6 +142,8 @@ private struct PulseHomeStatusBannerContent: View, Equatable {
             if let kind {
                 PulseStatusBanner(kind, onDismiss: dismissAction(kind))
                     .padding(.top, PulseHomeLayout.bannerTop)
+                    // The wordmark under a banner sits closer than under the header row (27 vs 31 pt).
+                    .padding(.bottom, PulseHomeLayout.wordmarkAfterBanner - PulseTheme.Header.wordmarkTop)
                     .transition(.opacity)
             }
         }
@@ -176,12 +185,12 @@ enum PulseHomeBannerDebug {
     }
 }
 
-/// Home's own spacing around the header, measured on the 2026 captures (help-center/91, reviews/r41).
+/// Home's own spacing around a status banner, measured on help-center/91 and health-more-2026/23.
 enum PulseHomeLayout {
-    /// From the header row to a status banner.
-    static let bannerTop: CGFloat = 16
-    /// From a status banner to the wordmark (the wordmark's own gap shrinks by the banner's).
-    static let wordmarkAfterBanner: CGFloat = 24
+    /// From the header row to the banner.
+    static let bannerTop: CGFloat = 20
+    /// From the banner to the wordmark's frame.
+    static let wordmarkAfterBanner: CGFloat = 27
 }
 
 // MARK: - Calendar

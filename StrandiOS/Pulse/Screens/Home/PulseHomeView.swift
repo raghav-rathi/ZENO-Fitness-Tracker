@@ -11,8 +11,8 @@ import StrandAnalytics
 ///
 /// Three variants (§2.9): today; a past day (ACTIVITIES with a single ADD, no banner, coaching, tiles, pill
 /// or Tonight's Sleep; Journal, Plan and Dashboard stay); and the new member before the first Recovery
-/// ("Get Started" with its cards and the Ask well in My Day's place, Looking Ahead, a personalizing
-/// dashboard).
+/// (straight from the dials to "Get Started" with its cards and the Ask well in My Day's place, then
+/// Tonight's Sleep, Looking Ahead and a personalizing dashboard).
 ///
 /// Owned by group "home". The dials, activities and vitals render `model.home`, built off the main actor;
 /// Home's own facts (dashboard rows, coaching inputs, the outlook) come from `homeExtras`, built beside it
@@ -164,11 +164,15 @@ struct PulseHomeSections: View {
     @Environment(\.pulseCoach) private var coach
 
     private var isToday: Bool { home.day.isToday }
-    private var isNewMember: Bool { extras?.start.isNewMember ?? false }
+    /// Before the first Recovery: read off the HomeSnapshot itself, so the variant never flips once the
+    /// extras land.
+    private var isNewMember: Bool { isToday && home.scoredDays == 0 }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            if isToday {
+            // The new member's Home goes straight from the dials to Get Started (onboarding/31a,
+            // completeness-critic/24): no coaching card and no monitor tiles yet.
+            if isToday && !isNewMember {
                 if let base = extras?.coaching {
                     // The stack, when a card is due, then the tiles 22 pt under its peek.
                     PulseCoachingStackHost(base: base, home: home)
@@ -184,8 +188,8 @@ struct PulseHomeSections: View {
                 .padding(.top, PulseTheme.Layout.sectionGap)
                 .id("pulse.myday")
             VStack(spacing: PulseTheme.Layout.stackGap) {
-                if isNewMember, let start = extras?.start {
-                    newMemberDay(start)
+                if isNewMember {
+                    newMemberDay(extras?.start)
                 } else {
                     myDay
                 }
@@ -245,11 +249,13 @@ struct PulseHomeSections: View {
         }
     }
 
-    /// The new member's day: the Get Started cards, the Ask well while Coach can answer, Tonight's Sleep,
-    /// and Today's Activities once something is logged.
+    /// The new member's day: the Get Started cards (once their done-signals are read), the Ask well while
+    /// Coach can answer, Tonight's Sleep, and Today's Activities once something is logged.
     @ViewBuilder
-    private func newMemberDay(_ start: PulseGetStartedFacts) -> some View {
-        PulseGetStartedCards(facts: start)
+    private func newMemberDay(_ start: PulseGetStartedFacts?) -> some View {
+        if let start {
+            PulseGetStartedCards(facts: start)
+        }
         if coach.availability == .ready {
             PulseAskWell { coach.open(nil) }
         }

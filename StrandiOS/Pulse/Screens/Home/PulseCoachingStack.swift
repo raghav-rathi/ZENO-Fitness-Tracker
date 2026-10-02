@@ -217,7 +217,7 @@ private struct PulseCoachingStackContent: View, Equatable {
                 .padding(.top, cards.isEmpty ? PulseHomeSpacing.tilesTop : PulseHomeSpacing.tilesAfterStack)
                 .id("pulse.monitors")
         }
-        .animation(PulseMotion.chrome, value: cards.map(\.id))
+        .pulseAnimation(PulseMotion.chrome, value: cards.map(\.id))
     }
 
     private var models: [PulseCoachingCardModel] {

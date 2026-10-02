@@ -73,19 +73,21 @@ struct PulseCustomizeDashboardView: View {
     // MARK: Rows
 
     private func currentRow(_ item: PulseDashboardItem, canRemove: Bool) -> some View {
-        HStack(spacing: PulseTheme.Space.s) {
+        HStack(spacing: PulseTheme.Space.xs) {
+            // The "–" [Z] sits in the card's leading inset; its 44 pt hit area overflows the glyph.
             Button {
                 withAnimation(animation) { draft?.hide(item) }
             } label: {
                 Image(systemName: "minus.circle.fill")
                     .font(.system(size: 20, weight: .regular))
                     .foregroundStyle(canRemove ? PulseTheme.textSecondary : PulseTheme.textDisabled)
-                    .frame(width: PulseTheme.Layout.minTapTarget, height: PulseTheme.Layout.minTapTarget)
+                    .frame(width: 24, height: PulseTheme.Layout.minTapTarget)
+                    .padding(.horizontal, PulseTheme.Space.xs)
                     .contentShape(Rectangle())
+                    .padding(.horizontal, -PulseTheme.Space.xs)
             }
             .buttonStyle(PulsePressStyle())
             .disabled(!canRemove)
-            .padding(.leading, -PulseTheme.Space.s)
             .accessibilityLabel(String(localized: "Remove \(item.title)"))
             rowLabel(item)
             if item.isChart {
@@ -124,7 +126,7 @@ struct PulseCustomizeDashboardView: View {
     }
 
     private func rowLabel(_ item: PulseDashboardItem) -> some View {
-        HStack(spacing: PulseTheme.Space.s) {
+        HStack(spacing: PulseTheme.Space.xs + 2) {
             Image(systemName: item.symbol)
                 .font(.system(size: 17, weight: .light))
                 .foregroundStyle(PulseTheme.textSecondary)
@@ -169,11 +171,12 @@ struct PulseCustomizeDashboardView: View {
     }
 }
 
-/// A Customize row: its own 57 pt white-10% card, 12 pt apart, inside the page margins.
+/// A Customize row: its own 57 pt white-10% card, 12 pt apart, inside the page margins; the icon 14 pt in
+/// and the name at ≈42 pt (reviews/04), the "–" ahead of them on current items.
 private struct PulseCustomizeRowStyle: ViewModifier {
     func body(content: Content) -> some View {
         content
-            .padding(.leading, PulseTheme.Layout.cardPadding)
+            .padding(.leading, PulseTheme.Space.s + 2)
             .padding(.trailing, PulseTheme.Space.xs)
             .frame(minHeight: 57)
             .listRowInsets(EdgeInsets(top: PulseTheme.Space.xs - 2, leading: PulseTheme.Layout.pageMargin,
