@@ -231,6 +231,8 @@ targets:
         excludes:
           - "Resources/Info.plist"
           - "Resources/NOOP.entitlements"
+          # Developer docs that live beside the code (StrandiOS/Pulse/ARCHITECTURE.md) are not app resources.
+          - "**/*.md"
       - path: StrandiOSShared
     # Same tracked wrapper as the macOS target (Strand/Oura/ is shared, not per-platform).
     configFiles:
