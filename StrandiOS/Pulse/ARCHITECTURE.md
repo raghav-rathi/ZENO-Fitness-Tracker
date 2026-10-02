@@ -430,7 +430,7 @@ All take plain values, never snapshots. Map a snapshot to them in your group (se
 | `PulseLineChart` | `(data:color:typicalRange:average:yDomain:gridlineCount:showsYAxisLabels:highlightID:showsArea:showsValueLabels:height:emptyMessage:)` |
 | `PulseStackedBarChart` | `(columns: [Column(id:label:sublabel:segments:totalLabel:)], yDomain:, gridlineCount:, highlightID:, barWidth:, height:)` |
 | `PulseHRAreaChart` | `(points: [PulseTimeValue], window:, color:, startLabel:, endLabel:, startSymbol:, endSymbol:, yValues:, height:)`: sleep or activity HR |
-| `PulseStressChart` | `(points:periods: [PulseChartPeriod], now:, currentLevel:, xLabels:, height:)`: value-coloured 24 h stress |
+| `PulseStressChart` | `(points:periods: [PulseChartPeriod], now:, currentLevel:, xLabels:, height:)`: value-coloured 24 h stress; a past day (`now: nil`) with no readings draws only "No stress curve for this day" |
 | `PulseStrainRecoveryChart` | `(days: [Day(id:label:sublabel:strain:recovery:)], highlightID:, height:)`: the dual-axis week |
 | `PulseChartAxis` | `gridValues(_:count:)`, `zeroBased(_:)`, `dynamic(_:)` |
 | `PulseHatchedTrack` | `(color:spacing:cornerRadius:)` |

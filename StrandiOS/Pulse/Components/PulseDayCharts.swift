@@ -156,6 +156,10 @@ struct PulseHRAreaChart: View {
 /// periods as 12% bands with a 3 pt cap on the top gridline and a glyph above, a dashed white-70% now-line
 /// ending in a 6 pt dot in the current level's colour, y labels 0.0 / 1.0 / 2.0 / 3.0 on the left and the
 /// rolling x labels under it (the last one white).
+///
+/// With no readings, today keeps its periods and says the day fills in; a past day (`now` nil) has nothing
+/// to fill in, so it draws only the empty grid and "No stress curve for this day", without periods or x
+/// labels (a lone workout would otherwise stretch across the whole chart as if it were the day).
 struct PulseStressChart: View {
     let points: [PulseTimeValue]
     var periods: [PulseChartPeriod] = []
@@ -167,8 +171,15 @@ struct PulseStressChart: View {
     var xLabels: [String] = []
     var height: CGFloat = 150
 
+    private var hasReadings: Bool { points.contains { $0.value != nil } }
+
+    /// A past day without a single reading: no curve will ever arrive, so periods and times are left out.
+    private var isEmptyPastDay: Bool { now == nil && !hasReadings }
+
+    private var shownPeriods: [PulseChartPeriod] { isEmptyPastDay ? [] : periods }
+
     private var range: ClosedRange<Date>? {
-        let dates = points.map(\.date) + periods.flatMap { [$0.start, $0.end] } + (now.map { [$0] } ?? [])
+        let dates = points.map(\.date) + shownPeriods.flatMap { [$0.start, $0.end] } + (now.map { [$0] } ?? [])
         guard let lo = dates.min(), let hi = dates.max(), hi > lo else { return nil }
         return lo...hi
     }
@@ -176,7 +187,7 @@ struct PulseStressChart: View {
     var body: some View {
         VStack(spacing: 6) {
             Chart {
-                ForEach(periods) { period in
+                ForEach(shownPeriods) { period in
                     RectangleMark(xStart: .value("Start", period.start), xEnd: .value("End", period.end),
                                   yStart: .value("Low", 0), yEnd: .value("High", 3))
                         .foregroundStyle(period.kind.color.opacity(0.12))
@@ -233,15 +244,16 @@ struct PulseStressChart: View {
             // Room above the plot for the period glyphs.
             .padding(.top, 16)
             .overlay {
-                if points.allSatisfy({ $0.value == nil }) {
-                    Text(String(localized: "The day's stress fills in as your strap records heart rate."))
+                if !hasReadings {
+                    Text(isEmptyPastDay ? String(localized: "No stress curve for this day.")
+                         : String(localized: "The day's stress fills in as your strap records heart rate."))
                         .pulseText(.body)
                         .foregroundStyle(PulseTheme.textSecondary)
                         .multilineTextAlignment(.center)
                         .padding(.horizontal, 24)
                 }
             }
-            if !xLabels.isEmpty {
+            if !xLabels.isEmpty && !isEmptyPastDay {
                 HStack {
                     ForEach(Array(xLabels.enumerated()), id: \.offset) { index, label in
                         Text(label)
