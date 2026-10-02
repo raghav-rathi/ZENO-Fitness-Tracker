@@ -120,6 +120,10 @@ enum PulseTheme {
     static let pagerPill = Color.white.opacity(0.18)
     /// The "✕" square the action-menu "+" morphs into.
     static let menuCloseSquare = Color(hex: "#2E3236")
+    /// The Weekly Trends highlight column behind the latest day.
+    static let chartHighlight = Color(hex: "#44484C")
+    /// "SYNCED TO 7:32AM" and its check in the DATA CAUGHT UP banner.
+    static let syncedTeal = Color(hex: "#00EC9C")
     /// The action popover, top and bottom of its vertical gradient, and the dim behind it.
     static let menuTop = Color(hex: "#464D56")
     static let menuBottom = Color(hex: "#32383D")
