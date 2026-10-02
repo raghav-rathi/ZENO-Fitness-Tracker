@@ -523,6 +523,20 @@ enum PulseFormat {
         return String(localized: "\(h)h \(m)m")
     }
 
+    /// "6:41" from minutes: the activity chip's duration.
+    static func hoursMinutes(_ minutes: Double) -> String {
+        let total = max(0, Int(minutes.rounded()))
+        return String(format: "%d:%02d", total / 60, total % 60)
+    }
+
+    /// A row's start time, prefixed with its weekday when it began on an earlier day than `end`
+    /// ("[Wed] 11:03 PM"). Real instants, device zone.
+    static func activityTime(_ start: Date, relativeTo end: Date) -> String {
+        guard !Calendar.current.isDate(start, inSameDayAs: end) else { return clock(start) }
+        let weekday = start.formatted(.dateTime.weekday(.abbreviated).locale(AppLanguage.activeLocale))
+        return "[\(weekday)] \(clock(start))"
+    }
+
     /// A clock time for a real instant, in the device zone, honouring the Clock format setting.
     static func clock(_ date: Date) -> String { AppClock.hourMinute(date) }
 
@@ -553,6 +567,19 @@ enum PulseFormat {
         f.timeZone = TimeZone(identifier: "UTC")
         dayFormatters[template] = f
         return f
+    }
+
+    /// A navigation-bar or pager title for a Home day: "Today", else "Wed, Jun 4" (the text style
+    /// uppercases it). `date` is a real instant on that logical day, so it is formatted in the device zone.
+    static func navDayTitle(offset: Int, date: Date) -> String {
+        guard offset > 0 else { return String(localized: "Today") }
+        return date.formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day()
+            .locale(AppLanguage.activeLocale))
+    }
+
+    /// The same title for a DAY KEY, formatted at UTC like every day key: "Wed, Sep 30".
+    static func navDayTitle(dayKey: String) -> String {
+        dayLabel(dayKey, template: "EEEMMMd")
     }
 
     /// "Today" / "Yesterday" / the weekday for a Home day. `date` is a real instant on that logical day

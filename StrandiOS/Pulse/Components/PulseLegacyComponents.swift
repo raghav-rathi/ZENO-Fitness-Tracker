@@ -3,112 +3,11 @@ import SwiftUI
 import StrandDesign
 import StrandAnalytics
 
-// MARK: - Dial
-
-/// A score dial: a thin full-circle track, a thick rounded progress arc, the value centred, the score
-/// name below.
-///
-/// The arc fills once when the dial appears and eases to a new value when the snapshot changes; both
-/// are one-shot transitions, never a loop, and both are skipped under Reduce Motion. Nothing here draws
-/// per frame at rest (the classic Today's animated canvases cost ~18% of a core idle).
-struct PulseDial: View {
-    let data: PulseDialData
-    var diameter: CGFloat = 104
-    var lineWidth: CGFloat = 9
-    /// Show the score name and state caption under the dial.
-    var showsLabel = true
-    /// Keep room for a two-line caption even when this dial has none, so a row of dials whose
-    /// neighbour carries a caption stays aligned. Off when no dial in the row has one.
-    var reservesCaption = true
-
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @ScaledMetric(relativeTo: .largeTitle) private var numeralBase: CGFloat = 34
-    @State private var shown: Double = 0
-
-    private var numeralSize: CGFloat {
-        // Follow Dynamic Type, but never outgrow the ring.
-        min(diameter * 0.40, max(diameter * 0.30, numeralBase * diameter / 104))
-    }
-
-    var body: some View {
-        VStack(spacing: 10) {
-            ZStack {
-                Circle()
-                    .stroke(PulseTheme.track, lineWidth: 3)
-                Circle()
-                    .trim(from: 0, to: shown)
-                    .stroke(data.color, style: StrokeStyle(lineWidth: lineWidth, lineCap: .round))
-                    .rotationEffect(.degrees(-90))
-                centre
-            }
-            .padding(lineWidth / 2)
-            .frame(width: diameter, height: diameter)
-
-            if showsLabel {
-                VStack(spacing: 3) {
-                    PulseLabel(data.score.displayName, color: PulseTheme.textSecondary)
-                    if caption != nil || reservesCaption {
-                        Text(caption ?? " ")
-                            .font(.caption2)
-                            .foregroundStyle(PulseTheme.textTertiary)
-                            .lineLimit(2)
-                            .multilineTextAlignment(.center)
-                            .minimumScaleFactor(0.85)
-                            .frame(minHeight: 28, alignment: .top)
-                            .opacity(caption == nil ? 0 : 1)
-                    }
-                }
-            }
-        }
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(data.accessibilityLabel)
-        .onAppear { fill(to: data.progress, duration: 0.9) }
-        .onChange(of: data.progress) { _, new in fill(to: new, duration: 0.35) }
-    }
-
-    @ViewBuilder
-    private var centre: some View {
-        switch data.state {
-        case .calibrating(let nights, let of):
-            VStack(spacing: 0) {
-                Text("\(nights)/\(of)")
-                    .font(PulseTheme.numeral(numeralSize * 0.72))
-                    .foregroundStyle(PulseTheme.textPrimary)
-                Text(String(localized: "nights"))
-                    .font(.caption2)
-                    .foregroundStyle(PulseTheme.textTertiary)
-            }
-        case .noData:
-            Text("–")
-                .font(PulseTheme.numeral(numeralSize))
-                .foregroundStyle(PulseTheme.textTertiary)
-        case .scored, .carried:
-            HStack(alignment: .firstTextBaseline, spacing: 1) {
-                Text(data.valueText)
-                    .font(PulseTheme.numeral(numeralSize))
-                    .foregroundStyle(PulseTheme.textPrimary)
-                if let unit = data.unitText {
-                    Text(unit)
-                        .font(PulseTheme.numeral(numeralSize * 0.45, weight: .semibold))
-                        .foregroundStyle(PulseTheme.textSecondary)
-                }
-            }
-            .lineLimit(1)
-            .minimumScaleFactor(0.6)
-            .padding(.horizontal, lineWidth + 4)
-        }
-    }
-
-    private var caption: String? { data.caption }
-
-    private func fill(to target: Double, duration: Double) {
-        guard !reduceMotion else {
-            shown = target
-            return
-        }
-        withAnimation(.easeOut(duration: duration)) { shown = target }
-    }
-}
+// MARK: - Legacy components
+//
+// Pieces the first Pulse screens are built from, kept so those screens keep working while the next wave
+// rebuilds them. New screens use the catalogue in this folder (PulseDials, PulseRows, PulseCallout,
+// PulseCharts, …) instead; once no screen uses one of these, delete it.
 
 // MARK: - Strain target
 
@@ -361,7 +260,8 @@ struct PulseRowDivider: View {
 
 // MARK: - Big button
 
-/// A full-width accent button (Breathe, Open full Sleep screen...).
+/// A full-width in-card button (Breathe, Open the full Sleep screen): the spec's nested button, white 10%
+/// on the card, radius 10, an icon and UPPERCASE 12 pt text at 85%. `prominent` is the white capsule.
 struct PulseActionButtonLabel: View {
     let title: String
     var symbol: String?
@@ -369,21 +269,20 @@ struct PulseActionButtonLabel: View {
 
     var body: some View {
         HStack(spacing: 8) {
-            if let symbol { Image(systemName: symbol).font(.subheadline.weight(.semibold)) }
-            Text(title).font(.subheadline.weight(.semibold))
+            if let symbol { Image(systemName: symbol).font(.system(size: 14, weight: .semibold)) }
+            Text(title).pulseText(.cardTitle)
         }
-        .foregroundStyle(prominent ? PulseTheme.onAccent : PulseTheme.accent)
+        .foregroundStyle(prominent ? Color.black : PulseTheme.textButton)
         .frame(maxWidth: .infinity)
-        .frame(minHeight: PulseTheme.minTapTarget)
-        .background(
-            Capsule(style: .continuous)
-                .fill(prominent ? PulseTheme.accent : PulseTheme.cardRaised)
-        )
-        .overlay(
-            Capsule(style: .continuous)
-                .strokeBorder(prominent ? Color.clear : PulseTheme.accent.opacity(0.35), lineWidth: 1)
-        )
-        .contentShape(Capsule())
+        .frame(minHeight: PulseTheme.Row.nestedButton)
+        .background {
+            if prominent {
+                Capsule(style: .circular).fill(Color.white)
+            } else {
+                RoundedRectangle(cornerRadius: PulseTheme.Radius.control, style: .circular).fill(PulseTheme.nested)
+            }
+        }
+        .contentShape(Rectangle())
     }
 }
 
@@ -446,152 +345,99 @@ extension View {
     }
 }
 
-// MARK: - Live leaves
-//
-// Each leaf below is the ONLY view that observes `LiveState` (64 published properties, several of them
-// ticking every second). The wrapper reads the few values it shows and hands them to an Equatable
-// content view, so a heart-rate tick re-renders one chip and nothing around it.
+// MARK: - Stress card (Home and Health)
 
-/// The strap chip: battery % and sync state; tap → Devices.
-struct PulseStrapChip: View {
-    @EnvironmentObject private var live: LiveState
-    @EnvironmentObject private var router: NavRouter
+struct PulseStressSection: View {
+    let stress: PulseStressSummary
+    let onBreathe: () -> Void
 
     var body: some View {
-        let display = LiquidTodayView.StrapBatteryDisplay.resolve(
-            activeIsWhoop: live.activeIsWhoop, connected: live.connected, batteryPct: live.batteryPct,
-            charging: live.charging, ringPct: live.ouraBatteryPct,
-            ringCharging: live.ouraWearState == .charging)
-        Button { router.openDevices() } label: {
-            PulseStrapChipContent(display: demoDisplay ?? display, syncing: live.backfilling)
-                .equatable()
-        }
-        .buttonStyle(PulsePressStyle())
-    }
+        VStack(alignment: .leading, spacing: 10) {
+            PulseSectionHeader(title: String(localized: "Stress"),
+                               trailing: stress.isToday ? String(localized: "Today") : nil)
+            PulseCard {
+                VStack(alignment: .leading, spacing: 14) {
+                    NavigationLink(value: TabRoute.stress) {
+                        HStack(alignment: .firstTextBaseline, spacing: 6) {
+                            Text(stress.scoreText)
+                                .font(PulseTheme.numeral(36))
+                                .foregroundStyle(PulseTheme.textPrimary)
+                            Text("/ 3")
+                                .font(PulseTheme.numeral(16, weight: .semibold))
+                                .foregroundStyle(PulseTheme.textTertiary)
+                            if let band = stress.bandTitle {
+                                PulseChip(text: band.capitalized, tint: PulseTheme.textSecondary)
+                                    .padding(.leading, 6)
+                            }
+                            Spacer(minLength: 0)
+                            PulseChevron()
+                        }
+                        .frame(minHeight: PulseTheme.minTapTarget)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(PulsePressStyle())
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel(String(localized: "Stress \(stress.scoreText) out of 3\(stress.bandTitle.map { ", \($0.lowercased())" } ?? "")"))
+                    .accessibilityHint(String(localized: "Opens Stress"))
 
-    /// DEBUG `--demo-sync` stands in for a connected strap so the chip can be screenshotted.
-    private var demoDisplay: LiquidTodayView.StrapBatteryDisplay? {
-        #if DEBUG
-        if DemoSyncHarness.active {
-            return .charge(pct: DemoSyncHarness.batteryPercent, charging: DemoSyncHarness.charging, isRing: false)
+                    if stress.hasCurve {
+                        DaytimeLoadLine(hours: stress.hours)
+                    } else if stress.isToday {
+                        Text(String(localized: "The hourly curve fills in as your strap records heart rate through the day."))
+                            .font(.caption)
+                            .foregroundStyle(PulseTheme.textTertiary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+
+                    Button(action: onBreathe) {
+                        PulseActionButtonLabel(title: String(localized: "Breathe"), symbol: "wind")
+                    }
+                    .buttonStyle(PulsePressStyle())
+                }
+            }
         }
-        #endif
-        return nil
+    }
+}
+// MARK: - Detail loading
+
+/// A loading placeholder for a dive whose snapshot is still building.
+struct PulseDetailLoading: View {
+    var body: some View {
+        ProgressView()
+            .tint(PulseTheme.textSecondary)
+            .frame(maxWidth: .infinity, minHeight: 240)
     }
 }
 
-private struct PulseStrapChipContent: View, Equatable {
-    let display: LiquidTodayView.StrapBatteryDisplay
-    let syncing: Bool
+// MARK: - Mini stat
+
+/// A small titled number in its own card.
+struct PulseMiniStat: View {
+    let title: String
+    let value: String?
+    let unit: String
 
     var body: some View {
-        HStack(spacing: 5) {
-            if syncing {
-                Image(systemName: "arrow.triangle.2.circlepath")
-                    .font(.caption.weight(.bold))
-                    .foregroundStyle(PulseTheme.accent)
-            } else {
-                Image(systemName: symbol)
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(tint)
-            }
-            if let text {
-                Text(text)
-                    .font(.caption.weight(.semibold).monospacedDigit())
-                    .foregroundStyle(PulseTheme.textPrimary)
+        VStack(alignment: .leading, spacing: 6) {
+            PulseLabel(title)
+            HStack(alignment: .firstTextBaseline, spacing: 2) {
+                Text(value ?? "–")
+                    .font(PulseTheme.numeral(24))
+                    .foregroundStyle(value == nil ? PulseTheme.textTertiary : PulseTheme.textPrimary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+                if value != nil {
+                    Text(unit)
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(PulseTheme.textTertiary)
+                }
             }
         }
-        .padding(.horizontal, 10)
-        .frame(minWidth: PulseTheme.minTapTarget, minHeight: 32)
-        .background(Capsule(style: .continuous).fill(PulseTheme.cardRaised))
-        .overlay(Capsule(style: .continuous).strokeBorder(PulseTheme.hairline, lineWidth: 1))
-        .frame(minHeight: PulseTheme.minTapTarget)
-        .contentShape(Rectangle())
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(PulseCardSurface())
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(accessibility)
-        .accessibilityHint(String(localized: "Opens Devices"))
-    }
-
-    private var text: String? {
-        if syncing { return String(localized: "Syncing") }
-        switch display {
-        case .charge(let pct, _, _): return "\(Int(pct.rounded()))%"
-        case .pending: return "–"
-        case .offline, .notActiveDevice: return nil
-        }
-    }
-
-    private var symbol: String {
-        switch display {
-        case .offline, .notActiveDevice: return "antenna.radiowaves.left.and.right.slash"
-        case .pending(let charging): return charging ? "battery.100.bolt" : "battery.50"
-        case .charge(let pct, let charging, _):
-            if charging { return "battery.100.bolt" }
-            switch pct {
-            case ..<15: return "battery.0"
-            case ..<40: return "battery.25"
-            case ..<65: return "battery.50"
-            case ..<90: return "battery.75"
-            default: return "battery.100"
-            }
-        }
-    }
-
-    private var tint: Color {
-        switch display {
-        case .offline, .notActiveDevice: return PulseTheme.textTertiary
-        case .pending: return PulseTheme.textSecondary
-        case .charge(let pct, let charging, _):
-            if charging { return PulseTheme.accent }
-            return pct < 15 ? PulseTheme.recoveryRedText : PulseTheme.textSecondary
-        }
-    }
-
-    private var accessibility: String {
-        if syncing { return String(localized: "Syncing strap history") }
-        switch display {
-        case .offline, .notActiveDevice: return String(localized: "Strap not connected")
-        case .pending: return String(localized: "Strap battery, no reading yet")
-        case .charge(let pct, let charging, let isRing):
-            let n = Int(pct.rounded())
-            if isRing { return String(localized: "Ring battery \(n) percent") }
-            return charging
-                ? String(localized: "Strap battery \(n) percent, charging")
-                : String(localized: "Strap battery \(n) percent")
-        }
-    }
-}
-
-/// The live heart-rate chip, present only while the strap is streaming.
-struct PulseLiveHRChip: View {
-    @EnvironmentObject private var live: LiveState
-
-    var body: some View {
-        let bpm: Int? = (live.connected && (live.heartRate ?? 0) > 0) ? live.heartRate : nil
-        PulseLiveHRChipContent(bpm: bpm).equatable()
-    }
-}
-
-private struct PulseLiveHRChipContent: View, Equatable {
-    let bpm: Int?
-
-    var body: some View {
-        if let bpm {
-            HStack(spacing: 4) {
-                Image(systemName: "heart.fill")
-                    .font(.caption2.weight(.bold))
-                    .foregroundStyle(PulseTheme.recoveryRedText)
-                Text("\(bpm)")
-                    .font(.caption.weight(.bold).monospacedDigit())
-                    .foregroundStyle(PulseTheme.textPrimary)
-            }
-            .padding(.horizontal, 10)
-            .frame(minHeight: 32)
-            .background(Capsule(style: .continuous).fill(PulseTheme.cardRaised))
-            .overlay(Capsule(style: .continuous).strokeBorder(PulseTheme.hairline, lineWidth: 1))
-            .accessibilityElement(children: .ignore)
-            .accessibilityLabel(String(localized: "Live heart rate \(bpm) beats per minute"))
-        }
+        .accessibilityLabel(value.map { "\(title), \($0) \(unit)" } ?? "\(title), no data")
     }
 }
 #endif

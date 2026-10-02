@@ -2,111 +2,86 @@
 import SwiftUI
 import StrandDesign
 
-/// More: the rest of the app in standard grouped rows. Every screen the classic More list reached is
-/// still here, plus Devices (which the classic list never had a row for).
+/// The More tab ("MORE", WHOOP_UI_SPEC §3.31): the rest of the app as separate row cards under UPPERCASE
+/// section headers. Every screen the classic More list reached is here, plus Devices.
+///
+/// Owned by group "more-profile", which rebuilds it to the spec's 2026 order (TOOLS, ACCOUNT &
+/// SETTINGS, SUPPORT, ADVANCED, INTERFACE, version line). The sections below are today's.
 struct PulseMoreView: View {
-    @Environment(\.pulseCoach) private var coach
-
     @EnvironmentObject private var repo: Repository
+    @Environment(\.pulseCoach) private var coach
     @AppStorage("pulse.enabled") private var pulseEnabled = true
-    @Environment(\.scrollToTopSignal) private var scrollToTopSignal
-    @Environment(\.pulseChrome) private var chrome
     @State private var showReport = false
     @State private var confirmClassic = false
-    private static let topID = "pulse.more.top"
 
     var body: some View {
-        ScrollViewReader { proxy in
-            List {
-                Section {
-                    row(String(localized: "Trends"), "chart.line.uptrend.xyaxis", .trends)
-                        .id(Self.topID)
-                    row(String(localized: "Weekly digest"), "calendar", .weeklyDigest)
-                    Button { showReport = true } label: {
-                        label(String(localized: "Report"), "doc.richtext", chevron: true)
+        PulseScreenScaffold(title: String(localized: "More"), role: .tabRoot, spacing: 0,
+                            refresh: { await repo.refresh() }) {
+            section(String(localized: "Performance")) {
+                row(String(localized: "Trends"), "chart.line.uptrend.xyaxis", .trends)
+                row(String(localized: "Weekly digest"), "calendar", .weeklyDigest)
+                Button { showReport = true } label: {
+                    PulseListRow(symbol: "doc.richtext", title: String(localized: "Report"))
+                }
+                .buttonStyle(PulsePressStyle())
+            }
+            section(String(localized: "Insights")) {
+                row(String(localized: "What moves you"), "wand.and.sparkles", .insightsHub)
+                row(String(localized: "Explore"), "square.grid.2x2", .explore)
+                row(String(localized: "Compare"), "rectangle.split.2x1", .compare)
+                row(String(localized: "Journal"), "square.and.pencil", .journal)
+                if coach.availability == .needsSetup {
+                    // Coach is on but has no provider yet: offer its setup here too.
+                    Button { coach.open(nil) } label: {
+                        PulseListRow(symbol: "sparkles", title: String(localized: "Set up AI Coach"))
                     }
-                    .listRowBackground(PulseTheme.card)
-                } header: { header(String(localized: "Performance")) }
-
-                Section {
-                    row(String(localized: "What moves you"), "wand.and.sparkles", .insightsHub)
-                    row(String(localized: "Explore"), "square.grid.2x2.fill", .explore)
-                    row(String(localized: "Compare"), "rectangle.split.2x1.fill", .compare)
-                    row(String(localized: "Journal"), "square.and.pencil", .journal)
-                    if coach.availability == .needsSetup {
-                        // Coach is on but has no provider yet: offer its setup here too.
-                        Button { coach.open(nil) } label: {
-                            label(String(localized: "Set up AI Coach"), "sparkles", chevron: true)
-                        }
-                        .listRowBackground(PulseTheme.card)
-                    }
-                } header: { header(String(localized: "Insights")) }
-
-                Section {
-                    row(String(localized: "Workouts"), "figure.run", .workouts)
-                    row(String(localized: "Lift Log"), "dumbbell.fill", .liftLog)
-                    row(String(localized: "Live"), "waveform.path.ecg", .live)
-                    row(String(localized: "Breathe"), "wind", .breathe)
-                    row(String(localized: "Intervals"), "timer", .intervals)
-                } header: { header(String(localized: "Activity")) }
-
-                Section {
-                    row(String(localized: "Devices"), "sensor.tag.radiowaves.forward.fill", .devices)
-                    row(String(localized: "Alarms"), "alarm.fill", .alarms)
-                } header: { header(String(localized: "Strap & alarms")) }
-
-                Section {
-                    row(String(localized: "Data Sources"), "externaldrive.fill", .dataSources)
-                    row(String(localized: "Apple Health"), "heart.fill", .appleHealth)
-                    row(String(localized: "Backup & Sync"), "externaldrive.fill.badge.icloud", .backupSync)
-                    row(String(localized: "Shortcuts Export"), "square.and.arrow.up.fill", .shortcutsExport)
-                } header: { header(String(localized: "Data")) }
-
-                Section {
-                    row(String(localized: "Settings"), "gearshape.fill", .settings)
-                } header: { header(String(localized: "Settings")) }
-
-                Section {
-                    row(String(localized: "Test Centre"), "stethoscope", .testCentre)
-                        .id("pulse.advanced")
-                    row(String(localized: "Limitations"), "list.bullet.rectangle", .limitations)
-                    row(String(localized: "Mi Band"), "figure.walk.motion", .miBand)
-                    row(String(localized: "Rhythm"), "waveform.path", .rhythm)
-                    row(String(localized: "Intelligence"), "brain.head.profile", .intelligence)
-                    row(String(localized: "Your Data, Fused"), "square.stack.3d.up.fill", .fusedRecord)
-                    row(String(localized: "Automations"), "wand.and.stars", .automations)
-                    row(String(localized: "Power saving"), "battery.25", .powerSaving)
-                    row(String(localized: "Siri & Shortcuts"), "mic.fill", .siriShortcuts)
-                    row(String(localized: "Classic Health"), "heart.text.square", .classicHealth)
-                } header: { header(String(localized: "Advanced")) }
-
-                Section {
-                    Toggle(isOn: Binding(get: { !pulseEnabled }, set: { if $0 { confirmClassic = true } })) {
-                        label(String(localized: "Classic interface"), "rectangle.stack", chevron: false)
-                    }
-                    .tint(PulseTheme.accent)
-                    .listRowBackground(PulseTheme.card)
-                    .id("pulse.bottom")
-                } header: {
-                    header(String(localized: "Interface"))
-                } footer: {
-                    Text(String(localized: "Switches to the classic tabs. Settings › WHOOP-style interface brings this one back."))
-                        .font(.caption)
-                        .foregroundStyle(PulseTheme.textTertiary)
+                    .buttonStyle(PulsePressStyle())
                 }
             }
-            .listStyle(.insetGrouped)
-            .scrollContentBackground(.hidden)
-            // Clear the floating tab bar: the list scrolls under it and its scrim.
-            .contentMargins(.bottom, chrome.tabRootBottomInset, for: .scrollContent)
-            .navigationTitle(String(localized: "More"))
-            .navigationBarTitleDisplayMode(.large)
-            .onChange(of: scrollToTopSignal) { _, _ in
-                withAnimation(.easeOut(duration: 0.3)) { proxy.scrollTo(Self.topID, anchor: .top) }
+            section(String(localized: "Activity")) {
+                row(String(localized: "Workouts"), "figure.run", .workouts)
+                row(String(localized: "Lift Log"), "dumbbell", .liftLog)
+                row(String(localized: "Live"), "waveform.path.ecg", .live)
+                row(String(localized: "Breathe"), "wind", .breathe)
+                row(String(localized: "Intervals"), "timer", .intervals)
             }
-            .pulseDebugScroll(proxy, ready: true)
+            section(String(localized: "Strap & alarms")) {
+                row(String(localized: "Devices"), "sensor.tag.radiowaves.forward", .devices)
+                row(String(localized: "Alarms"), "alarm", .alarms)
+            }
+            section(String(localized: "Data")) {
+                row(String(localized: "Data Sources"), "externaldrive", .dataSources)
+                row(String(localized: "Apple Health"), "heart", .appleHealth)
+                row(String(localized: "Backup & Sync"), "externaldrive.badge.icloud", .backupSync)
+                row(String(localized: "Shortcuts Export"), "square.and.arrow.up", .shortcutsExport)
+            }
+            section(String(localized: "Settings")) {
+                row(String(localized: "Settings"), "gearshape", .settings)
+            }
+            section(String(localized: "Advanced")) {
+                row(String(localized: "Test Centre"), "stethoscope", .testCentre)
+                    .id("pulse.advanced")
+                row(String(localized: "Limitations"), "list.bullet.rectangle", .limitations)
+                row(String(localized: "Mi Band"), "figure.walk.motion", .miBand)
+                row(String(localized: "Rhythm"), "waveform.path", .rhythm)
+                row(String(localized: "Intelligence"), "brain.head.profile", .intelligence)
+                row(String(localized: "Your Data, Fused"), "square.stack.3d.up", .fusedRecord)
+                row(String(localized: "Automations"), "wand.and.stars", .automations)
+                row(String(localized: "Power saving"), "battery.25", .powerSaving)
+                row(String(localized: "Siri & Shortcuts"), "mic", .siriShortcuts)
+                row(String(localized: "Classic Health"), "heart.text.square", .classicHealth)
+            }
+            section(String(localized: "Interface")) {
+                PulseListRow(symbol: "rectangle.stack", title: String(localized: "Classic interface"),
+                             trailing: .toggle(Binding(get: { !pulseEnabled },
+                                                       set: { if $0 { confirmClassic = true } })))
+                Text(String(localized: "Switches to the classic tabs. Settings › WHOOP-style interface brings this one back."))
+                    .pulseText(.secondary)
+                    .foregroundStyle(PulseTheme.textTertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, 4)
+            }
         }
-        .refreshable { await repo.refresh() }
         .sheet(isPresented: $showReport) {
             TrendsReportSheet(days: repo.days)
         }
@@ -117,45 +92,23 @@ struct PulseMoreView: View {
         } message: {
             Text(String(localized: "Your data and settings stay as they are. You can switch back from Settings."))
         }
-        .background(PulseBackground())
-        .pulseTabBarScrim()
-        .toolbarBackground(PulseTheme.backgroundTop, for: .navigationBar)
-        .environment(\.colorScheme, .dark)
     }
 
-    private func header(_ text: String) -> some View {
-        PulseLabel(text, color: PulseTheme.textSecondary)
+    private func section<Content: View>(_ title: String, @ViewBuilder rows: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: PulseTheme.Layout.headerGap) {
+            PulseListSectionHeader(title)
+            VStack(spacing: PulseTheme.Row.listGap) {
+                rows()
+            }
+        }
+        .padding(.top, PulseTheme.Space.l)
     }
 
     private func row(_ title: String, _ symbol: String, _ destination: PulseClassicDestination) -> some View {
-        NavigationLink(value: PulseRoute.classic(destination)) {
-            label(title, symbol, chevron: false)
+        PulseLink(.classic(destination)) {
+            PulseListRow(symbol: symbol, title: title)
         }
-        .listRowBackground(PulseTheme.card)
-    }
-
-    private func label(_ title: String, _ symbol: String, chevron: Bool) -> some View {
-        HStack(spacing: 14) {
-            Image(systemName: symbol)
-                .font(.body)
-                .foregroundStyle(PulseTheme.accent)
-                .frame(width: 28)
-                .accessibilityHidden(true)
-            Text(title)
-                .font(.body)
-                .foregroundStyle(PulseTheme.textPrimary)
-            if chevron {
-                Spacer(minLength: 8)
-                // The List's own disclosure colour, so this button row matches its NavigationLink
-                // neighbours rather than standing out brighter.
-                Image(systemName: "chevron.right")
-                    .font(.footnote.weight(.semibold))
-                    .foregroundStyle(Color(uiColor: .tertiaryLabel))
-                    .accessibilityHidden(true)
-            }
-        }
-        // A list row is already at least 44 pt tall; padding it further made each row read oversized.
-        .padding(.vertical, 2)
+        .buttonStyle(PulsePressStyle())
     }
 }
 #endif

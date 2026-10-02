@@ -19,11 +19,11 @@ enum PulseMetricPolarity: Equatable {
     /// Keys are the catalog / series keys the app uses; unknown keys are neutral.
     static func forMetric(_ key: String) -> PulseMetricPolarity {
         switch key {
-        case "hrv", "avg_hrv", "sleep_performance", "sleep_consistency", "sleep_hours", "asleep",
-             "restorative", "restorative_sleep", "steps", "hr_zones_1_3", "hr_zones_4_5", "zones",
-             "strength_time", "recovery", "vo2max", "vo2max_est", "sleep_efficiency":
+        case "hrv", "avg_hrv", "sleep", "sleep_performance", "sleep_consistency", "consistency", "sleep_hours",
+             "hours", "asleep", "restorative", "restorative_sleep", "steps", "hr_zones_1_3", "hr_zones_4_5",
+             "zones", "strength_time", "recovery", "vo2max", "vo2max_est", "sleep_efficiency", "efficiency":
             return .higherIsBetter
-        case "rhr", "resting_hr", "resp_rate", "respiratory_rate", "sleep_need", "sleep_needed",
+        case "rhr", "resting_hr", "resp", "resp_rate", "respiratory_rate", "sleep_need", "sleep_needed",
              "sleep_debt", "sleep_stress", "stress":
             return .lowerIsBetter
         default:

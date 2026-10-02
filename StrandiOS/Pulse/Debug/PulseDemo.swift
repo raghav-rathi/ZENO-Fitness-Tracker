@@ -148,7 +148,7 @@ struct PulseDemoScreen: View {
     @ViewBuilder
     private var content: some View {
         switch kind {
-        case .home: PulseHomeView(onAction: { _ in }, onSettings: {})
+        case .home: PulseHomeView()
         case .recovery: PulseRecoveryView()
         case .strain: PulseStrainView()
         case .sleep: PulseSleepView()

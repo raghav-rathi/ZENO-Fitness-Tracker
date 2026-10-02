@@ -4,14 +4,18 @@ import Charts
 import StrandDesign
 import StrandAnalytics
 
-/// The Strain deep dive: the dial, the target, how the day's strain built, heart rate against its zones,
+/// The current Pulse Strain dive (WHOOP_UI_SPEC §3.5 in the new theme): the 260 pt ring with the day's
+/// optimal range and target, the target card, how the day's strain built, heart rate against its zones,
 /// time in each zone, calories and the day's activities.
+///
+/// Owned by group "recovery-strain", which rebuilds it as `PulseStrainDiveView` (callout contributors,
+/// Weekly Trends, the inline insight card). Until then that route hosts this screen.
 struct PulseStrainView: View {
     @Environment(PulseModel.self) private var model
 
     var body: some View {
-        PulseDetailScaffold(title: PulseScore.strain.displayName, subtitle: model.dayCaption,
-                            ready: model.strain != nil) {
+        PulseScreenScaffold(title: PulseFormat.navDayTitle(offset: model.dayOffset, date: model.selectedLogicalDate),
+                            coach: .button, ready: model.strain != nil) {
             if let s = model.strain, s.day.offset == model.dayOffset {
                 content(s)
             } else {
@@ -23,14 +27,10 @@ struct PulseStrainView: View {
 
     @ViewBuilder
     private func content(_ s: StrainSnapshot) -> some View {
-        VStack(spacing: 6) {
-            PulseDial(data: s.dial, diameter: 196, lineWidth: 14, showsLabel: false)
-            Text(String(localized: "of 21"))
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(PulseTheme.textTertiary)
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.top, 8)
+        PulseHeroRing(content: s.dial.dialContent(target: s.target))
+            .frame(maxWidth: .infinity)
+            .padding(.top, 8)
+            .padding(.bottom, 8)
 
         if let target = s.target {
             PulseCard { PulseStrainTargetContent(target: target) }
@@ -44,8 +44,8 @@ struct PulseStrainView: View {
             .id("pulse.zones")
         PulseStrainStatsRow(snapshot: s)
 
-        VStack(alignment: .leading, spacing: 10) {
-            PulseSectionHeader(title: String(localized: "Activities"))
+        VStack(alignment: .leading, spacing: PulseTheme.Layout.headerGap) {
+            PulseSectionHeader(String(localized: "Activities"))
             PulseCard(padding: 0) {
                 VStack(spacing: 0) {
                     if s.workouts.isEmpty {
@@ -91,7 +91,7 @@ struct PulseStrainBuildCard: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: PulseTheme.Layout.headerGap) {
             PulseSectionHeader(title: String(localized: "Through the day"))
             PulseCard {
                 if snapshot.curve.count >= 2 {
@@ -145,7 +145,8 @@ struct PulseStrainBuildCard: View {
         .chartYAxis {
             AxisMarks(position: .trailing, values: [0, 7, 14, 21]) { _ in
                 AxisGridLine().foregroundStyle(PulseTheme.hairline)
-                AxisValueLabel().foregroundStyle(PulseTheme.textTertiary)
+                AxisValueLabel().font(PulseType.font(.axis))
+                .foregroundStyle(PulseTheme.textTertiary)
             }
         }
         .chartXAxis { PulseTimeAxis.marks(for: snapshot.window) }
@@ -206,7 +207,7 @@ struct PulseHeartRateZonesCard: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: PulseTheme.Layout.headerGap) {
             PulseSectionHeader(title: String(localized: "Heart rate"),
                                trailing: snapshot.peakHR.map { String(localized: "Peak \($0) bpm") })
             PulseCard {
@@ -267,7 +268,7 @@ struct PulseZoneTimeCard: View {
     var body: some View {
         let minutes = snapshot.zoneMinutes
         let top = max(1, minutes.max() ?? 1)
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: PulseTheme.Layout.headerGap) {
             PulseSectionHeader(title: String(localized: "Time in zones"))
             PulseCard {
                 VStack(spacing: 10) {

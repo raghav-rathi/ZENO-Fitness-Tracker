@@ -3,59 +3,40 @@ import SwiftUI
 import StrandDesign
 import StrandAnalytics
 
-/// The Health tab: the Health Monitor (each vital against its typical range), Stress, the healthspan
-/// estimates, the cycle card when it applies, the Lab Book and Steps. Always "now", whatever day Home
-/// is showing.
+/// The current Pulse Health tab, in the new theme: the Health Monitor (each vital against its typical
+/// range), Stress, the healthspan estimates, the cycle card when it applies, the Lab Book and Steps.
+/// Always "now", whatever day Home is showing.
+///
+/// Owned by group "health", which rebuilds the tab as `PulseHealthTabView` (ZENO Age orb, Pace of Aging,
+/// monitor and stress cards). Until then that tab hosts this screen.
 struct PulseHealthView: View {
     let onAction: (PulseQuickAction) -> Void
 
     @Environment(PulseModel.self) private var model
-    @Environment(\.scrollToTopSignal) private var scrollToTopSignal
-    @Environment(\.pulseChrome) private var chrome
-    private static let topID = "pulse.health.top"
 
     var body: some View {
-        ScrollViewReader { proxy in
-            ScrollView {
-                VStack(alignment: .leading, spacing: PulseTheme.sectionSpacing) {
-                    Text(String(localized: "Health"))
-                        .font(.largeTitle.weight(.bold))
-                        .foregroundStyle(PulseTheme.textPrimary)
-                        .padding(.top, 8)
-                        .id(Self.topID)
-                        .accessibilityAddTraits(.isHeader)
-                    if let health = model.health {
-                        PulseHealthMonitor(vitals: health.vitals)
-                            .id("pulse.monitor")
-                        if let stress = health.stress {
-                            PulseStressSection(stress: stress, onBreathe: { onAction(.breathe) })
-                                .id("pulse.stress")
-                        }
-                        PulseHealthspanSection(health: health)
-                            .id("pulse.healthspan")
-                        MenstrualCycleHomeCard()
-                        PulseHealthLinks(health: health)
-                            .id("pulse.records")
-                    } else {
-                        ProgressView()
-                            .tint(PulseTheme.textSecondary)
-                            .frame(maxWidth: .infinity, minHeight: 200)
-                    }
-                    Color.clear.frame(height: chrome.tabRootBottomInset).id("pulse.bottom")
+        PulseScreenScaffold(title: String(localized: "Health"), role: .tabRoot,
+                            spacing: PulseTheme.Layout.healthStackGap,
+                            refresh: { await model.pullToRefresh() }, ready: model.health != nil) {
+            if let health = model.health {
+                PulseHealthMonitor(vitals: health.vitals)
+                    .id("pulse.monitor")
+                if let stress = health.stress {
+                    PulseStressSection(stress: stress, onBreathe: { onAction(.breathe) })
+                        .id("pulse.stress")
                 }
-                .padding(.horizontal, PulseTheme.pagePadding)
+                PulseHealthspanSection(health: health)
+                    .id("pulse.healthspan")
+                MenstrualCycleHomeCard()
+                PulseHealthLinks(health: health)
+                    .id("pulse.records")
+            } else {
+                ProgressView()
+                    .tint(PulseTheme.textSecondary)
+                    .frame(maxWidth: .infinity, minHeight: 200)
             }
-            .pulseStatusBarBackdrop()
-            .refreshable { await model.pullToRefresh() }
-            .onChange(of: scrollToTopSignal) { _, _ in
-                withAnimation(.easeOut(duration: 0.3)) { proxy.scrollTo(Self.topID, anchor: .top) }
-            }
-            .pulseDebugScroll(proxy, ready: model.health != nil)
         }
         .task(id: model.healthKey) { await model.loadHealth() }
-        .pulseTabBarScrim()
-        .pulsePage()
-        .toolbar(.hidden, for: .navigationBar)
     }
 }
 
@@ -72,7 +53,7 @@ struct PulseHealthMonitor: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: PulseTheme.Layout.headerGap) {
             PulseSectionHeader(title: String(localized: "Health Monitor"), trailing: summary)
             PulseCard(padding: 0) {
                 VStack(spacing: 0) {
@@ -214,7 +195,7 @@ struct PulseHealthspanSection: View {
     let health: HealthSnapshot
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: PulseTheme.Layout.headerGap) {
             PulseSectionHeader(title: String(localized: "Healthspan"), trailing: String(localized: "Weekly"))
             LazyVGrid(columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)],
                       spacing: 12) {
@@ -281,7 +262,7 @@ struct PulseHealthLinks: View {
     let health: HealthSnapshot
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: PulseTheme.Layout.headerGap) {
             PulseSectionHeader(title: String(localized: "Records"))
             PulseCard(padding: 0) {
                 VStack(spacing: 0) {

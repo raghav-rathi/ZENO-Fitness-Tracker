@@ -188,7 +188,7 @@ struct PulseRootView: View {
     private func root(_ tab: PulseTab) -> some View {
         switch tab {
         case .home:
-            PulseHomeView(onAction: perform, onSettings: { present(PulseRoute.profile.forExistingEntryPoint) })
+            PulseHomeView()
         case .health:
             PulseHealthTabView()
         case .trends:
