@@ -62,8 +62,7 @@ struct PulseSleepPlannerView: View {
         .scrollBounceBehavior(.basedOnSize)
         .background(PulseBackground())
         .safeAreaInset(edge: .bottom, spacing: 0) {
-            PulseSleepAlarmPanel(plan: plan, alarmOn: behavior.smartAlarmEnabled, rejectStreak: rejectStreak,
-                                 strapWillArm: actions.strapWillArm(),
+            PulseSleepAlarmPanel(plan: plan, alarmOn: behavior.smartAlarmEnabled,
                                  onToggle: { setAlarm($0) },
                                  onMode: { sheet = .alarmMode },
                                  onWake: { sheet = .wakeTime })
@@ -216,6 +215,9 @@ struct PulseSleepPlannerView: View {
             if let plan {
                 PulseSleepTimeline(plan: plan)
                     .padding(.top, 60)
+                PulseSleepAlarmNotes(plan: plan, alarmOn: behavior.smartAlarmEnabled, rejectStreak: rejectStreak,
+                                     strapWillArm: actions.strapWillArm())
+                    .padding(.top, 12)
             } else {
                 PulseSkeletonBlock(height: 150)
                     .padding(.horizontal, PulseTheme.Layout.pageMargin)

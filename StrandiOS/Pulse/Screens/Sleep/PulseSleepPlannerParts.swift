@@ -200,12 +200,11 @@ private struct PulseSleepPinTail: Shape {
 // MARK: - The alarm panel (§3.11 item 8)
 
 /// The panel pinned at the bottom: the strap-vibrate glyph, ALARM and its switch (teal when on), then
-/// ALARM SET TO and WAKE TIME SET TO, and the honest notes that say when the alarm will not do what it says.
+/// ALARM SET TO and WAKE TIME SET TO. It stays WHOOP's height whatever the alarm's state; what the alarm
+/// cannot promise is said under the plan instead (`PulseSleepAlarmNotes`), so it never covers the bar.
 struct PulseSleepAlarmPanel: View {
     let plan: PulseSleepPlan?
     let alarmOn: Bool
-    let rejectStreak: Int
-    let strapWillArm: Bool
     let onToggle: (Bool) -> Void
     let onMode: () -> Void
     let onWake: () -> Void
@@ -233,15 +232,6 @@ struct PulseSleepAlarmPanel: View {
                 tile(title: String(localized: "Wake time set to"),
                      value: plan.map { PulseFormat.clock($0.wake) } ?? "--", action: onWake)
             }
-            if let note {
-                Text(note)
-                    .pulseText(.rowSubline)
-                    .foregroundStyle(noteIsWarning ? PulseTheme.negative : PulseTheme.textTertiary)
-                    .multilineTextAlignment(.center)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .frame(maxWidth: .infinity)
-            }
-            PulseSleepStrapNotice(alarmOn: alarmOn)
         }
         .padding(.horizontal, PulseTheme.Layout.pageMargin)
         .padding(.top, 14)
@@ -254,24 +244,6 @@ struct PulseSleepAlarmPanel: View {
                 .ignoresSafeArea(edges: .bottom))
         .dynamicTypeSize(...DynamicTypeSize.xxLarge)
     }
-
-    /// What the panel must admit, most important first.
-    private var note: String? {
-        guard alarmOn else { return nil }
-        if !strapWillArm {
-            return String(localized: "WHOOP 5/MG strap alarms need Protocol probes (Test Centre). Your wake time is saved, but the strap is not armed.")
-        }
-        if rejectStreak >= 2 {
-            return String(localized: "Your strap keeps reporting a different alarm time, so it may not buzz. Keep a phone alarm until it takes.")
-        }
-        if let plan, !plan.alarmFires {
-            let day = plan.wake.formatted(.dateTime.weekday(.wide).locale(AppLanguage.activeLocale))
-            return String(localized: "Your alarm is off on \(day).")
-        }
-        return String(localized: "A silent buzz from your strap. Keep a phone alarm as a backup.")
-    }
-
-    private var noteIsWarning: Bool { !strapWillArm || rejectStreak >= 2 }
 
     private func tile(title: String, value: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
@@ -297,6 +269,48 @@ struct PulseSleepAlarmPanel: View {
         .buttonStyle(PulsePressStyle())
         .accessibilityElement(children: .combine)
     }
+}
+
+/// What the alarm cannot promise, under the plan: a 5/MG strap that will not arm, a strap that keeps
+/// refusing the alarm, a morning the alarm is off for, that the buzz is silent, and the strap's own state.
+struct PulseSleepAlarmNotes: View {
+    let plan: PulseSleepPlan?
+    let alarmOn: Bool
+    let rejectStreak: Int
+    let strapWillArm: Bool
+
+    var body: some View {
+        VStack(spacing: 8) {
+            if let note {
+                Text(note)
+                    .pulseText(.rowSubline)
+                    .foregroundStyle(noteIsWarning ? PulseTheme.negative : PulseTheme.textTertiary)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity)
+            }
+            PulseSleepStrapNotice(alarmOn: alarmOn)
+        }
+        .padding(.horizontal, 32)
+    }
+
+    /// The most important thing to admit, first.
+    private var note: String? {
+        guard alarmOn else { return nil }
+        if !strapWillArm {
+            return String(localized: "WHOOP 5/MG strap alarms need Protocol probes (Test Centre). Your wake time is saved, but the strap is not armed.")
+        }
+        if rejectStreak >= 2 {
+            return String(localized: "Your strap keeps reporting a different alarm time, so it may not buzz. Keep a phone alarm until it takes.")
+        }
+        if let plan, !plan.alarmFires {
+            let day = plan.wake.formatted(.dateTime.weekday(.wide).locale(AppLanguage.activeLocale))
+            return String(localized: "Your alarm is off on \(day).")
+        }
+        return String(localized: "A silent buzz from your strap. Keep a phone alarm as a backup.")
+    }
+
+    private var noteIsWarning: Bool { !strapWillArm || rejectStreak >= 2 }
 }
 
 /// The strap's state as the alarm depends on it (§3.11 "States"): a battery under 20%, or, with the alarm on,
