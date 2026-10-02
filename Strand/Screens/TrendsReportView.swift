@@ -555,7 +555,13 @@ struct TrendsReportSheet: View {
         .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
         #endif
         .background(StrandPalette.surfaceBase)
+        // Same sizing split as WhatsNewView (#185): a fixed window on macOS, but on iPhone a 460 pt
+        // frame is wider than the screen and cut the title and range picker off both edges.
+        #if os(macOS)
         .frame(width: 460, height: 640)
+        #else
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        #endif
         #if os(iOS)
         .noopSheetPresentation(largeFirst: true)
         #endif
