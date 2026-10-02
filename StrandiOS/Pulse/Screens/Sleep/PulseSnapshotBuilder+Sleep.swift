@@ -518,17 +518,15 @@ extension PulseSnapshotBuilder {
         }
         let shown = PulseDisplay.displayedPercent(perf)
         let word = PulseSleepBand.name(PulseSleepBand.index(percent: perf) ?? 0).lowercased()
-        var text = String(localized: "Your sleep was \(word) at **\(shown)%**")
+        // The pill shows two lines: name a poor contributor when there is one, else the hours.
+        if let weakest = contributors.first(where: { $0.band == 0 && $0.kind != .stress }),
+           let pct = weakest.percent {
+            return String(localized: "Your sleep was \(word) at **\(shown)%**. **\(weakest.title)** was poor at \(PulseDisplay.displayedPercent(pct))%.")
+        }
         if let need = night.need {
-            text += ": " + String(localized: "\(PulseFormat.duration(minutes: night.asleep)) asleep against the \(PulseFormat.duration(minutes: need)) you needed.")
-        } else {
-            text += "."
+            return String(localized: "Your sleep was \(word) at **\(shown)%**: \(PulseFormat.duration(minutes: night.asleep)) asleep against the \(PulseFormat.duration(minutes: need)) you needed.")
         }
-        let weakest = contributors.filter { $0.band == 0 && $0.kind != .stress }.map { $0.title.lowercased() }
-        if let first = weakest.first {
-            text += " " + String(localized: "\(first.prefix(1).uppercased() + first.dropFirst()) held it back.")
-        }
-        return text
+        return String(localized: "Your sleep was \(word) at **\(shown)%**.")
     }
 
     // MARK: - The night's stress (a second build: raw heart rate and R-R)
