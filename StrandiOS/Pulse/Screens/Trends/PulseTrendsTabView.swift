@@ -142,20 +142,30 @@ private struct PulseTrendsWeekCard: View {
                 VStack(spacing: 0) {
                     ForEach(Array(snapshot.week.enumerated()), id: \.element.id) { index, line in
                         if index > 0 { PulseDivider() }
-                        HStack(spacing: 12) {
-                            PulseMiniRing(content: line.ring)
-                            Text(line.score.displayName)
-                                .pulseText(.label)
-                                .foregroundStyle(PulseTheme.textPrimary)
-                                .lineLimit(1)
-                            Spacer(minLength: 8)
-                            if let chip = line.chip {
-                                PulseDeltaChip(text: chip.text, trend: chip.trend)
+                        // One line at the default sizes; at large text the chip moves under the name.
+                        ViewThatFits(in: .horizontal) {
+                            HStack(spacing: 12) {
+                                ring(line)
+                                name(line)
+                                Spacer(minLength: 8)
+                                if let chip = line.chip {
+                                    PulseDeltaChip(text: chip.text, trend: chip.trend).fixedSize()
+                                }
+                                value(line)
                             }
-                            Text(line.value)
-                                .pulseText(.rowValue)
-                                .foregroundStyle(line.ring.isPlaceholder ? PulseTheme.textDisabled : PulseTheme.textPrimary)
-                                .frame(minWidth: 48, alignment: .trailing)
+                            VStack(alignment: .leading, spacing: 6) {
+                                HStack(spacing: 12) {
+                                    ring(line)
+                                    name(line)
+                                    Spacer(minLength: 8)
+                                    value(line)
+                                }
+                                if let chip = line.chip {
+                                    PulseDeltaChip(text: chip.text, trend: chip.trend)
+                                        .padding(.leading, PulseTheme.Dial.miniDiameter + 12)
+                                }
+                            }
+                            .padding(.vertical, 8)
                         }
                         .frame(minHeight: 48)
                         .accessibilityElement(children: .ignore)
@@ -172,6 +182,26 @@ private struct PulseTrendsWeekCard: View {
             }
         }
         .contentShape(Rectangle())
+    }
+
+    private func ring(_ line: TrendsTabSnapshot.WeekLine) -> some View {
+        PulseMiniRing(content: line.ring)
+    }
+
+    private func name(_ line: TrendsTabSnapshot.WeekLine) -> some View {
+        Text(line.score.displayName)
+            .pulseText(.label)
+            .foregroundStyle(PulseTheme.textPrimary)
+            .lineLimit(1)
+            .fixedSize()
+    }
+
+    private func value(_ line: TrendsTabSnapshot.WeekLine) -> some View {
+        Text(line.value)
+            .pulseText(.rowValue)
+            .foregroundStyle(line.ring.isPlaceholder ? PulseTheme.textDisabled : PulseTheme.textPrimary)
+            .fixedSize()
+            .frame(minWidth: 48, alignment: .trailing)
     }
 }
 
