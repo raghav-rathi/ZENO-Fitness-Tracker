@@ -8,9 +8,10 @@ import StrandAnalytics
 /// the band colour, the contributor callout (heart rate variability, resting heart rate, respiratory rate
 /// and sleep performance against their 30-day averages), BEHAVIOR INSIGHTS (the day's behaviour chips, or
 /// the compact row), Weekly Trends (Recovery, HRV, resting heart rate, respiratory rate, each opening its
-/// Trend View once that is rebuilt), then ZENO's "What shaped it". The inline insight card WHOOP dropped
-/// by Sep 2026 is gone while the floating coach summary pill carries the summary; with the Coach off, the
-/// same sentence sits in a plain card under the callout (§3.4 item 4 [Z]).
+/// Trend View once that is rebuilt), then ZENO's "What shaped it" and HOW IT'S CALCULATED. The bar carries
+/// the Green Light achievement chip (§1.5 [Z], `PulseDiveAchievement`). The inline insight card WHOOP
+/// dropped by Sep 2026 is gone while the floating coach summary pill carries the summary; with the Coach
+/// off, the same sentence sits in a plain card under the callout (§3.4 item 4 [Z]).
 ///
 /// Owned by group "recovery-strain".
 struct PulseRecoveryDiveView: View {
@@ -21,6 +22,8 @@ struct PulseRecoveryDiveView: View {
     @Environment(PulseModel.self) private var model
     @Environment(\.pulseNavigator) private var navigator
     @State private var snapshot: RecoveryDiveSnapshot?
+    /// The badges, for the bar's achievement chip.
+    @State private var profile: ProfileSnapshot?
 
     /// The snapshot, only while it is for the day Home is on (a day change shows the skeleton, never the
     /// previous day's figures under the new day's title).
@@ -31,7 +34,7 @@ struct PulseRecoveryDiveView: View {
 
     var body: some View {
         PulseScreenScaffold(title: PulseFormat.navDayTitle(offset: model.dayOffset, date: model.selectedLogicalDate),
-                            trailing: .info { navigator.open(.classic(.scoringGuide)) },
+                            trailing: PulseDiveAchievement.recovery.trailing(profile, open: navigator.open),
                             coach: current.map { PulseCoachAccessory.pill(summary: $0.summary) } ?? .button,
                             coachSeed: current?.coachSeed,
                             spacing: 0,
@@ -47,6 +50,7 @@ struct PulseRecoveryDiveView: View {
                 snapshot = s
             }
         }
+        .profileSnapshot($profile)
     }
 }
 
@@ -113,6 +117,10 @@ private struct PulseRecoveryDiveContent: View {
                     .padding(.top, PulseTheme.Layout.stackGap)
                     .id("pulse.shaped")
             }
+
+            PulseDiveExplainerRow()
+                .padding(.top, PulseTheme.Layout.stackGap)
+                .id("pulse.explainer")
         }
     }
 }
