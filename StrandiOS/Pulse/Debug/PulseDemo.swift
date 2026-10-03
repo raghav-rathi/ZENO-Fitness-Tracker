@@ -162,10 +162,10 @@ struct PulseDemoScreen: View {
     private var content: some View {
         switch kind {
         case .home: PulseHomeView()
-        case .recovery: PulseRecoveryView()
-        case .strain: PulseStrainView()
-        case .sleep: PulseSleepView()
-        case .health: PulseHealthView(onAction: { _ in })
+        case .recovery: PulseRecoveryDiveView()
+        case .strain: PulseStrainDiveView()
+        case .sleep: PulseSleepDiveView()
+        case .health: PulseHealthTabView()
         case .more: PulseMoreView()
         }
     }
