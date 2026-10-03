@@ -132,6 +132,10 @@ enum PulseTheme {
     static let hatch = Color.white.opacity(0.10)
     /// A chart's dashed average line and the "AVG." pill.
     static let averageLine = Color.white.opacity(0.8)
+    /// The dark navy core inside a chart's ringed point, far darker than the card and the area under the
+    /// line (WHOOP's cores sample #0D1D25–#0C202A on deep-dives-2026/16 and /19d, and the same in the
+    /// Strain & Recovery chart on completeness-critic/13).
+    static let lineMarkerCore = Color(hex: "#0C202A")
     /// The contributor callout's radial glow at its pointer and its top-lit 1 pt rim.
     static let calloutGlow = Color.white.opacity(0.10)
     static let calloutRim = Color.white.opacity(0.08)

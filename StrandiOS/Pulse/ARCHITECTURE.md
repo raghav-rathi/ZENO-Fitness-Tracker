@@ -467,7 +467,7 @@ All take plain values, never snapshots. Map a snapshot to them in your group (se
   `listSectionHeader`, `achievementChip`, `filterChip`, `dialogTop/Bottom`, `chartHighlight`,
   `pagerCapsule` (5%) / `pagerPill` (+10%), `streakPill`, `avatarFallback`, `skeleton`, `strapOutline`,
   `batteryText`, `preAddedChip`, `tagFill`, `segmentOff`, `typicalBand`, `typicalBox`, `hatch`,
-  `averageLine`, `calloutGlow` / `calloutRim`, `menuTop/Bottom`, `menuDim`, …
+  `averageLine`, `lineMarkerCore`, `calloutGlow` / `calloutRim`, `menuTop/Bottom`, `menuDim`, …
 - Text: `textPrimary`, `textButton` (85%), `textSecondary` (70%), `textTertiary` (50%), `textDisabled` (40%).
 - Data: `recoveryHigh/Mid/Low`, `recoveryLowText`, `strain`, `sleep`, `recoveryBlue`, `recoveryActivity`,
   `positive`, `negative`, `neutral`, `sufficient`, `baselineDot`; `recovery(_ band)`, `recoveryText(_ band)`,

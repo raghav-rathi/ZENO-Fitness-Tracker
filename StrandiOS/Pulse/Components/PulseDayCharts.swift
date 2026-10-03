@@ -411,7 +411,7 @@ struct PulseStrainRecoveryChart: View {
     private func marker(_ color: Color) -> some View {
         Circle()
             .strokeBorder(color, lineWidth: 2)
-            .background(Circle().fill(PulseTheme.cardSolidMiddle))
+            .background(Circle().fill(PulseTheme.lineMarkerCore))
             .frame(width: 9, height: 9)
     }
 
