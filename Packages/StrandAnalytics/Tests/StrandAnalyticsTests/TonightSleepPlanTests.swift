@@ -35,6 +35,44 @@ final class TonightSleepPlanTests: XCTestCase {
         }
     }
 
+    func testEveryNeedGoalIsAsleepByThatShareOfTheNeed() {
+        // REACH MY SLEEP NEED at 100, 85 or 70%: Home's card and the planner both plan the goal the planner
+        // has, asleep by wake − share × need (the share's minutes rounded once, as the planner prints them).
+        // Needs short enough that no bedtime is held at 8 PM (the hold has its own test below).
+        for wakeMinute in [6 * 60 + 30, 7 * 60 + 2, 9 * 60 + 15] {
+            for need in [452.4, 566.6, 600] {
+                for percent in [100, 85, 70] {
+                    let share = Double(percent) / 100
+                    let plan = TonightSleepPlan.bedtime(wake: morning(wakeMinute), needMin: need, fraction: share,
+                                                        calendar: calendar)
+                    let asleep = Int((need * share).rounded())
+                    XCTAssertFalse(plan.clamped, "wake \(wakeMinute) need \(need) at \(percent)%")
+                    XCTAssertEqual(minuteOfDay(plan.asleepBy), ((wakeMinute - asleep) % 1440 + 1440) % 1440,
+                                   "wake \(wakeMinute) need \(need) at \(percent)%")
+                    XCTAssertEqual(minuteOfDay(plan.inBed),
+                                   ((wakeMinute - asleep - Int(SleepNeed.typicalSleepLatencyMin)) % 1440 + 1440) % 1440)
+                }
+            }
+        }
+        // The demo seed's night: 85% of a 10:20 need before 7:02 AM is asleep by 10:15 PM, in bed by 10:00 PM.
+        let seed = TonightSleepPlan.bedtime(wake: morning(7 * 60 + 2), needMin: 620, fraction: 0.85,
+                                            calendar: calendar)
+        XCTAssertEqual(minuteOfDay(seed.asleepBy), 22 * 60 + 15)
+        XCTAssertEqual(minuteOfDay(seed.inBed), 22 * 60)
+    }
+
+    func testAMorningPlanForTomorrowsWakeGoesToBedThisEvening() {
+        // Once the night ending today is over, the plan is for tomorrow's wake (Sun 4 Oct, 7:02 AM): its
+        // bedtime falls this evening, never at once, so a wearer up at 6:50 AM is not told to go to sleep now.
+        let now = morning(6 * 60 + 50)
+        let tomorrow = morning(7 * 60 + 2, day: 4)
+        let plan = TonightSleepPlan.bedtime(wake: tomorrow, needMin: 620, calendar: calendar)
+        XCTAssertGreaterThan(plan.inBed, now)
+        XCTAssertEqual(calendar.component(.day, from: plan.inBed), 3)
+        XCTAssertEqual(minuteOfDay(plan.inBed), 20 * 60 + 27)
+        XCTAssertEqual(minuteOfDay(plan.asleepBy), 20 * 60 + 42)
+    }
+
     func testInBedIsTheSuggestedBedtimeAllowingTheLatency() {
         let wake = morning(6 * 60 + 58)
         for fraction in [1.0, 0.85, 0.7] {
