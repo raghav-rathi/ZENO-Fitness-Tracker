@@ -275,7 +275,8 @@ private struct PulseChallengeHero: View {
                 .accessibilityHidden(true)
         }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(target.map { "\(value) of \($0) \(kind.unitCaption)" } ?? "\(value) \(caption ?? kind.unitCaption)")
+        .accessibilityLabel(target.map { String(localized: "\(value) of \($0), \(kind.unitCaption)") }
+                            ?? "\(value), \(caption ?? kind.unitCaption)")
     }
 }
 

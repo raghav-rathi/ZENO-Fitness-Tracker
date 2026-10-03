@@ -312,7 +312,7 @@ private struct YearReviewMomentSlide: View {
             }
             .padding(.top, 28)
             .accessibilityElement(children: .ignore)
-            .accessibilityLabel("\(content.title), \(content.value)\(content.unit.map { " \($0)" } ?? "")")
+            .accessibilityLabel(Text(verbatim: [content.title, content.value + (content.unit ?? "")].joined(separator: ", ")))
             Text(content.title)
                 .extrasFont(S.titleSize, weight: .medium, relativeTo: .title2)
                 .foregroundStyle(PulseTheme.textPrimary)
