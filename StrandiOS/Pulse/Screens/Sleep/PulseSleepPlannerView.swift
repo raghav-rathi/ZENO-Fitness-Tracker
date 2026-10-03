@@ -236,10 +236,11 @@ struct PulseSleepPlannerView: View {
             if plan.clamped {
                 return String(localized: "Get to bed by \(bed), the earliest ZENO suggests, to reach \(plan.coveragePercent)% of your Sleep Need by \(wake).")
             }
+            // WHOOP's words (reviews/r133); without an alarm the wake is left to YOUR WAKE TIME (r135).
             if plan.alarmFires {
-                return String(localized: "Your alarm will go off at \(wake). Get to bed by \(bed) to achieve \(share)% of your Sleep Need.")
+                return String(localized: "Your alarm will go off at \(wake). Get to bed by \(bed) to achieve \(share)% Sleep Need.")
             }
-            return String(localized: "Get to bed by \(bed) to achieve \(share)% of your Sleep Need by \(wake).")
+            return String(localized: "Get to bed by \(bed) to achieve \(share)% Sleep Need.")
         }
     }
 
