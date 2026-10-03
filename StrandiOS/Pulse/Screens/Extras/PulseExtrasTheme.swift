@@ -126,7 +126,7 @@ enum PulseExtrasTheme {
         static let cardTopRadius: CGFloat = 36
         static let cardBottomRadius: CGFloat = 112
         static let shieldInset: CGFloat = 13
-        static let shieldStroke: CGFloat = 3
+        static let shieldStroke: CGFloat = 4.5
 
         /// Type sizes (they scale with Dynamic Type from these): the sentence at the foot of a slide
         /// (≈26 pt in WHOOP's face, 24 Medium in SF Pro), a slide's title, its caption.
@@ -171,6 +171,8 @@ enum PulseExtrasTheme {
         /// 20 pt long; lit ticks run from the challenge's colour to white at the head, unlit ones are grey.
         static let gaugeDiameter: CGFloat = 292
         static let gaugeSweep: Double = 270
+        /// The share of the circle's height the comb reaches down to (its ends sit at 135°): 1/2 + cos 45°/2.
+        static let gaugeVisibleHeight: CGFloat = 0.86
         static let tickCount = 120
         static let tickLength: CGFloat = 20
         static let tickWidth: CGFloat = 2.6

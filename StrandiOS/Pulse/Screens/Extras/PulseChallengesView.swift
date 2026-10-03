@@ -261,6 +261,9 @@ private struct PulseChallengeHero: View {
             }
             .frame(width: C.gaugeDiameter - 70)
         }
+        // The comb ends at 135° either side, so the circle's foot is empty: trim it, as WHOOP sets the
+        // days-left line just under the comb's two ends.
+        .frame(height: C.gaugeDiameter * C.gaugeVisibleHeight, alignment: .top)
         .frame(maxWidth: .infinity)
         .background(alignment: .top) {
             // The page's light at the top, tinted with the challenge's colour (WHOOP's is its branding).
