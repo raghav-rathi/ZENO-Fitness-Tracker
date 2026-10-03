@@ -644,9 +644,8 @@ actor PulseSnapshotBuilder {
                             route: .metric("spo2"), dayKey: d.key, flatPercent: 1))
         }
 
-        let apple = await appleRows()
         out.append(await stepsStat(r))
-        out.append(caloriesStat(r, apple: apple))
+        out.append(await caloriesStat(r))
         return out
     }
 
@@ -735,8 +734,13 @@ actor PulseSnapshotBuilder {
                     dayKey: r.day.key, flatPercent: 5, runningTotal: r.day.isToday)
     }
 
-    /// Active calories: Apple Health's imported figure first, else the on-device HR estimate (#616).
-    private func caloriesStat(_ r: PulseRequest, apple: [AppleDaily]) -> PulseKeyStat {
+    /// The day's active calories from the ONE precedence every calories surface shares: Apple Health's
+    /// imported figure first, else the on-device HR estimate (#616), with the per-day `history` the 30-day
+    /// comparison and the spark read and the detail route for the source chosen. The Key Stats tile and
+    /// My Dashboard's CALORIES row both read it, as `stepsResolution(_:)` serves steps.
+    func caloriesResolution(_ r: PulseRequest)
+        async -> (value: Double?, history: [(day: String, value: Double)], route: TabRoute) {
+        let apple = await appleRows()
         var importedByDay: [String: Double] = [:]
         for a in apple { if let k = a.activeKcal { importedByDay[a.day] = max(importedByDay[a.day] ?? 0, k) } }
         let deviceByDay = Dictionary(r.days.compactMap { m in m.activeKcalEst.map { (m.day, $0) } },
@@ -744,13 +748,19 @@ actor PulseSnapshotBuilder {
         let keys = Set(importedByDay.keys).union(deviceByDay.keys).sorted()
         let history = keys.compactMap { k in (importedByDay[k] ?? deviceByDay[k]).map { (day: k, value: $0) } }
         let key = r.day.key
-        let value = (importedByDay[key] ?? deviceByDay[key]).map { StatValue(value: $0, day: key) }
         let metric = MetricCatalog.todayCaloriesMetric(hasImportedKcal: importedByDay[key] != nil,
                                                        hasOnDeviceKcal: deviceByDay[key] != nil)
         let route = TabRoute.metricSourced(key: metric?.key ?? "energy_kcal", source: metric?.source ?? "my-whoop")
-        return stat(id: "kcal", title: String(localized: "Calories"), icon: "flame.fill", value: value,
-                    text: PulseFormat.grouped, unit: "kcal", history: history, route: route, dayKey: key,
-                    flatPercent: 5, runningTotal: r.day.isToday)
+        return (importedByDay[key] ?? deviceByDay[key], history, route)
+    }
+
+    private func caloriesStat(_ r: PulseRequest) async -> PulseKeyStat {
+        let calories = await caloriesResolution(r)
+        let key = r.day.key
+        return stat(id: "kcal", title: String(localized: "Calories"), icon: "flame.fill",
+                    value: calories.value.map { StatValue(value: $0, day: key) },
+                    text: PulseFormat.grouped, unit: "kcal", history: calories.history, route: calories.route,
+                    dayKey: key, flatPercent: 5, runningTotal: r.day.isToday)
     }
 
     // MARK: Stress
@@ -935,17 +945,16 @@ actor PulseSnapshotBuilder {
         let bpms = hr.map(\.bpm)
         let average = bpms.isEmpty ? nil : Int((Double(bpms.reduce(0, +)) / Double(bpms.count)).rounded())
 
-        let apple = await appleRows()
+        let calories = await caloriesResolution(r)
         let rows = await workoutRows()
         guard isCurrent(r) else { return nil }
-        let imported = apple.filter { $0.day == r.day.key }.compactMap(\.activeKcal).max()
         let start = Date(timeIntervalSince1970: TimeInterval(window.from))
         let end = Date(timeIntervalSince1970: TimeInterval(max(window.to, window.from + 60)))
         return StrainSnapshot(seq: r.seq, day: r.day, dial: strainDial(strain),
                               target: strainTarget(charge, strain: strain, isToday: r.day.isToday),
                               curve: curve, hr: points, window: start...end, zones: zones,
                               zoneMinutes: tiz.seconds.map { $0 / 60 },
-                              calories: imported ?? row?.activeKcalEst,
+                              calories: calories.value,
                               averageHR: average, peakHR: bpms.max(),
                               workouts: workoutItems(rows, window: window))
     }

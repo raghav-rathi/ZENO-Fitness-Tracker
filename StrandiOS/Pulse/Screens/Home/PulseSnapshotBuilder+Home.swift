@@ -60,20 +60,6 @@ extension PulseSnapshotBuilder {
         await cached("home.series.\(key)") { await repo.exploreSeries(key: key, source: "my-whoop") }
     }
 
-    /// Active calories per day with the precedence the core Calories stat uses: Apple Health's imported
-    /// figure first, else the on-device HR estimate (#616).
-    // TODO(foundation): expose the core's calorie resolution like `stepsResolution(_:)`, so this mirror
-    // can go.
-    private func calorieSeries(_ r: PulseRequest) async -> [(day: String, value: Double)] {
-        let apple = await appleRows()
-        var imported: [String: Double] = [:]
-        for a in apple { if let k = a.activeKcal { imported[a.day] = max(imported[a.day] ?? 0, k) } }
-        let device = Dictionary(r.days.compactMap { m in m.activeKcalEst.map { (m.day, $0) } },
-                                uniquingKeysWith: { _, last in last })
-        return Set(imported.keys).union(device.keys).sorted()
-            .compactMap { k in (imported[k] ?? device[k]).map { (day: k, value: $0) } }
-    }
-
     // MARK: Dashboard
 
     private func dashboardValue(_ item: PulseDashboardItem, r: PulseRequest, home: HomeSnapshot,
@@ -102,12 +88,11 @@ extension PulseSnapshotBuilder {
             value.isRunningTotal = r.day.isToday && value.value != nil
             return value
         case .calories:
-            let series = await calorieSeries(r)
+            let calories = await caloriesResolution(r)
             let route = home.stats.first { $0.id == "kcal" }.map { PulseRoute.tab($0.route) } ?? item.classicRoute
-            var value = compared(series.last { $0.day == key }?.value, on: key, caption: nil, history: series,
-                                 dayKey: key, text: PulseFormat.grouped, unit: nil,
-                                 baselineText: PulseFormat.grouped, polarity: polarity, fallback: route,
-                                 flatPercent: 5)
+            var value = compared(calories.value, on: key, caption: nil, history: calories.history, dayKey: key,
+                                 text: PulseFormat.grouped, unit: nil, baselineText: PulseFormat.grouped,
+                                 polarity: polarity, fallback: route, flatPercent: 5)
             value.isRunningTotal = r.day.isToday && value.value != nil
             return value
 
