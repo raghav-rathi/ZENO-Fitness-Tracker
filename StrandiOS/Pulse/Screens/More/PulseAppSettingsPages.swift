@@ -32,24 +32,24 @@ struct PulseUnitsView: View {
     var body: some View {
         PulseScreenScaffold(title: String(localized: "Units"), spacing: MoreLayout.sectionGap) {
             MoreSection(nil) {
-                PulseMenuRow(symbol: "scalemass", title: String(localized: "Body measurements"),
+                MoreMenuRow(symbol: "scalemass", title: String(localized: "Body measurements"),
                              selection: $unitSystemRaw,
                              options: [(UnitSystem.metric.rawValue, String(localized: "Metric (kg, cm)")),
                                        (UnitSystem.imperial.rawValue, String(localized: "Imperial (lb, ft)"))])
-                PulseMenuRow(symbol: "figure.run", title: String(localized: "Distance & pace"),
+                MoreMenuRow(symbol: "figure.run", title: String(localized: "Distance & pace"),
                              selection: distanceBinding,
                              options: [(UnitSystem.metric.rawValue, String(localized: "Kilometres")),
                                        (UnitSystem.imperial.rawValue, String(localized: "Miles"))])
-                PulseMenuRow(symbol: "thermometer.medium", title: String(localized: "Temperature"),
+                MoreMenuRow(symbol: "thermometer.medium", title: String(localized: "Temperature"),
                              selection: $temperatureRaw,
                              options: [("", String(localized: "Follow body")),
                                        (TemperatureUnit.celsius.rawValue, "°C"),
                                        (TemperatureUnit.fahrenheit.rawValue, "°F")])
-                PulseMenuRow(symbol: "hand.raised", title: String(localized: "Skin temperature"),
+                MoreMenuRow(symbol: "hand.raised", title: String(localized: "Skin temperature"),
                              selection: $skinTempDisplayRaw,
                              options: [("", String(localized: "Temperature")),
                                        (SkinTempDisplay.Kind.deviation.rawValue, String(localized: "vs baseline"))])
-                PulseMenuRow(symbol: "clock", title: String(localized: "Clock"),
+                MoreMenuRow(symbol: "clock", title: String(localized: "Clock"),
                              selection: $clockFormatRaw,
                              options: [(ClockFormatPreference.system.rawValue, String(localized: "System")),
                                        (ClockFormatPreference.twelveHour.rawValue, String(localized: "12-hour")),
@@ -63,7 +63,7 @@ struct PulseUnitsView: View {
 }
 
 /// A settings row whose value opens a menu of options (UNITS).
-struct PulseMenuRow: View {
+struct MoreMenuRow: View {
     let symbol: String?
     let title: String
     @Binding var selection: String
@@ -126,10 +126,9 @@ struct PulseNotificationsView: View {
                         if on { BatteryNotifier.requestAuthorization() }
                     }
                 if coach.availability != .off {
-                    MoreButtonRow(symbol: nil, title: String(localized: "Morning brief"),
-                                  subtitle: String(localized: "A line from your Coach each morning"),
-                                  trailing: .value(CoachBriefScheduler.isEnabled ? String(localized: "On")
-                                                                                 : String(localized: "Off"))) {
+                    MoreValueRow(title: String(localized: "Morning brief"),
+                                 subtitle: String(localized: "A line from your Coach each morning"),
+                                 value: CoachBriefScheduler.isEnabled ? String(localized: "On") : String(localized: "Off")) {
                         showCoachSettings = true
                     }
                 }
@@ -191,7 +190,7 @@ struct PulseHormonalInsightsView: View {
         PulseScreenScaffold(title: String(localized: "Hormonal insights"), spacing: MoreLayout.sectionGap) {
             if profile.cycleAwarenessApplies {
                 MoreSection(nil) {
-                    PulseCycleVisibilityToggle()
+                    MoreCycleVisibilityToggle()
                     if !cycleHidden {
                         MoreToggleRow(title: String(localized: "Cycle awareness"), isOn: $cycleAwareness,
                                       help: String(localized: "Reads a coarse cycle phase from your nightly skin temperature, on this iPhone. Awareness only: not contraception, not a fertility predictor, not a medical service."))
@@ -210,7 +209,7 @@ struct PulseHormonalInsightsView: View {
 
 /// "Show cycle insights": the user's own "not for me" switch. Hiding also stops tracking, as the classic
 /// Automations switch does; showing only re-offers it.
-struct PulseCycleVisibilityToggle: View {
+struct MoreCycleVisibilityToggle: View {
     @EnvironmentObject private var model: AppModel
     @AppStorage(AppModel.cycleAwarenessKey) private var cycleAwareness = false
     @AppStorage(AppModel.cycleAwarenessHiddenKey) private var cycleHidden = false
@@ -245,10 +244,11 @@ struct PulseHideMetricsView: View {
             MorePageIntro(text: String(localized: "Hide a feature's cards. ZENO keeps recording underneath, so turning one back on shows everything since."))
             MoreSection(nil) {
                 if profile.cycleAwarenessApplies {
-                    PulseCycleVisibilityToggle()
+                    MoreCycleVisibilityToggle()
                 }
-                MoreToggleRow(title: String(localized: "Show hydration"), isOn: $hydrationEnabled,
-                              help: String(localized: "The water log and its daily goal. Off by default."))
+                MoreToggleRow(title: String(localized: "Hide hydration"),
+                              isOn: Binding(get: { !hydrationEnabled }, set: { hydrationEnabled = !$0 }),
+                              help: String(localized: "The water log and its daily goal. Hidden until you turn it on."))
             }
             if PulseCustomizeDashboardView.isRebuilt {
                 MoreSection(nil) {

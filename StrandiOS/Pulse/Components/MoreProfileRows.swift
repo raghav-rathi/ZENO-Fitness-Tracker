@@ -314,6 +314,58 @@ struct MoreToggleRow: View {
     }
 }
 
+/// A settings item that opens something, drawn like `MoreToggleRow` (no card, the UPPERCASE label at the
+/// left) with its value and "›" where the switch would be, so it lines up with the switches around it.
+struct MoreValueRow: View {
+    let title: String
+    var subtitle: String?
+    let value: String
+    var separator = true
+    let action: () -> Void
+
+    init(title: String, subtitle: String? = nil, value: String, separator: Bool = true,
+         action: @escaping () -> Void) {
+        self.title = title
+        self.subtitle = subtitle
+        self.value = value
+        self.separator = separator
+        self.action = action
+    }
+
+    var body: some View {
+        Button(action: action) {
+            VStack(alignment: .leading, spacing: 0) {
+                HStack(spacing: 12) {
+                    VStack(alignment: .leading, spacing: 3) {
+                        MoreWordWrapLabel(title)
+                            .foregroundStyle(PulseTheme.textPrimary)
+                        if let subtitle {
+                            Text(subtitle)
+                                .pulseText(.rowSubline)
+                                .foregroundStyle(PulseTheme.rowSubline)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                    Spacer(minLength: 8)
+                    Text(value)
+                        .pulseText(.secondary)
+                        .foregroundStyle(PulseTheme.textSecondary)
+                    PulseChevron(color: PulseTheme.textTertiary, size: 14)
+                }
+                .frame(minHeight: PulseTheme.Layout.minTapTarget)
+                if separator {
+                    MoreDashedRule()
+                        .padding(.top, 14)
+                }
+            }
+            .padding(.horizontal, 4)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(PulsePressStyle())
+        .accessibilityElement(children: .combine)
+    }
+}
+
 /// The dashed hairline that closes a settings item (white 25%, 4 on 3).
 struct MoreDashedRule: View {
     var body: some View {

@@ -384,7 +384,7 @@ struct PulseUnlockModal: View {
                             .pulseText(.capsuleLabel)
                             .foregroundStyle(PulseTheme.textPrimary)
                             .frame(maxWidth: .infinity, minHeight: 56)
-                            .background(RoundedRectangle(cornerRadius: 14, style: .continuous)
+                            .background(RoundedRectangle(cornerRadius: MoreLayout.modalButtonRadius, style: .continuous)
                                 .strokeBorder(PulseTheme.textTertiary, lineWidth: 1.5))
                             .contentShape(Rectangle())
                     }
@@ -394,7 +394,7 @@ struct PulseUnlockModal: View {
                             .pulseText(.capsuleLabel)
                             .foregroundStyle(Color.black)
                             .frame(maxWidth: .infinity, minHeight: 56)
-                            .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Color.white))
+                            .background(RoundedRectangle(cornerRadius: MoreLayout.modalButtonRadius, style: .continuous).fill(Color.white))
                             .contentShape(Rectangle())
                     }
                     .buttonStyle(PulsePressStyle())
@@ -476,21 +476,39 @@ struct PulseUnlockModal: View {
         }
     }
 
+    /// profile-community-2026/12: the next milestone's badge, small and greyed, leads the card.
+    @ViewBuilder
+    private var nextBadge: some View {
+        switch unlock {
+        case .badge(let badge):
+            let info = ProfileBadgeInfo(badge)
+            ProfileBadgeArt(family: badge.family, symbol: info.symbol, locked: true, alarm: info.alarm, size: 44)
+        case .streak:
+            ProfileFlameArt(days: 1, size: 40, glows: false)
+                .saturation(0)
+                .opacity(0.4)
+                .frame(width: 44, height: 44)
+        }
+    }
+
     private func nextCard(_ next: (text: String, fraction: Double)) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(String(localized: "Your Next Milestone"))
-                .pulseText(.coachingTitle)
-                .foregroundStyle(PulseTheme.positive)
-            Text(next.text)
-                .pulseText(.rowSubline)
-                .foregroundStyle(PulseTheme.textSecondary)
-            GeometryReader { geo in
-                ZStack(alignment: .leading) {
-                    Capsule().fill(PulseTheme.track)
-                    Capsule().fill(PulseTheme.positive).frame(width: geo.size.width * CGFloat(next.fraction))
+        HStack(alignment: .center, spacing: 14) {
+            nextBadge
+            VStack(alignment: .leading, spacing: 8) {
+                Text(String(localized: "Your Next Milestone"))
+                    .pulseText(.coachingTitle)
+                    .foregroundStyle(PulseTheme.positive)
+                Text(next.text)
+                    .pulseText(.rowSubline)
+                    .foregroundStyle(PulseTheme.textSecondary)
+                GeometryReader { geo in
+                    ZStack(alignment: .leading) {
+                        Capsule().fill(PulseTheme.track)
+                        Capsule().fill(PulseTheme.positive).frame(width: geo.size.width * CGFloat(next.fraction))
+                    }
                 }
+                .frame(height: 4)
             }
-            .frame(height: 4)
         }
         .padding(18)
         .background(RoundedRectangle(cornerRadius: PulseTheme.Radius.card, style: .circular)

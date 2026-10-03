@@ -269,7 +269,7 @@ struct PulseAchievementDetailsView: View {
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 20)
-        .background(RoundedRectangle(cornerRadius: 16, style: .circular).fill(ProfileArtPalette.milestoneCard))
+        .background(RoundedRectangle(cornerRadius: MoreLayout.profileCardRadius, style: .circular).fill(ProfileArtPalette.milestoneCard))
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(String(localized: "Next milestone \(next)"))
         .accessibilityValue(String(localized: "\(badge.remaining ?? 0) more"))

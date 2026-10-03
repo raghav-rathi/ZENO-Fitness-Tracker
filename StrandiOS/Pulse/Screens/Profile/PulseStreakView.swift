@@ -124,7 +124,7 @@ struct PulseStreakView: View {
         }
         .padding(.horizontal, 18)
         .padding(.vertical, 20)
-        .background(RoundedRectangle(cornerRadius: 16, style: .circular).fill(ProfileArtPalette.milestoneCard))
+        .background(RoundedRectangle(cornerRadius: MoreLayout.profileCardRadius, style: .circular).fill(ProfileArtPalette.milestoneCard))
     }
 
     private func weekdayLabel(_ weekday: Int) -> String {
@@ -173,7 +173,7 @@ struct PulseStreakView: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 22)
-        .background(RoundedRectangle(cornerRadius: 16, style: .circular).fill(ProfileArtPalette.milestoneCard))
+        .background(RoundedRectangle(cornerRadius: MoreLayout.profileCardRadius, style: .circular).fill(ProfileArtPalette.milestoneCard))
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(String(localized: "Next milestone \(m.next) days"))
         .accessibilityValue(String(localized: "\(m.remaining) more days"))
@@ -213,7 +213,7 @@ struct PulseStreakView: View {
         }
         .padding(20)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: 16, style: .circular).fill(ProfileArtPalette.milestoneCard))
+        .background(RoundedRectangle(cornerRadius: MoreLayout.profileCardRadius, style: .circular).fill(ProfileArtPalette.milestoneCard))
         .accessibilityElement(children: .combine)
     }
 

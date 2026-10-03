@@ -352,7 +352,7 @@ private struct ProfileBirthdaySheet: View {
                         .pulseText(.capsuleLabel)
                         .foregroundStyle(PulseTheme.textPrimary)
                         .frame(maxWidth: .infinity, minHeight: 52)
-                        .background(RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .background(RoundedRectangle(cornerRadius: MoreLayout.modalButtonRadius, style: .continuous)
                             .strokeBorder(Color.white, lineWidth: 1.5))
                         .contentShape(Rectangle())
                 }
@@ -362,7 +362,7 @@ private struct ProfileBirthdaySheet: View {
                         .pulseText(.capsuleLabel)
                         .foregroundStyle(valid ? Color.black : PulseTheme.textTertiary)
                         .frame(maxWidth: .infinity, minHeight: 52)
-                        .background(RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .background(RoundedRectangle(cornerRadius: MoreLayout.modalButtonRadius, style: .continuous)
                             .fill(valid ? Color.white : PulseTheme.buttonInvalid))
                         .contentShape(Rectangle())
                 }

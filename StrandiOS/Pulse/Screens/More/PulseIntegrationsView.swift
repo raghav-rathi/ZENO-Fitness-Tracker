@@ -32,7 +32,7 @@ struct PulseIntegrationsView: View {
     /// APPLE HEALTH on a dark gradient card with a status mark, the featured card at the top.
     private var featuredCard: some View {
         HStack(spacing: 14) {
-            PulseHealthGlyph(size: 34)
+            MoreHealthGlyph(size: 34)
             Text(String(localized: "Apple Health"))
                 .modifier(MoreLabelText())
                 .foregroundStyle(PulseTheme.textPrimary)
@@ -59,13 +59,13 @@ struct PulseIntegrationsView: View {
 
 /// A white rounded tile with a red heart: the generic sign for health data (an SF Symbol, not Apple's
 /// app icon artwork).
-struct PulseHealthGlyph: View {
+struct MoreHealthGlyph: View {
     var size: CGFloat = 34
 
     var body: some View {
         Image(systemName: "heart.fill")
             .font(.system(size: size * 0.5, weight: .semibold))
-            .foregroundStyle(Color(hex: "#FF3B5C"))
+            .foregroundStyle(ProfileArtPalette.healthHeart)
             .frame(width: size, height: size)
             .background(RoundedRectangle(cornerRadius: size * 0.24, style: .continuous).fill(Color.white))
             .accessibilityHidden(true)
@@ -129,14 +129,15 @@ struct PulseAppleHealthIntegrationView: View {
     /// The heart tile joined to ZENO's tile by a dotted line.
     private var connectionGraphic: some View {
         HStack(spacing: 14) {
-            PulseHealthGlyph(size: 64)
+            MoreHealthGlyph(size: 64)
             HStack(spacing: 5) {
                 ForEach(0..<6, id: \.self) { _ in
                     Circle().fill(PulseTheme.textTertiary).frame(width: 4, height: 4)
                 }
             }
             ZStack {
-                RoundedRectangle(cornerRadius: 15, style: .continuous).fill(Color(hex: "#20262C"))
+                RoundedRectangle(cornerRadius: MoreLayout.healthTileRadius, style: .continuous)
+                    .fill(ProfileArtPalette.zenoTile)
                 PulseZenoMonogramShape()
                     .stroke(Color.white, style: StrokeStyle(lineWidth: 2.5, lineCap: .round, lineJoin: .round))
                     .frame(width: 26, height: 26)

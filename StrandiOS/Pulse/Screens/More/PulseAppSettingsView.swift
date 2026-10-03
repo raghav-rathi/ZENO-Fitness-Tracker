@@ -21,15 +21,20 @@ struct PulseAppSettingsView: View {
 
     @Environment(\.pulseNavigator) private var navigator
     @EnvironmentObject private var profile: ProfileStore
-    @State private var modal: AppSettingsModal?
 
     var body: some View {
-        PulseScreenScaffold(title: String(localized: "App settings"), spacing: PulseTheme.Row.listGap) {
+        // health-more-2026/08, 08b: the first card starts ≈62 pt under the ✕'s centre.
+        PulseScreenScaffold(title: String(localized: "App settings"), spacing: PulseTheme.Row.listGap,
+                            topPadding: 40) {
             MoreButtonRow(symbol: "figure.run", title: String(localized: "Activity settings")) {
                 navigator.open(PulseActivitySettingsRoute().route)
             }
-            MoreButtonRow(symbol: "sparkles", title: String(localized: "AI settings")) { modal = .ai }
-            MoreButtonRow(symbol: "square.and.arrow.up", title: String(localized: "Data export")) { modal = .export }
+            MoreButtonRow(symbol: "sparkles", title: String(localized: "AI settings")) {
+                navigator.open(PulseAISettingsRoute().route)
+            }
+            MoreButtonRow(symbol: "square.and.arrow.up", title: String(localized: "Data export")) {
+                navigator.open(PulseDataExportRoute().route)
+            }
             MoreButtonRow(symbol: "ruler", title: String(localized: "Units")) {
                 navigator.open(PulseUnitsRoute().route)
             }
@@ -51,10 +56,9 @@ struct PulseAppSettingsView: View {
                 navigator.open(PulseHideMetricsRoute().route)
             }
         }
-        // AI Settings and Export are modals of their own in WHOOP ("✕", §1.5, §1.6), over this sheet.
-        .sheet(item: $modal) { modal in
-            PulseModalHost(route: modal.route)
-        }
+        // AI Settings and Export are modals of their own in WHOOP ("✕", §1.5, §1.6). Inside this sheet the
+        // navigator pushes them (the shell offers no modal over a modal yet); opened from anywhere else,
+        // their routes present them as sheets.
         .onAppear(perform: openDebugPage)
     }
 
@@ -70,8 +74,8 @@ struct PulseAppSettingsView: View {
         case "heart-rate-settings":
             navigator.open(PulseActivitySettingsRoute().route)
             navigator.open(PulseHeartRateSettingsRoute().route)
-        case "ai-settings": modal = .ai
-        case "data-export": modal = .export
+        case "ai-settings": navigator.open(PulseAISettingsRoute().route)
+        case "data-export": navigator.open(PulseDataExportRoute().route)
         case "activity-settings": navigator.open(PulseActivitySettingsRoute().route)
         case "units": navigator.open(PulseUnitsRoute().route)
         case "integrations": navigator.open(PulseIntegrationsRoute().route)
@@ -85,19 +89,6 @@ struct PulseAppSettingsView: View {
         default: break
         }
         #endif
-    }
-}
-
-/// The two App Settings pages WHOOP presents as modals of their own.
-private enum AppSettingsModal: String, Identifiable {
-    case ai, export
-    var id: String { rawValue }
-
-    var route: PulseRoute {
-        switch self {
-        case .ai: return PulseAISettingsRoute().route
-        case .export: return PulseDataExportRoute().route
-        }
     }
 }
 
