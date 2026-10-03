@@ -54,6 +54,17 @@ extension PulseSnapshotBuilder {
         await repo.periodStarts()
     }
 
+    /// The opt-in auto-detected workout Home offers to save (§3.14 [Z]): the classic Today card's
+    /// candidate (`Repository.autoDetectCandidate`, a sustained-elevated heart-rate window in the last two
+    /// days that is neither saved nor dismissed, detected off the main actor), nil inside when there is
+    /// none or Settings' Auto-detect workouts is off. nil when a newer refresh superseded the build.
+    func homeDetectedWorkout(_ r: PulseRequest) async -> HomeDetectedWorkout? {
+        begin(r.seq)
+        let candidate = await repo.autoDetectCandidate()
+        guard isCurrent(r) else { return nil }
+        return HomeDetectedWorkout(workout: candidate)
+    }
+
     // MARK: Series
 
     /// A strap-source Explore series (imported-wins per day, then NOOP's computed value, then the daily

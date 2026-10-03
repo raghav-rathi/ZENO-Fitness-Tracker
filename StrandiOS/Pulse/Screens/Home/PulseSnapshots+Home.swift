@@ -118,6 +118,12 @@ struct PulseMonitorGrades: Equatable {
     var isPending: Bool { judged == 0 }
 }
 
+/// The opt-in auto-detected workout for Home's coaching stack (§3.14 [Z]); `workout` is nil when there is none
+/// to suggest.
+struct HomeDetectedWorkout: Equatable {
+    let workout: DetectedWorkout?
+}
+
 /// Everything Home's own sections draw for one day, beside `HomeSnapshot`.
 struct HomeExtrasSnapshot: Equatable {
     let seq: Int
