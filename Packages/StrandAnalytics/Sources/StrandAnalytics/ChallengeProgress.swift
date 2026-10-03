@@ -23,6 +23,10 @@ public enum ChallengeProgress {
         case steps
         /// Nights in bed by a set time, counted.
         case bedtime
+
+        /// Counted one day (one night) at a time, at most once each, rather than summed: a target of 7 needs
+        /// 7 separate nights, so missed nights can put it out of reach.
+        public var isCounted: Bool { self == .bedtime }
     }
 
     /// A challenge as the wearer set it.
@@ -75,9 +79,29 @@ public enum ChallengeProgress {
         public let daysLeft: Int
         /// The day the running total reached the target.
         public let completedOn: String?
+        /// Counted kinds (bedtime): the most the challenge can still end on if every open night counts,
+        /// that is what it has plus every night not yet judged: tonight's and every later one, and last
+        /// night's until it is judged (its sleep may not have synced yet). nil for summed kinds, which have
+        /// no such ceiling.
+        public let maxReachable: Int?
+
+        public init(logged: Double, target: Int, phase: Phase, daysLeft: Int, completedOn: String?,
+                    maxReachable: Int? = nil) {
+            self.logged = logged
+            self.target = target
+            self.phase = phase
+            self.daysLeft = daysLeft
+            self.completedOn = completedOn
+            self.maxReachable = maxReachable
+        }
 
         public var fraction: Double { target > 0 ? logged / Double(target) : 0 }
         public var remaining: Double { max(0, Double(target) - logged) }
+        /// False once a counted challenge has missed too many nights to reach its target.
+        public var isReachable: Bool { maxReachable.map { $0 >= target } ?? true }
+        /// Counted kinds: the nights still open (to be judged), so a sentence never promises more nights than
+        /// the challenge has left. nil for summed kinds.
+        public var openCount: Int? { maxReachable.map { max(0, $0 - Int(logged.rounded(.down))) } }
     }
 
     /// Where `definition` stands on `today`, from what each day counted. Days outside the challenge and
@@ -115,8 +139,24 @@ public enum ChallengeProgress {
         case .complete, .ended:
             daysLeft = 0
         }
+        var maxReachable: Int?
+        if definition.kind.isCounted {
+            let counted = Int(total.rounded(.down))
+            switch phase {
+            case .upcoming:
+                maxReachable = definition.days
+            case .running:
+                let yesterday = PulseDisplay.dayKey(today, offsetBy: -1)
+                let open = definition.dayKeys.filter { key in
+                    key > today || ((key == today || key == yesterday) && perDay[key] == nil)
+                }.count
+                maxReachable = min(definition.days, counted + open)
+            case .complete, .ended:
+                maxReachable = counted
+            }
+        }
         return Status(logged: total, target: definition.target, phase: phase, daysLeft: daysLeft,
-                      completedOn: completedOn)
+                      completedOn: completedOn, maxReachable: maxReachable)
     }
 
     /// Whether a night's time in bed meets a bedtime target. A time before noon is after midnight, so

@@ -65,6 +65,75 @@ final class ChallengeProgressTests: XCTestCase {
         XCTAssertEqual(won.phase, .complete)
     }
 
+    // MARK: Reachability (counted kinds)
+
+    /// 7 nights on time in 7 days, from Sep 30.
+    private let bedtime = ChallengeProgress.Definition(kind: .bedtime, target: 7, days: 7, startDay: "2026-09-30",
+                                                       bedtimeMinute: 23 * 60)
+
+    func testMissedNightsPutACountedTargetOutOfReach() {
+        // The review's capture: two late nights, one on time, today Oct 3 with 4 days left. At most 1 + 4 = 5
+        // of 7 nights can still be on time, so 7/7 is out of reach.
+        let perDay = ["2026-09-30": 0.0, "2026-10-01": 0, "2026-10-02": 1]
+        let s = ChallengeProgress.status(bedtime, perDay: perDay, today: "2026-10-03")
+        XCTAssertEqual(s.phase, .running)
+        XCTAssertEqual(s.logged, 1)
+        XCTAssertEqual(s.daysLeft, 4)
+        XCTAssertEqual(s.maxReachable, 5)
+        XCTAssertEqual(s.openCount, 4)
+        XCTAssertFalse(s.isReachable)
+    }
+
+    func testTonightCountsOnlyWhileItIsStillToBeJudged() {
+        // A 5-of-7 target: Oct 3's night is open until it is judged.
+        let five = ChallengeProgress.Definition(kind: .bedtime, target: 5, days: 7, startDay: "2026-09-30",
+                                                bedtimeMinute: 23 * 60)
+        let open = ChallengeProgress.status(five, perDay: ["2026-09-30": 0, "2026-10-01": 0, "2026-10-02": 1],
+                                            today: "2026-10-03")
+        XCTAssertEqual(open.maxReachable, 5)
+        XCTAssertTrue(open.isReachable)
+        // Judged late (an early-morning sync of a night keyed to today), it is gone.
+        let judged = ChallengeProgress.status(five, perDay: ["2026-09-30": 0, "2026-10-01": 0, "2026-10-02": 1,
+                                                             "2026-10-03": 0],
+                                              today: "2026-10-03")
+        XCTAssertEqual(judged.maxReachable, 4)
+        XCTAssertFalse(judged.isReachable)
+    }
+
+    func testLastNightStaysOpenUntilItsSleepSyncs() {
+        // Oct 3, nothing judged for Oct 2's night yet (it has not synced): it may still count.
+        let s = ChallengeProgress.status(bedtime, perDay: ["2026-09-30": 1, "2026-10-01": 1], today: "2026-10-03")
+        XCTAssertEqual(s.maxReachable, 7)
+        XCTAssertTrue(s.isReachable)
+        // An older night with nothing recorded is over: Sep 30 missing, two days later.
+        let older = ChallengeProgress.status(bedtime, perDay: ["2026-10-01": 1], today: "2026-10-03")
+        XCTAssertEqual(older.maxReachable, 6)
+        XCTAssertFalse(older.isReachable)
+    }
+
+    func testReachabilityAtTheEdges() {
+        let upcoming = ChallengeProgress.status(bedtime, perDay: [:], today: "2026-09-29")
+        XCTAssertEqual(upcoming.maxReachable, 7)
+        XCTAssertTrue(upcoming.isReachable)
+
+        let won = ChallengeProgress.status(
+            ChallengeProgress.Definition(kind: .bedtime, target: 2, days: 7, startDay: "2026-09-30"),
+            perDay: ["2026-09-30": 1, "2026-10-01": 1], today: "2026-10-03")
+        XCTAssertEqual(won.phase, .complete)
+        XCTAssertTrue(won.isReachable)
+
+        let ended = ChallengeProgress.status(bedtime, perDay: ["2026-10-01": 1], today: "2026-10-08")
+        XCTAssertEqual(ended.phase, .ended)
+        XCTAssertEqual(ended.maxReachable, 1)
+        XCTAssertFalse(ended.isReachable)
+
+        // Summed kinds have no ceiling.
+        let minutes = ChallengeProgress.status(allIn, perDay: ["2026-06-29": 1], today: "2026-07-05")
+        XCTAssertNil(minutes.maxReachable)
+        XCTAssertNil(minutes.openCount)
+        XCTAssertTrue(minutes.isReachable)
+    }
+
     func testBedtimeReadsAfterMidnightAsLate() {
         let eleven = 23 * 60
         XCTAssertTrue(ChallengeProgress.isInBedBy(onsetMinute: 22 * 60 + 45, target: eleven))
