@@ -49,14 +49,17 @@ struct PulseMemoryDetailView: View {
     }
 
     private func content(_ item: PulseMemoryItem) -> some View {
-        VStack(alignment: .leading, spacing: 0) {
-            Text(item.title)
+        // A title cut short of its sentence would only repeat the start of the text under it: show the whole
+        // memory as the title then, and the text under it only when it says more.
+        let heading = item.title.hasSuffix("…") ? item.detail : item.title
+        return VStack(alignment: .leading, spacing: 0) {
+            Text(heading)
                 .pulseText(.weeklyTrendsTitle)
                 .foregroundStyle(PulseTheme.textPrimary)
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.top, 14)
                 .accessibilityAddTraits(.isHeader)
-            if item.detail != item.title {
+            if item.detail != heading {
                 Text(item.detail)
                     .pulseText(.subtitle)
                     .foregroundStyle(PulseTheme.textSecondary)

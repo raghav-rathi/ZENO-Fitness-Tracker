@@ -223,6 +223,7 @@ struct PulseCycleCoachingCard: View {
             Image(systemName: metric.symbol)
                 .font(.system(size: 16, weight: .regular))
                 .foregroundStyle(PulseTheme.textTertiary)
+                .frame(height: 20, alignment: .leading)
                 .accessibilityHidden(true)
             Text(metric.title)
                 .pulseText(.label)
