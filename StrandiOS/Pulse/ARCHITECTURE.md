@@ -212,7 +212,7 @@ without anyone touching the shell. The fallbacks:
 |---|---|---|
 | `.sleepPlanner` | Alarms | NavRouter `.alarms`, Home's Tonight's Sleep |
 | `.deviceSettings` | Devices | NavRouter `.devices`, Home's strap chip, More's row |
-| `.profile` | Settings | Home's avatar, More's row |
+| `.profile` | Settings | More's row (Home's avatar opens `.profile` directly) |
 | `.journal(dayOffset:)` | Journal (InsightsView) | NavRouter `.journal`, quick action, ＋ menu |
 | `.startActivity` | Workouts | quick action, ＋ menu, Home's START ACTIVITY |
 | `.addActivity` | Workouts | Home's + ADD ACTIVITY, ＋ menu |
@@ -738,8 +738,9 @@ Activity group (`Screens/Activity/`), deviations and what the next wave inherits
 - **Add Activity's banner** keeps "ZENO scores an activity you add from your strap's heart rate over that
   time." rather than the spec's [Z] "Your edits help ZENO recognise your activities.": the detector is a
   fixed heuristic that learns nothing from edits.
-- **"View HR settings"** opens the classic Settings (the zones are in its Profile card); there is no
-  heart-rate page to deep-link to yet.
+- **"View HR settings"** still opens the classic Settings (the zones are in its Profile card). More's
+  HEART RATE SETTINGS (`PulseHeartRateSettingsRoute`) now edits the same max HR and zones; pointing the
+  link there is the activity group's change.
 - **After End & Save** Activity Details draws the live session's own samples until the strap's history
   covers 90% of the window, and `Repository.workoutRows` keeps a row saved with its own Avg / Max HR (a
   live session's) until the trace covers 90% of it (`Repository.traceCoversWorkout`).
