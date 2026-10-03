@@ -217,7 +217,7 @@ enum PulseExtrasTheme {
         /// The steps figure's blue (/50: #1A6EB0 at the top of the digits to #0B4C7C at their foot).
         static let stepsTop = Color(hex: "#2A7CC0")
         static let stepsBottom = Color(hex: "#0B4C7C")
-        static let mountain = Color(hex: "#8C8F95")
+        static let mountain = Color(hex: "#8C8F95").opacity(0.9)
         static let mountainSize: CGFloat = 170
 
         /// Behaviour bars (/11): helps teal, hurts orange, brightest for the largest effect; tall for
@@ -251,6 +251,7 @@ enum PulseExtrasTheme {
         static let personaWave = Color.white.opacity(0.07)
         static let personaWaveHeight: CGFloat = 70
         static let personaGlowRadius: CGFloat = 320
+        static let personaGlowStrength = 0.9
         static let personaWordmark = CGSize(width: 72, height: 12)
 
         /// The summary share card's surfaces (/09): the stat card and the row cards, their corners, the
@@ -258,6 +259,7 @@ enum PulseExtrasTheme {
         static let summaryCard = Color.white.opacity(0.06)
         static let summaryRow = Color.white.opacity(0.07)
         static let summaryRowIcon = Color(hex: "#C9A15A")
+        static let summaryRowIconRim = Color(hex: "#C9A15A").opacity(0.6)
         static let summaryCardRadius: CGFloat = 16
         static let summaryRowRadius: CGFloat = 14
         static let summaryRing: CGFloat = 72
@@ -272,6 +274,9 @@ enum PulseExtrasTheme {
         /// Healthspan palette's green when younger, the unfavourable orange when older.
         static let ageBadge: CGFloat = 104
         static let ageRim: CGFloat = 1.5
+        static let ageRimStrength = 0.7
+        static let ageFillCentre = 0.28
+        static let ageFillEdge = 0.04
         /// Under a tenth of a year either way reads as the wearer's own age.
         static let ageSameBand = 0.05
 

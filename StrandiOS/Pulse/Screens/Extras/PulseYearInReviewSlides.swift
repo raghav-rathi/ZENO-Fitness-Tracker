@@ -689,7 +689,7 @@ private struct YearReviewStepsSlide: View {
                     .padding(.horizontal, 12)
                 Image(systemName: "mountain.2.fill")
                     .font(.system(size: S.mountainSize, weight: .regular))
-                    .foregroundStyle(S.mountain.opacity(0.9))
+                    .foregroundStyle(S.mountain)
                     .padding(.top, 70)
             }
             .padding(.top, 60)
@@ -774,7 +774,7 @@ private struct YearReviewPersonaSlide: View {
                     .padding(.top, 6)
                 Text(paragraph)
                     .extrasFont(S.personaParagraphSize, weight: .regular, relativeTo: .body)
-                    .foregroundStyle(PulseTheme.textPrimary.opacity(0.85))
+                    .foregroundStyle(PulseTheme.textButton)
                     .lineSpacing(S.personaLineSpacing)
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.top, 12)
@@ -800,7 +800,7 @@ private struct YearReviewPersonaSlide: View {
                 RoundedRectangle(cornerRadius: S.personaCardRadius, style: .continuous)
                     .fill(S.personaCardFill)
                     .overlay {
-                        RadialGradient(colors: [persona.glow.opacity(0.9), persona.glow.opacity(0)],
+                        RadialGradient(colors: [persona.glow.opacity(S.personaGlowStrength), persona.glow.opacity(0)],
                                        center: UnitPoint(x: 0.3, y: 0.85), startRadius: 0,
                                        endRadius: S.personaGlowRadius)
                             .clipShape(RoundedRectangle(cornerRadius: S.personaCardRadius, style: .continuous))
@@ -1055,7 +1055,7 @@ struct YearReviewSummaryCard: View {
                 .font(.system(size: S.summaryGlyphSize, weight: .regular))
                 .foregroundStyle(S.summaryRowIcon)
                 .frame(width: S.summaryGlyphFrame, height: S.summaryGlyphFrame)
-                .background(Circle().strokeBorder(S.summaryRowIcon.opacity(0.6), lineWidth: 1))
+                .background(Circle().strokeBorder(S.summaryRowIconRim, lineWidth: 1))
             VStack(alignment: .leading, spacing: 2) {
                 if detailFirst {
                     Text(title).pulseText(.legend).foregroundStyle(PulseTheme.textSecondary)
@@ -1125,9 +1125,9 @@ private struct YearReviewAgeBadge: View {
         .frame(width: S.ageBadge, height: S.ageBadge)
         .background {
             Circle()
-                .fill(RadialGradient(colors: [tint.opacity(0.28), tint.opacity(0.04)], center: .center, startRadius: 0,
-                                     endRadius: S.ageBadge / 2))
-                .overlay(Circle().strokeBorder(tint.opacity(0.7), lineWidth: S.ageRim))
+                .fill(RadialGradient(colors: [tint.opacity(S.ageFillCentre), tint.opacity(S.ageFillEdge)],
+                                     center: .center, startRadius: 0, endRadius: S.ageBadge / 2))
+                .overlay(Circle().strokeBorder(tint.opacity(S.ageRimStrength), lineWidth: S.ageRim))
         }
         .dynamicTypeSize(...DynamicTypeSize.xLarge)
         .accessibilityElement(children: .combine)

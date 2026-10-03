@@ -416,7 +416,8 @@ struct PulseZenoLiveRoute: PulseScreenRoute {
 
 #if DEBUG
 /// `--pulse-zeno-live-sample`: a drawn stand-in photo (sky, hills and a lake) for simulator captures, which
-/// cannot pick from the library.
+/// cannot pick from the library. Its colours and sizes are the picture's content, not the screen's, so they
+/// stay here rather than in the theme.
 enum ZenoLiveSample {
     @MainActor
     static func image() -> UIImage? {
