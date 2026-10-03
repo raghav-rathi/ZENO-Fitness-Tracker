@@ -271,12 +271,16 @@ struct PulseHomeSections: View {
         }
     }
 
-    /// My Day for an established member: the coach pill (today), then Today's Activities and Tonight's
-    /// Sleep (Tonight's first in the evening, §3.1 order rule), My Journal and the Menstrual card.
+    /// My Day for an established member: the coach pill (today), the Year in Review promo in its season,
+    /// then Today's Activities and Tonight's Sleep (Tonight's first in the evening, §3.1 order rule), My
+    /// Journal and the Menstrual card.
     @ViewBuilder
     private var myDay: some View {
         if isToday {
             PulseHomeCoachEntry(home: home, facts: current?.outlook)
+            if PulseHomeDebug.forcesYearInReview || PulseYearInReviewView.isInSeason() {
+                PulseYearInReviewPromo()
+            }
         }
         if isToday && PulseDailyOutlook.isEvening(home), let tonight = home.tonight {
             PulseTonightsSleepCard(tonight: tonight)
@@ -333,8 +337,9 @@ enum PulseHomeSpacing {
 /// grade, for a capture (the demo seed's vitals are all in range). `--pulse-home-milestones`: one
 /// milestone card of each kind in the coaching stack (`PulseHomeMilestones.debugCards`).
 /// `--pulse-coaching-top <id prefix>`: lift the coaching cards whose id starts so ("challenge",
-/// "milestone-badge", "week-review") to the top of the stack, which simctl cannot page with ✓. Under
-/// `--demo-seed` the unlock modal stays off Home unless `--more-unlock` asks for it. No-op in Release.
+/// "milestone-badge", "week-review") to the top of the stack, which simctl cannot page with ✓.
+/// `--pulse-yir-season`: the Year in Review promo in My Day out of its season. Under `--demo-seed` the
+/// unlock modal stays off Home unless `--more-unlock` asks for it. No-op in Release.
 enum PulseHomeDebug {
     /// Whether Home presents the unlock modal. A `--demo-seed` store fills in after the modal's silent
     /// first look, so its whole history would be announced over Home, again on every launch, as simctl
@@ -384,6 +389,15 @@ enum PulseHomeDebug {
         }
         #else
         return nil
+        #endif
+    }
+
+    /// DEBUG `--pulse-yir-season`: the Year in Review promo out of its season, for a capture.
+    static var forcesYearInReview: Bool {
+        #if DEBUG
+        return CommandLine.arguments.contains("--pulse-yir-season")
+        #else
+        return false
         #endif
     }
 

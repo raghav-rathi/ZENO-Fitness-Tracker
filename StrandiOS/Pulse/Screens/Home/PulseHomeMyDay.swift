@@ -145,6 +145,45 @@ struct PulseHomeCoachEntry: View {
     }
 }
 
+// MARK: - Year in Review (§3.39 [Z])
+
+/// "✦ Your 2026 in Review ›": My Day's seasonal promo, shown from 1 December to 15 January
+/// (`PulseYearInReviewView.isInSeason`) and opening the full-screen story. A pill row like the coach
+/// pill's, on the story's own near-black page lifting into its indigo glow, the mark in the year's blue.
+struct PulseYearInReviewPromo: View {
+    @Environment(\.pulseNavigator) private var navigator
+
+    var body: some View {
+        Button { navigator.open(.yearInReview) } label: {
+            HStack(spacing: 12) {
+                Image(systemName: "sparkles")
+                    .pulseHomeGlyph(.pillMark)
+                    .foregroundStyle(LinearGradient(gradient: PulseTheme.Gradients.yearInReviewYear,
+                                                    startPoint: .leading, endPoint: .trailing))
+                    .frame(width: 22)
+                    .accessibilityHidden(true)
+                Text(PulseYearInReviewView.seasonTitle())
+                    .pulseText(.coachingTitle)
+                    .foregroundStyle(PulseTheme.textPrimary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.85)
+                Spacer(minLength: 8)
+                PulseChevron(color: PulseTheme.textPrimary, size: 14)
+            }
+            .padding(.horizontal, PulseTheme.Layout.cardPadding)
+            .frame(maxWidth: .infinity, minHeight: PulseTheme.Row.pill)
+            .background(RoundedRectangle(cornerRadius: PulseTheme.Radius.card, style: .circular)
+                .fill(LinearGradient(colors: [PulseTheme.Gradients.yearInReviewPage,
+                                              PulseTheme.Gradients.yearInReviewGlowIndigo],
+                                     startPoint: .leading, endPoint: .trailing)))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(PulsePressStyle())
+        .accessibilityHint(String(localized: "Opens your year in review"))
+        .id("pulse.year-in-review")
+    }
+}
+
 // MARK: - Today's Activities (§3.1 item 8b, §2.6 item 7)
 
 /// TODAY'S ACTIVITIES (ACTIVITIES on a past day): last night, naps and workouts as activity rows, oldest
