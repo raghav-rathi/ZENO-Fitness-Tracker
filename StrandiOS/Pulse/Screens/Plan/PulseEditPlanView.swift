@@ -20,7 +20,9 @@ struct PulseEditPlanView: View {
                     .pulseText(.pageTitle)
                     .foregroundStyle(PulseTheme.textPrimary)
                     .accessibilityAddTraits(.isHeader)
-                Text(String(localized: "Choose from the plans below or create your own. A plan sets weekly goals for your sleep, strain, activities and behaviors, and ZENO tracks them from your data."))
+                // WHOOP's two sentences (§3.19) without the claims ZENO cannot keep: its templates are fixed,
+                // not "personalized", and a plan sets goals rather than daily recommendations.
+                Text(String(localized: "Choose from the list of plans below or create your own. Starting a plan sets your goals for the week ahead."))
                     .pulseText(.subtitle)
                     .foregroundStyle(PulseTheme.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
