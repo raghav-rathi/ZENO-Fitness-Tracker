@@ -788,13 +788,10 @@ struct HealthExtras: View {
                 .padding(.bottom, 4)
             HealthIllnessSlot()
             PulseLink(.tab(stepsRoute)) {
-                PulseListRow(symbol: "figure.walk", title: String(localized: "Steps"),
+                // The row draws its own card, paddings and height (§2.6.22); the shoe is My Dashboard's.
+                PulseListRow(symbol: "shoe", title: String(localized: "Steps"),
                              subtitle: String(localized: "Today and your trend"),
                              trailing: .value(stepsToday.map { PulseFormat.grouped($0) } ?? "--"))
-                    .padding(.horizontal, 16)
-                    .frame(minHeight: PulseTheme.Row.listWithSubline)
-                    .pulseCardBackground(.rowCard)
-                    .contentShape(Rectangle())
             }
             .buttonStyle(PulsePressStyle())
         }
