@@ -485,7 +485,11 @@ extension PulseSnapshotBuilder {
         // Monday's look back: a week with at least three scored days behind it.
         let weekAgo = PulseDisplay.dayKey(key, offsetBy: -7) ?? key
         let lastWeekScored = history.filter { $0.day >= weekAgo }.count
-        let isMonday = Calendar.current.component(.weekday, from: r.now) == 2
+        var isMonday = Calendar.current.component(.weekday, from: r.now) == 2
+        #if DEBUG
+        // `--pulse-week-review`: any day is Monday for the week-in-review card, for a capture.
+        if CommandLine.arguments.contains("--pulse-week-review") { isMonday = true }
+        #endif
         // A target only from the day's own Recovery, exactly as the dial draws its band and tick.
         let ownTarget = home.target.flatMap { $0.fromCarriedRecovery ? nil : $0 }
         let alarm = alarmCheck(r, home: home)
