@@ -248,7 +248,8 @@ extension PulseSnapshotBuilder {
             seq: r.seq, requestDayKey: r.day.key, todayKey: Repository.localDayKey(r.now), nightKeys: keys,
             wakeDayKey: key, hasNight: tonight != nil, olderKey: keys.first { $0 < key },
             newerKey: keys.last { $0 > key }, dial: dial, contributors: contributors, summary: summary,
-            lastNight: lastNight, hoursVsNeeded: hoursVsNeeded, consistency: consistency, efficiency: efficiency,
+            lastNight: lastNight, edit: tonight?.night.editTarget.map(SleepTimeEdit.init(night:)),
+            hoursVsNeeded: hoursVsNeeded, consistency: consistency, efficiency: efficiency,
             stress: stress, weekly: weekly, naps: napList, sleepingHR: sleepingHR, lowestHR: lowestHR,
             respRate: tonight == nil ? nil : daysByKey[key]?.respRateBpm, metricPages: metricPages)
     }

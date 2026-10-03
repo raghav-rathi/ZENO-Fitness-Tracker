@@ -26,6 +26,8 @@ typealias PulseSleepView = PulseSleepDiveView
 struct PulseSleepDiveView: View {
     @Environment(PulseModel.self) private var model
     @Environment(\.pulseNavigator) private var navigator
+    @EnvironmentObject private var repo: Repository
+    @EnvironmentObject private var intelligence: IntelligenceEngine
 
     /// The night the wearer stepped to, by wake day; nil means Home's night.
     @State private var nightKey: String?
@@ -33,6 +35,13 @@ struct PulseSleepDiveView: View {
     @State private var stress: SleepStressSnapshot?
     @State private var stressBaseline: SleepStressBaseline?
     @State private var selectedStage: SleepStage?
+    /// The night open in the sleep-time editor (EDIT on Last Night's Sleep).
+    @State private var editing: SleepTimeEdit?
+    /// A night with nothing recorded, being added as a Sleep or nap.
+    @State private var addingNight = false
+    /// The night just deleted, undoable for a few seconds (#65).
+    @State private var undo: PulseSleepUndo?
+    @State private var undoDismiss: Task<Void, Never>?
     #if DEBUG
     @State private var debugApplied = false
     #endif
@@ -104,6 +113,47 @@ struct PulseSleepDiveView: View {
         .task(id: snapshot?.stress) {
             await loadStress()
         }
+        .sheet(item: $editing) { edit in
+            SleepTimeEditor(edit: edit, onSave: { bed, wake in
+                await SleepEditActions.save(edit, bedTs: bed, wakeTs: wake, repo: repo, intelligence: intelligence)
+            }, onDelete: {
+                if let snapshot = await SleepEditActions.delete(edit, repo: repo, intelligence: intelligence) {
+                    offerUndo(snapshot, edit: edit)
+                }
+            })
+            .presentationDetents([.medium, .large])
+        }
+        .sheet(isPresented: $addingNight) {
+            PulseActivityFormSheet(mode: .add(preset: PulseActivityCatalog.sleepKinds.first), onDone: { _ in })
+        }
+    }
+
+    /// EDIT: the night's own editor, the classic Sleep screen's (its #940 guards, its delete confirm, an
+    /// undo after a delete); a night with nothing recorded is added instead, as ADD ACTIVITY's Sleep or nap.
+    private func edit(_ s: SleepDiveSnapshot) {
+        if let edit = s.edit {
+            editing = edit
+        } else {
+            addingNight = true
+        }
+    }
+
+    /// Show UNDO for a delete for seven seconds, as the classic Sleep screen does; a later delete replaces it.
+    private func offerUndo(_ snapshot: SleepDeletionSnapshot, edit: SleepTimeEdit) {
+        undoDismiss?.cancel()
+        let shown = PulseSleepUndo(snapshot: snapshot, bedTs: edit.bedTs, wakeTs: edit.wakeTs)
+        undo = shown
+        undoDismiss = Task {
+            try? await Task.sleep(nanoseconds: 7_000_000_000)
+            guard !Task.isCancelled, undo == shown else { return }
+            undo = nil
+        }
+    }
+
+    private func undoDelete(_ shown: PulseSleepUndo) {
+        undoDismiss?.cancel()
+        undo = nil
+        Task { await SleepEditActions.undo(shown.snapshot, repo: repo, intelligence: intelligence) }
     }
 
     private func load() async {
@@ -156,6 +206,7 @@ struct PulseSleepDiveView: View {
             return
         }
         if let raw = PulseSleepDebug.stage, let stage = SleepStage(rawValue: raw) { selectedStage = stage }
+        if PulseSleepDebug.opensEditor { edit(s) }
     }
     #endif
 
@@ -163,6 +214,9 @@ struct PulseSleepDiveView: View {
 
     @ViewBuilder
     private func content(_ s: SleepDiveSnapshot) -> some View {
+        if let undo {
+            PulseSleepUndoBanner(undo: undo) { undoDelete(undo) }
+        }
         let scored = s.dial.value != nil
         let band = PulseSleepBand.index(percent: s.dial.value)
         // An unscored night has no level to light (deep-dives-2026/19f: no dashes under the ring).
@@ -260,12 +314,12 @@ struct PulseSleepDiveView: View {
         }
     }
 
-    /// "Last Night's Sleep" with EDIT ✎ (always: a night with nothing recorded is one to add) and "Today vs.
-    /// prior 30 days" under it.
+    /// "Last Night's Sleep" with EDIT ✎ (always: a night with nothing recorded is one to add, `edit(_:)`) and
+    /// "Today vs. prior 30 days" under it.
     private func lastNightHeader(_ s: SleepDiveSnapshot) -> some View {
         VStack(alignment: .leading, spacing: 5) {
             PulseSectionHeader(String(localized: "Last Night's Sleep"),
-                               accessory: .edit { navigator.present(.tab(.sleep)) })
+                               accessory: .edit { edit(s) })
             Group {
                 if s.wakeDayKey == s.todayKey {
                     Text(String(localized: "Today")).fontWeight(.semibold).foregroundColor(PulseTheme.textPrimary)
@@ -330,6 +384,47 @@ struct PulseSleepDiveView: View {
 
     private func explain(_ topic: PulseSleepExplainerTopic) {
         navigator.open(PulseSleepExplainerRoute(topic: topic).route)
+    }
+}
+
+// MARK: - Undo after a delete (#65)
+
+/// A deleted night that can still be restored, and the window its banner names.
+struct PulseSleepUndo: Equatable {
+    let snapshot: SleepDeletionSnapshot
+    let bedTs: Int
+    let wakeTs: Int
+
+    /// The classic banner's honesty rule (#65): only a DETECTED night is tombstoned, so only its message
+    /// promises the window will not be detected again.
+    var message: String {
+        if snapshot.session.userEdited { return String(localized: "Sleep deleted.") }
+        let bed = PulseFormat.clock(Date(timeIntervalSince1970: TimeInterval(bedTs)))
+        let wake = PulseFormat.clock(Date(timeIntervalSince1970: TimeInterval(wakeTs)))
+        return String(localized: "Sleep deleted. ZENO won't detect sleep between \(bed) and \(wake) again.")
+    }
+}
+
+/// "Sleep deleted." over UNDO, in a card at the top of the dive while the delete can be taken back.
+struct PulseSleepUndoBanner: View {
+    let undo: PulseSleepUndo
+    let onUndo: () -> Void
+
+    var body: some View {
+        PulseCard {
+            HStack(spacing: PulseTheme.Layout.gridGap) {
+                Text(undo.message)
+                    .pulseText(.subtitle)
+                    .foregroundStyle(PulseTheme.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 0)
+                Button(String(localized: "Undo"), action: onUndo)
+                    .buttonStyle(.pulseNested)
+                    .accessibilityLabel(String(localized: "Undo sleep deletion"))
+            }
+        }
+        .transition(.opacity)
+        .accessibilityElement(children: .contain)
     }
 }
 
@@ -468,6 +563,7 @@ struct PulseSleepContributorRowView: View {
 ///   `--sleep-schedule`                     open My Schedule over the Sleep Planner
 ///   `--sleep-sheet goal|alarm|wake`        open one of the planner's sheets
 ///   `--sleep-drop-night`                   show Home's day on the dive as a day with no recorded night
+///   `--sleep-edit`                         open EDIT (the night's editor, or adding one) once the dive loads
 enum PulseSleepDebug {
     private static func value(_ flag: String) -> String? {
         let args = CommandLine.arguments
@@ -482,6 +578,7 @@ enum PulseSleepDebug {
     static var showsSchedule: Bool { CommandLine.arguments.contains("--sleep-schedule") }
     static var sheet: String? { value("--sleep-sheet") }
     static var dropsHomeNight: Bool { CommandLine.arguments.contains("--sleep-drop-night") }
+    static var opensEditor: Bool { CommandLine.arguments.contains("--sleep-edit") }
 }
 #endif
 #endif

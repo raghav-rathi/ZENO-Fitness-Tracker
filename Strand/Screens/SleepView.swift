@@ -99,7 +99,7 @@ struct SleepView: View {
     /// Non-nil while the wake-time editor sheet is open. Carries the night's stable key (`startTs`) and
     /// current wake time so the editor seeds its picker; saving routes through `repo.editSleepWakeTime`,
     /// which marks the session `userEdited` so a later strap sync can't revert the correction. (#318)
-    @State private var wakeEdit: WakeEdit?
+    @State private var wakeEdit: SleepTimeEdit?
 
     /// Non-nil while the "Add nap" picker sheet is open (#508). Carries a seed bed/wake for the picker;
     /// saving routes through `repo.addManualNap`, which stages the chosen window from raw and writes it as
@@ -257,36 +257,15 @@ struct SleepView: View {
                 observeResultChange()
             }
             .sheet(item: $wakeEdit) { edit in
-                // The night's RECORDED coverage for the #940 guards: from the immutable detected
-                // onset (where the strap actually saw the night; an earlier hand-set onset widens
-                // it) through the current wake. A corrected window that abandons this range has no
-                // data to stage from, so the editor confirms the move instead of silently creating
-                // a phantom night.
-                let coverageLo = min(edit.detectedStartTs, edit.bedTs)
-                SleepTimeEditor(bedTs: edit.bedTs, wakeTs: edit.wakeTs,
-                                coverage: coverageLo...max(edit.wakeTs, coverageLo + 1),
-                                suppressesReDetection: !edit.userEdited,
-                                onSave: { newBedTs, newWakeTs in
-                    await repo.editSleepTimes(detectedStartTs: edit.detectedStartTs, oldEndTs: edit.wakeTs,
-                                              storedStagesJSON: edit.stagesJSON,
-                                              newStartTs: newBedTs, newEndTs: newWakeTs)
-                    // Re-score the day so the dashboard aggregates (Rest / recovery) honor the corrected
-                    // sleep window, not just the Sleep tab's session view; then refresh the read cache.
-                    await intelligence.analyzeRecent()
-                    await repo.refresh()
+                SleepTimeEditor(edit: edit, onSave: { newBedTs, newWakeTs in
+                    await SleepEditActions.save(edit, bedTs: newBedTs, wakeTs: newWakeTs,
+                                                repo: repo, intelligence: intelligence)
                 }, onDelete: {
-                    // Delete = the edit path minus the re-insert: drop this session so every metric
-                    // recomputes immediately as if the night were never recorded, durably tombstoned so a
-                    // re-detect doesn't bring it back, then re-score + refresh exactly like an edit. (#68)
-                    // #65: the returned snapshot lets the user UNDO within a few seconds. It restores the
-                    // deleted row into its ORIGINAL namespace and lifts the tombstone.
-                    let snapshot = await repo.deleteSleepSession(detectedStartTs: edit.detectedStartTs,
-                                                                 endTs: edit.wakeTs)
-                    await intelligence.analyzeRecent()
-                    await repo.refresh()
-                    // `edit.bedTs` is the effective (displayed) onset, so the banner shows the same clock
-                    // time the user saw for this night.
-                    if let snapshot { presentSleepUndo(snapshot, displayStart: edit.bedTs, windowEnd: edit.wakeTs) }
+                    // #65: the returned snapshot lets the user UNDO within a few seconds. `edit.bedTs` is the
+                    // effective (displayed) onset, so the banner shows the same clock time the user saw.
+                    if let snapshot = await SleepEditActions.delete(edit, repo: repo, intelligence: intelligence) {
+                        presentSleepUndo(snapshot, displayStart: edit.bedTs, windowEnd: edit.wakeTs)
+                    }
                 })
             }
             // Manually add a missed nap (#508): same picker, but the chosen window is staged from raw and
@@ -370,9 +349,7 @@ struct SleepView: View {
     /// tombstone, re-score, then dismiss the banner.
     private func undoSleepDelete(_ banner: SleepUndoBanner) async {
         sleepUndoTask?.cancel()
-        await repo.undoDeleteSleepSession(banner.snapshot)
-        await intelligence.analyzeRecent()
-        await repo.refresh()
+        await SleepEditActions.undo(banner.snapshot, repo: repo, intelligence: intelligence)
         await MainActor.run { withAnimation(.easeOut(duration: 0.2)) { sleepUndo = nil } }
     }
 
@@ -801,11 +778,11 @@ struct SleepView: View {
                 whyPopover(text: "", napSuffix: true)
             }
             Button {
-                wakeEdit = WakeEdit(detectedStartTs: nap.startTs,
-                                    bedTs: nap.effectiveStartTs,
-                                    wakeTs: nap.endTs,
-                                    stagesJSON: nap.stagesJSON,
-                                    userEdited: true)   // a nap row is always manually added → no tombstone on delete
+                wakeEdit = SleepTimeEdit(detectedStartTs: nap.startTs,
+                                         bedTs: nap.effectiveStartTs,
+                                         wakeTs: nap.endTs,
+                                         stagesJSON: nap.stagesJSON,
+                                         userEdited: true)   // a nap row is always manually added → no tombstone on delete
             } label: {
                 Image(systemName: isEdited ? "pencil.circle.fill" : "pencil.circle")
                     .font(StrandFont.headline)
@@ -1306,11 +1283,7 @@ struct SleepView: View {
         if let target = night.editTarget {
             let isEdited = target.userEdited
             Button {
-                wakeEdit = WakeEdit(detectedStartTs: target.startTs,
-                                    bedTs: target.effectiveStartTs,
-                                    wakeTs: target.endTs,
-                                    stagesJSON: target.stagesJSON,
-                                    userEdited: isEdited)
+                wakeEdit = SleepTimeEdit(night: target)
             } label: {
                 Image(systemName: isEdited ? "pencil.circle.fill" : "pencil.circle")
                     .font(StrandFont.headline)
@@ -2790,8 +2763,6 @@ private struct SleepInputKey: Equatable {
 
 // MARK: - Wake-time editor
 
-/// Identifies the night being edited for `.sheet(item:)`. A night's `startTs` is its stable natural
-/// key (wake-time edits never move it), so it doubles as the sheet identity.
 /// The transient UNDO banner state after a suppressing delete (#65). `identityStart` is the immutable
 /// detected key so a stale auto-dismiss task can tell whether it still owns the current banner;
 /// `displayStart` is the effective (shown) onset for the message clock.
@@ -2802,7 +2773,11 @@ private struct SleepUndoBanner {
     let windowEnd: Int
 }
 
-private struct WakeEdit: Identifiable {
+/// One stored night (or nap) opened in `SleepTimeEditor`. Identifies the night being edited for
+/// `.sheet(item:)`: a night's `startTs` is its stable natural key (wake-time edits never move it), so it
+/// doubles as the sheet identity. The classic Sleep screen and Pulse's Sleep dive both build it from the
+/// same stored block (`Night.editTarget`), so an edit made on either writes against the same row.
+struct SleepTimeEdit: Identifiable, Equatable {
     let detectedStartTs: Int   // immutable detected key the edit writes against
     let bedTs: Int             // current effective onset (seeds the bed picker)
     let wakeTs: Int            // current wake (seeds the wake picker)
@@ -2812,6 +2787,66 @@ private struct WakeEdit: Identifiable {
     /// for it. Mirrors the undo-banner branch (#65 banner/confirm honesty).
     let userEdited: Bool
     var id: Int { detectedStartTs }
+
+    init(detectedStartTs: Int, bedTs: Int, wakeTs: Int, stagesJSON: String?, userEdited: Bool) {
+        self.detectedStartTs = detectedStartTs
+        self.bedTs = bedTs
+        self.wakeTs = wakeTs
+        self.stagesJSON = stagesJSON
+        self.userEdited = userEdited
+    }
+
+    /// A night's main stored block (`Night.editTarget`): its detected key, its current effective bed and
+    /// wake, its stages and whether it was edited before.
+    init(night block: CachedSleepSession) {
+        self.init(detectedStartTs: block.startTs, bedTs: block.effectiveStartTs, wakeTs: block.endTs,
+                  stagesJSON: block.stagesJSON, userEdited: block.userEdited)
+    }
+
+    /// The night's RECORDED coverage for the #940 guards: from the immutable detected onset (where the
+    /// strap actually saw the night; an earlier hand-set onset widens it) through the current wake. A
+    /// corrected window that abandons this range has no data to stage from, so the editor confirms the move
+    /// instead of silently creating a phantom night.
+    var coverage: ClosedRange<Int> {
+        let lo = min(detectedStartTs, bedTs)
+        return lo...max(wakeTs, lo + 1)
+    }
+}
+
+/// What an edit in `SleepTimeEditor` does to the store, in one place for every screen that opens the
+/// editor (the classic Sleep screen, Pulse's Sleep dive), so the same correction is the same write and the
+/// same re-score wherever it is made.
+@MainActor
+enum SleepEditActions {
+    /// Save corrected bed and wake times (kept through the next strap sync, #318), then re-score the day so
+    /// the dashboard aggregates (Rest / recovery) honor the corrected window, not just the session view, and
+    /// refresh the read cache.
+    static func save(_ edit: SleepTimeEdit, bedTs: Int, wakeTs: Int, repo: Repository,
+                     intelligence: IntelligenceEngine) async {
+        await repo.editSleepTimes(detectedStartTs: edit.detectedStartTs, oldEndTs: edit.wakeTs,
+                                  storedStagesJSON: edit.stagesJSON, newStartTs: bedTs, newEndTs: wakeTs)
+        await intelligence.analyzeRecent()
+        await repo.refresh()
+    }
+
+    /// Delete = the edit path minus the re-insert: drop this session so every metric recomputes immediately
+    /// as if the night were never recorded, durably tombstoned so a re-detect doesn't bring it back, then
+    /// re-score + refresh exactly like an edit (#68). The returned snapshot is what an UNDO restores (#65):
+    /// the row back into its ORIGINAL namespace, the tombstone lifted.
+    static func delete(_ edit: SleepTimeEdit, repo: Repository,
+                       intelligence: IntelligenceEngine) async -> SleepDeletionSnapshot? {
+        let snapshot = await repo.deleteSleepSession(detectedStartTs: edit.detectedStartTs, endTs: edit.wakeTs)
+        await intelligence.analyzeRecent()
+        await repo.refresh()
+        return snapshot
+    }
+
+    /// Undo a delete from its snapshot, then re-score and refresh.
+    static func undo(_ snapshot: SleepDeletionSnapshot, repo: Repository, intelligence: IntelligenceEngine) async {
+        await repo.undoDeleteSleepSession(snapshot)
+        await intelligence.analyzeRecent()
+        await repo.refresh()
+    }
 }
 
 /// Seeds the "Add nap" picker (#508). A nap is short, so seed a 30-minute window anchored to the night's
@@ -2831,8 +2866,9 @@ private struct AddNapSeed: Identifiable {
 
 /// A small sheet to hand-correct a night's bed (onset) and wake (end) instants. Seeds both pickers with
 /// the current values, including each calendar date. Hands the chosen unix-second (bed, wake) back via
-/// `onSave`. Pure presentation + a single async save — persistence lives in the repo.
-private struct SleepTimeEditor: View {
+/// `onSave`. Pure presentation + a single async save — persistence lives in the repo (`SleepEditActions`).
+/// Internal so Pulse's Sleep dive presents the same editor, #940 guards and delete confirm included.
+struct SleepTimeEditor: View {
     let onSave: (Int, Int) async -> Void
     /// Optional destructive delete (#68). Non-nil for an existing main-sleep / nap edit (the editor then
     /// shows a "Delete this sleep" button gated behind a confirmation); nil for the "Add a nap" sheet,
@@ -2892,6 +2928,13 @@ private struct SleepTimeEditor: View {
         _bed = State(initialValue: Date(timeIntervalSince1970: TimeInterval(seedBed)))
         _previousBed = State(initialValue: Date(timeIntervalSince1970: TimeInterval(seedBed)))
         _wake = State(initialValue: Date(timeIntervalSince1970: TimeInterval(wakeTs)))
+    }
+
+    /// The editor for a stored night or nap: its own bed and wake, its recorded coverage for the #940 guards
+    /// and the delete-confirm copy its tombstone warrants (#65).
+    init(edit: SleepTimeEdit, onSave: @escaping (Int, Int) async -> Void, onDelete: (() async -> Void)? = nil) {
+        self.init(bedTs: edit.bedTs, wakeTs: edit.wakeTs, coverage: edit.coverage,
+                  suppressesReDetection: !edit.userEdited, onSave: onSave, onDelete: onDelete)
     }
 
     /// The current edit window after the same future/inverted/duration guards used by persistence.
