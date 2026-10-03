@@ -448,7 +448,7 @@ struct HealthMonitorCard: View {
         if judged.isEmpty { return String(localized: "Calibrating your ranges") }
         if outside.isEmpty { return String(localized: "\(judged.count)/\(judged.count) metrics within range") }
         if outside.count == 1, let one = outside.first {
-            return one.direction < 0 ? String(localized: "\(one.name) low") : String(localized: "\(one.name) high")
+            return one.direction < 0 ? String(localized: "\(one.titleName) low") : String(localized: "\(one.titleName) high")
         }
         return String(localized: "\(outside.count)/\(judged.count) metrics out of range")
     }

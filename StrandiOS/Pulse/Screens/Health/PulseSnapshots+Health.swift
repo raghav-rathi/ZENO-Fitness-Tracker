@@ -105,6 +105,19 @@ struct HealthVital: Equatable, Identifiable {
     /// Judged against a personal baseline (true) or the typical adult range.
     let isPersonal: Bool
     let route: TabRoute
+
+    /// The name in Title Case, as the HEALTH MONITOR footer names one metric out of range ("Heart Rate
+    /// Variability low", reviews/84). `name` stays the one for sentences, VoiceOver and the Coach.
+    var titleName: String {
+        switch id {
+        case "resp": return String(localized: "Respiratory Rate")
+        case "spo2": return String(localized: "Blood Oxygen")
+        case "rhr": return String(localized: "Resting Heart Rate")
+        case "hrv": return String(localized: "Heart Rate Variability")
+        case "skin": return String(localized: "Skin Temperature")
+        default: return name
+        }
+    }
 }
 
 // MARK: Stress
