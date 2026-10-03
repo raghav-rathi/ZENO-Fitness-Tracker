@@ -3,9 +3,6 @@ import SwiftUI
 import StrandDesign
 import StrandAnalytics
 
-/// The DEBUG `--demo-screen pulsesleep` host (Debug/PulseDemo.swift) still names the dive's first type.
-typealias PulseSleepView = PulseSleepDiveView
-
 /// The Sleep deep dive (WHOOP_UI_SPEC §3.3), pushed from the Sleep dial, the sleep rows and the sticky
 /// header's mini ring.
 ///
