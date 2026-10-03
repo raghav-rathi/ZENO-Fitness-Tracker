@@ -74,7 +74,8 @@ struct PulseStrengthTabs<Tab: Hashable>: View {
                         .pulseText(.menuLabel)
                         .foregroundStyle(selected ? PulseTheme.textPrimary : PulseTheme.textTertiary)
                         .lineLimit(1)
-                        .fixedSize()
+                        .minimumScaleFactor(0.7)
+                        .fixedSize(horizontal: false, vertical: true)
                         .padding(.bottom, 10)
                         // The underline is exactly as wide as the label.
                         .overlay(alignment: .bottom) {
@@ -93,6 +94,8 @@ struct PulseStrengthTabs<Tab: Hashable>: View {
             }
             Spacer(minLength: 0)
         }
+        // Chrome, capped like the shared nav bar: at the largest sizes two labels would not fit a phone.
+        .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
         .animation(PulseMotion.resolved(PulseMotion.menu, reduceMotion: reduceMotion), value: selection)
     }
 }
@@ -397,6 +400,8 @@ struct PulseStrengthZoneBar: View {
                         .frame(maxWidth: .infinity)
                 }
             }
+            // Six labels share one row; the element reads its zone to VoiceOver as a whole.
+            .dynamicTypeSize(...DynamicTypeSize.xxLarge)
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(String(localized: "Heart-rate zone"))

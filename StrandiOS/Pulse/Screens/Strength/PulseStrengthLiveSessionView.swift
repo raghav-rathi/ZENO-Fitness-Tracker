@@ -165,6 +165,7 @@ struct PulseStrengthLiveSessionView: View {
         }
         .padding(.horizontal, PulseTheme.Layout.pageMargin)
         .padding(.top, 4)
+        .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
     }
 
     // MARK: LIVE SESSION

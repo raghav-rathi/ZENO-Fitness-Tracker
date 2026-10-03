@@ -112,7 +112,8 @@ struct PulseStrengthExercisesTab: View {
         }
         .pulseText(.label)
         .foregroundStyle(PulseTheme.textTertiary)
-        .lineLimit(1)
+        // "WEIGHT (KG)" takes a second line at the largest text sizes instead of being cut off.
+        .lineLimit(2)
         .minimumScaleFactor(0.8)
     }
 

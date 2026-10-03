@@ -522,9 +522,12 @@ struct PulseOnboardingPillStyle: ButtonStyle {
         configuration.label
             .pulseOnboardingText(.pill)
             .foregroundStyle(kind == .white ? Color.black : Color.white)
-            .lineLimit(1)
+            // Two lines at the largest text sizes rather than a cut-off label; the pill grows to fit.
+            .lineLimit(2)
+            .multilineTextAlignment(.center)
             .minimumScaleFactor(0.8)
             .padding(.horizontal, 16)
+            .padding(.vertical, 6)
             .frame(maxWidth: .infinity, minHeight: PulseOnboardingMetrics.pillHeight)
             .background(background)
             .contentShape(Rectangle())

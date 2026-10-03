@@ -36,9 +36,9 @@ struct PulseStrengthExerciseDetailsView: View {
     private var unitSystem: UnitSystem { UnitSystem(rawValue: unitSystemRaw) ?? .metric }
 
     var body: some View {
+        // No floating Coach here, as in WHOOP's page (g03): it sat over the record cards' dates.
         PulseScreenScaffold(title: String(localized: "Exercise Details"),
                             trailing: .info { showsInfo = true },
-                            coach: .button,
                             spacing: 16,
                             ready: snapshot != nil) {
             VStack(alignment: .leading, spacing: 6) {
@@ -54,12 +54,10 @@ struct PulseStrengthExerciseDetailsView: View {
                 }
             }
             .padding(.top, 6)
-            HStack(spacing: 8) {
-                PulseFilterChip(title: String(localized: "Progress"), isSelected: section == .progress) { section = .progress }
-                PulseFilterChip(title: String(localized: "History"), isSelected: section == .history) { section = .history }
-                PulseFilterChip(title: String(localized: "Instructions"), isSelected: section == .instructions) {
-                    section = .instructions
-                }
+            // At the largest text sizes the three chips scroll rather than break "Instructions" mid-word.
+            ViewThatFits(in: .horizontal) {
+                chips
+                ScrollView(.horizontal, showsIndicators: false) { chips }
             }
             PulseLoadingGate(isLoading: snapshot == nil) {
                 if let snapshot {
@@ -90,6 +88,16 @@ struct PulseStrengthExerciseDetailsView: View {
                                            system: system)
         }) {
             snapshot = built
+        }
+    }
+
+    private var chips: some View {
+        HStack(spacing: 8) {
+            PulseFilterChip(title: String(localized: "Progress"), isSelected: section == .progress) { section = .progress }
+            PulseFilterChip(title: String(localized: "History"), isSelected: section == .history) { section = .history }
+            PulseFilterChip(title: String(localized: "Instructions"), isSelected: section == .instructions) {
+                section = .instructions
+            }
         }
     }
 
@@ -149,29 +157,22 @@ struct PulseStrengthExerciseDetailsView: View {
             if open { expanded.remove(set.id) } else { expanded.insert(set.id) }
         } label: {
             VStack(alignment: .leading, spacing: 10) {
-                HStack(spacing: 10) {
-                    if let weight = set.weight {
-                        PulseValueText(value: weight, unit: unit, style: .rowValue, unitStyle: .secondary,
-                                       unitColor: PulseTheme.textSecondary)
+                // One line as in WHOOP's card; at large text sizes the date drops under the figures.
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 10) {
+                        topSetFigures(set, unit: unit)
+                        Spacer(minLength: 6)
+                        topSetDate(set)
+                        disclosure(open)
                     }
-                    if let reps = set.reps {
-                        PulseValueText(value: reps, unit: String(localized: "reps"), style: .rowValue,
-                                       unitStyle: .secondary, unitColor: PulseTheme.textSecondary)
+                    HStack(alignment: .top, spacing: 10) {
+                        VStack(alignment: .leading, spacing: 6) {
+                            HStack(spacing: 10) { topSetFigures(set, unit: unit) }
+                            topSetDate(set)
+                        }
+                        Spacer(minLength: 6)
+                        disclosure(open)
                     }
-                    if set.rank <= 3 {
-                        medal(set.rank)
-                    }
-                    Spacer(minLength: 6)
-                    Text(set.date)
-                        .pulseText(.pillTitle)
-                        .foregroundStyle(PulseTheme.textSecondary)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.8)
-                    Image(systemName: "chevron.down")
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(PulseTheme.textSecondary)
-                        .rotationEffect(.degrees(open ? 180 : 0))
-                        .accessibilityHidden(true)
                 }
                 if open {
                     VStack(alignment: .leading, spacing: 4) {
@@ -197,6 +198,37 @@ struct PulseStrengthExerciseDetailsView: View {
         .buttonStyle(PulsePressStyle())
         .accessibilityElement(children: .combine)
         .accessibilityHint(open ? String(localized: "Collapses") : String(localized: "Shows the estimated one-rep max"))
+    }
+
+    @ViewBuilder
+    private func topSetFigures(_ set: StrengthExerciseSnapshot.TopSet, unit: String) -> some View {
+        if let weight = set.weight {
+            PulseValueText(value: weight, unit: unit, style: .rowValue, unitStyle: .secondary,
+                           unitColor: PulseTheme.textSecondary)
+        }
+        if let reps = set.reps {
+            PulseValueText(value: reps, unit: String(localized: "reps"), style: .rowValue,
+                           unitStyle: .secondary, unitColor: PulseTheme.textSecondary)
+        }
+        if set.rank <= 3 {
+            medal(set.rank)
+        }
+    }
+
+    private func topSetDate(_ set: StrengthExerciseSnapshot.TopSet) -> some View {
+        Text(set.date)
+            .pulseText(.pillTitle)
+            .foregroundStyle(PulseTheme.textSecondary)
+            .lineLimit(1)
+            .minimumScaleFactor(0.8)
+    }
+
+    private func disclosure(_ open: Bool) -> some View {
+        Image(systemName: "chevron.down")
+            .font(.system(size: 13, weight: .semibold))
+            .foregroundStyle(PulseTheme.textSecondary)
+            .rotationEffect(.degrees(open ? 180 : 0))
+            .accessibilityHidden(true)
     }
 
     /// A gold, silver or bronze medal (SF Symbol; WHOOP's medal art is not copied).
