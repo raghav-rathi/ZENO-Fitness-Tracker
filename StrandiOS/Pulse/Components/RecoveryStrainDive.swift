@@ -449,26 +449,19 @@ struct PulseConfidenceChip: View {
 
 // MARK: Insight
 
-/// The dive's inline insight (§2.6 item 10). With the Coach on it is the coach card (AI border, the CTA in
-/// the AI gradient); with the Coach switched off it is the same sentence on a plain card with no CTA, so
-/// the explanation survives without dressing local copy as the Coach's.
+/// A dive's insight sentence while the Coach is switched off (§1.2 [Z], §3.4 item 4 [Z]): a plain card with
+/// no CTA, so the explanation survives without dressing local copy as the Coach's. With the Coach on the
+/// floating coach summary pill takes its place, so the dives show it only when `coach.availability` is
+/// `.off` and a page never carries two insight surfaces.
 struct PulseDiveInsight: View {
     let text: String
-    let cta: String
-    let seed: String
-
-    @Environment(\.pulseCoach) private var coach
 
     var body: some View {
-        if coach.availability == .off {
-            PulseCard {
-                Text(text)
-                    .pulseText(.body)
-                    .foregroundStyle(PulseTheme.textPrimary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-        } else {
-            PulseInsightCard(text: text, cta: cta) { coach.open(seed) }
+        PulseCard {
+            Text(text)
+                .pulseText(.body)
+                .foregroundStyle(PulseTheme.textPrimary)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 }

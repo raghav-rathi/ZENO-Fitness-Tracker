@@ -94,8 +94,7 @@ private struct PulseRecoveryDiveContent: View {
             // With the Coach off there is no summary pill, so its sentence sits here as a plain card, 16 pt
             // under the legend (the callout's own bottom inset).
             if coach.availability == .off, let insight = s.insight {
-                PulseDiveInsight(text: insight, cta: String(localized: "Explore your recovery insights"),
-                                 seed: s.coachSeed)
+                PulseDiveInsight(text: insight)
                     .id("pulse.insight")
             }
 

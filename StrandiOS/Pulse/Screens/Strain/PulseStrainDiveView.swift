@@ -7,11 +7,13 @@ import StrandAnalytics
 /// Top to bottom, as the 2026 captures lay it out (deep-dives-2026/57, help-center/72, the 2026-04
 /// storyboard deep-dives-2026/41): the 260 pt ring on 0–21 with the day's optimal range as a light band and
 /// the Strain Target tick at its middle, the contributor callout (heart-rate zones 1-3 and 4-5, Strength
-/// Activity Time, steps, each against its 30-day average), the inline insight (the band's meaning, or where
-/// the day stands against its optimal range), Today's Activities, Weekly Trends (Strain, the two zone
-/// groups stacked by zone, steps, calories, each opening its Trend View once that is rebuilt; steps opens
-/// the Steps screen until then), then ZENO's day details and HOW IT'S CALCULATED. The bar carries the Big
-/// Days achievement chip (§1.5 [Z], `PulseDiveAchievement`).
+/// Activity Time, steps, each against its 30-day average), Today's Activities, Weekly Trends (Strain, the
+/// two zone groups stacked by zone, steps, calories, each opening its Trend View once that is rebuilt; steps
+/// opens the Steps screen until then), then ZENO's day details and HOW IT'S CALCULATED. The bar carries the
+/// Big Days achievement chip (§1.5 [Z], `PulseDiveAchievement`). The page has one insight surface: with the
+/// Coach on, the floating coach summary pill takes the inline insight card's place (§1.2 [Z]); with the
+/// Coach off, the insight (the band's meaning, or where the day stands against its optimal range) sits in a
+/// plain card under the legend, as on the Recovery dive.
 ///
 /// Owned by group "recovery-strain".
 struct PulseStrainDiveView: View {
@@ -57,6 +59,8 @@ struct PulseStrainDiveView: View {
 private struct PulseStrainDiveContent: View {
     let snapshot: StrainDiveSnapshot
 
+    @Environment(\.pulseCoach) private var coach
+
     private var s: StrainDiveSnapshot { snapshot }
 
     private var legendDay: String {
@@ -73,11 +77,13 @@ private struct PulseStrainDiveContent: View {
                 .padding(.top, 22)
                 .id("pulse.contributors")
 
-            // deep-dives-2026/57: the insight card sits 19 pt under the legend well, the callout's own
-            // 16 pt bottom inset plus 3.
-            PulseDiveInsight(text: s.insight, cta: String(localized: "Explore your strain insights"),
-                             seed: s.coachSeed)
-                .padding(.top, 3)
+            // With the Coach off there is no summary pill, so the insight sits here as a plain card, 19 pt
+            // under the legend well (deep-dives-2026/57: the callout's own 16 pt bottom inset plus 3).
+            if coach.availability == .off {
+                PulseDiveInsight(text: s.insight)
+                    .padding(.top, 3)
+                    .id("pulse.insight")
+            }
 
             PulseStrainActivitiesSection(activities: s.activities, isToday: s.day.isToday)
                 .padding(.top, PulseTheme.Layout.sectionGap)
