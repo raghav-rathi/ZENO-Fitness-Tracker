@@ -492,7 +492,8 @@ struct PulseSleepStressCard: View {
 }
 
 /// The stress chart's times, each at its own place along the plot (the chart's own label row spaces its
-/// labels evenly): the start at the left, two half hours, and the end in bold white at the right.
+/// labels evenly): the start at the left and two half hours in a light grey face, and the end in bold white
+/// at the right (deep-dives-2026/19b; §3.3 7d).
 struct PulseSleepStressTicks: View {
     let ticks: [SleepStressSnapshot.XTick]
 
@@ -503,7 +504,7 @@ struct PulseSleepStressTicks: View {
             ForEach(Array(ticks.enumerated()), id: \.offset) { _, tick in
                 let x = inset + width * CGFloat(tick.fraction)
                 Text(tick.text)
-                    .font(PulseType.font(.axis))
+                    .font(PulseType.font(tick.isEnd ? .axis : .tabLabel))
                     .foregroundStyle(tick.isEnd ? PulseTheme.textPrimary : PulseTheme.textTertiary)
                     .fixedSize()
                     .alignmentGuide(.leading) { d in

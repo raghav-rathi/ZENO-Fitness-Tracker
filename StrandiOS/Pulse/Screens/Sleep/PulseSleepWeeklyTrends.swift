@@ -155,14 +155,10 @@ private struct SleepChartHighlight: View {
     }
 }
 
-/// The two-line x label under a column ("Wed" over "5"), white for the newest day.
+/// The two-line x label under a column ("Wed" over "5"), white for the newest day: the shared charts' own
+/// label (`PulseChartAxis.xLabel`), so the cards drawn here and the shared bar and line cards print one face.
 private func sleepXLabel(_ day: SleepWeekNight?, highlighted: Bool) -> some View {
-    VStack(spacing: 1) {
-        Text(day?.label ?? "")
-        Text(day?.sublabel ?? "")
-    }
-    .font(PulseType.font(.axis))
-    .foregroundStyle(highlighted ? PulseTheme.textPrimary : PulseTheme.textTertiary)
+    PulseChartAxis.xLabel(day.map { (label: $0.label, sublabel: Optional($0.sublabel)) }, highlighted: highlighted)
 }
 
 // MARK: - HOURS VS. NEEDED (HOURS): two lines
