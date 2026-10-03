@@ -12,6 +12,9 @@ import StrandAnalytics
 /// Everything the profile pages show, already resolved.
 struct ProfileSnapshot: Equatable {
     let seq: Int
+    /// Whether the build read a loaded store. Before the repository's first load the day list is empty,
+    /// so an unlock check must not take such a snapshot for the wearer's history.
+    let storeLoaded: Bool
     /// Today's day key, the streak's anchor (the Home pill's).
     let todayKey: String
     /// The level ladder over the scored Recoveries.

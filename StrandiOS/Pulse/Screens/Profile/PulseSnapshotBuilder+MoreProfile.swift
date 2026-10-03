@@ -19,9 +19,10 @@ import WhoopStore
 
 extension PulseSnapshotBuilder {
 
-    /// Build the profile snapshot. `calendarAge` is the profile's age from its birthday (read on the main
-    /// actor by the caller), nil to leave ZENO Age out.
-    func profile(_ r: PulseRequest, calendarAge: Int?) async -> ProfileSnapshot? {
+    /// Build the profile snapshot. `calendarAge` is the profile's age from its birthday and `storeLoaded`
+    /// the repository's `loaded` when the request was made (both read on the main actor by the caller);
+    /// a nil age leaves ZENO Age out.
+    func profile(_ r: PulseRequest, calendarAge: Int?, storeLoaded: Bool) async -> ProfileSnapshot? {
         begin(r.seq)
         let rest = await restSeries()
         let workouts = await workoutRows()
@@ -92,7 +93,8 @@ extension PulseSnapshotBuilder {
         }
 
         guard isCurrent(r) else { return nil }
-        return ProfileSnapshot(seq: r.seq, todayKey: todayKey, level: level, streak: streak, badges: badges,
+        return ProfileSnapshot(seq: r.seq, storeLoaded: storeLoaded, todayKey: todayKey, level: level,
+                               streak: streak, badges: badges,
                                firstDayKey: days.first?.day, zenoAge: zeno, highlights: highlights,
                                activity: activity)
     }

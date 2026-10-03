@@ -30,12 +30,16 @@ private struct ProfileSnapshotTask: ViewModifier {
     @Binding var snapshot: ProfileSnapshot?
     @Environment(PulseModel.self) private var model
     @EnvironmentObject private var profile: ProfileStore
+    @EnvironmentObject private var repo: Repository
 
     func body(content: Content) -> some View {
         let age = profile.age
         content.task(id: "\(model.healthKey)|\(age)") {
+            // Read in the same main-actor turn as the request `build` makes, so the flag describes the
+            // day list the build reads.
+            let loaded = repo.loaded
             if let built = await model.build(dayOffset: 0, { builder, request in
-                await builder.profile(request, calendarAge: age)
+                await builder.profile(request, calendarAge: age, storeLoaded: loaded)
             }) {
                 snapshot = built
             }
@@ -247,7 +251,9 @@ private struct ProfileUnlockPresenter: ViewModifier {
 
     func body(content: Content) -> some View {
         content
-            .onChange(of: snapshot?.seq) { _, _ in evaluate() }
+            // The seq alone can repeat: a build in the turn between the store's load and the model's seq
+            // catching up carries the old seq with a loaded store.
+            .onChange(of: snapshot.map { "\($0.seq)|\($0.storeLoaded)" }) { _, _ in evaluate() }
             .onAppear(perform: evaluate)
             .fullScreenCover(item: $unlock) { unlock in
                 PulseUnlockModal(unlock: unlock, onClose: { finish() }, onView: {
@@ -262,7 +268,9 @@ private struct ProfileUnlockPresenter: ViewModifier {
     }
 
     private func evaluate() {
-        guard let snapshot, unlock == nil else { return }
+        // A build from before the store's first load sees no days at all. Taking it as the first look would
+        // record a zero baseline, and the real history would then arrive as a run of "new" unlocks.
+        guard let snapshot, snapshot.storeLoaded, unlock == nil else { return }
         #if DEBUG
         if PulseMoreDebug.flag("--more-unlock"), let first = snapshot.unlockedBadges.first {
             unlock = .badge(first)
