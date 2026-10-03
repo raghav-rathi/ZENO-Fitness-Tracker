@@ -202,10 +202,11 @@ struct PulseHomeSections: View {
             if isToday && !isNewMember {
                 if let base = current?.coaching {
                     // The stack, when a card is due, then the tiles 22 pt under its peek.
-                    PulseCoachingStackHost(base: base, home: home, grades: current?.monitor,
+                    PulseCoachingStackHost(base: base, home: home, grades: PulseHomeDebug.monitor ?? current?.monitor,
                                            stressUpdated: stressUpdated)
                 } else {
-                    PulseMonitorTiles(home: home, grades: current?.monitor, stressUpdated: stressUpdated)
+                    PulseMonitorTiles(home: home, grades: PulseHomeDebug.monitor ?? current?.monitor,
+                                      stressUpdated: stressUpdated)
                         .padding(.top, PulseHomeSpacing.tilesTop)
                         .id("pulse.monitors")
                 }
@@ -311,7 +312,8 @@ enum PulseHomeSpacing {
 
 /// DEBUG `--pulse-dashboard <id,id,…>`: show these dashboard items, for a capture, without touching the
 /// stored layout. `--pulse-home-open outlook|review`: open the local Daily Outlook or Day in Review once
-/// Home has loaded. No-op in Release.
+/// Home has loaded. `--pulse-monitor elevated|low|very-elevated|out`: the Health Monitor tile with that
+/// grade, for a capture (the demo seed's vitals are all in range). No-op in Release.
 enum PulseHomeDebug {
     #if DEBUG
     private static var opened = false
@@ -332,6 +334,25 @@ enum PulseHomeDebug {
         }
     }
     #endif
+
+    static var monitor: PulseMonitorGrades? {
+        #if DEBUG
+        let args = CommandLine.arguments
+        guard let i = args.firstIndex(of: "--pulse-monitor"), i + 1 < args.count else { return nil }
+        let skin = String(localized: "Skin temperature"), rhr = String(localized: "Resting heart rate")
+        switch args[i + 1] {
+        case "elevated": return PulseMonitorGrades(judged: 5, out: [.init(name: rhr, strong: false, high: true)])
+        case "low": return PulseMonitorGrades(judged: 5, out: [.init(name: rhr, strong: false, high: false)])
+        case "very-elevated": return PulseMonitorGrades(judged: 5, out: [.init(name: skin, strong: true, high: true)])
+        case "out":
+            return PulseMonitorGrades(judged: 5, out: [.init(name: rhr, strong: false, high: true),
+                                                       .init(name: skin, strong: false, high: true)])
+        default: return nil
+        }
+        #else
+        return nil
+        #endif
+    }
 
     static var dashboard: [PulseDashboardItem]? {
         #if DEBUG
