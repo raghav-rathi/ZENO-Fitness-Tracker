@@ -30,6 +30,10 @@ enum ActiveWorkoutPersistence {
         var liveStrain: Double
         var pausedAtSec: Int? = nil
         var pausedDurationSec: Int? = nil
+        /// Whether the session records a GPS route (false once Track Route was switched off), so a
+        /// relaunch re-arms the recorder only when it should. nil in a snapshot from before the switch
+        /// existed, which recorded a route for every distance sport.
+        var recordsRoute: Bool? = nil
     }
 
     /// The single `UserDefaults` key (JSON-encoded `Snapshot`). Namespaced like `moments`/`sleepMarks`.
@@ -59,7 +63,8 @@ enum ActiveWorkoutPersistence {
             peakHr: max(0, raw.peakHr),
             liveStrain: raw.liveStrain.isFinite ? max(0, raw.liveStrain) : 0,
             pausedAtSec: raw.pausedAtSec.flatMap { $0 > 0 ? $0 : nil },
-            pausedDurationSec: raw.pausedDurationSec.map { max(0, $0) }
+            pausedDurationSec: raw.pausedDurationSec.map { max(0, $0) },
+            recordsRoute: raw.recordsRoute
         )
     }
 

@@ -40,8 +40,8 @@ struct PulseLiveSessionView: View {
 
     private var workout: AppModel.ActiveWorkout? { app.activeWorkout }
     private var kind: PulseActivityKind { PulseActivityCatalog.kind(named: workout?.sport ?? "") }
-    /// The session records a route: a distance sport whose Track Route stayed on.
-    private var hasMap: Bool { kind.isDistanceSport && (session?.trackRoute ?? true) }
+    /// The session records a route: a distance sport whose Track Route stayed on, as the engine armed it.
+    private var hasMap: Bool { app.activeWorkoutIsGps }
     /// The session's Activity Strain, 0–21, scored exactly as End & Save scores the saved row
     /// (`AppModel.endWorkout`: the profile's max heart rate and today's MEASURED resting heart rate). The
     /// engine's running `liveStrain` assumes a resting 60 bpm, a different scale from the saved row and from
@@ -128,7 +128,6 @@ struct PulseLiveSessionView: View {
         if let start = workout?.start {
             session = PulseActivitySessionStore.session(startSec: Int(start.timeIntervalSince1970))
         }
-        enforceTrackRoute()
         #if DEBUG
         if let minutes = PulseActivityDebug.demoLiveMinutes, let w = workout {
             let count = w.samples.count
@@ -146,15 +145,8 @@ struct PulseLiveSessionView: View {
         #endif
     }
 
-    /// Track Route switched off for a sport that records one: keep the recorder stopped, including after a
-    /// resume or a relaunch re-arms it.
-    private func enforceTrackRoute() {
-        if session?.trackRoute == false, app.gpsRecorder.isRecording { app.gpsRecorder.stop() }
-    }
-
     private func togglePause() {
         app.toggleWorkoutPause()
-        enforceTrackRoute()
     }
 
     private func endAndSave() {

@@ -122,6 +122,38 @@ final class ActiveWorkoutPersistenceTests: XCTestCase {
         XCTAssertEqual(decoded!.liveStrain, 0, accuracy: 1e-9)
     }
 
+    // MARK: - Track Route
+
+    /// A session started with Track Route off must come back off after a kill: the relaunch re-arms the
+    /// recorder from this flag alone.
+    func testRecordsRouteRoundTrips() {
+        for value in [true, false] {
+            var snap = snapshot(sport: "Running")
+            snap.recordsRoute = value
+            XCTAssertEqual(ActiveWorkoutPersistence.decode(ActiveWorkoutPersistence.encode(snap))?.recordsRoute, value)
+        }
+    }
+
+    /// A snapshot written before the switch existed carries no flag, and reads as "not stated" rather than
+    /// as off, so a distance session interrupted across the update still records its route.
+    func testSnapshotWithoutTheFlagReadsAsUnstated() {
+        let old = Data("""
+            {"startSec":1700000000,"sport":"Running","samples":[],"avgHr":0,"peakHr":0,"liveStrain":0}
+            """.utf8)
+        let decoded = ActiveWorkoutPersistence.decode(old)
+        XCTAssertNotNil(decoded)
+        XCTAssertNil(decoded?.recordsRoute)
+    }
+
+    /// The one arming rule: a distance sport records unless Track Route is off; nothing else ever does.
+    @MainActor
+    func testRouteIsRecordedForADistanceSportWithTrackRouteOn() {
+        XCTAssertTrue(AppModel.recordsRoute(sport: "Running", trackRoute: true))
+        XCTAssertFalse(AppModel.recordsRoute(sport: "Running", trackRoute: false))
+        XCTAssertFalse(AppModel.recordsRoute(sport: "Yoga", trackRoute: true))
+        XCTAssertFalse(AppModel.recordsRoute(sport: "Yoga", trackRoute: false))
+    }
+
     func testDecodePreservesAbsentPauseDurationAndClampsPresentNegative() {
         let absent = snapshot()
         XCTAssertNil(ActiveWorkoutPersistence.decode(ActiveWorkoutPersistence.encode(absent))?.pausedDurationSec)

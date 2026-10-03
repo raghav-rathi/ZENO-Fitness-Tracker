@@ -103,12 +103,12 @@ final class AppModel: ObservableObject {
     /// the session still banks HR + Effort without a route. Observed by the live workout card for live
     /// distance/pace; its final route is persisted on End via `RouteStore`, keyed by the saved row's
     /// natural key (the shared `WorkoutRow` has no route column on Apple). Default behaviour is opt-in by
-    /// sport: it only arms for a `WorkoutCatalog.Sport.isDistanceSport`, and only actually captures once
-    /// the user grants When-In-Use location.
+    /// sport: it only arms for a `WorkoutCatalog.Sport.isDistanceSport` whose Track Route is on, and only
+    /// actually captures once the user grants When-In-Use location.
     let gpsRecorder = GpsWorkoutRecorder()
-    /// True while the active workout is a GPS-type session (drives the End-time route persist). Mirrors
-    /// Android's `ActiveWorkout.gpsEnabled`.
-    private var activeWorkoutIsGps = false
+    /// True while the active workout records a GPS route (drives the End-time route persist, and tells a
+    /// live screen whether there is a route to show). Mirrors Android's `ActiveWorkout.gpsEnabled`.
+    private(set) var activeWorkoutIsGps = false
 
     /// A manual workout in progress. `samples` accumulate from the smoothed live `bpm`; `liveStrain`
     /// is recomputed as the window grows so the active card can show strain building in real time.
@@ -825,7 +825,11 @@ final class AppModel: ObservableObject {
     /// name; callers that don't pick a sport get the catalogue default "Other", parity with Android's
     /// `startWorkout(sport:)`). The active card on Live then shows elapsed time, live HR and strain
     /// building; End scores + saves it under this sport. Confirms with a single buzz. (#519)
-    func startWorkout(sport: String = WorkoutCatalog.defaultSportName) {
+    ///
+    /// `trackRoute` false is a Track Route switched off: a distance sport then records no route and never
+    /// arms the recorder, so location is not even asked for, and a relaunch mid-session keeps it that way.
+    /// Callers that offer no such switch get the default, a route for every distance sport.
+    func startWorkout(sport: String = WorkoutCatalog.defaultSportName, trackRoute: Bool = true) {
         guard activeWorkout == nil else { return }
         lastWorkout = nil
         let name = sport.trimmingCharacters(in: .whitespaces)
@@ -837,7 +841,7 @@ final class AppModel: ObservableObject {
         // record a route, and the recorder still captures nothing unless the user grants When-In-Use
         // location (and on a Mac with no GPS it stays empty) , the session always banks HR + Effort
         // regardless. A non-distance sport (yoga, strength) never touches location at all.
-        activeWorkoutIsGps = WorkoutCatalog.sport(named: resolved)?.isDistanceSport ?? false
+        activeWorkoutIsGps = Self.recordsRoute(sport: resolved, trackRoute: trackRoute)
         if activeWorkoutIsGps {
             gpsRecorder.start(startMs: Int64(started.timeIntervalSince1970 * 1000))
         }
@@ -849,6 +853,12 @@ final class AppModel: ObservableObject {
         emitWorkoutsTrace(WorkoutsTrace.sessionLine(
             event: "start", sportKey: WorkoutSource.traceSportKey(resolved), hrSamples: 0))
         buzz(loops: 1, gate: HapticPrefs.workout)
+    }
+
+    /// Whether a session of `sport` records a GPS route: a distance sport (#524) whose Track Route is on.
+    /// The one rule `startWorkout` and the relaunch rehydrate both arm the recorder by.
+    static func recordsRoute(sport: String, trackRoute: Bool) -> Bool {
+        trackRoute && (WorkoutCatalog.sport(named: sport)?.isDistanceSport ?? false)
     }
 
     /// Emit one Workouts & GPS test-mode line tagged `.workouts` iff the mode is on. The cheap
@@ -902,7 +912,8 @@ final class AppModel: ObservableObject {
                 peakHr: w.peakHr,
                 liveStrain: w.liveStrain,
                 pausedAtSec: w.pausedAt.map { Int($0.timeIntervalSince1970) },
-                pausedDurationSec: Int(w.pausedDuration)))
+                pausedDurationSec: Int(w.pausedDuration),
+                recordsRoute: activeWorkoutIsGps))
     }
 
     /// If a manual workout was in flight when iOS killed the app, rebuild `activeWorkout` from the durable
@@ -925,8 +936,9 @@ final class AppModel: ObservableObject {
         // a distance workout restored after an OS kill resumes as a non-GPS workout: Resume never
         // restarts CoreLocation and End never asks the recorder for its route. Re-arm from the original
         // start so newly captured fixes keep the workout's elapsed-time basis; leave a restored paused
-        // session paused until the user explicitly resumes it.
-        activeWorkoutIsGps = WorkoutCatalog.sport(named: snap.sport)?.isDistanceSport ?? false
+        // session paused until the user explicitly resumes it. A session started with Track Route off
+        // stays off: the snapshot carries that choice (absent from an older snapshot, which recorded).
+        activeWorkoutIsGps = Self.recordsRoute(sport: snap.sport, trackRoute: snap.recordsRoute ?? true)
         if activeWorkoutIsGps {
             gpsRecorder.restore(
                 startMs: Int64(snap.startSec) * 1000,

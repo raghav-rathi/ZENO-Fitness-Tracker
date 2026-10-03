@@ -98,7 +98,8 @@ private struct PulseActivityDemoStarter: View {
 // MARK: - Session preferences
 
 /// What the pre-start screen chose for the session it starts, kept on this iPhone by the session's start
-/// so a relaunch mid-session resumes with the same Strain Target and Track Route choice.
+/// so a relaunch mid-session resumes with the same Strain Target. (The Track Route choice is the engine's
+/// own: `AppModel.startWorkout(sport:trackRoute:)` keeps it with the session.)
 enum PulseActivitySessionStore {
     static let strainTargetOnKey = "pulse.activity.strainTargetOn"
     private static let sessionKey = "pulse.activity.session"
@@ -107,8 +108,6 @@ enum PulseActivitySessionStore {
         let startSec: Int
         /// The Activity Strain the session aims at, 0–21, when Strain Target was on.
         let target: Double?
-        /// False when Track Route was switched off for a sport that records a route.
-        let trackRoute: Bool
     }
 
     static func save(_ session: Session, defaults: UserDefaults = .standard) {
@@ -362,19 +361,16 @@ struct PulsePreStartView: View {
     }
 }
 
-/// The one place the flow starts a session: the engine's own start, then the screen's choices for it.
+/// The one place the flow starts a session: the engine's own start (with the Track Route choice, so a
+/// route switched off is never recorded), then the screen's Strain Target for it.
 @MainActor
 enum PulseStartEngine {
     static func start(app: AppModel, sport: String, target: Double?, trackRoute: Bool) {
         guard app.activeWorkout == nil else { return }
         RecentSportsPrefs.recordSelection(sport)
-        app.startWorkout(sport: sport)
+        app.startWorkout(sport: sport, trackRoute: trackRoute)
         guard let started = app.activeWorkout?.start else { return }
-        PulseActivitySessionStore.save(.init(startSec: Int(started.timeIntervalSince1970), target: target,
-                                             trackRoute: trackRoute))
-        // Track Route off for a sport that records a route: stop the recorder the engine just armed, so
-        // no route is kept (the engine has no switch of its own yet; see the activity notes).
-        if !trackRoute { app.gpsRecorder.stop() }
+        PulseActivitySessionStore.save(.init(startSec: Int(started.timeIntervalSince1970), target: target))
     }
 }
 
