@@ -68,9 +68,22 @@ struct PulseProfile: Equatable {
 /// returns nil when superseded, so a fast run of swipes does not queue a build per day.
 actor PulseSnapshotBuilder {
     let repo: Repository
+    /// The optimal Strain range for each whole Recovery percent, 0...100 (`optimalStrainBands()`).
+    private let strainBands: [ClosedRange<Double>?]
 
-    init(repo: Repository) {
+    init(repo: Repository, strainBands: [ClosedRange<Double>?]) {
         self.repo = repo
+        self.strainBands = strainBands
+    }
+
+    /// CoupledView's approved recovery-to-strain bands (`CoupledView.optimalStrainRange`) for every whole
+    /// percent a dial can print, read once on the main actor, where that rule is isolated, for the builder
+    /// to look up off it.
+    @MainActor
+    static func optimalStrainBands() -> [ClosedRange<Double>?] {
+        (0...100).map { percent in
+            CoupledView.optimalStrainRange(recovery: Double(percent)).map { Double($0.lowerBound)...Double($0.upperBound) }
+        }
     }
 
     // MARK: Per-refresh cache
@@ -353,16 +366,23 @@ actor PulseSnapshotBuilder {
         PulseDialData(score: .strain, value: value, state: value == nil ? .noData : .scored)
     }
 
+    /// The optimal Strain range for a Recovery as a dial prints it (a whole percent, 0...100), from
+    /// CoupledView's approved bands as the builder read them at start-up.
+    func optimalStrainRange(percent: Int) -> ClosedRange<Double>? {
+        strainBands.indices.contains(percent) ? strainBands[percent] : nil
+    }
+
     /// The recommended range for the day from the recovery the dial shows, through CoupledView's
     /// approved recovery-to-strain bands. Judged on the whole percent the dial prints.
     func strainTarget(_ display: LiquidTodayView.ChargeDisplay, strain: Double?,
                               isToday: Bool) -> PulseStrainTarget? {
         guard let pct = display.pct else { return nil }
-        let shown = Double(PulseDisplay.displayedPercent(pct))
-        guard let band = CoupledView.optimalStrainRange(recovery: shown) else { return nil }
+        let percent = PulseDisplay.displayedPercent(pct)
+        let shown = Double(percent)
+        guard let band = optimalStrainRange(percent: percent) else { return nil }
         let carried: Bool
         if case .carried = display { carried = true } else { carried = false }
-        return PulseStrainTarget(range: Double(band.lowerBound)...Double(band.upperBound),
+        return PulseStrainTarget(range: band,
                                  intent: PulseDisplay.strainIntent(recoveryPercent: shown),
                                  band: PulseDisplay.recoveryBand(percent: shown),
                                  current: strain, fromCarriedRecovery: carried, isToday: isToday)

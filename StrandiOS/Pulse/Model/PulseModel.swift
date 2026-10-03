@@ -66,7 +66,7 @@ final class PulseModel {
         self.repo = repo
         self.profile = profile
         self.ble = ble
-        builder = PulseSnapshotBuilder(repo: repo)
+        builder = PulseSnapshotBuilder(repo: repo, strainBands: PulseSnapshotBuilder.optimalStrainBands())
         #if DEBUG
         pendingDayOffset = PulseDebugLaunch.dayOffset
         pendingNightIndex = PulseDebugLaunch.nightIndex
