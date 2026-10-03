@@ -752,14 +752,18 @@ extension PulseSnapshotBuilder {
         }
     }
 
-    /// Tonight's plan as Home's TONIGHT'S SLEEP card states it: the planner's own resolver
-    /// (`PulseSleepPlan.resolve`) for REACH MY SLEEP NEED at 100%, so the card and the planner it opens
-    /// show the same wake and bedtime from the same settings. `settings` is read on the main actor
-    /// (`PulseSleepPlanSettings.current`) and passed in with the request.
-    func tonightSleepPlan(_ r: PulseRequest, settings: PulseSleepPlanSettings) async -> PulseSleepPlan? {
+    /// Tonight's plan for Home's TONIGHT'S SLEEP card, through the planner's own resolver
+    /// (`PulseSleepPlan.resolve`): given the planner's stored goal (`pulse.sleepPlanner.goal`) and the running
+    /// Weekly Plan's sleep goals, the card would show the wake and bedtime the planner it opens shows.
+    /// `settings`, `goal` and `weeklyPlan` are read on the main actor (`PulseSleepPlanSettings.current` or
+    /// `.stored`, `PulseSleepGoal(storageValue:)`, `PulseWeeklyPlanSleepGoals.current`) and passed in with the
+    /// request. Nothing calls it yet: Home's card still works tonight out through `tonightPlan`.
+    func tonightSleepPlan(_ r: PulseRequest, settings: PulseSleepPlanSettings, goal: PulseSleepGoal = .default,
+                          weeklyPlan: PulseWeeklyPlanSleepGoals? = nil) async -> PulseSleepPlan? {
         guard let s = await sleepPlanner(r) else { return nil }
-        return PulseSleepPlan.resolve(now: r.now, goal: .default, needMin: s.need.totalMin, settings: settings,
-                                      recentWakeMinutes: s.recentWakeMinutes, timings: s.timings)
+        return PulseSleepPlan.resolve(now: r.now, goal: goal, needMin: s.need.totalMin, settings: settings,
+                                      recentWakeMinutes: s.recentWakeMinutes, timings: s.timings,
+                                      weeklyPlan: weeklyPlan)
     }
 }
 

@@ -4,8 +4,10 @@ import StrandAnalytics
 
 // MARK: - Tonight's plan (WHOOP_UI_SPEC §3.1 item 8c, §3.11)
 //
-// One resolver for everything any screen states about tonight, so Home's TONIGHT'S SLEEP card, the Sleep
-// Planner's times, bar, headline and alarm panel, and My Schedule can never describe different nights:
+// One resolver for everything a screen states about tonight, so the Sleep Planner's times, bar, headline
+// and alarm panel and My Schedule can never describe different nights. Home's TONIGHT'S SLEEP card is to
+// read it too (`PulseSnapshotBuilder.tonightSleepPlan`), but still works tonight out on its own
+// (`PulseSnapshotBuilder.tonightPlan`):
 //
 //   wake      `TonightSleepPlan.wake`: the strap alarm only when it will buzz that morning (on, armed,
 //             that weekday), else the wind-down reminder's wake while it is on, else the median wake of
@@ -123,8 +125,8 @@ struct PulseSleepPlanSettings: Equatable {
     }
 
     /// The same, read straight from the stored keys (BehaviorStore's alarm keys, as `BehaviorStore.init` reads
-    /// them, and WindDownNudge's), for a caller without the store, such as the shell building Home's
-    /// request: `PulseSnapshotBuilder.tonightSleepPlan(_:settings:)`.
+    /// them, and WindDownNudge's), for a caller without the store, such as the shell building the request
+    /// for Home's card (`PulseSnapshotBuilder.tonightSleepPlan`).
     @MainActor
     static func stored(strapWillArm: Bool = true, defaults d: UserDefaults = .standard) -> PulseSleepPlanSettings {
         let weekdays = (d.array(forKey: "behavior.smartAlarmWeekdays") as? [Int] ?? []).filter { (1...7).contains($0) }
