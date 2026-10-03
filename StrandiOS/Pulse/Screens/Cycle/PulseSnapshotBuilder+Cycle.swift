@@ -177,7 +177,7 @@ extension PulseSnapshotBuilder {
             // only where phases apply.
             position = (Double(lo + hi) / 2) / Double(length)
         }
-        let headline = header.cycleDay
+        let headline = header.cardDay
             ?? (mode == .menopause ? String(localized: "Symptom tracking") : String(localized: "Log a period to start"))
         return CycleTodaySnapshot(seq: r.seq, header: header, headline: headline,
                                   position: position.map { min(1, max(0, $0)) })
@@ -197,12 +197,14 @@ extension PulseSnapshotBuilder {
                 subtitle += " • " + (days == 1 ? String(localized: "1 day since your last logged bleed")
                                                : String(localized: "\(days) days since your last logged bleed"))
             }
-            return .init(cycleDay: nil, phase: nil, title: String(localized: "Menopause"), subtitle: subtitle,
-                         basis: nil, caveat: nil, accessibility: String(localized: "Menopause. \(subtitle)"))
+            return .init(cycleDay: nil, cardDay: nil, phase: nil, title: String(localized: "Menopause"),
+                         subtitle: subtitle, basis: nil, caveat: nil,
+                         accessibility: String(localized: "Menopause. \(subtitle)"))
         }
 
         if active, let cd = summary.cycleDay {
             let dayText = String(localized: "Cycle Day \(cd)")
+            let cardDay = String(localized: "Day \(cd)")
             let phase = summary.phase
             let title: String? = phasesApply ? phase.map(PulseCycleText.phaseTitle) : nil
             var parts: [String] = []
@@ -235,21 +237,22 @@ extension PulseSnapshotBuilder {
             }
             let subtitle = parts.joined(separator: " • ")
             let spoken = [dayText, title, subtitle, basis].compactMap { $0 }.joined(separator: ". ")
-            return .init(cycleDay: dayText, phase: phasesApply ? phase : nil, title: title, subtitle: subtitle,
-                         basis: basis, caveat: caveat, accessibility: spoken)
+            return .init(cycleDay: dayText, cardDay: cardDay, phase: phasesApply ? phase : nil, title: title,
+                         subtitle: subtitle, basis: basis, caveat: caveat, accessibility: spoken)
         }
 
         // No usable logs: the temperature engine, when it reads a phase, is the only voice.
         if phasesApply, let engine = inputs.engine, let phase = PulseCycleText.phase(engine.phase),
            let lo = engine.cycleDayLow, let hi = engine.cycleDayHigh {
             let dayText = lo == hi ? String(localized: "Cycle Day \(lo)") : String(localized: "Cycle Day \(lo)–\(hi)")
+            let cardDay = lo == hi ? String(localized: "Day \(lo)") : String(localized: "Day \(lo)–\(hi)")
             var subtitle = String(localized: "Estimated from your skin temperature")
             if let w = engine.nextPeriodWindow {
                 subtitle += " • " + PulseCycleText.nextPeriod(
                     window: MenstrualCycleModel.Window(earliest: w.earliestDay, latest: w.latestDay), today: today)
             }
             let title = PulseCycleText.phaseTitle(phase)
-            return .init(cycleDay: dayText, phase: phase, title: title, subtitle: subtitle,
+            return .init(cycleDay: dayText, cardDay: cardDay, phase: phase, title: title, subtitle: subtitle,
                          basis: String(localized: "Log your period to anchor your cycle day"), caveat: nil,
                          accessibility: "\(dayText). \(title). \(subtitle)")
         }
@@ -261,8 +264,8 @@ extension PulseSnapshotBuilder {
             subtitle = String(localized: "Log your period to see your cycle day, phase and predictions.")
         }
         let title = String(localized: "No Phase Predicted")
-        return .init(cycleDay: nil, phase: nil, title: title, subtitle: subtitle, basis: nil, caveat: nil,
-                     accessibility: "\(title). \(subtitle)")
+        return .init(cycleDay: nil, cardDay: nil, phase: nil, title: title, subtitle: subtitle, basis: nil,
+                     caveat: nil, accessibility: "\(title). \(subtitle)")
     }
 
     /// The engine's next-period window as dashed days, only where the logs predict nothing.

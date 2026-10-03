@@ -39,6 +39,8 @@ struct CycleInsightsSnapshot: Equatable {
     struct Header: Equatable {
         /// "Cycle Day 3", "Cycle Day 18–22", or nil ("No Phase Predicted", "Menopause").
         let cycleDay: String?
+        /// The same day as a card prints it under its label (§3.20 item 6, §3.1 item 8e): "Day 3", "Day 18–22".
+        let cardDay: String?
         let phase: PulseCyclePhase?
         /// "Menstrual Phase", "No Phase Predicted", "Menopause"; nil where phases do not apply (hormonal
         /// contraception), leaving the cycle day alone.
@@ -200,7 +202,8 @@ struct CycleTodaySnapshot: Equatable {
     let seq: Int
     /// The page's header: "Cycle Day 3" with "Menstrual Phase", "No Phase Predicted", "Menopause".
     let header: CycleInsightsSnapshot.Header
-    /// The line under the card's label: the cycle day, or what there is instead ("Log a period to start").
+    /// The line under the card's label: the header's cycle day as a card prints it ("Day 3"), or what there
+    /// is instead ("Log a period to start").
     let headline: String
     /// Today's place in the cycle, 0…1, for the card's phase bar; nil without a cycle day to place, and
     /// where phases do not apply (menopause, hormonal contraception), as the page then draws none.
