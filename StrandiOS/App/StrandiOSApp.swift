@@ -108,6 +108,10 @@ struct StrandiOSApp: App {
         #endif
         let model = AppModel()
         _model = StateObject(wrappedValue: model)
+        // The Coach's standing context (the wearer's active My Memory items while Pulse runs) goes with every
+        // request, the scheduled morning brief included, so it is set before the brief can be generated: a
+        // background launch may never open the Coach sheet, which sets it too.
+        model.coach.systemContext = PulseCoachEnvelope.standingContext
         CoachBriefScheduler.register(generateBrief: { [weak coach = model.coach] in
             await coach?.generateBrief()
         }, log: { [weak model] line in
