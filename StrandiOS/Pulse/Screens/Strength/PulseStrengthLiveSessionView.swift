@@ -4,9 +4,10 @@ import StrandDesign
 import StrandAnalytics
 import WhoopStore
 
-/// The live session as a destination of its own, full screen. The shell presents it whenever
-/// `LiftSessionController.isPresented` is set (`PulseLiftSessionPresenter`): a workout started or resumed
-/// here or in the Lift Log, and a tap on the session bar.
+/// The live session as a destination of its own, full screen. `PulseLiftSessionPresenter` presents it
+/// whenever `LiftSessionController.isPresented` is set (a workout started or resumed in the Strength Trainer
+/// or the Lift Log, a tap on the session bar): the host of the modal on top does, such as the Strength
+/// Trainer's, else the shell.
 struct PulseStrengthLiveRoute: PulseScreenRoute {
     var presentation: PulsePresentation { .fullScreen }
     var view: some View { PulseStrengthLiveSessionView() }
@@ -130,9 +131,10 @@ struct PulseStrengthLiveSessionView: View {
     private func header(_ engine: LiftSessionEngine) -> some View {
         HStack(alignment: .center, spacing: 0) {
             Menu {
-                // The running session lives on in the bar above the tab bar.
+                // Back to the screen it was opened over, where the session runs on: the Strength Trainer's
+                // WORKOUT IN PROGRESS card, or the session bar (shown once no modal covers the shell).
                 Button { dismiss() } label: {
-                    Label(String(localized: "Minimise to the bar"), systemImage: "chevron.down")
+                    Label(String(localized: "Minimise"), systemImage: "chevron.down")
                 }
                 Button { session.undo() } label: {
                     Label(String(localized: "Undo last step"), systemImage: "arrow.uturn.backward")

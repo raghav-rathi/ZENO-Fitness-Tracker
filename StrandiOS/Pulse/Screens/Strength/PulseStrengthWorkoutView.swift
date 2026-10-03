@@ -190,8 +190,8 @@ struct PulseStrengthWorkoutView: View {
         }
     }
 
-    /// START WORKOUT: a new session, or the one already running; either raises `isPresented`, and the shell
-    /// opens the live screen.
+    /// START WORKOUT: a new session, or the one already running; either raises `isPresented`, and the host
+    /// of the modal this page is pushed in (the Strength Trainer's) opens the live screen.
     private func start(_ workout: StrengthWorkout) async {
         if session.isActive {
             session.isPresented = true
