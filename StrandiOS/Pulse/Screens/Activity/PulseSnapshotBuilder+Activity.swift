@@ -211,8 +211,9 @@ extension PulseSnapshotBuilder {
     }
 
     /// Coverage from which a heart-rate stream counts as the activity's whole: the share at which
-    /// `Repository.workoutRows` starts reading a strap-native row's Avg / Max HR from the stored trace
-    /// (#499), so the chart and the figures beside it switch to the strap's history together.
+    /// `Repository.workoutRows` starts reading the Avg / Max HR of a strap-native row saved with its own (a
+    /// live session's) from the stored trace (#499), so the chart and the figures beside it switch to the
+    /// strap's history together.
     static let fullCoverage = Repository.workoutTraceFullCoverage
 
     /// The heart rate of a row's own strap around it (half its length either side, at least 15 minutes,

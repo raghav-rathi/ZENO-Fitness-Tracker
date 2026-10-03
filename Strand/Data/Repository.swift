@@ -2829,11 +2829,13 @@ final class Repository: ObservableObject {
     ///
     ///  - STRAP-NATIVE rows (`manual` / detected `<id>-noop`) are charted/zoned/scored straight from this
     ///    strap trace, so their Avg HR is recomputed as the true mean of those samples (and Max → true
-    ///    peak) once the trace covers the workout (`traceCoversWorkout`) , a manual edit can no longer
-    ///    drift them out of agreement with the graph. Until then they keep the figures they were SAVED
-    ///    with: a session recorded on this phone lands in the store only when the strap offloads it, and a
-    ///    fragment's average ("57 bpm" beside a Strain scored from the whole session) would otherwise
-    ///    reach every screen that lists the workout.
+    ///    peak) , a manual edit can no longer drift them out of agreement with the graph. A row SAVED with
+    ///    both figures (a live session's, from its own samples) keeps them until the trace covers the
+    ///    workout (`traceCoversWorkout`): a session's trace lands in the store only when the strap offloads
+    ///    it, and a fragment's average ("57 bpm" beside a Strain scored from the whole session) would
+    ///    otherwise reach every screen that lists the workout. A row saved without them (a retro entry
+    ///    stores no Max HR, and an Avg only if one was typed) has nothing to keep, so it reads both from
+    ///    whatever trace there is.
     ///  - IMPORTED rows (Apple Health / Health Connect / Whoop CSV) carry their OWN avg/max; we only FILL
     ///    them when nil (and the strap happened to be worn), never overriding a real imported value.
     ///
@@ -2946,15 +2948,16 @@ final class Repository: ObservableObject {
         }
 
         // Phase 3 , reassemble in ORIGINAL order. For an eligible row that cleared `minSamples` apply the
-        // off-main reduction (strap-native → trace IS the source once it covers the workout: override avg +
-        // max, else keep the saved pair; imported → fill avg, keep imported max). Every other row passes
-        // through verbatim.
+        // off-main reduction (strap-native → trace IS the source: override avg + max, unless the row was saved
+        // with both and the trace does not cover it yet, which keeps the saved pair; imported → fill avg, keep
+        // imported max). Every other row passes through verbatim.
         return zip(rows.indices, rows).map { i, row in
             guard let r = reduced[i] else { return row }
             let cls = WorkoutSource.classify(row.source)
             let strapNative = cls == .manual || cls == .detected
-            let newAvg = strapNative && !r.covered ? row.avgHr : r.avg
-            let newMax = strapNative ? (r.covered ? r.peak : row.maxHr) : (row.maxHr ?? r.peak)
+            let keepSaved = strapNative && !r.covered && row.avgHr != nil && row.maxHr != nil
+            let newAvg = keepSaved ? row.avgHr : r.avg
+            let newMax = strapNative ? (keepSaved ? row.maxHr : r.peak) : (row.maxHr ?? r.peak)
             // #961: FILL a nil Effort from the recomputed strain (never override a stored one). Display-only,
             // like the avg/max reconcile , the workout-PK upsert would wipe it, and the backend rescore
             // persists the durable value on the next analyze tick.
@@ -2966,9 +2969,9 @@ final class Repository: ObservableObject {
         }
     }
 
-    /// The share of a workout's minutes its strap trace must cover before a strap-native row's Avg / Max HR
-    /// are read from the trace instead of the figures it was saved with (#499). Activity Details draws the
-    /// stored trace from the same share, so the chart and the figures beside it change over together.
+    /// The share of a workout's minutes its strap trace must cover before a strap-native row saved with its
+    /// own Avg / Max HR (a live session's) reads them from the trace instead (#499). Activity Details draws
+    /// the stored trace from the same share, so the chart and the figures beside it change over together.
     nonisolated static let workoutTraceFullCoverage = 0.9
 
     /// Whether a trace holding samples in `coveredMinutes` of `[startTs, endTs]` (cut into minutes as
