@@ -41,12 +41,8 @@ extension PulseSnapshotBuilder {
             extraSpread: inputs.mode == .perimenopause ? 2 : 0)
         let active = summary.status == .active && !menopause
 
-        // The calendar's span: the first thing logged (at most a year back, at least two months back)
-        // through the end of the month two months ahead.
-        let firstLogged = ([logs.starts.min(), logs.flow.keys.min(), logs.symptoms.keys.min()].compactMap { $0 }).min()
-        let yearBack = MenstrualCycleModel.shift(today, by: -365) ?? today
-        let twoMonthsBack = MenstrualCycleModel.shift(today, by: -62) ?? today
-        let rangeStart = PulseCycleDates.monthStart(max(yearBack, min(firstLogged ?? twoMonthsBack, twoMonthsBack)))
+        // The calendar's span: from `firstLogDay` through the end of the month two months ahead.
+        let rangeStart = PulseCycleDates.firstLogDay(logs, today: today)
         let rangeEnd = PulseCycleDates.monthEnd(PulseCycleDates.monthStart(MenstrualCycleModel.shift(today, by: 62) ?? today))
         var infos = MenstrualCycleModel.calendar(from: rangeStart, to: rangeEnd, summary: summary, flow: logs.flow,
                                                  today: today, phasesApply: phasesApply)
@@ -460,6 +456,15 @@ enum PulseCycleDates {
 
     /// "2026-10-01" for any day in October 2026.
     static func monthStart(_ day: String) -> String { String(day.prefix(8)) + "01" }
+
+    /// The first day the calendar shows and the log sheet's pager steps back to: the start of the month of
+    /// the first thing logged, at most a year back and at least two months back.
+    static func firstLogDay(_ logs: PulseCycleLog.Logs, today: String) -> String {
+        let firstLogged = ([logs.starts.min(), logs.flow.keys.min(), logs.symptoms.keys.min()].compactMap { $0 }).min()
+        let yearBack = MenstrualCycleModel.shift(today, by: -365) ?? today
+        let twoMonthsBack = MenstrualCycleModel.shift(today, by: -62) ?? today
+        return monthStart(max(yearBack, min(firstLogged ?? twoMonthsBack, twoMonthsBack)))
+    }
 
     /// The month's last day key.
     static func monthEnd(_ monthStart: String) -> String {

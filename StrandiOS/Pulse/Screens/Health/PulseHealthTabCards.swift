@@ -557,11 +557,12 @@ struct HealthCycleSlot: View {
 
 /// MENSTRUAL CYCLE INSIGHTS (§3.20 item 6), when cycle awareness is on: the phase over "Day 21", a
 /// coral-to-lavender bar with today's white marker, and "+ LOG CYCLE". The card opens Menstrual Cycle
-/// Insights; LOG CYCLE opens the cycle tracker that logs today.
+/// Insights; LOG CYCLE opens that page's own log sheet on today (`PulseCycleCardLogSheet`), so a log made
+/// here is the same log, saved the same way.
 struct HealthCycleCard: View, Equatable {
     let result: CyclePhaseEngine.Result?
 
-    @State private var showsTracker = false
+    @State private var showsLog = false
 
     static func == (lhs: HealthCycleCard, rhs: HealthCycleCard) -> Bool {
         lhs.result == rhs.result
@@ -591,17 +592,31 @@ struct HealthCycleCard: View, Equatable {
                 }
                 .buttonStyle(PulsePressStyle())
                 Button {
-                    showsTracker = true
+                    showsLog = true
                 } label: {
                     Label(String(localized: "Log cycle"), systemImage: "plus")
                 }
                 .buttonStyle(.pulseNested(fill: PulseTheme.Menstrual.logButton))
             }
         }
-        .sheet(isPresented: $showsTracker) {
-            HealthCycleTrackerSheet()
+        .sheet(isPresented: $showsLog) {
+            PulseCycleCardLogSheet()
         }
+        #if DEBUG
+        .onAppear { openDebugLogIfAsked() }
+        #endif
     }
+
+    #if DEBUG
+    @MainActor private static var openedDebugLog = false
+
+    /// `--pulse-health-log-cycle`: open LOG CYCLE's sheet once, for captures.
+    private func openDebugLogIfAsked() {
+        guard !Self.openedDebugLog, CommandLine.arguments.contains("--pulse-health-log-cycle") else { return }
+        Self.openedDebugLog = true
+        showsLog = true
+    }
+    #endif
 
     private var phaseTitle: String {
         switch result?.phase {
@@ -640,21 +655,6 @@ struct HealthCycleCard: View, Equatable {
         }
         .frame(height: 16)
         .accessibilityHidden(true)
-    }
-}
-
-/// LOG CYCLE's sheet: the classic cycle tracker, reading the phase and curve from `AppModel` while open.
-private struct HealthCycleTrackerSheet: View {
-    @EnvironmentObject private var appModel: AppModel
-
-    var body: some View {
-        if let result = appModel.cyclePhase {
-            CycleTrackerView(result: result, curve: appModel.cycleCurve)
-        } else {
-            PulseSkeleton.cards([120, 200])
-                .padding(PulseTheme.Layout.pageMargin)
-                .task { await appModel.refreshV5Signals() }
-        }
     }
 }
 
