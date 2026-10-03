@@ -102,8 +102,8 @@ struct PulseWeeklyDigestView: View {
 }
 
 /// The Weekly Digest opened `page` weeks back (0 is the week containing today, 1 the Monday-to-Sunday
-/// week before it), for an entry point that names its week: Home's Monday "Your week in review" card
-/// opens last week. Pushed, as `.weeklyDigest` is.
+/// week before it), for an entry point that names its week (Home's Monday "Your week in review" card is
+/// to open page 1, last week). Pushed, as `.weeklyDigest` is.
 struct PulseWeeklyDigestRoute: PulseScreenRoute {
     let page: Int
     var view: some View { PulseWeeklyDigestView(page: page) }
