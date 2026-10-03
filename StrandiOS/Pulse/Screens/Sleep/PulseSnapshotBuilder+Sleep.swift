@@ -586,9 +586,9 @@ extension PulseSnapshotBuilder {
                                    lastLevel: res.windows.last(where: { $0.level != nil })?.level)
     }
 
-    // MARK: - Sleep Planner
+    // MARK: - Tonight's plan (Sleep Planner, Home's TONIGHT'S SLEEP)
 
-    /// Tonight's need with its parts, and the recent nights' timing (§3.11).
+    /// Tonight's need with its parts, the recent nights' wake minutes and their timing (§3.11).
     func sleepPlanner(_ r: PulseRequest) async -> SleepPlannerSnapshot? {
         begin(r.seq)
         let groups = await nightGroups(r)
@@ -610,8 +610,31 @@ extension PulseSnapshotBuilder {
                 bedOffsetSec: zone.secondsFromGMT(for: Date(timeIntervalSince1970: TimeInterval(shape.bedTs))),
                 wakeOffsetSec: zone.secondsFromGMT(for: Date(timeIntervalSince1970: TimeInterval(shape.wakeTs)))))
         }
-        return SleepPlannerSnapshot(seq: r.seq, need: need, timings: timings.sorted { $0.day < $1.day },
-                                    planDayKey: todayKey)
+        return SleepPlannerSnapshot(seq: r.seq, need: need,
+                                    recentWakeMinutes: Self.recentWakeMinutes(groups, habitual: habitual),
+                                    timings: timings.sorted { $0.day < $1.day })
+    }
+
+    /// The main night's wake minute for the most recent `TonightSleepPlan.habitNights` night groups, newest
+    /// first: exactly the window and main-night pick Home's card has always taken its usual wake from.
+    static func recentWakeMinutes(_ groups: [[CachedSleepSession]], habitual: Int?) -> [Int] {
+        let cal = Calendar.current
+        return groups.prefix(TonightSleepPlan.habitNights).compactMap { g -> Int? in
+            guard let end = SleepView.mainNightGroup(g, habitualMidsleepSec: habitual).last?.endTs else { return nil }
+            let c = cal.dateComponents([.hour, .minute], from: Date(timeIntervalSince1970: TimeInterval(end)))
+            return (c.hour ?? 0) * 60 + (c.minute ?? 0)
+        }
+    }
+
+    /// Tonight's plan as Home's TONIGHT'S SLEEP card states it: the planner's own resolver
+    /// (`PulseSleepPlan.resolve`) for REACH MY SLEEP NEED at 100%, so the card and the planner it opens
+    /// show the same wake and bedtime from the same settings. `settings` is read on the main actor
+    /// (`PulseSleepPlanSettings.current`) and passed in with the request.
+    func tonightSleepPlan(_ r: PulseRequest, settings: PulseSleepPlanSettings) async -> PulseSleepPlan? {
+        guard let s = await sleepPlanner(r) else { return nil }
+        return PulseSleepPlan.resolve(now: r.now, goal: .default, needMin: s.need.totalMin, settings: settings,
+                                      recentWakeMinutes: s.recentWakeMinutes, timings: s.timings)
     }
 }
+
 #endif

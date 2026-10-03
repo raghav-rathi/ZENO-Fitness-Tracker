@@ -19,9 +19,20 @@ struct PulseSleepTimeline: View {
     /// The two times sit this far toward the centre from their ticks (both references: 15–17 pt).
     private static let timeInset: CGFloat = 16
 
-    private let timesHeight: CGFloat = 78
-    private let barTop: CGFloat = 118
+    /// The two times with their two-line captions; the digits' tops sit ≈6 pt into it.
+    private let timesHeight: CGFloat = 58
+    /// The bar's top edge: its ticks start ≈87 pt under the digits' tops (reviews/r134, r135).
+    private let barTop: CGFloat = 96
     private let barHeight: CGFloat = 26
+
+    /// What named the wake, under it: the wearer's own time, their usual one, or a typical guess.
+    private var wakeCaption: String {
+        switch plan.wakeSource {
+        case .strapAlarm, .windDown: return String(localized: "Your wake time")
+        case .habit: return String(localized: "Usual wake")
+        case .typical: return String(localized: "Typical wake")
+        }
+    }
 
     var body: some View {
         GeometryReader { geo in
@@ -29,12 +40,13 @@ struct PulseSleepTimeline: View {
             let bedX = w * Self.bedFraction
             let wakeX = w * Self.wakeFraction
             ZStack(alignment: .topLeading) {
-                // The two times, centred over their ticks but kept inside the margins.
+                // The two times on one line, centred over their ticks but kept inside the margins, their
+                // captions hanging under them (one line or two).
                 timeBlock(plan.bedtime, caption: String(localized: "Suggested time to bed"))
-                    .frame(width: 150)
+                    .frame(width: 150, height: timesHeight, alignment: .top)
                     .position(x: min(max(bedX + Self.timeInset, 75), w - 75), y: timesHeight / 2)
-                timeBlock(plan.wake, caption: String(localized: "Your wake time"))
-                    .frame(width: 150)
+                timeBlock(plan.wake, caption: wakeCaption)
+                    .frame(width: 150, height: timesHeight, alignment: .top)
                     .position(x: min(max(wakeX - Self.timeInset, 75), w - 75), y: timesHeight / 2)
 
                 dropLine(x: bedX, from: timesHeight + 4, to: barTop)
@@ -43,9 +55,9 @@ struct PulseSleepTimeline: View {
                 Text(String(localized: "Time in bed"))
                     .pulseText(.label)
                     .foregroundStyle(PulseTheme.textPrimary)
-                    .position(x: w / 2, y: barTop - 14)
+                    .position(x: w / 2, y: barTop - 12)
 
-                // The bar: a faint strip across the screen, hatched between the ticks.
+                // The bar: a strip darker than the page across the screen, hatched between the ticks.
                 PulseTheme.Planner.barStrip
                     .frame(width: w + 2 * PulseTheme.Layout.pageMargin, height: barHeight)
                     .position(x: w / 2, y: barTop + barHeight / 2)
@@ -58,7 +70,7 @@ struct PulseSleepTimeline: View {
                     .font(PulseType.font(.rowValue))
                     .foregroundStyle(PulseTheme.textPrimary)
                     .padding(.horizontal, 12)
-                    .frame(height: 32)
+                    .frame(height: 30)
                     .background(Capsule(style: .circular).fill(PulseTheme.Planner.timeCapsule))
                     .overlay(Capsule(style: .circular).strokeBorder(Color.white, lineWidth: 1.5))
                     .fixedSize()
@@ -81,15 +93,16 @@ struct PulseSleepTimeline: View {
         .accessibilityElement(children: .contain)
     }
 
-    /// "10:25PM" (32 pt, the AM / PM 15 pt) over its two-line caption.
+    /// "9:17PM" (24 pt Bold condensed, the AM / PM 13 pt: reviews/r134's 17.7 pt digits) over its two-line
+    /// caption.
     private func timeBlock(_ date: Date, caption: String) -> some View {
         VStack(spacing: 3) {
             HStack(alignment: .firstTextBaseline, spacing: 1) {
                 Text(PulseFormat.clockNoMeridiem(date))
-                    .font(PulseType.font(.plannerTime))
+                    .font(PulseType.font(.mediumValue))
                 if let meridiem = Self.meridiem(date) {
                     Text(meridiem)
-                        .font(PulseType.numeral(15))
+                        .font(PulseType.font(.headerNumeral))
                 }
             }
             .foregroundStyle(PulseTheme.textPrimary)
@@ -167,10 +180,21 @@ struct PulseSleepTimeline: View {
     /// "PM" / "AM" in the reader's clock, or nil on a 24-hour clock.
     static func meridiem(_ date: Date) -> String? {
         guard !AppClock.uses24Hour else { return nil }
+        return meridiemFormatter(AppClock.formattingLocale).string(from: date)
+    }
+
+    private static let formatterLock = NSLock()
+    private static var meridiemFormatters: [String: DateFormatter] = [:]
+
+    /// One "a" formatter per locale, made once rather than on every render.
+    private static func meridiemFormatter(_ locale: Locale) -> DateFormatter {
+        formatterLock.lock(); defer { formatterLock.unlock() }
+        if let f = meridiemFormatters[locale.identifier] { return f }
         let f = DateFormatter()
-        f.locale = AppClock.formattingLocale
+        f.locale = locale
         f.dateFormat = "a"
-        return f.string(from: date)
+        meridiemFormatters[locale.identifier] = f
+        return f
     }
 }
 
@@ -200,14 +224,37 @@ private struct PulseSleepPinTail: Shape {
 // MARK: - The alarm panel (§3.11 item 8)
 
 /// The panel pinned at the bottom: the strap-vibrate glyph, ALARM and its switch (teal when on), then
-/// ALARM SET TO and WAKE TIME SET TO. It stays WHOOP's height whatever the alarm's state; what the alarm
-/// cannot promise is said under the plan instead (`PulseSleepAlarmNotes`), so it never covers the bar.
+/// ALARM SET TO and WAKE TIME SET TO. An alarm switched on that the strap will not keep says so here, in
+/// the panel, where the switch is (NOT ARMED, and one line above the tiles); the softer notes (the silent
+/// buzz, a day it is off) sit under the plan (`PulseSleepAlarmNotes`), so the panel stays WHOOP's height
+/// otherwise and never covers the bar.
 struct PulseSleepAlarmPanel: View {
+    /// What the panel must admit.
+    enum Warning: Equatable {
+        /// A WHOOP 5/MG strap arms its alarm only with Protocol probes on.
+        case notArmed
+        /// The strap keeps reporting a different alarm time than it was sent (#34).
+        case rejected
+
+        var text: String {
+            switch self {
+            case .notArmed: return String(localized: "Not armed: a WHOOP 5/MG strap needs Protocol probes on.")
+            case .rejected: return String(localized: "Your strap keeps reporting a different alarm time.")
+            }
+        }
+    }
+
     let plan: PulseSleepPlan?
     let alarmOn: Bool
+    let warning: Warning?
     let onToggle: (Bool) -> Void
     let onMode: () -> Void
     let onWake: () -> Void
+
+    private var modeText: String {
+        guard alarmOn else { return String(localized: "Off") }
+        return warning == .notArmed ? String(localized: "Not armed") : String(localized: "Exact time")
+    }
 
     var body: some View {
         VStack(spacing: 14) {
@@ -226,11 +273,27 @@ struct PulseSleepAlarmPanel: View {
                     .frame(width: 60, alignment: .trailing)
             }
             .frame(minHeight: PulseTheme.Layout.minTapTarget)
+            if let warning {
+                Label {
+                    Text(warning.text)
+                } icon: {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                }
+                .pulseText(.rowSubline)
+                .foregroundStyle(PulseTheme.negative)
+                .multilineTextAlignment(.leading)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.top, -6)
+            }
             PulseButtonRow {
-                tile(title: String(localized: "Alarm set to"),
-                     value: alarmOn ? String(localized: "Exact time") : String(localized: "Off"), action: onMode)
+                tile(title: String(localized: "Alarm set to"), value: modeText,
+                     valueColor: warning == .notArmed ? PulseTheme.negative : PulseTheme.textPrimary, action: onMode)
+                // The alarm's own time for that morning; dimmed while it will not buzz then.
                 tile(title: String(localized: "Wake time set to"),
-                     value: plan.map { PulseFormat.clock($0.wake) } ?? "--", action: onWake)
+                     value: plan.map { PulseFormat.clock($0.alarmTime) } ?? "--",
+                     valueColor: plan?.alarmFires == true ? PulseTheme.textPrimary : PulseTheme.textTertiary,
+                     action: onWake)
             }
         }
         .padding(.horizontal, PulseTheme.Layout.pageMargin)
@@ -245,7 +308,7 @@ struct PulseSleepAlarmPanel: View {
         .dynamicTypeSize(...DynamicTypeSize.xxLarge)
     }
 
-    private func tile(title: String, value: String, action: @escaping () -> Void) -> some View {
+    private func tile(title: String, value: String, valueColor: Color, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             VStack(spacing: 4) {
                 Text(title)
@@ -255,7 +318,7 @@ struct PulseSleepAlarmPanel: View {
                     .minimumScaleFactor(0.8)
                 Text(value)
                     .pulseText(.menuLabel)
-                    .foregroundStyle(PulseTheme.textPrimary)
+                    .foregroundStyle(valueColor)
                     .lineLimit(1)
                     .minimumScaleFactor(0.8)
             }
@@ -271,12 +334,12 @@ struct PulseSleepAlarmPanel: View {
     }
 }
 
-/// What the alarm cannot promise, under the plan: a 5/MG strap that will not arm, a strap that keeps
-/// refusing the alarm, a morning the alarm is off for, that the buzz is silent, and the strap's own state.
+/// The softer notes under the plan: why a strap alarm that is on will not buzz, a morning the alarm is
+/// off for, that the buzz is silent; with the alarm off, where the wake time came from; and the strap's
+/// own state.
 struct PulseSleepAlarmNotes: View {
-    let plan: PulseSleepPlan?
+    let plan: PulseSleepPlan
     let alarmOn: Bool
-    let rejectStreak: Int
     let strapWillArm: Bool
 
     var body: some View {
@@ -284,7 +347,7 @@ struct PulseSleepAlarmNotes: View {
             if let note {
                 Text(note)
                     .pulseText(.rowSubline)
-                    .foregroundStyle(noteIsWarning ? PulseTheme.negative : PulseTheme.textTertiary)
+                    .foregroundStyle(PulseTheme.textTertiary)
                     .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
                     .frame(maxWidth: .infinity)
@@ -294,23 +357,26 @@ struct PulseSleepAlarmNotes: View {
         .padding(.horizontal, 32)
     }
 
-    /// The most important thing to admit, first.
     private var note: String? {
-        guard alarmOn else { return nil }
-        if !strapWillArm {
-            return String(localized: "WHOOP 5/MG strap alarms need Protocol probes (Test Centre). Your wake time is saved, but the strap is not armed.")
+        if alarmOn {
+            if !strapWillArm {
+                return String(localized: "Your wake time is saved, but a WHOOP 5/MG strap arms its alarm only with Protocol probes on (Test Centre). Keep a phone alarm.")
+            }
+            if !plan.alarmFires {
+                let day = plan.wake.formatted(.dateTime.weekday(.wide).locale(AppLanguage.activeLocale))
+                return String(localized: "Your alarm is off on \(day).")
+            }
+            return String(localized: "A silent buzz from your strap. Keep a phone alarm as a backup.")
         }
-        if rejectStreak >= 2 {
-            return String(localized: "Your strap keeps reporting a different alarm time, so it may not buzz. Keep a phone alarm until it takes.")
+        switch plan.wakeSource {
+        case .habit:
+            return String(localized: "Planned for your usual wake time, the middle of your recent nights. Set a wake time to plan for a different one.")
+        case .typical:
+            return String(localized: "There is no wake time to plan for yet, so this assumes a typical one. Set yours below.")
+        case .windDown, .strapAlarm:
+            return nil
         }
-        if let plan, !plan.alarmFires {
-            let day = plan.wake.formatted(.dateTime.weekday(.wide).locale(AppLanguage.activeLocale))
-            return String(localized: "Your alarm is off on \(day).")
-        }
-        return String(localized: "A silent buzz from your strap. Keep a phone alarm as a backup.")
     }
-
-    private var noteIsWarning: Bool { !strapWillArm || rejectStreak >= 2 }
 }
 
 /// The strap's state as the alarm depends on it (§3.11 "States"): a battery under 20%, or, with the alarm on,
@@ -346,60 +412,10 @@ struct PulseSleepStrapNotice: View {
 
 // MARK: - Sheets
 
-/// "TOMORROW I WANT TO": Peak, Perform or Get By, each with its share of tonight's need.
-struct PulseSleepGoalSheet: View {
-    let selection: PulseSleepGoal
-    let onPick: (PulseSleepGoal) -> Void
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text(String(localized: "Tomorrow I want to"))
-                .pulseText(.cardHeadline)
-                .foregroundStyle(PulseTheme.textPrimary)
-                .padding(.top, 24)
-                .padding(.bottom, 6)
-                .accessibilityAddTraits(.isHeader)
-            ForEach(PulseSleepGoal.allCases) { goal in
-                Button { onPick(goal) } label: {
-                    HStack(spacing: 12) {
-                        VStack(alignment: .leading, spacing: 3) {
-                            Text(goal.title)
-                                .pulseText(.cardTitle)
-                                .foregroundStyle(PulseTheme.textPrimary)
-                            Text(String(localized: "\(goal.percent)% of your sleep need"))
-                                .pulseText(.rowSubline)
-                                .foregroundStyle(PulseTheme.textSecondary)
-                        }
-                        Spacer(minLength: 8)
-                        if goal == selection {
-                            Image(systemName: "checkmark")
-                                .font(.system(size: 15, weight: .bold))
-                                .foregroundStyle(PulseTheme.positive)
-                        }
-                    }
-                    .padding(.horizontal, 18)
-                    .frame(maxWidth: .infinity, minHeight: PulseTheme.Row.listWithSubline, alignment: .leading)
-                    .pulseCardBackground(.rowCard)
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(PulsePressStyle())
-                .accessibilityAddTraits(goal == selection ? .isSelected : [])
-            }
-            Spacer(minLength: 0)
-        }
-        .padding(.horizontal, PulseTheme.Layout.pageMargin)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .background(PulseTheme.wheelSheet.ignoresSafeArea())
-        .presentationDetents([.height(340), .large])
-        .presentationDragIndicator(.visible)
-        .presentationCornerRadius(PulseTheme.Radius.menu)
-        .environment(\.colorScheme, .dark)
-    }
-}
-
 /// ALARM SET TO: Exact Time (the strap's silent buzz at the wake time) or Off. Sleep Goal and In the Green
 /// need a phone watching the night for a light-sleep moment, which ZENO has on Android only, so they are
-/// shown and unavailable rather than offered and broken (§3.11 item 9).
+/// shown and unavailable rather than offered and broken (§3.11 item 9; a deviation the integration notes
+/// record).
 struct PulseSleepAlarmModeSheet: View {
     let alarmOn: Bool
     let onPick: (Bool) -> Void
@@ -415,7 +431,7 @@ struct PulseSleepAlarmModeSheet: View {
             row(String(localized: "Exact time"),
                 String(localized: "Your strap buzzes at your wake time, even if your phone is asleep or ZENO is closed."),
                 selected: alarmOn, enabled: true) { onPick(true) }
-            row(String(localized: "Off"), String(localized: "No alarm. The plan still uses your wake time."),
+            row(String(localized: "Off"), String(localized: "No alarm. The plan uses your usual wake time instead."),
                 selected: !alarmOn, enabled: true) { onPick(false) }
             row(String(localized: "Sleep goal"),
                 String(localized: "Wakes you in a light moment once your goal is met. Needs a phone-side smart wake, on Android only for now."),
@@ -450,7 +466,7 @@ struct PulseSleepAlarmModeSheet: View {
                 Spacer(minLength: 8)
                 if selected {
                     Image(systemName: "checkmark")
-                        .font(.system(size: 15, weight: .bold))
+                        .pulseText(.coachingTitle)
                         .foregroundStyle(PulseTheme.positive)
                 }
             }
@@ -482,8 +498,14 @@ struct PulseSleepTimeSheet: View {
         self.confirmTitle = confirmTitle
         self.onConfirm = onConfirm
         self.onCancel = onCancel
-        let base = Calendar.current.startOfDay(for: Date())
-        _date = State(initialValue: base.addingTimeInterval(TimeInterval(minutes * 60)))
+        _date = State(initialValue: Self.date(minutes: minutes))
+    }
+
+    /// `minutes` past midnight today, set on the calendar: on a daylight-saving change day, counting
+    /// seconds from midnight would show (and then save) an hour off.
+    static func date(minutes: Int, on day: Date = Date(), calendar: Calendar = .current) -> Date {
+        let m = min(max(minutes, 0), 24 * 60 - 1)
+        return calendar.date(bySettingHour: m / 60, minute: m % 60, second: 0, of: day) ?? day
     }
 
     var body: some View {
@@ -502,7 +524,8 @@ struct PulseSleepTimeSheet: View {
                         .pulseText(.capsuleLabel)
                         .foregroundStyle(PulseTheme.textPrimary)
                         .frame(maxWidth: .infinity, minHeight: 52)
-                        .background(RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .background(RoundedRectangle(cornerRadius: PulseTheme.Planner.wheelButtonRadius,
+                                                     style: .continuous)
                             .strokeBorder(Color.white, lineWidth: 1.5))
                         .contentShape(Rectangle())
                 }
@@ -517,7 +540,8 @@ struct PulseSleepTimeSheet: View {
                         .lineLimit(1)
                         .minimumScaleFactor(0.8)
                         .frame(maxWidth: .infinity, minHeight: 52)
-                        .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Color.white))
+                        .background(RoundedRectangle(cornerRadius: PulseTheme.Planner.wheelButtonRadius,
+                                                     style: .continuous).fill(Color.white))
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(PulsePressStyle())

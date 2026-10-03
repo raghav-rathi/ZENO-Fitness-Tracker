@@ -52,9 +52,10 @@ enum PulseSleepExplainerTopic: String, Hashable, CaseIterable {
             ]
         case .planner:
             return [
-                String(localized: "The suggested time to bed leaves enough time in bed to sleep the share of your sleep need you chose before your wake time, plus 15 minutes to fall asleep."),
-                String(localized: "Peak aims for all of your need, Perform for 85% and Get By for 70%. Your need is tonight's from ZENO's sleep need model, the same need Hours vs. needed measures against."),
-                String(localized: "The optimal window is the bed and wake time that would keep your Sleep Consistency highest: the middle of your last four nights."),
+                String(localized: "Your wake time is your strap alarm's when it will buzz that morning; otherwise the wake time of your wind-down reminder while it is on; otherwise your usual wake, the middle of your last two weeks of nights; and with none of those, a typical 7:00 AM. Home's Tonight's Sleep plans for the same wake."),
+                String(localized: "Reach my sleep need plans for 100%, 85% or 70% of tonight's need from ZENO's sleep need model, the same need Hours vs. needed measures against. The suggested time to bed leaves that much sleep before your wake time, plus 15 minutes to fall asleep."),
+                String(localized: "Improve my sleep plans for consistency instead: asleep at the middle of your last four nights' bedtimes, which keeps tomorrow's Sleep Consistency highest for your wake time. The percentage is the score that night would get."),
+                String(localized: "The optimal window is the bed and wake time that would keep your Sleep Consistency highest. ZENO never suggests a bedtime before 8 PM unless you wake before 5 AM."),
                 String(localized: "The alarm is your strap's silent buzz, armed on the strap itself. Keep a phone alarm as a backup for anything you cannot miss."),
             ]
         }
