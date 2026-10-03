@@ -186,12 +186,16 @@ struct MoreListRow: View {
         case .tag(let text):
             PulseTag(text)
         case .check(let done):
-            // A status mark: a teal ✓ in its tint once done, an empty ring before.
+            // A status mark: a teal ✓ in its tint once done, an empty square before, the badge's own 24 pt
+            // shape, so the column never alternates squares and circles (WHOOP pairs a done/not-done mark
+            // in one shape, §2.6.21, §2.6.37).
             Group {
                 if done {
                     PulseStatusBadge(.check, tint: .teal)
                 } else {
-                    Circle().strokeBorder(PulseTheme.textDisabled, lineWidth: 1.5).frame(width: 22, height: 22)
+                    RoundedRectangle(cornerRadius: PulseTheme.Radius.badge, style: .circular)
+                        .strokeBorder(PulseTheme.textDisabled, lineWidth: 1.5)
+                        .frame(width: 24, height: 24)
                 }
             }
             .accessibilityLabel(done ? String(localized: "Done") : String(localized: "Not done yet"))
