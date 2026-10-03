@@ -9,9 +9,9 @@ import StrandDesign
 ///
 ///     Landing → Privacy and Terms of Use (its "Terms of Use" link opens the points the gate presents)
 ///       → [Put On → Wake Up → Check for Pairing Mode → SEARCHING / SELECT / CONNECTING / CONNECTED]
-///       → Where Do You Live? → Connect To Apple Health → What's Your Birthday? → Choose a Gender
-///       → Height and Weight → Bring Your History → Turn On Notifications → Welcome to ZENO
-///       → What to Expect Next → Home
+///       → Welcome to ZENO! (name) → Where Do You Live? → Connect To Apple Health → What's Your Birthday?
+///       → Choose a Gender → Height and Weight → Bring Your History → Turn On Notifications
+///       → Welcome to ZENO → What to Expect Next → Home
 ///
 /// Two ways in:
 ///   - the FIRST RUN (`init(needsTerms:needsSetup:onAcceptTerms:onFinished:)`): the same gates as the
@@ -26,10 +26,8 @@ import StrandDesign
 ///     terms are not accepted, and finishing simply closes it.
 ///
 /// The classic Appearance step is dropped (Pulse is dark only, §3.38). WHOOP's "Welcome to WHOOP!" name
-/// step waits for a shared place to keep the name: `ProfileStore` has none, and a key private to this
-/// folder would be read by nothing and missed by backups. Once the foundation adds `ProfileStore.firstName`
-/// (a key in Profile.swift's `K`, the backup whitelist and its Android twin), the step comes back bound
-/// to it, ahead of Where Do You Live?.
+/// step keeps the name where the profile keeps it (`PulseProfileIdentity`, the one key Profile shows and
+/// Edit Profile edits), so the name typed here is the name Profile shows.
 struct PulseOnboardingView: View {
     /// Rebuilt: the `.onboarding` route opens this flow, and the app root's first-run switch reads this
     /// flag (above). The `.onboarding` route has no classic fallback either way.
@@ -108,8 +106,8 @@ struct PulseOnboardingView: View {
         if includesTerms { steps.append(.privacy) }
         if includesSetup {
             if pairsStrap { steps += PulseOnboardingStep.deviceSteps }
-            steps += [.location, .appleHealth, .birthday, .gender, .body, .history, .notifications, .welcome,
-                      .expectations]
+            steps += [.name, .location, .appleHealth, .birthday, .gender, .body, .history, .notifications,
+                      .welcome, .expectations]
         }
         return steps
     }
@@ -173,6 +171,8 @@ struct PulseOnboardingView: View {
                 pairing.stop()
                 go(to: .pairingMode, forward: false)
             }, onSkip: skipPairing, onDone: { _ in go(to: PulseOnboardingStep.firstProfileStep) })
+        case .name:
+            PulseOnboardingNameStep(progress: progress(.name), onBack: back, onNext: advance)
         case .location:
             PulseOnboardingLocationStep(progress: progress(.location), onBack: back, onNext: advance)
         case .appleHealth:
@@ -303,6 +303,7 @@ enum PulseOnboardingStep: String, CaseIterable {
     case wakeUp
     case pairingMode
     case searching
+    case name
     case location
     case appleHealth
     case birthday
@@ -318,7 +319,7 @@ enum PulseOnboardingStep: String, CaseIterable {
     /// The device tutorial's steps that carry the ring (START PAIRING is the filled circle that ends it).
     static let deviceRingSteps: [PulseOnboardingStep] = [.putOn, .wakeUp, .pairingMode]
     /// Where the profile starts, after the device steps or a skipped pairing.
-    static let firstProfileStep = PulseOnboardingStep.location
+    static let firstProfileStep = PulseOnboardingStep.name
 
     /// Steps whose ring shows progress through the setup (everything except the landing, the device steps
     /// and the last step's filled circle).

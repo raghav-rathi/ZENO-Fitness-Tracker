@@ -216,6 +216,57 @@ struct PulseOnboardingTermsSheet: View {
 
 // MARK: Profile
 
+/// "Welcome to ZENO!" / "Tell us your name so we get it right." (first name only, optional). The name is
+/// the profile's own (`PulseProfileIdentity`): Profile shows it, and Edit Profile changes it later.
+struct PulseOnboardingNameStep: View {
+    let progress: Double
+    let onBack: () -> Void
+    let onNext: () -> Void
+
+    @State private var name = PulseProfileIdentity.storedName ?? ""
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        PulseOnboardingStepPage(
+            title: String(localized: "Welcome to ZENO!"),
+            subtitle: String(localized: "Tell us your name so we get it right."),
+            onBack: onBack,
+            illustration: { PulseOnboardingIllustration(symbol: "hands.clap.fill", accent: "sparkles",
+                                                        accentAlignment: .topTrailing) },
+            content: {
+                VStack(alignment: .leading, spacing: PulseOnboardingMetrics.labelToField) {
+                    PulseOnboardingFieldLabel(String(localized: "First name"))
+                    PulseOnboardingFieldBox {
+                        TextField("", text: $name,
+                                  prompt: Text(String(localized: "First name"))
+                                    .foregroundStyle(PulseOnboardingColors.placeholder))
+                            .pulseOnboardingText(.fieldValue)
+                            .foregroundStyle(PulseTheme.textPrimary)
+                            .textContentType(.givenName)
+                            .textInputAutocapitalization(.words)
+                            .autocorrectionDisabled(true)
+                            .submitLabel(.next)
+                            .focused($focused)
+                            .onSubmit(save)
+                            .accessibilityLabel(String(localized: "First name"))
+                    }
+                    Text(String(localized: "Optional. It stays on this iPhone and only labels your profile."))
+                        .pulseText(.secondary)
+                        .foregroundStyle(PulseTheme.textTertiary)
+                        .padding(.leading, 4)
+                        .padding(.top, 2)
+                }
+            },
+            cta: { PulseOnboardingRingButton(title: String(localized: "Next"), progress: progress, action: save) })
+    }
+
+    private func save() {
+        focused = false
+        PulseProfileIdentity.setName(name)
+        onNext()
+    }
+}
+
 /// "Where Do You Live?": a searchable country list that only sets the default units (nothing about the
 /// country is stored). The selected row turns white (onboarding/16a). Optional: SKIP keeps the units.
 struct PulseOnboardingLocationStep: View {
