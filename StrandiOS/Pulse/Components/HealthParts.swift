@@ -175,27 +175,16 @@ struct HealthSegmentBar: View {
     }
 }
 
-/// A sentence-case section header ("More from ZENO", "Sessions", "Sleep"), 20 pt Semibold, with an
-/// optional caption at the right.
+/// A sentence-case section header ("More from ZENO", "Sessions", "Trend View"), 20 pt Semibold.
 struct HealthSectionHeader: View {
     let title: String
-    var trailing: String?
 
     var body: some View {
-        HStack(alignment: .firstTextBaseline) {
-            Text(title)
-                .pulseText(.sectionTitle)
-                .foregroundStyle(PulseTheme.textPrimary)
-                .accessibilityAddTraits(.isHeader)
-            Spacer(minLength: 8)
-            if let trailing {
-                Text(trailing)
-                    .pulseText(.legend)
-                    .foregroundStyle(PulseTheme.textSecondary)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.8)
-            }
-        }
+        Text(title)
+            .pulseText(.sectionTitle)
+            .foregroundStyle(PulseTheme.textPrimary)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .accessibilityAddTraits(.isHeader)
     }
 }
 

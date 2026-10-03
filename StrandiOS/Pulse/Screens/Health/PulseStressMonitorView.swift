@@ -109,7 +109,8 @@ struct PulseStressMonitorView: View {
             .padding(.top, 28)
 
             if s.totals.scoredMinutes > 0 {
-                HealthTotalDayCard(dayKey: s.day.dayKey, totals: s.totals, typical: s.typical)
+                HealthTotalDayCard(dayKey: s.day.dayKey, totals: s.totals, typical: s.typical,
+                                   typicalDays: s.typicalDays)
                     .id("pulse.total")
                     .padding(.top, 28)
             }
@@ -220,6 +221,8 @@ struct HealthTotalDayCard: View {
     let dayKey: String
     let totals: StressDayTotals.Totals
     let typical: StressDayTotals.Totals?
+    /// How many earlier same weekdays the typical day averages.
+    var typicalDays = 0
 
     private static let levels: [StressDayTotals.Level] = [.low, .medium, .high]
 
@@ -247,7 +250,7 @@ struct HealthTotalDayCard: View {
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }
                 }
-                Text(String(localized: "Stress across your scored waking hours. Sleep, and hours you were moving, are not scored."))
+                Text(footnote)
                     .pulseText(.subtitle)
                     .foregroundStyle(PulseTheme.textTertiary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -256,6 +259,12 @@ struct HealthTotalDayCard: View {
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(String(localized: "Total day"))
         .accessibilityValue(accessibility)
+    }
+
+    private var footnote: String {
+        let base = String(localized: "Stress across your scored waking hours. Sleep, and hours you were moving, are not scored.")
+        guard typical != nil, typicalDays > 0 else { return base }
+        return base + " " + String(localized: "Typical averages this weekday over \(typicalDays) earlier weeks you wore your strap.")
     }
 
     private var heading: some View {

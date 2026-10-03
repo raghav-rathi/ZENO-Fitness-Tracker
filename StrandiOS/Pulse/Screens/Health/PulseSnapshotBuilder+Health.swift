@@ -49,7 +49,6 @@ extension PulseSnapshotBuilder {
             return HealthStressCard(
                 highMinutes: scored ? StressDayTotals.totals(todayHours).highMinutes : nil,
                 points: day.points.filter { $0.date >= start },
-                typicalHighMinutes: nil,
                 dayKey: day.dayKey)
         }
         return HealthTabSnapshot(seq: r.seq, age: age, labs: labs, vitals: healthVitals(r), stress: card,

@@ -145,10 +145,9 @@ struct PulseStressDay: Equatable {
 struct HealthStressCard: Equatable {
     /// Minutes in the HIGH band so far today; nil while today has no scored hour.
     let highMinutes: Int?
-    /// Today's curve so far, for the sparkline.
+    /// Today's curve so far, for the sparkline. (The typical weekday it is set against comes in a second,
+    /// slower pass: `PulseSnapshotBuilder.healthTypicalHighMinutes`.)
     let points: [PulseTimeValue]
-    /// The typical same weekday's HIGH minutes up to the same hour, once it is built (a second, slower pass).
-    var typicalHighMinutes: Int?
     /// The weekday's key, for "vs. typical Tue".
     let dayKey: String
 }
