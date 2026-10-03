@@ -18,8 +18,8 @@ struct PulseAchievementsView: View {
     var body: some View {
         PulseScreenScaffold(title: String(localized: "Achievements"), spacing: 0, topPadding: 4,
                             ready: snapshot != nil) {
-            PulseSectionHeader(String(localized: "All Achievements"), count: snapshot?.unlockedBadges.count,
-                               style: .pageTitle)
+            // 20 pt Semibold: "All Achievements" measures 154 pt wide on profile-community-2026/80.
+            PulseSectionHeader(String(localized: "All Achievements"), count: snapshot?.unlockedBadges.count)
                 .padding(.horizontal, -4)
                 .padding(.top, 6)
             chips
@@ -61,13 +61,16 @@ struct PulseAchievementsView: View {
                             .foregroundStyle(PulseTheme.textSecondary)
                             .padding(.horizontal, 4)
                     } else {
-                        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 10), count: 3),
-                                  alignment: .center, spacing: 36) {
+                        // Cells align by their tops (profile-community-2026/80, 04): a one-line name or a
+                        // locked badge without a date never pushes its art below its neighbours'.
+                        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 10, alignment: .top),
+                                                 count: 3),
+                                  spacing: 36) {
                             ForEach(badges) { badge in
                                 Button {
                                     navigator.open(PulseAchievementDetailsRoute(badgeID: badge.id).route)
                                 } label: {
-                                    ProfileBadgeCell(badge: badge, artSize: 80)
+                                    ProfileBadgeCell(badge: badge, artSize: 70)
                                 }
                                 .buttonStyle(PulsePressStyle())
                             }

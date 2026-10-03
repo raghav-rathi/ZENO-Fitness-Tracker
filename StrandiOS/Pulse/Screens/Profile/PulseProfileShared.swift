@@ -148,10 +148,11 @@ struct ProfileBadgeInfo {
 }
 
 /// A badge in the grid or the Profile carousel: the art with its big count over the lower third, the
-/// name (15 pt Medium, two lines), and the unlock date (13 pt, 50%) when asked for.
+/// name (13 pt Medium, two lines), and the unlock date (13 pt, 50%) when asked for. Measured on
+/// profile-community-2026/80: art ≈70 pt, count digits 22–23 pt tall (≈32 pt Heavy condensed).
 struct ProfileBadgeCell: View {
     let badge: PulseAchievements.Badge
-    var artSize: CGFloat = 80
+    var artSize: CGFloat = 70
     var showsDate = true
 
     var body: some View {
@@ -162,18 +163,15 @@ struct ProfileBadgeCell: View {
                                 locked: !badge.isUnlocked, alarm: info.alarm, size: artSize)
                     .padding(.bottom, artSize * 0.3)
                 Text(ProfileBadgeInfo.countText(badge))
-                    .font(PulseType.numeral(artSize * 0.53, weight: .heavy))
+                    .font(PulseType.numeral(artSize * 0.46, weight: .heavy))
                     .foregroundStyle(badge.isUnlocked ? PulseTheme.textPrimary : ProfileArtPalette.lockedGlyph)
                     .shadow(color: Color.black.opacity(0.7), radius: 6, y: 2)
                     .lineLimit(1)
                     .minimumScaleFactor(0.5)
             }
-            Text(info.name)
-                .pulseText(.filter)
+            // Wrapped between words only: "Weightlifting Regular" never breaks inside "Weightlifting".
+            ProfileWordWrapText(info.name, size: 13, weight: .medium, relativeTo: .footnote)
                 .foregroundStyle(PulseTheme.textPrimary)
-                .multilineTextAlignment(.center)
-                .lineLimit(2)
-                .fixedSize(horizontal: false, vertical: true)
             if showsDate, let day = badge.unlockedDay {
                 Text(ProfileFormat.day(day))
                     .pulseText(.rowSubline)
