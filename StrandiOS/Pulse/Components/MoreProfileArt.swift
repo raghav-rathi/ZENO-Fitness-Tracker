@@ -305,15 +305,18 @@ struct ProfileStarArc: View {
 // MARK: - Level medal and plaque
 
 /// The strap-shaped level plaque: a rounded block in its material with the level number and a darker
-/// band across its foot (ZENO's own; no wordmark).
+/// band across its foot (ZENO's own; no wordmark). 34 × 48 by default; the Levels grid draws WHOOP's
+/// narrower 28 × 44 (profile-community-2026/56).
 struct ProfileLevelPlaque: View {
     let level: Int
     let material: PulseLevels.Material
     var width: CGFloat = 34
+    /// nil keeps the default 34 : 48 proportion.
+    var height: CGFloat?
 
     var body: some View {
         let colors = ProfileArtPalette.material(material)
-        let height = width * 48 / 34
+        let height = self.height ?? width * 48 / 34
         let shape = RoundedRectangle(cornerRadius: width * 0.2, style: .continuous)
         ZStack(alignment: .bottom) {
             shape.fill(LinearGradient(colors: colors, startPoint: .top, endPoint: .bottom))

@@ -547,22 +547,24 @@ struct ProfileFlatPage<Content: View>: View {
     private var header: some View {
         if circularBack {
             ZStack {
-                HStack(spacing: 10) {
+                // profile-community-2026/11: "LEVELS" in the 12 pt nav caps every bar uses, and a 17.5 pt
+                // "?" circle 14 pt after it.
+                HStack(spacing: 14) {
                     Text(title)
-                        .font(.system(size: 15, weight: .bold))
-                        .tracking(2)
-                        .textCase(.uppercase)
+                        .pulseText(.navTitle)
                         .foregroundStyle(PulseTheme.textPrimary)
                         .accessibilityAddTraits(.isHeader)
                     if let onHelp {
                         Button(action: onHelp) {
                             Text(verbatim: "?")
-                                .font(.system(size: 13, weight: .semibold))
+                                .font(.system(size: 11, weight: .semibold))
                                 .foregroundStyle(PulseTheme.textTertiary)
-                                .frame(width: 22, height: 22)
-                                .overlay(Circle().strokeBorder(PulseTheme.textTertiary, lineWidth: 1.2))
-                                .frame(width: PulseTheme.Layout.minTapTarget, height: PulseTheme.Layout.minTapTarget)
+                                .frame(width: 18, height: 18)
+                                .overlay(Circle().strokeBorder(PulseTheme.textTertiary, lineWidth: 1.1))
+                                // A 44 pt touch that does not push the circle away from the title.
+                                .padding(13)
                                 .contentShape(Rectangle())
+                                .padding(-13)
                         }
                         .buttonStyle(PulsePressStyle())
                         .accessibilityLabel(String(localized: "About levels"))
