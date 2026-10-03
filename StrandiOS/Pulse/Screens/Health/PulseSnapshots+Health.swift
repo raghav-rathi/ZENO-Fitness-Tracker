@@ -40,6 +40,14 @@ struct HealthAgeSummary: Equatable {
     }
 }
 
+/// ZENO AGE TREND's page: every stored week, oldest first, and today's key (the last week's end while it
+/// is still being scored).
+struct HealthAgeTrendSnapshot: Equatable {
+    let seq: Int
+    let weeks: [HealthAgeWeek]
+    let todayKey: String
+}
+
 /// Where ZENO Age stands on the Health tab: still unlocking, or a reading.
 enum HealthAgeState: Equatable {
     /// `nights` of the `needed` nights of sleep in the last 31 days (§3.20 item 3 [Z]: 21 of 31).

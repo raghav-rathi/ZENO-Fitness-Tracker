@@ -81,6 +81,14 @@ extension PulseSnapshotBuilder {
         }
     }
 
+    /// ZENO AGE TREND's page (§3.23 item 8): every stored week, the ones Healthspan's card draws.
+    func healthAgeTrend(_ r: PulseRequest, dateOfBirth: Date) async -> HealthAgeTrendSnapshot? {
+        begin(r.seq)
+        let weeks = await healthAgeWeeks(dateOfBirth: dateOfBirth, now: r.now)
+        guard isCurrent(r) else { return nil }
+        return HealthAgeTrendSnapshot(seq: r.seq, weeks: weeks, todayKey: Repository.localDayKey(r.now))
+    }
+
     /// Unlocked once there is a recent ZENO Age (within five weeks) and 21 nights of sleep in the last 31
     /// days (§3.20 item 3 [Z], WHOOP's own threshold).
     func healthAgeState(_ r: PulseRequest, weeks: [HealthAgeWeek], groups: [[CachedSleepSession]]) -> HealthAgeState {
