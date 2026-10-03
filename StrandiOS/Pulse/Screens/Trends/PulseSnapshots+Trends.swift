@@ -34,6 +34,9 @@ struct PulseTrendSeries: Equatable, Sendable {
     var unknownDays: Set<String> = []
     /// TIME IN BED: each night's bed and wake as minutes from its wake day's local midnight.
     var spans: [String: PulseTrendSpan] = [:]
+    /// What today's still-counting value is, where "So far today" would misname it: Day Stress's today is
+    /// the Stress Monitor's reading, so this is when it was read ("7:30 AM", "Fri 10:30 PM") or "Daily score".
+    var todayCaption: String?
 
     var earliest: String? { points.first?.day }
     var hasData: Bool { !points.isEmpty }
@@ -294,7 +297,8 @@ struct TrendsTabSnapshot: Equatable {
         /// nil while the metric has no reading.
         let value: String?
         let unit: String
-        /// "Sep 30" for an older reading, "So far today" for a running total, "Last 7 days".
+        /// "Sep 30" for an older reading, "So far today" for a running total (or the series' own
+        /// `todayCaption`, Day Stress's reading time), "Last 7 days".
         let caption: String?
         let trend: PulseTrend?
         let baseline: String?

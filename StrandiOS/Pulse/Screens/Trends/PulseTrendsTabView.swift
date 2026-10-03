@@ -124,6 +124,7 @@ private struct PulseTrendsTabContent: View {
                 PulseListSectionHeader(section.pillar.title)
                     .padding(.top, 32)
                     .padding(.bottom, 14)
+                    .id("pulse.\(section.pillar.rawValue)")
                 VStack(spacing: PulseTheme.Row.listGap) {
                     ForEach(section.rows) { row in
                         PulseLink(.trendView(metric: row.id)) {

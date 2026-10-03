@@ -15,7 +15,8 @@ import WhoopStore
 // respiratory rate and blood oxygen from the merged daily rows (Home, the Recovery dive), Sleep
 // Performance through the Sleep dial's resolver, need / consistency / debt through
 // `Repository.resolvedNightSleep`, steps through the one `StepsResolver`, calories with Home's tile rule,
-// stress from its stored daily score, and anything else through the Explore read path.
+// stress from its stored daily score (today's from the Stress Monitor's own reading), and anything else
+// through the Explore read path.
 
 extension PulseSnapshotBuilder {
 
@@ -294,15 +295,26 @@ extension PulseSnapshotBuilder {
             return filled
 
         case .stress:
+            // Each day's stored daily score, printed as the Stress Monitor's gauge prints a level (cut to one
+            // decimal, `HealthStressGauge.printed`), so a bar and its breakdown band never round into a band
+            // the level is not in.
             let stored = await stressStoredSeries()
-            var rows = stored.map { ($0.day, min(max($0.value, 0), 3)) }
-            // Today's level through Home's model (StressModel over the history), so today's bar is the
-            // STRESS MONITOR's number rather than a stored score that may not exist yet.
-            if let score = StressModel(days: r.days, stored: stored)?.score {
+            var rows = stored.map { ($0.day, HealthStressGauge.printed($0.value)) }
+            var caption: String?
+            if r.day.offset == 0 {
+                // Today is the Stress Monitor's own reading (`stressDay`, the funnel Home's tile and the Health
+                // tab's card read): the curve's latest scored hour, the evening before until today's first,
+                // else today's daily score, with when it was read. Without either, today has no point.
                 rows.removeAll { $0.0 == today }
-                rows.append((today, min(max(score, 0), 3)))
+                if let day = await stressDay(r), let level = day.gaugeLevel?.level {
+                    rows.append((today, HealthStressGauge.printed(level)))
+                    caption = PulseStressDay.readingTime(day.latest?.at, dayKey: day.dayKey)
+                        ?? String(localized: "Daily score")
+                }
             }
-            return PulseTrendSeries(points: Self.points(rows, through: today))
+            var series = PulseTrendSeries(points: Self.points(rows, through: today))
+            series.todayCaption = caption
+            return series
 
         case .vo2Estimate:
             let resolved = await repo.resolvedSeries(key: "vo2max_est", source: "my-whoop")

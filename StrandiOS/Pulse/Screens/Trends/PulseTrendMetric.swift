@@ -17,6 +17,8 @@ import StrandAnalytics
 //     which is far too heavy to re-score for every day of a 6M window. So "Day Stress" charts the daily
 //     level as AVERAGE with level-coloured bars and a STRESS BREAKDOWN (DAYS) of high / medium / low days,
 //     and Sleep Stress and Non-Activity Stress are omitted: no per-night or activity-masked series exists.
+//     Today's value is the Stress Monitor's own reading (its gauge), so the row and today's bar print what
+//     Home's tile, the Health tab and the monitor print.
 //   - "+ ADD ENTRY" (Weight, Lean Body Mass) and "+ ADD MANUAL VO₂ MAX VALUE" are omitted: ZENO has no flow
 //     that records a dated weight or VO₂ max reading (weight and lean mass come from Apple Health; the
 //     profile's single weight in Settings is a scoring input, not a reading).
@@ -150,7 +152,7 @@ enum PulseTrendSource: Equatable, Hashable, Sendable {
     case zones([Int])
     /// Minutes of strength activities, derived from logged activities.
     case strength
-    /// The stored daily stress score (0–3).
+    /// The stored daily stress score (0–3); today, the Stress Monitor's reading (`stressDay`).
     case stress
     /// ZENO's weekly VO₂ max estimate.
     case vo2Estimate
