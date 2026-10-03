@@ -303,6 +303,7 @@ struct PulseStrengthLiveSessionView: View {
             Image(systemName: "dumbbell")
                 .font(.system(size: 40, weight: .light))
                 .foregroundStyle(PulseTheme.textTertiary)
+                .accessibilityHidden(true)
             Text(String(localized: "No workout running"))
                 .pulseText(.coachingTitle)
                 .foregroundStyle(PulseTheme.textPrimary)
