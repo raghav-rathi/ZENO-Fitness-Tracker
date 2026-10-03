@@ -76,16 +76,19 @@ struct PulseAvatarButton: View {
 
 // MARK: - Status banner (§3.1 item 2, §2.9 "Syncing", "Off wrist")
 
-/// The one status banner under the header, today only, in priority order: CATCHING UP… while the strap
-/// backfills history, DATA CAUGHT UP · SYNCED TO <time> for 8 s after a sync finishes, STRAP OFF WRIST,
-/// then LOW STRAP BATTERY (≤ 15%, dismissible for the day). Its own leaf because `LiveState` publishes
-/// constantly; the banner below redraws only when what it shows changes.
+/// The one status banner under the header, today only, in priority order: CATCHING UP… while history is
+/// still on its way, DATA CAUGHT UP · SYNCED TO <time> for 8 s after a sync that really finished, STRAP OFF
+/// WRIST, then LOW STRAP BATTERY (≤ 15%, dismissible for the day). Its own leaf because `LiveState`
+/// publishes constantly; the banner below redraws only when what it shows changes.
 struct PulseHomeStatusBanner: View {
     @EnvironmentObject private var live: LiveState
 
     var body: some View {
         PulseHomeStatusBannerContent(state: .init(connected: live.connected || PulseHomeBannerDebug.forced != nil,
-                                                  backfilling: live.backfilling, worn: live.worn,
+                                                  backfilling: live.backfilling,
+                                                  historyPending: live.historyPendingSync,
+                                                  syncFailed: live.lastSyncError != nil,
+                                                  worn: live.worn,
                                                   battery: live.activeIsWhoop ? live.batteryPct : nil,
                                                   charging: live.charging ?? false,
                                                   lastSyncedAt: live.lastSyncedAt))
@@ -96,19 +99,34 @@ struct PulseHomeStatusBanner: View {
 /// What the banner reads from the strap.
 struct PulseStrapBannerState: Equatable {
     let connected: Bool
+    /// An offload is running (`LiveState.backfilling`).
     let backfilling: Bool
+    /// The strap holds records newer than the ones banked (`LiveState.historyPendingSync`): set between
+    /// BLEManager's back-to-back auto-continue passes and right after connecting, before an offload starts.
+    let historyPending: Bool
+    /// The last offload ended abnormally (`LiveState.lastSyncError`).
+    let syncFailed: Bool
     let worn: Bool
     let battery: Double?
     let charging: Bool
+    /// The last offload that reached HISTORY_COMPLETE (the only end BLEManager stamps): an abort, a
+    /// timeout or a disconnect leaves it alone.
     let lastSyncedAt: TimeInterval?
+
+    /// More history is still on its way: the classic Today's "syncing" rule (`backfilling ||
+    /// historyPendingSync`), so the two screens never disagree on it.
+    var catchingUp: Bool { backfilling || historyPending }
 }
 
 private struct PulseHomeStatusBannerContent: View, Equatable {
     let state: PulseStrapBannerState
 
-    /// The sync that just finished, while its 8 s "caught up" window is open.
-    @State private var caughtUp: Date?
-    @State private var lastBackfilling = false
+    /// A fresh HISTORY_COMPLETE stamp waiting out `settleSeconds`: BLEManager decides whether more history
+    /// is pending (and re-kicks the next pass) just after it stamps, so the stamp alone does not yet mean
+    /// caught up. CATCHING UP… stays up meanwhile.
+    @State private var settling: TimeInterval?
+    /// The stamp DATA CAUGHT UP names, during its 8 s window.
+    @State private var caughtUp: TimeInterval?
     /// The day the low-battery banner was dismissed ("yyyy-MM-dd").
     @AppStorage("pulse.home.lowBatteryDismissed") private var lowBatteryDismissed = ""
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -120,6 +138,10 @@ private struct PulseHomeStatusBannerContent: View, Equatable {
     /// ZENO's low-battery threshold (the header's battery figure turns red at the same point).
     private static let lowBattery = 15.0
     private static let caughtUpSeconds: TimeInterval = 8
+    private static let settleSeconds: TimeInterval = 2
+    /// A stamp older than this when it reaches the banner is a restored one (the launch seed from the last
+    /// session), not a sync that just finished.
+    private static let freshStamp: TimeInterval = 30
 
     private var todayKey: String { Repository.localDayKey(Date()) }
 
@@ -128,8 +150,12 @@ private struct PulseHomeStatusBannerContent: View, Equatable {
         if let forced = PulseHomeBannerDebug.forced { return forced }
         #endif
         guard state.connected else { return nil }
-        if state.backfilling { return .catchingUp(progress: nil) }
-        if let caughtUp { return .caughtUp(syncedTo: PulseFormat.clock(caughtUp)) }
+        if state.catchingUp || settling != nil { return .catchingUp(progress: nil) }
+        // Caught up only while the stamp it names is still the latest, nothing is pending and the offload
+        // ended cleanly; the time is that stamp's, the one clock the fact comes from.
+        if let caughtUp, caughtUp == state.lastSyncedAt, !state.syncFailed {
+            return .caughtUp(syncedTo: PulseFormat.clock(Date(timeIntervalSince1970: caughtUp)))
+        }
         if !state.worn { return .offWrist }
         if let battery = state.battery, !state.charging, battery <= Self.lowBattery, lowBatteryDismissed != todayKey {
             return .lowBattery(percent: Int(battery.rounded()))
@@ -148,9 +174,25 @@ private struct PulseHomeStatusBannerContent: View, Equatable {
             }
         }
         .animation(PulseMotion.resolved(PulseMotion.chrome, reduceMotion: reduceMotion), value: kind)
-        .onChange(of: state.backfilling) { was, now in
-            // A backfill that just ended opens the 8 s "caught up" window.
-            if was && !now { caughtUp = Date() }
+        .onChange(of: state.lastSyncedAt) { old, new in
+            // Only a HISTORY_COMPLETE moves the stamp; a restored one is not a sync that just finished.
+            guard let new, new != old, abs(Date().timeIntervalSince1970 - new) < Self.freshStamp else { return }
+            caughtUp = nil
+            settling = new
+        }
+        .onChange(of: state.catchingUp) { _, busy in
+            // Another pass started (or more turned out to be pending): this stamp was not the end.
+            if busy {
+                settling = nil
+                caughtUp = nil
+            }
+        }
+        .task(id: settling) {
+            guard let stamp = settling else { return }
+            try? await Task.sleep(for: .seconds(Self.settleSeconds))
+            guard !Task.isCancelled else { return }
+            settling = nil
+            caughtUp = stamp
         }
         .task(id: caughtUp) {
             guard caughtUp != nil else { return }
