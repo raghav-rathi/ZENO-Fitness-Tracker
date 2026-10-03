@@ -123,21 +123,22 @@ struct DayTimelineChart: View {
             stripLabels(g)
             if !snapshot.hasHeartRate { emptyMessage(g) }
 
-            // The touch surface: the strip and the plot.
+            // The touch surface over the strip and the plot; it is also the chart's one VoiceOver element,
+            // so its frame (not the whole screen this view covers) is what VoiceOver outlines.
             Color.clear
                 .contentShape(Rectangle())
                 .frame(width: plot.width, height: plot.maxY - strip.minY)
-                .offset(x: plot.minX, y: strip.minY)
                 .gesture(dragGesture(g))
+                .accessibilityElement()
+                .accessibilityLabel(accessibilityTitle)
+                .accessibilityValue(accessibilityValue)
+                .accessibilityHint(String(localized: "Swipe up or down to move through the day."))
+                .accessibilityAdjustableAction { direction in
+                    adjustCursor(direction)
+                }
+                .offset(x: plot.minX, y: strip.minY)
         }
         .sensoryFeedback(.selection, trigger: scrubStarts)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(accessibilityTitle)
-        .accessibilityValue(accessibilityValue)
-        .accessibilityHint(String(localized: "Swipe up or down to move through the day."))
-        .accessibilityAdjustableAction { direction in
-            adjustCursor(direction)
-        }
     }
 
     // MARK: Axes

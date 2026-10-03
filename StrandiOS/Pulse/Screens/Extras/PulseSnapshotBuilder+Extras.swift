@@ -227,11 +227,16 @@ extension PulseSnapshotBuilder {
             return YearInReview.Activity(day: key, name: name, minutes: seconds / 60)
         }
 
-        // Strain's optimal range for a Recovery: the band rule the Strain target and the dial use.
+        // Strain's optimal range for a Recovery: the band rule the Strain target and the dial use
+        // (`CoupledView.optimalStrainRange`), read once on the main actor for every whole percent.
+        let bands: [ClosedRange<Double>?] = await MainActor.run {
+            (0...100).map { pct in
+                CoupledView.optimalStrainRange(recovery: Double(pct)).map { Double($0.lowerBound)...Double($0.upperBound) }
+            }
+        }
+        guard isCurrent(r) else { return nil }
         let summary = YearInReview.summarize(year: year, through: through, days: days, activities: activities,
-                                             strainRange: { pct in
-            CoupledView.optimalStrainRange(recovery: pct).map { Double($0.lowerBound)...Double($0.upperBound) }
-        })
+                                             strainRange: { pct in bands[min(100, max(0, Int(pct.rounded())))] })
 
         let behaviors = await yearBehaviors(r, inYear: inYear)
         guard isCurrent(r) else { return nil }

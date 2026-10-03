@@ -43,7 +43,13 @@ struct PulseDayTimelineView: View {
             GeometryReader { full in
                 let size = full.size
                 Group {
-                    if monitor.orientation.isLandscape {
+                    if size.width > size.height {
+                        // The window itself is landscape (an iPad, which rotates its interface): lay out
+                        // sideways as it is, without turning anything.
+                        landscape(size: size, side: max(insets.leading, insets.trailing), bottom: insets.bottom)
+                            .frame(width: size.width, height: size.height)
+                            .transition(.opacity)
+                    } else if monitor.orientation.isLandscape {
                         // The interface stays portrait; the timeline turns itself to read upright.
                         let side = insets.bottom > 0 ? insets.top : 0
                         let bottom: CGFloat = insets.bottom > 0 ? 21 : 0
