@@ -19,15 +19,34 @@ enum PulseStrengthColors {
     /// The set inputs on the EXERCISES tab (g08: #16191C fields with a faint rim).
     static let inputFill = Color(hex: "#15181B")
     static let inputBorder = Color(hex: "#2E3338")
-    /// The ACTIVE ring: blue at its start, teal-green at its head (g07b).
-    static let activeRing = Gradient(colors: [Color(hex: "#1D86E0"), Color(hex: "#13C4C0"), Color(hex: "#00EE93"),
-                                              Color(hex: "#1D86E0")])
-    /// The REST ring: a grey-white sheen (g07a).
-    static let restRing = Gradient(colors: [Color(hex: "#F2F4F5"), Color(hex: "#7A7F84"), Color(hex: "#C9CDD0"),
-                                            Color(hex: "#F2F4F5")])
-    static let ringTrack = Color.white.opacity(0.08)
-    /// The disc inside the ring.
-    static let ringDisc = Color(hex: "#1E2328")
+    /// The ACTIVE ring's rim, clockwise from 12 o'clock, sampled at the rim's peak on g07b (ring centre
+    /// (200, 330.5), radius 116–118): blue at the top, bright green from 3 to 6 o'clock, navy at 9.
+    static let activeRim = Gradient(stops: [
+        .init(color: Color(hex: "#0E86D2"), location: 0),
+        .init(color: Color(hex: "#2BBDD6"), location: 30.0 / 360),
+        .init(color: Color(hex: "#21BDAF"), location: 60.0 / 360),
+        .init(color: Color(hex: "#0FE897"), location: 90.0 / 360),
+        .init(color: Color(hex: "#19E699"), location: 180.0 / 360),
+        .init(color: Color(hex: "#32AD98"), location: 210.0 / 360),
+        .init(color: Color(hex: "#0F6574"), location: 240.0 / 360),
+        .init(color: Color(hex: "#0F3562"), location: 270.0 / 360),
+        .init(color: Color(hex: "#195385"), location: 300.0 / 360),
+        .init(color: Color(hex: "#1970B3"), location: 330.0 / 360),
+        .init(color: Color(hex: "#0E86D2"), location: 1)
+    ])
+    /// The ACTIVE band is the rim's colours, dimmed (g07b: navy-tinted on the left, green on the right).
+    static let activeBandOpacity = 0.2
+    /// The REST ring's rim, lit from the bottom-left (g07a): #42474B at 12 o'clock, brightest at 8.
+    static let restRim = Gradient(stops: [
+        .init(color: Color(hex: "#42474B"), location: 0),
+        .init(color: Color(hex: "#52575B"), location: 90.0 / 360),
+        .init(color: Color(hex: "#828387"), location: 180.0 / 360),
+        .init(color: Color(hex: "#A7ABAE"), location: 240.0 / 360),
+        .init(color: Color(hex: "#757A7D"), location: 300.0 / 360),
+        .init(color: Color(hex: "#42474B"), location: 1)
+    ])
+    /// The REST band is the rim's greys, dimmed (g07a: #2A2D32–#3D4144 on the page).
+    static let restBandOpacity = 0.25
     /// The thumbnail tile's backdrop (ZENO has no exercise photos; a dark stage with a glyph stands in).
     static let thumbTop = Color(hex: "#25313A")
     static let thumbBottom = Color(hex: "#13181C")

@@ -16,6 +16,7 @@ struct PulseStrengthExercisesTab: View {
     let onAddExercise: () -> Void
 
     @EnvironmentObject private var session: LiftSessionController
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @AppStorage(UnitPrefs.systemKey) private var unitSystemRaw = UnitSystem.metric.rawValue
     @FocusState private var focused: Field?
     @State private var draft: [Field: String] = [:]
@@ -49,7 +50,9 @@ struct PulseStrengthExercisesTab: View {
                 // Follow the session down the list when it moves on its own.
                 .onChange(of: engine.currentSlot) { _, slot in
                     guard let slot else { return }
-                    withAnimation { proxy.scrollTo(slot.exerciseIndex, anchor: .top) }
+                    withAnimation(PulseMotion.resolved(PulseMotion.chrome, reduceMotion: reduceMotion)) {
+                        proxy.scrollTo(slot.exerciseIndex, anchor: .top)
+                    }
                 }
             }
             .pulseKeyboardDone($focused)
@@ -137,9 +140,13 @@ struct PulseStrengthExercisesTab: View {
             .buttonStyle(PulsePressStyle())
             .accessibilityLabel(warmup ? String(localized: "Warm-up set, tap to make it a working set")
                                        : String(localized: "Set \(slot.setIndex), tap to mark it a warm-up"))
-            field(.reps(slot), text: repsBinding(slot), ghost: ghostReps(slot))
-            field(.weight(slot), text: weightBinding(slot), ghost: ghostWeight(slot))
-            field(.rpe(slot), text: rpeBinding(slot), ghost: ghostRpe(engine, slot: slot))
+            field(.reps(slot), text: repsBinding(slot), ghost: ghostReps(slot),
+                  label: fieldLabel(slot, warmup: warmup, column: String(localized: "reps")))
+            field(.weight(slot), text: weightBinding(slot), ghost: ghostWeight(slot),
+                  label: fieldLabel(slot, warmup: warmup,
+                                    column: String(localized: "weight in \(LiftFormat.weightUnit(unitSystem))")))
+            field(.rpe(slot), text: rpeBinding(slot), ghost: ghostRpe(engine, slot: slot),
+                  label: fieldLabel(slot, warmup: warmup, column: String(localized: "RPE")))
                 .frame(width: 52)
             Button {
                 session.start(slot)
@@ -160,7 +167,12 @@ struct PulseStrengthExercisesTab: View {
             .strokeBorder(PulseTheme.Activity.strengthActiveTimer.opacity(working ? 0.8 : 0), lineWidth: 1))
     }
 
-    private func field(_ key: Field, text: Binding<String>, ghost: String) -> some View {
+    /// What VoiceOver calls a set's field: "Set 2 reps", "Warm-up set weight in kg".
+    private func fieldLabel(_ slot: LiftSlot, warmup: Bool, column: String) -> String {
+        warmup ? String(localized: "Warm-up set \(column)") : String(localized: "Set \(slot.setIndex) \(column)")
+    }
+
+    private func field(_ key: Field, text: Binding<String>, ghost: String, label: String) -> some View {
         // The grey number is drawn here rather than as the field's prompt, so it is always grey: a number
         // nobody typed must never read like one that was.
         ZStack(alignment: .leading) {
@@ -175,6 +187,7 @@ struct PulseStrengthExercisesTab: View {
                 .foregroundStyle(PulseTheme.textPrimary)
                 .numericKeyboard()
                 .focused($focused, equals: key)
+                .accessibilityLabel(label)
                 .accessibilityValue(text.wrappedValue.isEmpty ? String(localized: "\(ghost), not entered") : text.wrappedValue)
         }
             .padding(.horizontal, 12)

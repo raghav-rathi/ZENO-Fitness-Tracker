@@ -4,6 +4,14 @@ import StrandDesign
 import StrandAnalytics
 import WhoopStore
 
+/// The live session as a destination of its own, full screen, so whatever shows the running session can
+/// open THIS screen. The shell's session bar (`PulseLiftSessionChrome`, foundation-owned) still opens the
+/// classic `LiftSessionView` sheet; it should open this route while `PulseStrengthTrainerView.isRebuilt`.
+struct PulseStrengthLiveRoute: PulseScreenRoute {
+    var presentation: PulsePresentation { .fullScreen }
+    var view: some View { PulseStrengthLiveSessionView() }
+}
+
 /// The live session (WHOOP_UI_SPEC §3.29 "Live session"; activity-flows-2026/g07a–c, g08, g10), a full-
 /// screen rendering of the app's one `LiftSessionController`: the strap double-tap, the rest buzzes, the
 /// Lock Screen banner and the minimised bar all keep following the same session.
@@ -71,6 +79,8 @@ struct PulseStrengthLiveSessionView: View {
             }
         }
         .environment(\.colorScheme, .dark)
+        // Opened as a route it sits in a navigation stack; its header is its own.
+        .toolbar(.hidden, for: .navigationBar)
         .task(id: session.engine?.plan.map(\.exercise)) { await loadLastTime() }
         .sheet(isPresented: $showsFinish) {
             PulseStrengthFinishSheet(onDone: { dismiss() })
@@ -119,8 +129,9 @@ struct PulseStrengthLiveSessionView: View {
     private func header(_ engine: LiftSessionEngine) -> some View {
         HStack(alignment: .center, spacing: 0) {
             Menu {
+                // The running session lives on in the bar above the tab bar.
                 Button { dismiss() } label: {
-                    Label(String(localized: "Minimise"), systemImage: "chevron.down")
+                    Label(String(localized: "Minimise to the bar"), systemImage: "chevron.down")
                 }
                 Button { session.undo() } label: {
                     Label(String(localized: "Undo last step"), systemImage: "arrow.uturn.backward")
@@ -173,8 +184,9 @@ struct PulseStrengthLiveSessionView: View {
     private func liveTab(_ engine: LiftSessionEngine) -> some View {
         ScrollView(.vertical, showsIndicators: false) {
             VStack(spacing: 0) {
-                PulseStrengthStageRing(stage: PulseStrengthStage(engine: engine))
-                    .padding(.top, 52)
+                PulseStrengthStageRing(stage: PulseStrengthStage(engine: engine, doneVolume: doneVolume(),
+                                                                 unit: LiftFormat.weightUnit(unitSystem)))
+                    .padding(.top, 45)
                 PulseStrengthHeartRateBlock()
                     .padding(.top, 56)
                 exerciseCard(engine)
@@ -183,6 +195,17 @@ struct PulseStrengthLiveSessionView: View {
             .padding(.horizontal, PulseTheme.Layout.pageMargin)
         }
         .scrollBounceBehavior(.basedOnSize)
+    }
+
+    /// The volume this session has lifted, as finishing would save it (`setsToSave`, its grey numbers
+    /// filling the blanks) and as PROGRESS counts it (`LiftMetrics.volumeLoadKg`): working sets only.
+    private func doneVolume() -> String? {
+        let rows = session.setsToSave(completingUnfinished: false).map { set in
+            LiftSetRow(id: "", deviceId: "", sessionId: "", ord: 0, exercise: "", primaryMuscle: nil,
+                       secondaryMuscles: [], setIndex: set.slot.setIndex, weightKg: set.weightKg, reps: set.reps,
+                       rpe: nil, isWarmup: set.isWarmup, startTs: nil, endTs: nil, restSec: nil, note: nil)
+        }
+        return LiftMetrics.volumeLoadKg(rows).map { StrengthFormat.volume($0, unitSystem) }
     }
 
     /// The set the card describes: the one being worked, else the one coming next (NEXT).
@@ -343,127 +366,203 @@ struct PulseStrengthExerciseTarget: Identifiable {
 
 // MARK: - The stage ring
 
-/// What the ring shows, resolved from the engine's stage.
+/// What the ring shows, resolved from the engine's stage. The session's own elapsed time is the header's
+/// alone; the ring only ever shows the stage's own figure (one readout per fact).
 enum PulseStrengthStage: Equatable {
-    /// Before the first set: the time since the session began.
-    case warmup(since: Int)
+    /// Before the first set: no set or rest is being timed yet.
+    case warmup
     /// A set is running: its time, counting up, green.
     case active(since: Int)
-    /// Resting: the time left, counting down; the ring empties as it runs.
+    /// Resting: the time left, counting down; the rim empties as it runs.
     case rest(start: Int, endsAt: Int)
-    /// Every set is done: the session's time.
-    case done(since: Int)
+    /// Every set is done: the volume the session lifted (`volume` nil when no set had a weight).
+    case done(volume: String?, unit: String, sets: Int)
 
-    init(engine: LiftSessionEngine) {
+    init(engine: LiftSessionEngine, doneVolume: @autoclosure () -> String?, unit: String) {
         switch engine.stage {
-        case .warmup: self = .warmup(since: engine.startTs)
+        case .warmup: self = .warmup
         case .working: self = .active(since: engine.stageStartedAt)
         case .resting(_, let endsAt):
-            self = engine.allCompleted ? .done(since: engine.startTs) : .rest(start: engine.stageStartedAt, endsAt: endsAt)
-        case .finished: self = .done(since: engine.startTs)
+            self = engine.allCompleted
+                ? .done(volume: doneVolume(), unit: unit, sets: engine.completedWorkingSets)
+                : .rest(start: engine.stageStartedAt, endsAt: endsAt)
+        case .finished: self = .done(volume: doneVolume(), unit: unit, sets: engine.completedWorkingSets)
+        }
+    }
+
+    /// Whether the ring's figure is a clock that moves.
+    var ticks: Bool {
+        switch self {
+        case .active, .rest: return true
+        case .warmup, .done: return false
         }
     }
 }
 
-/// The REST / ACTIVE ring (g07a/b): a dark disc inside a ring — blue to teal-green with a glow while a set
-/// runs, a grey-white sheen while resting — with the stage's word and its clock (44 pt).
+/// The REST / ACTIVE ring (g07a/b), 240 pt across: a 15 pt band with a 3 pt rim on its outer edge.
+///   - REST: a dim band (white 8%) and a grey rim lit from the bottom-left; the rim is the countdown,
+///     emptying as the rest runs while the band stays whole.
+///   - ACTIVE: the rim runs blue at 12 o'clock, bright green from 3 to 6, navy at 9, over a band tinted in
+///     the same colours, with a soft glow.
+/// Inside, the stage's word and its figure (44 pt). Only the clock redraws, once a second, while on screen.
 struct PulseStrengthStageRing: View {
     let stage: PulseStrengthStage
 
-    private static let diameter: CGFloat = 226
-    private static let stroke: CGFloat = 9
+    private static let diameter: CGFloat = 240
+    /// g07a's band runs from r ≈ 105 to the rim at 120.
+    private static let band: CGFloat = 15
+    private static let rim: CGFloat = 3
+
+    /// The rim's colours from 12 o'clock, clockwise, for a circle drawn unrotated.
+    private static func rimGradient(_ gradient: Gradient) -> AngularGradient {
+        AngularGradient(gradient: gradient, center: .center, startAngle: .degrees(-90), endAngle: .degrees(270))
+    }
 
     var body: some View {
-        TimelineView(.periodic(from: Date(timeIntervalSince1970: floor(Date().timeIntervalSince1970)), by: 1)) { context in
-            let now = Int(context.date.timeIntervalSince1970)
-            content(now: now)
+        ZStack {
+            band
+            if case .active = stage {
+                activeRim
+            }
+            if stage.ticks {
+                TimelineView(.periodic(from: Date(timeIntervalSince1970: floor(Date().timeIntervalSince1970)), by: 1)) { context in
+                    timed(now: Int(context.date.timeIntervalSince1970))
+                }
+            } else {
+                still
+            }
         }
         .frame(width: Self.diameter + 24, height: Self.diameter + 24)
     }
 
-    @ViewBuilder
-    private func content(now: Int) -> some View {
-        let reading = reading(now: now)
-        ZStack {
-            Circle()
-                .fill(PulseStrengthColors.ringDisc)
-                .frame(width: Self.diameter - Self.stroke, height: Self.diameter - Self.stroke)
-            Circle()
-                .stroke(PulseStrengthColors.ringTrack, lineWidth: Self.stroke)
-                .frame(width: Self.diameter - Self.stroke, height: Self.diameter - Self.stroke)
-            ring(reading)
-            VStack(spacing: 8) {
-                Text(reading.label)
-                    .pulseText(.navTitle)
-                    .foregroundStyle(reading.green ? PulseTheme.Activity.strengthActiveTimer : PulseTheme.textPrimary)
-                Text(reading.clock)
-                    .font(PulseType.font(.strengthTimer))
-                    .foregroundStyle(reading.green ? PulseTheme.Activity.strengthActiveTimer : PulseTheme.textPrimary)
-                    .monospacedDigit()
+    // MARK: Ring
+
+    /// The band: the rim's own colours, dimmed, so it is lit where the rim is (g07a: #2A2D32 under the
+    /// top-right of the rim, #3D4144 under its bright bottom-left; g07b: navy on the left, green on the
+    /// right). It stays whole while the REST rim counts down.
+    private var band: some View {
+        let size = Self.diameter - Self.band
+        return Group {
+            switch stage {
+            case .active:
+                Circle()
+                    .stroke(Self.rimGradient(PulseStrengthColors.activeRim), lineWidth: Self.band)
+                    .opacity(PulseStrengthColors.activeBandOpacity)
+            case .warmup, .rest, .done:
+                Circle()
+                    .stroke(Self.rimGradient(PulseStrengthColors.restRim), lineWidth: Self.band)
+                    .opacity(PulseStrengthColors.restBandOpacity)
             }
-            .accessibilityElement(children: .combine)
-            .accessibilityLabel(reading.accessibility)
         }
+        .frame(width: size, height: size)
     }
+
+    /// The ACTIVE rim and its glow (static: the clock is the only thing that moves).
+    private var activeRim: some View {
+        let size = Self.diameter - Self.rim
+        let gradient = Self.rimGradient(PulseStrengthColors.activeRim)
+        return ZStack {
+            Circle()
+                .stroke(gradient, lineWidth: 6)
+                .blur(radius: 7)
+                .opacity(0.7)
+            Circle()
+                .stroke(gradient, lineWidth: Self.rim)
+        }
+        .frame(width: size, height: size)
+    }
+
+    /// The REST rim, with a faint halo: the countdown's remaining fraction, from 12 o'clock clockwise.
+    /// The shape is turned a quarter for the trim to start at 12, so its gradient starts a quarter back.
+    private func restRim(_ fraction: CGFloat) -> some View {
+        let size = Self.diameter - Self.rim
+        let arc = Circle().trim(from: 0, to: max(0, min(1, fraction)))
+        let gradient = AngularGradient(gradient: PulseStrengthColors.restRim, center: .center,
+                                       startAngle: .degrees(0), endAngle: .degrees(360))
+        return ZStack {
+            arc
+                .stroke(gradient, style: StrokeStyle(lineWidth: 5, lineCap: .round))
+                .blur(radius: 4)
+                .opacity(0.45)
+            arc
+                .stroke(gradient, style: StrokeStyle(lineWidth: Self.rim, lineCap: .round))
+        }
+        .rotationEffect(.degrees(-90))
+        .frame(width: size, height: size)
+    }
+
+    // MARK: Figures
 
     @ViewBuilder
-    private func ring(_ reading: Reading) -> some View {
-        let size = Self.diameter - Self.stroke
+    private func timed(now: Int) -> some View {
         switch stage {
-        case .active:
-            Circle()
-                .stroke(AngularGradient(gradient: PulseStrengthColors.activeRing, center: .center,
-                                        startAngle: .degrees(150), endAngle: .degrees(510)),
-                        lineWidth: Self.stroke)
-                .frame(width: size, height: size)
-                .shadow(color: Color(hex: "#00D7B0").opacity(0.55), radius: 10)
-        case .rest:
-            Circle()
-                .trim(from: 0, to: reading.fraction)
-                .stroke(AngularGradient(gradient: PulseStrengthColors.restRing, center: .center),
-                        style: StrokeStyle(lineWidth: Self.stroke, lineCap: .round))
-                .rotationEffect(.degrees(-90))
-                .frame(width: size, height: size)
-                .shadow(color: Color.white.opacity(0.25), radius: 8)
-        case .warmup, .done:
-            Circle()
-                .stroke(AngularGradient(gradient: PulseStrengthColors.restRing, center: .center), lineWidth: Self.stroke)
-                .opacity(0.55)
-                .frame(width: size, height: size)
-        }
-    }
-
-    private struct Reading {
-        let label: String
-        let clock: String
-        let green: Bool
-        let fraction: CGFloat
-        let accessibility: String
-    }
-
-    private func reading(now: Int) -> Reading {
-        switch stage {
-        case .warmup(let since):
-            let clock = PulseStrengthClock.text(now - since, padded: true)
-            return Reading(label: String(localized: "Warm-up"), clock: clock, green: false, fraction: 1,
-                           accessibility: String(localized: "Warm-up, \(clock)"))
         case .active(let since):
             let clock = PulseStrengthClock.text(now - since, padded: true)
-            return Reading(label: String(localized: "Active"), clock: clock, green: true, fraction: 1,
-                           accessibility: String(localized: "Set active, \(clock)"))
+            figure(label: String(localized: "Active"), value: clock, unit: nil,
+                   color: PulseTheme.Activity.strengthActiveTimer,
+                   accessibility: String(localized: "Set active, \(clock)"))
         case .rest(let start, let endsAt):
             let left = max(0, endsAt - now)
-            let total = max(1, endsAt - start)
             let clock = PulseStrengthClock.text(left, padded: true)
-            return Reading(label: left > 0 ? String(localized: "Rest") : String(localized: "Ready"), clock: clock,
-                           green: false, fraction: CGFloat(left) / CGFloat(total),
-                           accessibility: left > 0 ? String(localized: "Rest, \(clock) left")
-                                                   : String(localized: "Rest over, ready for the next set"))
-        case .done(let since):
-            let clock = PulseStrengthClock.text(now - since, padded: true)
-            return Reading(label: String(localized: "All sets done"), clock: clock, green: false, fraction: 1,
-                           accessibility: String(localized: "All sets done, \(clock)"))
+            ZStack {
+                restRim(CGFloat(left) / CGFloat(max(1, endsAt - start)))
+                figure(label: left > 0 ? String(localized: "Rest") : String(localized: "Ready"), value: clock,
+                       unit: nil, color: PulseTheme.textPrimary,
+                       accessibility: left > 0 ? String(localized: "Rest, \(clock) left")
+                                               : String(localized: "Rest over, ready for the next set"))
+            }
+        case .warmup, .done:
+            still
         }
+    }
+
+    @ViewBuilder
+    private var still: some View {
+        switch stage {
+        case .warmup:
+            // Nothing is being timed before the first set; the session's time is in the header.
+            figure(label: String(localized: "Warm-up"), value: "--:--", unit: nil, color: PulseTheme.textDisabled,
+                   labelColor: PulseTheme.textPrimary,
+                   accessibility: String(localized: "Warm-up. Start a set to time it."))
+        case .done(let volume, let unit, let sets):
+            if let volume {
+                figure(label: String(localized: "All sets done"), value: volume, unit: unit,
+                       color: PulseTheme.textPrimary,
+                       accessibility: String(localized: "All sets done, \(volume) \(unit) lifted"))
+            } else {
+                figure(label: String(localized: "All sets done"), value: "\(sets)",
+                       unit: sets == 1 ? String(localized: "set") : String(localized: "sets"),
+                       color: PulseTheme.textPrimary,
+                       accessibility: String(localized: "All sets done, \(sets) sets"))
+            }
+        case .active, .rest:
+            EmptyView()
+        }
+    }
+
+    private func figure(label: String, value: String, unit: String?, color: Color,
+                        labelColor: Color? = nil, accessibility: String) -> some View {
+        VStack(spacing: 8) {
+            Text(label)
+                .pulseText(.navTitle)
+                .foregroundStyle(labelColor ?? color)
+            HStack(alignment: .firstTextBaseline, spacing: 4) {
+                Text(value)
+                    .font(PulseType.font(.strengthTimer))
+                    .foregroundStyle(color)
+                    .monospacedDigit()
+                if let unit {
+                    Text(unit)
+                        .pulseText(.tileUnit)
+                        .foregroundStyle(PulseTheme.textSecondary)
+                }
+            }
+            .lineLimit(1)
+            .minimumScaleFactor(0.6)
+            .frame(maxWidth: Self.diameter - Self.band * 2 - 24)
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(accessibility)
     }
 }
 
