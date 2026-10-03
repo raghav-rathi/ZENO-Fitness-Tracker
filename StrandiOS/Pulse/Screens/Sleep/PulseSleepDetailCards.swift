@@ -38,6 +38,8 @@ struct PulseSleepHoursVsNeededCard: View {
                 }
             }
             .padding(.horizontal, 8)
+            // HOURS OF SLEEP's caps ≈14.5 pt under the baseline (deep-dives-2026/15: 14.7).
+            .padding(.top, -8)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(GeometryReader { geo in
                 Color.clear.preference(key: SleepWidthKey.self, value: geo.size.width - 16)
@@ -152,9 +154,10 @@ struct PulseSleepConsistencyCard: View {
                     legend
                 }
             }
+            // The first gridline's time ≈14 pt under the baseline (deep-dives-2026/03: 14.0).
             if !card.nights.isEmpty {
                 PulseSleepConsistencyChart(card: card)
-                    .padding(.top, 4)
+                    .padding(.top, 1)
             }
         }
     }
@@ -327,7 +330,8 @@ struct PulseSleepEfficiencyCard: View {
                 SleepLabelValueRow(label: String(localized: "Awake"), value: card.awakeText)
             }
             .padding(.horizontal, 8)
-            .padding(.top, 2)
+            // ASLEEP's caps ≈15.5 pt under the baseline (deep-dives-2026/19, 19c: 15.6).
+            .padding(.top, -8)
             if let events = card.wakeEvents {
                 PulseDivider()
                     .padding(.horizontal, -4)
@@ -429,6 +433,8 @@ struct PulseSleepStressCard: View {
                              now: s.chartEnd, currentLevel: s.lastLevel, xLabels: [], height: 150)
             PulseSleepStressTicks(ticks: s.xTicks)
         }
+        // The plot's top line ≈13.6 pt under the baseline, the moon level with it (deep-dives-2026/19b, 19c).
+        .padding(.top, -15)
         VStack(spacing: 16) {
             ForEach(s.levels) { level in
                 VStack(alignment: .leading, spacing: 9) {

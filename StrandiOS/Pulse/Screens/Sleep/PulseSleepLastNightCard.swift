@@ -23,8 +23,9 @@ struct PulseSleepLastNightCard: View {
         PulseCard(.detail) {
             VStack(alignment: .leading, spacing: 0) {
                 SleepCardHeader(title: String(localized: "Hours of sleep"), onInfo: onInfo)
-                SleepFigureView(figure: night.hours, style: .mediumValue, glyphSize: 6, compactBaseline: true)
-                    .padding(.top, 10)
+                // Title caps to value caps 24 pt, as on the detail cards (deep-dives-2026/14, 15: 23.3–23.7).
+                SleepFigureView(figure: night.hours)
+                    .padding(.top, 7)
 
                 PulseSleepHRChart(night: night, selected: selected)
                     .padding(.horizontal, -PulseTheme.Layout.cardPadding)
