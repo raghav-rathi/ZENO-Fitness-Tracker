@@ -122,6 +122,8 @@ enum PulseActivityStyle {
         static let stat: CGFloat = 20
         static let mapStat: CGFloat = 18
         static let liveHeart: CGFloat = 17
+        /// The camera inside the live session's LIVE ring (b01).
+        static let liveCamera: CGFloat = 15
         static let panelEmpty: CGFloat = 34
         static let panelReset: CGFloat = 17
         static let panelCheck: CGFloat = 20
@@ -178,6 +180,8 @@ enum PulseActivityTextStyle {
     case liveDiscCaption
     /// "← Heart Rate" · "Map →".
     case liveFooter
+    /// "LIVE" under the live session's camera ring (§3.8: 12 pt Bold caps).
+    case liveButton
     /// A live stat's unit ("mi", "/mi").
     case statUnit
     /// The pre-start circle's battery figure and "No strap" (fixed: they sit in a 181 pt circle).
@@ -216,6 +220,7 @@ enum PulseActivityTextStyle {
         case .liveZoneLabelCurrent: return Spec(size: 13, weight: .bold, uppercase: false, tracking: 0, relativeTo: .footnote, maxScale: 1.3)
         case .liveDiscCaption: return Spec(size: 13, weight: .semibold, uppercase: false, tracking: 0, relativeTo: nil, maxScale: 1)
         case .liveFooter: return Spec(size: 16, weight: .regular, uppercase: false, tracking: 0, relativeTo: .callout, maxScale: 1.5)
+        case .liveButton: return Spec(size: 12, weight: .bold, uppercase: true, tracking: 1.4, relativeTo: .caption, maxScale: 1.3)
         case .statUnit: return Spec(size: 15, weight: .semibold, uppercase: false, tracking: 0, relativeTo: .subheadline, maxScale: 1.3)
         case .circleCaption: return Spec(size: 14, weight: .medium, uppercase: false, tracking: 0, relativeTo: nil, maxScale: 1)
         }

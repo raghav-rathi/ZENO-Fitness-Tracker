@@ -23,6 +23,7 @@ struct PulseLiveSessionView: View {
     let onDiscard: () -> Void
 
     @EnvironmentObject private var app: AppModel
+    @Environment(\.pulseNavigator) private var navigator
     @AppStorage("workoutKeepScreenOn") private var keepScreenOn = false
     @AppStorage(UnitPrefs.systemKey) private var unitSystemRaw = UnitSystem.metric.rawValue
     @AppStorage(UnitPrefs.distanceSystemKey) private var distanceSystemRaw = ""
@@ -31,6 +32,10 @@ struct PulseLiveSessionView: View {
     @State private var endDialog: EndDialog?
     @State private var calories: Double?
     @State private var session: PulseActivitySessionStore.Session?
+    #if DEBUG
+    /// `--activity-live-camera` opens ZENO Live once, not again on the way back.
+    @State private var debugCameraOpened = false
+    #endif
 
     enum Page: Hashable { case heartRate, strain, map }
     enum EndDialog: Identifiable {
@@ -139,6 +144,10 @@ struct PulseLiveSessionView: View {
         default: break
         }
         if PulseActivityDebug.has("--activity-end-dialog") { endDialog = .end }
+        if PulseActivityDebug.has("--activity-live-camera"), !debugCameraOpened {
+            debugCameraOpened = true
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1) { navigator.open(PulseZenoLiveRoute().route) }
+        }
         if PulseActivityDebug.has("--activity-end-save") {
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { endAndSave() }
         }
@@ -273,6 +282,13 @@ struct PulseLiveSessionView: View {
             }
             .padding(.horizontal, 10)
             Spacer(minLength: 0)
+        }
+        // LIVE at the top-right under the band (b01, b03: the ring's top ≈30 pt down, ≈7 pt in from the
+        // edge). ZENO Live opens over the session, which keeps recording underneath (§3.10).
+        .overlay(alignment: .topTrailing) {
+            PulseLiveCameraButton { navigator.open(PulseZenoLiveRoute().route) }
+                .padding(.top, 30)
+                .padding(.trailing, 2)
         }
     }
 
@@ -470,6 +486,49 @@ struct PulseLiveStrainRing: View {
         let r = diameter / 2 - stroke - 6
         let angle = fraction * 2 * .pi - .pi / 2
         return CGSize(width: r * CGFloat(cos(angle)), height: r * CGFloat(sin(angle)))
+    }
+}
+
+// MARK: - LIVE (§3.8 "LIVE button", §3.10)
+
+/// A ≈36 pt white ring around a camera, broken at its upper left where ZENO's mark sits (WHOOP draws its
+/// own mark there; ZENO never does), over "LIVE". Opens ZENO Live.
+struct PulseLiveCameraButton: View {
+    let action: () -> Void
+
+    private let diameter: CGFloat = 36
+
+    var body: some View {
+        Button(action: action) {
+            VStack(spacing: 6) {
+                ZStack {
+                    // The gap is 15% of the ring, centred at 10:30 (225° from 3 o'clock, clockwise).
+                    Circle()
+                        .trim(from: 0, to: 0.85)
+                        .rotation(.degrees(225 + 0.075 * 360))
+                        .stroke(PulseTheme.textPrimary, style: StrokeStyle(lineWidth: 2, lineCap: .round))
+                    Image(systemName: "camera.fill")
+                        .font(.system(size: PulseActivityStyle.Glyph.liveCamera, weight: .regular))
+                        .foregroundStyle(PulseTheme.textPrimary)
+                    PulseZenoMonogramShape()
+                        .stroke(PulseTheme.textPrimary, style: StrokeStyle(lineWidth: 1.4, lineCap: .round, lineJoin: .round))
+                        .frame(width: 9, height: 9)
+                        .offset(x: -diameter / 2 * 0.707, y: -diameter / 2 * 0.707)
+                }
+                .frame(width: diameter, height: diameter)
+                Text(String(localized: "Live"))
+                    .activityText(.liveButton)
+                    .foregroundStyle(PulseTheme.textPrimary)
+                    .lineLimit(1)
+            }
+            .frame(minWidth: PulseTheme.Layout.minTapTarget, minHeight: PulseTheme.Layout.minTapTarget)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(PulsePressStyle())
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(String(localized: "ZENO Live"))
+        .accessibilityHint(String(localized: "Lays your live numbers over a photo to share. The activity keeps recording."))
+        .accessibilityAddTraits(.isButton)
     }
 }
 

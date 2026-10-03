@@ -28,6 +28,7 @@ import WhoopProtocol
 //   --activity-demo-live [min]    a live session N minutes in (default 28) fed demo heart rate
 //   --activity-live-page hr|strain|map   the live pager on that page
 //   --activity-end-dialog         the live session's END THIS ACTIVITY? card
+//   --activity-live-camera        the live session's LIVE button: ZENO Live pushed over the session
 //   --activity-end-save           End & Save the live session once it is on screen (then Activity Details)
 //   --activity-target <value>     the Strain Target panel with a dragged target
 //   --activity-reset              discard a session an earlier launch left running
