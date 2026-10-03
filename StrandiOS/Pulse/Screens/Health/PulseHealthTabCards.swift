@@ -4,12 +4,13 @@ import StrandAnalytics
 
 // MARK: - The Health tab's cards (WHOOP_UI_SPEC §3.20)
 
-/// "7.2 years younger" / "0.4 years older" / "About your age", from the engine's own gap.
+/// "7.2 years younger" / "0.4 years older", from the engine's own gap, always with the figure as WHOOP
+/// prints it (help-center/113-115, reviews/r07). No gap reads "0.0 years younger": the rule Healthspan's
+/// compact header and Profile's ZENO AGE card use, so every readout of the same gap agrees.
 func healthYearsLine(_ yearsYounger: Double) -> String {
     let amount = PulseFormat.oneDecimal(abs(yearsYounger))
-    if amount == PulseFormat.oneDecimal(0) { return String(localized: "About your age") }
-    return yearsYounger > 0 ? String(localized: "\(amount) years younger")
-                            : String(localized: "\(amount) years older")
+    return yearsYounger >= 0 ? String(localized: "\(amount) years younger")
+                             : String(localized: "\(amount) years older")
 }
 
 // MARK: Orb
