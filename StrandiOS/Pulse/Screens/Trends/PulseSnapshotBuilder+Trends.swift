@@ -21,9 +21,11 @@ extension PulseSnapshotBuilder {
 
     // MARK: Trend View
 
-    /// One Trend View page for `key`, anchored on today. nil when superseded or for an unknown key.
+    /// One Trend View page for `key`. The series runs through `r`'s day (today); the latest window ends
+    /// `anchorOffset` days earlier (0 = today, more when the page was opened from a past day's Home). nil
+    /// when superseded or for an unknown key.
     func trendView(_ r: PulseRequest, key: String, range: PulseTrendMath.Range, page: Int,
-                   units: PulseTrendUnits, cycleOverlay: Bool) async -> TrendViewSnapshot? {
+                   units: PulseTrendUnits, cycleOverlay: Bool, anchorOffset: Int = 0) async -> TrendViewSnapshot? {
         begin(r.seq)
         guard let metric = PulseTrendMetric.resolve(key) else { return nil }
         let series = await trendSeries(r, metric: metric, units: units)
@@ -35,14 +37,16 @@ extension PulseSnapshotBuilder {
             phases = demo
         }
         #endif
-        return PulseTrendPageBuilder.page(seq: r.seq, metric: metric, series: series, anchor: r.day.key,
+        return PulseTrendPageBuilder.page(seq: r.seq, metric: metric, series: series, today: r.day.key,
+                                          anchor: PulseTrendMath.addDays(r.day.key, -max(0, anchorOffset)),
                                           range: range, page: page, phases: phases)
     }
 
     /// WHAT CORRELATES for one Trend View page: the other metrics whose days move with this one's over the
-    /// same period, by Pearson r (|r| ≥ 0.30 on at least 10 shared days, the classic card's rule).
+    /// same period (W: the 30 days to its end), by Pearson r (|r| ≥ 0.30 on at least 10 shared days, the
+    /// classic card's rule), leaving out the metrics computed from it.
     func trendCorrelations(_ r: PulseRequest, key: String, range: PulseTrendMath.Range, page: Int,
-                           units: PulseTrendUnits) async -> [PulseTrendCorrelation]? {
+                           units: PulseTrendUnits, anchorOffset: Int = 0) async -> PulseTrendCorrelations? {
         begin(r.seq)
         guard let metric = PulseTrendMetric.resolve(key) else { return nil }
         let own = await trendSeries(r, metric: metric, units: units)
@@ -51,7 +55,8 @@ extension PulseSnapshotBuilder {
             others.append((other, await trendSeries(r, metric: other, units: units)))
             guard isCurrent(r) else { return nil }
         }
-        return PulseTrendPageBuilder.correlations(metric: metric, series: own, others: others, anchor: r.day.key,
+        return PulseTrendPageBuilder.correlations(metric: metric, series: own, others: others, today: r.day.key,
+                                                  anchor: PulseTrendMath.addDays(r.day.key, -max(0, anchorOffset)),
                                                   range: range, page: page)
     }
 
@@ -117,9 +122,10 @@ extension PulseSnapshotBuilder {
 
     // MARK: Series
 
-    /// `metric`'s daily series for this refresh, read once and shared.
+    /// `metric`'s daily series for this refresh, read once and shared. Keyed by the request's day too, as
+    /// the series stops at that day.
     func trendSeries(_ r: PulseRequest, metric: PulseTrendMetric, units: PulseTrendUnits) async -> PulseTrendSeries {
-        await cached("trends.series.\(metric.key).\(units.id)") {
+        await cached("trends.series.\(metric.key).\(units.id).\(r.day.key)") {
             await self.resolveTrendSeries(r, metric: metric, units: units)
         }
     }
@@ -176,6 +182,9 @@ extension PulseSnapshotBuilder {
                 return v.map { (night.day, $0) }
             }
             return PulseTrendSeries(points: Self.points(rows, through: today))
+
+        case .timeInBed:
+            return await timeInBedSeries(r)
 
         case .hoursVsNeed:
             let asleep = await repo.exploreSeries(key: "sleep_total_min", source: "my-whoop")
@@ -244,7 +253,12 @@ extension PulseSnapshotBuilder {
                     perZone[z, default: [:]][day, default: 0] += minutes * pct[z - 1] / 100
                 }
             }
-            return Self.zeroFilled(parts: zones.map { perZone[$0] ?? [:] }, firstDay: firstDay, r: r, unknown: unknown)
+            var filled = Self.zeroFilled(parts: zones.map { perZone[$0] ?? [:] }, firstDay: firstDay, r: r,
+                                         unknown: unknown)
+            if let first = filled.earliest {
+                filled.unknownDays = unknown.filter { $0 >= first && $0 <= today }
+            }
+            return filled
 
         case .strength:
             let rows = await workoutRows()
@@ -290,6 +304,32 @@ extension PulseSnapshotBuilder {
             }
             return series
         }
+    }
+
+    /// TIME IN BED per night: the merged main night the Sleep dive and Home print (`SleepModel.mergeDay` over
+    /// the same night groups, its `timeInBed`), with its bedtime and wake as minutes from the wake day's
+    /// local midnight for the floating bars. A strap-only member has every night here; an imported in-bed
+    /// figure (the WHOOP export's) wins its day's value.
+    private func timeInBedSeries(_ r: PulseRequest) async -> PulseTrendSeries {
+        let groups = await nightGroups(r)
+        let habitual = await habitualMidsleep()
+        let imported = await repo.exploreSeries(key: "in_bed_min", source: "my-whoop")
+        let calendar = Calendar.current
+        var minutes: [String: Double] = [:]
+        var spans: [String: PulseTrendSpan] = [:]
+        for g in groups {
+            guard let night = SleepModel.mergeDay(g, habitualMidsleepSec: habitual, motionByStart: [:]) else { continue }
+            let wake = Date(timeIntervalSince1970: TimeInterval(night.session.endTs))
+            let key = Repository.localDayKey(wake)
+            let midnight = calendar.startOfDay(for: wake)
+            let bed = night.onsetDate.timeIntervalSince(midnight) / 60
+            let up = wake.timeIntervalSince(midnight) / 60
+            if up > bed { spans[key] = PulseTrendSpan(bed: bed, wake: up) }
+            if night.timeInBed > 0 { minutes[key] = night.timeInBed }
+        }
+        for row in imported where row.value > 0 { minutes[row.day] = row.value }
+        return PulseTrendSeries(points: Self.points(minutes.map { ($0.key, $0.value) }, through: r.day.key),
+                                spans: spans.filter { $0.key <= r.day.key })
     }
 
     /// Every night's resolved sleep figures (need, consistency, debt, hours vs needed), the per-night read

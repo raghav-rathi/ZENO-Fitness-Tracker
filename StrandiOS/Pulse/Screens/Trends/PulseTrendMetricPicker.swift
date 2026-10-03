@@ -13,6 +13,8 @@ struct PulseTrendMetricPicker: View {
     @Environment(PulseModel.self) private var model
     @Environment(\.dismiss) private var dismiss
     @State private var items: [PulseTrendPickerItem]?
+    @ScaledMetric(relativeTo: .body) private var iconSize = PulseTheme.Trends.metricIcon
+    @ScaledMetric(relativeTo: .body) private var tickSize = PulseTheme.Trends.pickerTick
 
     /// The rows before the availability scan lands: every metric, none marked.
     private var rows: [PulseTrendPickerItem] {
@@ -23,22 +25,26 @@ struct PulseTrendMetricPicker: View {
 
     var body: some View {
         NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 0) {
-                    ForEach(PulseTrendPillar.allCases) { pillar in
-                        let group = rows.filter { $0.pillar == pillar }
-                        if !group.isEmpty {
-                            PulseListSectionHeader(pillar.title)
-                                .padding(.top, pillar == .sleep ? 8 : 28)
-                                .padding(.bottom, 12)
-                            VStack(spacing: PulseTheme.Row.listGap) {
-                                ForEach(group) { item in row(item) }
+            ScrollViewReader { proxy in
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 0) {
+                        ForEach(PulseTrendPillar.allCases) { pillar in
+                            let group = rows.filter { $0.pillar == pillar }
+                            if !group.isEmpty {
+                                PulseListSectionHeader(pillar.title)
+                                    .padding(.top, pillar == .sleep ? 8 : 28)
+                                    .padding(.bottom, 12)
+                                VStack(spacing: PulseTheme.Row.listGap) {
+                                    ForEach(group) { item in row(item).id(item.id) }
+                                }
                             }
                         }
                     }
+                    .padding(.horizontal, PulseTheme.Layout.pageMargin)
+                    .padding(.bottom, 32)
                 }
-                .padding(.horizontal, PulseTheme.Layout.pageMargin)
-                .padding(.bottom, 32)
+                // Open on the current metric: from a Recovery or Strain page it sits below the SLEEP group.
+                .onAppear { proxy.scrollTo(selected, anchor: .center) }
             }
             .background(PulseBackground())
             .pulseNavHeader(String(localized: "Choose a metric"), showsBack: false)
@@ -64,7 +70,7 @@ struct PulseTrendMetricPicker: View {
         } label: {
             HStack(spacing: 16) {
                 Image(systemName: item.symbol)
-                    .font(.system(size: 19, weight: .light))
+                    .font(.system(size: iconSize, weight: .light))
                     .foregroundStyle(PulseTheme.rowIcon)
                     .frame(width: 28)
                     .accessibilityHidden(true)
@@ -82,7 +88,7 @@ struct PulseTrendMetricPicker: View {
                 Spacer(minLength: 8)
                 if item.id == selected {
                     Image(systemName: "checkmark")
-                        .font(.system(size: 15, weight: .bold))
+                        .font(.system(size: tickSize, weight: .bold))
                         .foregroundStyle(PulseTheme.positive)
                         .accessibilityHidden(true)
                 }

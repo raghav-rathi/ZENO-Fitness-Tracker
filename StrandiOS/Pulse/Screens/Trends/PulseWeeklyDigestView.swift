@@ -11,10 +11,15 @@ import StrandAnalytics
 ///   3. the deep dives' Weekly Trends cards for RECOVERY, STRAIN and SLEEP PERFORMANCE;
 ///   4. Highlights: best Recovery, max Strain, longest sleep, most time in HR zones, each with its day;
 ///   5. Behaviors this week: the journal behaviours logged, each with its effect on Recovery over 90 days;
-///   6. a plain summary (local text, not the Coach's), ASK COACH when the Coach is on, and EXPORT REPORT.
+///   6. a plain summary (local text, not the Coach's), ASK COACH when the Coach is on, and EXPORT REPORT as
+///      a nested button inside that card (§3.40 item 7), once the period has readings to export.
 ///
 /// The plan block (§3.40 item 3) appears once Weekly Plan data exists; ZENO has none yet. Owned by group
 /// "trends".
+///
+/// TODO(cycle-coach): §3.40 item 7 puts the Coach's own summary in the insight card when a provider is
+/// configured. It is the local template sentence today, like the dives' summary pills; the cycle-coach
+/// group swaps in the Coach's text (`CoachBriefScheduler`) where a provider exists.
 struct PulseWeeklyDigestView: View {
     /// Existing entry points (Trends › THIS WEEK, INSIGHTS) open this screen instead of the classic Weekly
     /// digest once it is true (see `PulseRoute.forExistingEntryPoint`).
@@ -102,9 +107,11 @@ private struct PulseDigestContent: View {
             HStack(spacing: 16) {
                 PulseTrendRangePager(pager: snapshot.pager, onBack: onBack, onForward: onForward)
                     .frame(maxWidth: .infinity)
-                PulseSegmentedControl(options: WeeklyDigestSnapshot.Mode.allCases, selection: $mode) { $0.segmentTitle }
+                PulseTrendSegments(label: String(localized: "Week or month"),
+                                   options: WeeklyDigestSnapshot.Mode.allCases, selection: $mode,
+                                   title: { $0.segmentTitle },
+                                   spoken: { $0 == .week ? String(localized: "Week") : String(localized: "Month") })
                     .frame(width: 104)
-                    .accessibilityLabel(String(localized: "Week or month"))
             }
             .padding(.top, 8)
 
@@ -114,7 +121,10 @@ private struct PulseDigestContent: View {
                 ForEach(snapshot.pillars) { pillar in
                     Group {
                         if let chip = pillar.chip {
+                            // The compact chip prints "4%"; VoiceOver hears which pillar and against what.
                             PulseDeltaChip(text: chip.text, trend: chip.trend)
+                                .accessibilityElement(children: .ignore)
+                                .accessibilityLabel(pillar.chipAccessibility ?? chip.text)
                         } else {
                             Color.clear.frame(height: 1)
                         }
@@ -168,16 +178,12 @@ private struct PulseDigestContent: View {
                 }
                 summary.padding(.top, PulseTheme.Layout.stackGap)
             }
-
-            Button { navigator.present(.classic(.report)) } label: {
-                Label(String(localized: "Export report"), systemImage: "square.and.arrow.up")
-            }
-            .buttonStyle(.pulseOutlineWhite)
-            .padding(.top, 24)
         }
     }
 
     // MARK: Cards
+
+    @ScaledMetric(relativeTo: .body) private var iconSize = PulseTheme.Trends.rowIcon
 
     private var highlights: some View {
         PulseCard {
@@ -188,7 +194,7 @@ private struct PulseDigestContent: View {
                     if index > 0 { PulseDivider() }
                     HStack(spacing: 14) {
                         Image(systemName: item.symbol)
-                            .font(.system(size: 18, weight: .regular))
+                            .font(.system(size: iconSize, weight: .regular))
                             .foregroundStyle(PulseTheme.textTertiary)
                             .frame(width: 22)
                             .accessibilityHidden(true)
@@ -250,6 +256,8 @@ private struct PulseDigestContent: View {
         }
     }
 
+    /// The period in a sentence, ASK COACH under it, then EXPORT REPORT as the card's nested button (white
+    /// 10% on the card, radius 10, 40 pt, §3.40 item 7). Only drawn once the period has readings.
     private var summary: some View {
         PulseCard {
             VStack(alignment: .leading, spacing: 4) {
@@ -262,6 +270,11 @@ private struct PulseDigestContent: View {
                         coach.open(snapshot.insight)
                     }
                 }
+                Button { navigator.present(.classic(.report)) } label: {
+                    Label(String(localized: "Export report"), systemImage: "square.and.arrow.up")
+                }
+                .buttonStyle(.pulseNested)
+                .padding(.top, 12)
             }
         }
     }

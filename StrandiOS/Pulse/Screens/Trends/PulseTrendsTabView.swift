@@ -64,7 +64,7 @@ struct PulseTrendsTabView: View {
                 .padding(.top, 32)
                 .padding(.bottom, 14)
             VStack(spacing: PulseTheme.Row.listGap) {
-                link(String(localized: "What moves you"), String(localized: "Behaviours ranked by their effect, with dose and response"),
+                link(String(localized: "What moves you"), String(localized: "Behaviors ranked by their effect, with dose and response"),
                      "wand.and.sparkles", .classic(.insightsHub))
                 link(String(localized: "Explore"), String(localized: "Every metric, and the full day's heart rate"),
                      "square.grid.2x2", .classic(.explore))
@@ -131,13 +131,20 @@ private struct PulseTrendsWeekCard: View {
     var body: some View {
         PulseCard {
             VStack(alignment: .leading, spacing: 0) {
-                HStack(alignment: .firstTextBaseline) {
-                    PulseCardTitle(String(localized: "This week"), accessory: .chevron)
-                        .layoutPriority(1)
-                    Text(snapshot.weekTitle)
-                        .pulseText(.secondary)
-                        .foregroundStyle(PulseTheme.textTertiary)
-                        .lineLimit(1)
+                // The week's dates at the right of the title; under it when both no longer fit one line.
+                // The title is sized to its words: `PulseCardTitle` fills its row, and given the row it
+                // left the dates no width at all.
+                ViewThatFits(in: .horizontal) {
+                    HStack(alignment: .firstTextBaseline, spacing: 0) {
+                        PulseCardTitle(String(localized: "This week"), accessory: .chevron)
+                            .fixedSize()
+                        Spacer(minLength: 8)
+                        weekDates.fixedSize()
+                    }
+                    VStack(alignment: .leading, spacing: 4) {
+                        PulseCardTitle(String(localized: "This week"), accessory: .chevron)
+                        weekDates
+                    }
                 }
                 VStack(spacing: 0) {
                     ForEach(Array(snapshot.week.enumerated()), id: \.element.id) { index, line in
@@ -184,6 +191,13 @@ private struct PulseTrendsWeekCard: View {
         .contentShape(Rectangle())
     }
 
+    private var weekDates: some View {
+        Text(snapshot.weekTitle)
+            .pulseText(.secondary)
+            .foregroundStyle(PulseTheme.textSecondary)
+            .accessibilityLabel(String(localized: "Week of \(snapshot.weekTitle)"))
+    }
+
     private func ring(_ line: TrendsTabSnapshot.WeekLine) -> some View {
         PulseMiniRing(content: line.ring)
     }
@@ -207,13 +221,19 @@ private struct PulseTrendsWeekCard: View {
 
 /// A Trends row: icon and name at the left (the reading's day under the name when it is not today), a
 /// 7-day sparkline, then the value with its ▲▼ and the 30-day average under it.
+///
+/// It draws My Dashboard's row (`PulseMetricRow`: the same icon, title, value, glyph and baseline styles,
+/// paddings and card) with the caption and sparkline added inside it, which the shared row has no slot for
+/// yet; once it gains one (a caption and a trailing accessory), this becomes that row.
 struct PulseTrendsMetricRow: View {
     let row: TrendsTabSnapshot.Row
+
+    @ScaledMetric(relativeTo: .body) private var iconSize = PulseTheme.Trends.rowIcon
 
     var body: some View {
         HStack(spacing: 12) {
             Image(systemName: row.symbol)
-                .font(.system(size: 18, weight: .regular))
+                .font(.system(size: iconSize, weight: .regular))
                 .foregroundStyle(PulseTheme.textTertiary)
                 .frame(width: 22)
                 .accessibilityHidden(true)

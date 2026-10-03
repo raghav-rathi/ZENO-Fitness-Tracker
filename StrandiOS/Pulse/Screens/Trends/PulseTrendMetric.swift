@@ -8,6 +8,21 @@ import StrandAnalytics
 // 0–21), with what its header says, how its values print, how its chart is drawn and where its numbers come
 // from. The WHOOP metrics are spelled out below; any other `MetricCatalog` key falls back to a generic
 // entry built from the catalog, so every metric the app stores has a Trend View.
+//
+// [Z] Where this list departs from §3.12, and why (data honesty: nothing is drawn that ZENO does not hold):
+//   - Stress. WHOOP's stress views print AVG. HIGH STRESS (h:mm in the high zone) over 100%-stacked
+//     HIGH / MEDIUM / LOW bars, for Total Day, Sleep and Non-Activity stress. ZENO stores ONE stress figure
+//     per day, the 0–3 level (`repo.series("stress")`); the hourly timeline that could be split into
+//     zones (`DaytimeStress`) is scored only for today, from that day's raw heart rate, R-R and motion,
+//     which is far too heavy to re-score for every day of a 6M window. So "Day Stress" charts the daily
+//     level as AVERAGE with level-coloured bars and a STRESS BREAKDOWN (DAYS) of high / medium / low days,
+//     and Sleep Stress and Non-Activity Stress are omitted: no per-night or activity-masked series exists.
+//   - "+ ADD ENTRY" (Weight, Lean Body Mass) and "+ ADD MANUAL VO₂ MAX VALUE" are omitted: ZENO has no flow
+//     that records a dated weight or VO₂ max reading (weight and lean mass come from Apple Health; the
+//     profile's single weight in Settings is a scoring input, not a reading).
+//   - Calories print "kcal", not WHOOP's "Cals": the figure is ACTIVE calories (Apple Health's, else the
+//     strap's estimate), not WHOOP's total burn, and Home's dashboard row and the Strain dive print the
+//     same figure as kcal.
 
 /// The pillar a metric belongs to: the Trends tab's sections and the metric picker's groups.
 enum PulseTrendPillar: String, CaseIterable, Identifiable, Hashable, Sendable {
@@ -98,6 +113,9 @@ enum PulseTrendChartKind: Equatable, Hashable {
     case stacked([PulseTrendPart])
     /// Two lines: hours of sleep against the need (HOURS VS. NEEDED (HOURS)).
     case hoursVsNeed
+    /// Each night a bar from bedtime to wake on a clock axis (TIME IN BED, W and M); the long ranges
+    /// chart the nights' durations.
+    case floating
 }
 
 /// How a period's headline value is aggregated.
@@ -121,6 +139,9 @@ enum PulseTrendSource: Equatable, Hashable, Sendable {
     case restorative(percent: Bool)
     /// Hours asleep with the night's need beside them.
     case hoursVsNeed
+    /// Each night's time in bed and its bed → wake span from ZENO's own sleep sessions (the night the Sleep
+    /// dive prints), an imported in-bed figure winning its day.
+    case timeInBed
     /// The one steps resolver (`StepsResolver`).
     case steps
     /// Active calories: Apple Health's imported figure, else the on-device estimate (Home's tile rule).
@@ -174,7 +195,8 @@ struct PulseTrendMetric: Identifiable, Equatable, Hashable {
     let key: String
     /// "Heart Rate Variability" (the dropdown uppercases it).
     let title: String
-    /// The name inside a sentence: "HRV", "Recovery", "steps".
+    /// The name inside a sentence, always singular so "your average … was" agrees: "HRV", "Recovery",
+    /// "step count", "calorie burn".
     let sentenceName: String
     let symbol: String
     let pillar: PulseTrendPillar
@@ -247,6 +269,25 @@ extension PulseTrendMetric {
         return generic(key)
     }
 
+    /// True when one metric is computed from the other, so their days move together by construction and
+    /// a correlation between them says nothing (WHAT CORRELATES leaves them out). Recovery is scored from
+    /// HRV, resting HR, respiratory rate, the Sleep Performance and skin temperature; Sleep Performance from
+    /// hours vs needed, efficiency, restorative share and consistency; hours vs needed is hours over need;
+    /// time asleep is the time in bed less the time awake.
+    static func derived(_ a: String, _ b: String) -> Bool {
+        (derivedFrom[a]?.contains(b) ?? false) || (derivedFrom[b]?.contains(a) ?? false)
+    }
+
+    private static let derivedFrom: [String: Set<String>] = [
+        "recovery": ["hrv", "rhr", "resp_rate", "sleep_performance", "skin_temp"],
+        "sleep_performance": ["hours_vs_needed_pct", "sleep_total_min", "sleep_efficiency", "restorative_pct",
+                              "restorative_min", "sleep_consistency", "sleep_need_min"],
+        "hours_vs_needed_pct": ["sleep_total_min", "sleep_need_min"],
+        "restorative_pct": ["restorative_min", "sleep_total_min"],
+        "sleep_need_min": ["sleep_debt_min"],
+        "in_bed_min": ["sleep_efficiency", "sleep_total_min"]
+    ]
+
     /// Catalog keys that open a curated metric under another key.
     private static let aliases: [String: String] = [
         "active_kcal": "energy_kcal",
@@ -275,7 +316,7 @@ extension PulseTrendMetric {
 
     static let hoursVsNeed = PulseTrendMetric(
         key: "sleep_total_min", title: String(localized: "Hours vs. Needed (Hours)"),
-        sentenceName: String(localized: "hours of sleep"), symbol: "moon.zzz", pillar: .sleep,
+        sentenceName: String(localized: "time asleep"), symbol: "moon.zzz", pillar: .sleep,
         unit: String(localized: "hr"), format: .duration, scale: .zeroBased, chart: .hoursVsNeed,
         color: PulseTheme.sleep, polarity: .higherIsBetter, chipPolarity: .higherIsBetter,
         aggregation: .average, isRunningTotal: false, showsTypicalRange: false, cta: nil, breakdown: nil,
@@ -291,9 +332,9 @@ extension PulseTrendMetric {
     static let timeInBed = PulseTrendMetric(
         key: "in_bed_min", title: String(localized: "Time in Bed"), sentenceName: String(localized: "time in bed"),
         symbol: "bed.double", pillar: .sleep, unit: String(localized: "hr"), format: .duration,
-        scale: .zeroBased, chart: .bars, color: PulseTheme.sleep, polarity: .neutral, chipPolarity: .neutral,
+        scale: .zeroBased, chart: .floating, color: PulseTheme.sleep, polarity: .neutral, chipPolarity: .neutral,
         aggregation: .average, isRunningTotal: false, showsTypicalRange: false, cta: nil, breakdown: nil,
-        note: nil, explainer: nil, ranges: allRanges, source: .explore(key: "in_bed_min", source: "my-whoop"))
+        note: nil, explainer: nil, ranges: allRanges, source: .timeInBed)
 
     static let sleepConsistency = PulseTrendMetric(
         key: "sleep_consistency", title: String(localized: "Sleep Consistency"),
@@ -426,14 +467,14 @@ extension PulseTrendMetric {
         note: nil, explainer: nil, ranges: allRanges, source: .daily(.strain))
 
     static let steps = PulseTrendMetric(
-        key: "steps", title: String(localized: "Steps"), sentenceName: String(localized: "steps"),
+        key: "steps", title: String(localized: "Steps"), sentenceName: String(localized: "step count"),
         symbol: "figure.walk", pillar: .strain, unit: "", format: .grouped, scale: .zeroBased, chart: .bars,
         color: PulseTheme.strain, polarity: .higherIsBetter, chipPolarity: .higherIsBetter, aggregation: .average,
         isRunningTotal: true, showsTypicalRange: false, cta: .stepsGoal, breakdown: nil, note: nil,
         explainer: nil, ranges: allRanges, source: .steps)
 
     static let calories = PulseTrendMetric(
-        key: "energy_kcal", title: String(localized: "Calories"), sentenceName: String(localized: "calories"),
+        key: "energy_kcal", title: String(localized: "Calories"), sentenceName: String(localized: "calorie burn"),
         symbol: "flame", pillar: .strain, unit: "kcal", format: .grouped, scale: .zeroBased, chart: .bars,
         color: PulseTheme.strain, polarity: .neutral, chipPolarity: .neutral, aggregation: .average,
         isRunningTotal: true, showsTypicalRange: false, cta: nil, breakdown: nil,

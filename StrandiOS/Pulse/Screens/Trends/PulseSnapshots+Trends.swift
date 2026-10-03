@@ -29,9 +29,21 @@ struct PulseTrendSeries: Equatable, Sendable {
     var unit: String?
     /// Values are a signed deviation (skin temperature from its baseline).
     var signed = false
+    /// Days whose value is UNKNOWN rather than zero (a day with an activity logged without heart-rate
+    /// zones): they are absent from `points`, and a week holding one is partial.
+    var unknownDays: Set<String> = []
+    /// TIME IN BED: each night's bed and wake as minutes from its wake day's local midnight.
+    var spans: [String: PulseTrendSpan] = [:]
 
     var earliest: String? { points.first?.day }
     var hasData: Bool { !points.isEmpty }
+}
+
+/// A night's bed → wake span in minutes from its wake day's local midnight: the evening before is
+/// negative ("22:30" is -90), the morning positive ("06:30" is 390). TIME IN BED's floating bars.
+struct PulseTrendSpan: Equatable, Sendable {
+    let bed: Double
+    let wake: Double
 }
 
 /// The ▲▼ chip beside a headline value: "▲ 45% vs. prior week".
@@ -68,6 +80,8 @@ struct PulseTrendLegendItem: Equatable, Identifiable {
 struct PulseTrendChartModel: Equatable {
     enum Mode: Equatable {
         case bars, line, stacked, dualLine
+        /// One bar per day from `Column.range`'s lower to its upper bound (TIME IN BED's bed → wake).
+        case floating
     }
 
     struct Column: Equatable, Identifiable {
@@ -78,9 +92,15 @@ struct PulseTrendChartModel: Equatable {
         var parts: [Double] = []
         /// The dual line's second value (the need).
         var secondary: Double?
+        /// A floating bar's extent on the y axis (bed → wake).
+        var range: ClosedRange<Double>?
         var color: Color
+        /// Over the column (a floating bar: over its top end).
         var label: String?
+        /// The dual line's second label; a floating bar's label under its bottom end.
         var secondaryLabel: String?
+        /// A week holding a day of unknown value: drawn faint and labelled as partial, never as a week.
+        var isPartial = false
     }
 
     struct Tick: Equatable {
@@ -106,6 +126,25 @@ struct PulseTrendChartModel: Equatable {
         let changeLabel: String?
         let color: Color
         let changeColor: Color
+        /// The value label's colour (white, or the series colour when two sets share the chart).
+        var labelColor: Color = PulseTheme.textPrimary
+        /// The value label sits under the line rather than over it (HOURS VS. NEEDED's hours).
+        var labelBelow = false
+    }
+
+    /// A dashed horizontal line with a white pill at the left axis: M's "AVG.", TIME IN BED's average
+    /// bedtime and wake ("20:32" / "04:36").
+    struct Marker: Equatable, Identifiable {
+        let id: String
+        let value: Double
+        let pill: String
+    }
+
+    /// Columns `startIndex...endIndex` drawn faint under a caption (Training Load's building weeks).
+    struct DimmedSpan: Equatable {
+        let startIndex: Int
+        let endIndex: Int
+        let caption: String
     }
 
     /// A stretch of the menstrual-cycle strip under the plot.
@@ -122,6 +161,8 @@ struct PulseTrendChartModel: Equatable {
     var yTicks: [Tick]
     var xLabels: [XLabel]
     var barWidth: CGFloat
+    /// When set, a bar is this fraction of its column's pitch instead of `barWidth` (M's thirty bars).
+    var barFraction: CGFloat?
     var partColors: [Color] = []
     var lineColor: Color
     var secondaryColor: Color?
@@ -138,8 +179,14 @@ struct PulseTrendChartModel: Equatable {
     /// Shown centred when no column has a value.
     var emptyMessage: String?
     let accessibilitySummary: String
+    /// Dashed lines with pills other than M's AVG. (TIME IN BED's average bedtime and wake).
+    var markers: [Marker] = []
+    /// The y axis runs downward: its lower bound at the top (TIME IN BED's clock, bedtime above wake).
+    var invertedY = false
+    /// Columns drawn faint under a caption.
+    var dimmedSpan: DimmedSpan?
 
-    var hasValues: Bool { columns.contains { $0.value != nil } }
+    var hasValues: Bool { columns.contains { $0.value != nil || $0.range != nil } }
 }
 
 /// A breakdown block: "RECOVERY BREAKDOWN (DAYS)", a stacked bar and its rows.
@@ -200,6 +247,15 @@ struct PulseTrendCorrelation: Equatable, Identifiable {
     let symbol: String
     let r: Double
     let n: Int
+}
+
+/// WHAT CORRELATES for one page: the period it scanned and what moved with the metric over it.
+struct PulseTrendCorrelations: Equatable {
+    /// "this period", or for W, whose seven days are too few, "the 30 days to Oct 2".
+    let period: String
+    let rows: [PulseTrendCorrelation]
+    /// The metric has at least `minimumCorrelationDays` readings in the period.
+    let hasEnoughDays: Bool
 }
 
 /// A row of the metric picker.
@@ -278,6 +334,8 @@ struct WeeklyDigestSnapshot: Equatable {
         let score: PulseScore
         let content: PulseDialContent
         let chip: PulseTrendChip?
+        /// The chip as VoiceOver reads it, with the period it compares against ("Sleep, up 4% vs. last week").
+        let chipAccessibility: String?
         let route: PulseRoute
         var id: String { score.rawValue }
     }

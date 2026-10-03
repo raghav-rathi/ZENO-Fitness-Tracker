@@ -17,6 +17,7 @@ struct PulseTrainingLoadView: View {
     @Environment(PulseModel.self) private var model
     @State private var range: PulseTrendMath.Range = .sixMonths
     @State private var snapshot: TrainingLoadSnapshot?
+    @ScaledMetric(relativeTo: .footnote) private var footnoteGlyph = PulseTheme.Trends.footnoteGlyph
 
     init() {
         #if DEBUG
@@ -131,9 +132,10 @@ struct PulseTrainingLoadView: View {
     }
 
     private var rangeControl: some View {
-        PulseSegmentedControl(options: PulseTrainingLoadBuilder.ranges, selection: $range) { $0.segmentTitle }
+        PulseTrendSegments(label: String(localized: "Range"), options: PulseTrainingLoadBuilder.ranges,
+                           selection: $range, title: { $0.segmentTitle }, spoken: { $0.spokenName })
             .frame(width: 180)
-            .accessibilityLabel(String(localized: "Range"))
+            .padding(.trailing, PulseTheme.Trends.rangeColumnTrailing)
     }
 
     private func legend(_ title: String, _ color: Color) -> some View {
@@ -146,19 +148,19 @@ struct PulseTrainingLoadView: View {
         .accessibilityElement(children: .combine)
     }
 
+    /// "i" then the note, set as the Trend View's footnotes are (deep-dives-2026/45).
     private func footnote(_ text: String) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 12) {
+        HStack(alignment: .firstTextBaseline, spacing: PulseTheme.Trends.footnoteGap) {
             Image(systemName: "info")
-                .font(.system(size: 15, weight: .semibold))
+                .font(.system(size: footnoteGlyph, weight: .semibold))
                 .foregroundStyle(PulseTheme.textSecondary)
-                .frame(width: 12)
+                .frame(width: PulseTheme.Trends.footnoteGlyphColumn)
                 .accessibilityHidden(true)
             Text(text)
                 .pulseText(.rowSubline)
                 .foregroundStyle(PulseTheme.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
-        .padding(.leading, 6)
     }
 }
 #endif

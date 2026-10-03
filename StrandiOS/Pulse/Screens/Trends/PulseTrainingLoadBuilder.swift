@@ -70,14 +70,29 @@ enum PulseTrainingLoadBuilder {
             let step = all.count > 7 ? Int((Double(all.count) / 7).rounded(.up)) : 1
             labels = all.enumerated().compactMap { $0.offset % step == 0 ? $0.element : nil }
         }
+        // The model's first six weeks are still settling from its seed (fitness starts at the first two
+        // weeks' average and drifts toward the real level), so they are drawn faint under "Building"
+        // rather than read as a real rise or fall in fitness.
+        var building: PulseTrendChartModel.DimmedSpan?
+        if let start = result.startDay {
+            let established = PulseTrendMath.addDays(start, config.establishedDays - 1)
+            let settling = keys.indices.filter { keys[$0] < established && byDay[keys[$0]] != nil }
+            if let first = settling.first, let last = settling.last {
+                building = .init(startIndex: first, endIndex: last, caption: String(localized: "Building"))
+            }
+        }
+        var summary = latest.map {
+            String(localized: "Training load. Fitness \(PulseFormat.oneDecimal($0.chronicLoad)), fatigue \(PulseFormat.oneDecimal($0.acuteLoad)), form \(signed($0.balance))")
+        } ?? String(localized: "Training load, not enough days yet")
+        if building != nil {
+            summary += ". " + String(localized: "The first six weeks are faint: the model is still building")
+        }
         let chart = PulseTrendChartModel(
             mode: .dualLine, columns: columns, yDomain: domain, yTicks: ticks, xLabels: labels, barWidth: 7,
             lineColor: PulseTheme.textPrimary, secondaryColor: PulseTheme.strain,
             dimmed: false, showsMarkers: false, marksLastPointOnly: false,
             emptyMessage: columns.contains { $0.value != nil } ? nil : String(localized: "No training load yet"),
-            accessibilitySummary: latest.map {
-                String(localized: "Training load. Fitness \(PulseFormat.oneDecimal($0.chronicLoad)), fatigue \(PulseFormat.oneDecimal($0.acuteLoad)), form \(signed($0.balance))")
-            } ?? String(localized: "Training load, not enough days yet"))
+            accessibilitySummary: summary, dimmedSpan: building)
         let stats: [TrainingLoadSnapshot.Stat] = [
             .init(id: "ctl", title: String(localized: "Fitness (CTL)"), value: latest.map { PulseFormat.oneDecimal($0.chronicLoad) } ?? "--"),
             .init(id: "atl", title: String(localized: "Fatigue (ATL)"), value: latest.map { PulseFormat.oneDecimal($0.acuteLoad) } ?? "--"),

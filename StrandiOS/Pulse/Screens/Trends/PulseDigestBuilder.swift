@@ -86,28 +86,29 @@ enum PulseDigestBuilder {
         }
     }
 
+    /// A pillar's period against the one before, by the Trend View's one rule (`PulseTrendMath.compare`):
+    /// Sleep and Recovery in whole percent, Strain in tenths of a point.
+    static func comparison(_ score: PulseScore, _ pair: Pair) -> PulseTrendMath.Comparison? {
+        guard let current = pair.current, let previous = pair.previous else { return nil }
+        return score == .strain
+            ? PulseTrendMath.compare(current, with: previous, step: 0.1, absolute: true)
+            : PulseTrendMath.compare(current, with: previous, step: 1)
+    }
+
+    /// "vs. last week" / "vs. last month".
+    static func phrase(_ mode: WeeklyDigestSnapshot.Mode) -> String {
+        mode == .week ? String(localized: "vs. last week") : String(localized: "vs. last month")
+    }
+
     /// "▲ 4% vs. last week": a percent for Sleep and Recovery, absolute points for Strain; grey for Recovery
-    /// and Strain as on the Trend View, "● 0%" when the two print the same.
+    /// and Strain as on the Trend View, "● 0%" ("● 0.0") when unchanged.
     static func chip(_ score: PulseScore, _ pair: Pair, mode: WeeklyDigestSnapshot.Mode,
                      compact: Bool = false) -> PulseTrendChip? {
-        guard let current = pair.current, let previous = pair.previous,
-              let change = PulseTrendMath.change(current: current, previous: previous) else { return nil }
-        let phrase = mode == .week ? String(localized: "vs. last week") : String(localized: "vs. last month")
-        let magnitude: String
-        let delta: Double
-        switch score {
-        case .strain:
-            let shown = PulseFormat.oneDecimal(abs(change.delta))
-            magnitude = shown
-            delta = shown == PulseFormat.oneDecimal(0) ? 0 : change.delta
-        case .sleep, .recovery:
-            let pct = Int(abs(change.percent ?? 0).rounded())
-            magnitude = "\(pct)%"
-            delta = pct == 0 || PulseFormat.whole(current) == PulseFormat.whole(previous) ? 0 : change.delta
-        }
+        guard let c = comparison(score, pair) else { return nil }
+        let magnitude = c.percent.map { "\($0)%" } ?? PulseFormat.oneDecimal(c.magnitude)
         let polarity: PulseMetricPolarity = score == .sleep ? .higherIsBetter : .neutral
-        return PulseTrendChip(text: compact ? magnitude : "\(magnitude) \(phrase)",
-                              trend: PulseTrend(delta: delta, polarity: polarity))
+        return PulseTrendChip(text: compact ? magnitude : "\(magnitude) \(phrase(mode))",
+                              trend: PulseTrend(delta: c.delta, polarity: polarity))
     }
 
     /// A pillar's ring content: Sleep and Recovery in percent (Recovery in its band colour), Strain on 0–21.
@@ -143,9 +144,10 @@ enum PulseDigestBuilder {
 
     // MARK: Trends tab
 
-    /// The metrics every Trends tab shows, with or without readings; the others appear once they have one.
+    /// The metrics every Trends tab shows, with or without readings, so each of the five sections is there
+    /// from the first day (§3.35); the others appear once they have one.
     static let coreMetrics: Set<String> = ["sleep_performance", "sleep_total_min", "recovery", "hrv", "rhr",
-                                           "strain", "steps", "stress"]
+                                           "strain", "steps", "stress", "weight"]
 
     static func tab(seq: Int, today: String, series: [String: PulseTrendSeries]) -> TrendsTabSnapshot {
         let empty = PulseTrendSeries()
@@ -187,21 +189,31 @@ enum PulseDigestBuilder {
         func spokenValue(_ v: Double) -> String { "\(format.text(v)) \(unit)" }
         guard let latest = s.points.last else {
             guard coreMetrics.contains(m.key) else { return nil }
+            // Say where the readings would come from when it is not the strap.
+            let caption: String
+            if case .explore(_, let source) = m.source, source == "apple-health" {
+                caption = String(localized: "No readings yet · from Apple Health")
+            } else {
+                caption = String(localized: "No readings yet")
+            }
             return .init(id: m.key, title: m.rowTitle, symbol: m.symbol, value: nil, unit: "",
-                         caption: String(localized: "No readings yet"), trend: nil, baseline: nil, spark: spark,
-                         color: color, accessibility: String(localized: "\(m.rowTitle), no readings yet"))
+                         caption: caption, trend: nil, baseline: nil, spark: spark,
+                         color: color, accessibility: "\(m.rowTitle), \(caption)")
         }
         let history = s.points.map { (day: $0.day, value: $0.value) }
 
         if m.aggregation == .weeklyTotal {
-            // Minutes from logged activities: the last seven days' total against the four weeks before.
+            // Minutes from logged activities: the last seven days' total against the four weeks before, the
+            // whole weeks only. Seven days holding a day of unknown zone time total a lower bound, so they
+            // get no arrow.
             guard let w = PulseTrendMath.window(.week, anchor: today, earliest: s.earliest) else { return nil }
             let total = PulseTrendMath.points(s.points, in: w).reduce(0) { $0 + $1.value }
             let before = PulseTrendMath.Window(start: PulseTrendMath.addDays(w.start, -28),
                                                end: PulseTrendMath.addDays(w.start, -1), page: 0, dayCount: 28,
                                                hasOlder: false)
-            let reference = PulseTrendMath.averageWeeklyTotal(s.points, in: before)
-            let trend = reference.map { ref in
+            let reference = PulseTrendMath.averageWeeklyTotal(s.points, in: before, unknownDays: s.unknownDays)
+            let partial = w.dayKeys.contains(where: s.unknownDays.contains)
+            let trend = partial ? nil : reference.map { ref in
                 PulseTrend(delta: format.text(total) == format.text(ref) ? 0 : total - ref, polarity: m.polarity)
             }
             return .init(id: m.key, title: m.rowTitle, symbol: m.symbol, value: text(total), unit: unit,
@@ -262,8 +274,12 @@ enum PulseDigestBuilder {
             (.recovery, period.recovery, PulseTrendMetric.recovery.key),
             (.strain, period.strain, PulseTrendMetric.dayStrain.key)
         ].map { score, pair, key in
-            .init(score: score, content: ring(score, value: pair.current), chip: chip(score, pair, mode: mode, compact: true),
-                  route: .trendView(metric: key))
+            let pillarChip = Self.chip(score, pair, mode: mode, compact: true)
+            return .init(score: score, content: ring(score, value: pair.current), chip: pillarChip,
+                         chipAccessibility: pillarChip.map {
+                             "\(score.displayName), \($0.trend.accessibilityDescription), \($0.text) \(phrase(mode))"
+                         },
+                         route: .trendView(metric: key))
         }
         let hasData = pillars.contains { !$0.content.isPlaceholder }
         let cards = [
@@ -306,7 +322,9 @@ enum PulseDigestBuilder {
         }
         let domain: ClosedRange<Double> = m.key == "strain" ? 0...21 : 0...100
         let grid: [Double] = m.key == "strain" ? [0, 5.25, 10.5, 15.75, 21] : [0, 25, 50, 75, 100]
-        let highlight = w.contains(today) ? today : keys.last(where: { byDay[$0] != nil })
+        // A month's bars are a 10 pt pitch, and the shared chart's ≈29 pt highlight column would cover three
+        // days: only a week highlights its day.
+        let highlight = mode == .month ? nil : (w.contains(today) ? today : keys.last(where: { byDay[$0] != nil }))
         return .init(id: m.key, title: m.title, data: data, yDomain: domain, gridValues: grid, highlightID: highlight,
                      route: .trendView(metric: m.key))
     }
@@ -387,8 +405,9 @@ enum PulseDigestBuilder {
         }
         let list = shown.map { score, v in "\(score.displayName) \(valueText(score, v))" }
         parts.append(String(localized: "Your averages \(span): \(list.joined(separator: ", "))."))
-        if let c = p.recovery.current, let b = p.recovery.previous {
-            switch PulseTrendMath.relation(c.rounded(), reference: b.rounded()) {
+        // Judged by the chip's own rule, so "held level" sits only beside a "● 0%".
+        if let b = p.recovery.previous, let c = comparison(.recovery, p.recovery) {
+            switch c.relation {
             case .above: parts.append(String(localized: "Recovery ran higher than the period before (\(valueText(.recovery, b)))."))
             case .below: parts.append(String(localized: "Recovery ran lower than the period before (\(valueText(.recovery, b)))."))
             case .within: parts.append(String(localized: "Recovery held level with the period before."))

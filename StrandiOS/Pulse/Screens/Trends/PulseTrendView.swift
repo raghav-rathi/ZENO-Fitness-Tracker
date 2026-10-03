@@ -11,14 +11,16 @@ import StrandAnalytics
 /// overlay is on. The Coach button floats at the bottom right.
 ///
 /// Every number comes from `TrendViewSnapshot`, built off the main actor from the metric's resolved
-/// series (`PulseSnapshotBuilder.trendView`). The window is anchored on today whatever day Home shows.
-/// Owned by group "trends".
+/// series (`PulseSnapshotBuilder.trendView`). The latest window ends today, or `anchorOffset` days earlier
+/// when the page is opened for a past day (`PulseTrendDayRoute`). Owned by group "trends".
 struct PulseTrendView: View {
     /// Existing entry points (My Dashboard rows, STRAIN & RECOVERY) open this screen instead of the classic
     /// metric detail once it is true (see `PulseRoute.forExistingEntryPoint`).
     static let isRebuilt = true
     /// The `MetricCatalog` key of the metric to chart first.
     let metric: String
+    /// Days before today the latest window ends on (0: today).
+    let anchorOffset: Int
 
     @Environment(PulseModel.self) private var model
     @Environment(\.pulseNavigator) private var navigator
@@ -27,23 +29,28 @@ struct PulseTrendView: View {
     @State private var page: Int
     @State private var snapshot: TrendViewSnapshot?
     /// WHAT CORRELATES, loaded after the page (it scans every other metric).
-    @State private var correlations: [PulseTrendCorrelation]?
+    @State private var correlations: PulseTrendCorrelations?
     @State private var showsPicker = false
     @AppStorage(UnitPrefs.systemKey) private var unitSystemRaw = UnitSystem.metric.rawValue
     @AppStorage(UnitPrefs.temperatureKey) private var temperatureRaw = ""
     @AppStorage(AppModel.cycleAwarenessKey) private var cycleAwareness = false
+    @ScaledMetric(relativeTo: .body) private var iconSize = PulseTheme.Trends.metricIcon
+    @ScaledMetric(relativeTo: .body) private var chevronSize = PulseTheme.Trends.dropdownChevron
 
-    init(metric: String) {
+    init(metric: String, anchorOffset: Int = 0) {
         self.metric = metric
         _key = State(initialValue: metric)
         var range = PulseTrendMath.Range.week
         var page = 0
         var picker = false
+        var offset = max(0, anchorOffset)
         #if DEBUG
         range = PulseTrendDebugLaunch.range ?? range
         page = PulseTrendDebugLaunch.page ?? page
         picker = PulseTrendDebugLaunch.opensPicker
+        offset = PulseTrendDebugLaunch.anchorOffset ?? offset
         #endif
+        self.anchorOffset = offset
         _range = State(initialValue: range)
         _page = State(initialValue: page)
         _showsPicker = State(initialValue: picker)
@@ -58,14 +65,14 @@ struct PulseTrendView: View {
     private var resolved: PulseTrendMetric? { PulseTrendMetric.resolve(key) }
 
     private var loadKey: String {
-        "\(model.healthKey)|\(key)|\(range.rawValue)|\(page)|\(units.id)|\(cycleAwareness)"
+        "\(model.healthKey)|\(key)|\(range.rawValue)|\(page)|\(units.id)|\(cycleAwareness)|\(anchorOffset)"
     }
 
     var body: some View {
         PulseScreenScaffold(title: String(localized: "Trend View"), coach: .button, coachSeed: coachSeed,
                             spacing: 0, ready: snapshot != nil) {
             dropdown
-                .padding(.top, 18)
+                .padding(.top, 17)
             if resolved == nil {
                 unavailable
                     .padding(.top, 24)
@@ -101,16 +108,23 @@ struct PulseTrendView: View {
     private func load() async {
         guard resolved != nil else { return }
         let key = self.key, range = self.range, page = self.page, units = self.units, cycle = cycleAwareness
+        let offset = anchorOffset
         if let s = await model.build(dayOffset: 0, { builder, request in
-            await builder.trendView(request, key: key, range: range, page: page, units: units, cycleOverlay: cycle)
+            await builder.trendView(request, key: key, range: range, page: page, units: units,
+                                    cycleOverlay: cycle, anchorOffset: offset)
         }) {
             snapshot = s
-            // The builder clamps a page past the history; keep the state in step with what is shown.
-            if s.page != self.page { self.page = s.page }
-            if s.range != self.range { self.range = s.range }
+            // The builder clamps a page past the history; keep the state in step with what is shown. Only
+            // once the series has a reading: a build that runs before the store is read (at launch, or a
+            // moment while a refresh resets it) has no history to clamp against and would reset the page.
+            if s.hasData {
+                if s.page != self.page { self.page = s.page }
+                if s.range != self.range { self.range = s.range }
+            }
         }
         if let rows = await model.build(dayOffset: 0, { builder, request in
-            await builder.trendCorrelations(request, key: key, range: range, page: page, units: units)
+            await builder.trendCorrelations(request, key: key, range: range, page: page, units: units,
+                                            anchorOffset: offset)
         }) {
             correlations = rows
         }
@@ -121,11 +135,19 @@ struct PulseTrendView: View {
             guard new != range else { return }
             range = new
             page = 0
+            correlations = nil
         })
     }
 
-    private func back() { page += 1 }
-    private func forward() { page = max(0, page - 1) }
+    private func back() {
+        page += 1
+        correlations = nil
+    }
+
+    private func forward() {
+        page = max(0, page - 1)
+        correlations = nil
+    }
 
     private var coachSeed: String? {
         guard let s = snapshot else { return nil }
@@ -136,13 +158,13 @@ struct PulseTrendView: View {
 
     // MARK: Pieces
 
-    /// The metric dropdown: a full-width card (≈54 pt, radius 12) with the metric's icon, its name in
+    /// The metric dropdown: a full-width card (56 pt, radius 12) with the metric's icon, its name in
     /// 13 pt Bold caps and "⌄" at the right. It opens the metric picker.
     private var dropdown: some View {
         Button { showsPicker = true } label: {
             HStack(spacing: 14) {
                 Image(systemName: resolved?.symbol ?? "chart.xyaxis.line")
-                    .font(.system(size: 19, weight: .light))
+                    .font(.system(size: iconSize, weight: .light))
                     .foregroundStyle(PulseTheme.textTertiary)
                     .frame(width: 26)
                     .accessibilityHidden(true)
@@ -153,7 +175,7 @@ struct PulseTrendView: View {
                     .minimumScaleFactor(0.8)
                 Spacer(minLength: 8)
                 Image(systemName: "chevron.down")
-                    .font(.system(size: 15, weight: .bold))
+                    .font(.system(size: chevronSize, weight: .bold))
                     .foregroundStyle(PulseTheme.textPrimary)
                     .accessibilityHidden(true)
             }
@@ -185,18 +207,19 @@ struct PulseTrendView: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 10) {
-                    PulseSkeletonBlock(height: 12, width: 64, radius: 4)
-                    PulseSkeletonBlock(height: 36, width: 96, radius: 6)
-                    PulseSkeletonBlock(height: 18, width: 132, radius: 4)
+                    PulseSkeletonBlock(height: 12, width: 64, radius: PulseTheme.Radius.badge)
+                    PulseSkeletonBlock(height: 36, width: 96, radius: PulseTheme.Radius.toggle)
+                    PulseSkeletonBlock(height: 18, width: 132, radius: PulseTheme.Radius.badge)
                 }
                 Spacer()
                 VStack(alignment: .trailing, spacing: 18) {
                     PulseSkeletonBlock(height: 36, width: PulseTheme.Trends.rangeColumnWidth, radius: PulseTheme.Radius.control)
-                    PulseSkeletonBlock(height: 16, width: 150, radius: 4)
+                    PulseSkeletonBlock(height: 16, width: 150, radius: PulseTheme.Radius.badge)
                 }
+                .padding(.trailing, PulseTheme.Trends.rangeColumnTrailing)
             }
             .padding(.top, 31)
-            PulseSkeletonBlock(height: 44, radius: 6)
+            PulseSkeletonBlock(height: 44, radius: PulseTheme.Radius.toggle)
                 .padding(.top, 30)
             PulseSkeletonBlock(height: 280)
                 .padding(.top, 32)
@@ -206,15 +229,29 @@ struct PulseTrendView: View {
     }
 }
 
+/// The Trend View for a metric with its latest window ending on an earlier day: what a My Dashboard row
+/// opens while Home shows a past day, so the page shows that day's period rather than today's.
+///
+///     PulseLink(PulseTrendDayRoute(metric: "hrv", dayOffset: model.dayOffset).route) { … }
+struct PulseTrendDayRoute: PulseScreenRoute {
+    let metric: String
+    let dayOffset: Int
+    var view: some View { PulseTrendView(metric: metric, anchorOffset: dayOffset) }
+}
+
 // MARK: - The page
 
 /// Everything below the dropdown, drawn from one snapshot.
 private struct PulseTrendPage: View {
     let snapshot: TrendViewSnapshot
-    let correlations: [PulseTrendCorrelation]?
+    let correlations: PulseTrendCorrelations?
     @Binding var range: PulseTrendMath.Range
     let onBack: () -> Void
     let onForward: () -> Void
+
+    @ScaledMetric(relativeTo: .footnote) private var footnoteGlyph = PulseTheme.Trends.footnoteGlyph
+    @ScaledMetric(relativeTo: .body) private var cycleGlyph = PulseTheme.Trends.cycleNoteGlyph
+    @ScaledMetric(relativeTo: .body) private var ctaIcon = PulseTheme.Trends.ctaIcon
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -225,6 +262,7 @@ private struct PulseTrendPage: View {
                     .pulseText(.trendInsight)
                     .foregroundStyle(PulseTheme.textPrimary)
                     .fixedSize(horizontal: false, vertical: true)
+                    .padding(.leading, PulseTheme.Trends.insightLeading)
                     .padding(.top, 30)
             }
             VStack(alignment: .trailing, spacing: 12) {
@@ -261,7 +299,7 @@ private struct PulseTrendPage: View {
                 .padding(.top, 28)
             }
             if let correlations, snapshot.hasData {
-                PulseTrendCorrelationsCard(rows: correlations, metric: snapshot.metric, range: snapshot.range)
+                PulseTrendCorrelationsCard(scan: correlations, metric: snapshot.metric)
                     .padding(.top, 28)
             }
         }
@@ -269,8 +307,8 @@ private struct PulseTrendPage: View {
 
     // MARK: Header
 
-    /// AVERAGE / value / chip at the left; W | M | 6M | 1Y | ALL and the range pager at the right. At large
-    /// text sizes the two stack.
+    /// AVERAGE / value / chip at the left; W | M | 6M | 1Y | ALL and the range pager at the right, ending
+    /// 24 pt from the screen edge. At large text sizes the two stack.
     private var header: some View {
         ViewThatFits(in: .horizontal) {
             HStack(alignment: .top, spacing: 10) {
@@ -287,7 +325,8 @@ private struct PulseTrendPage: View {
 
     @ViewBuilder
     private var headlines: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        // HOURS VS. NEEDED stacks its two compact values tight (deep-dives-2026/21).
+        VStack(alignment: .leading, spacing: snapshot.headlines.count > 1 ? 4 : 14) {
             ForEach(snapshot.headlines) { item in
                 if item.compact { compactHeadline(item) } else { headline(item) }
             }
@@ -300,14 +339,15 @@ private struct PulseTrendPage: View {
             Text(item.label)
                 .pulseText(.label)
                 .foregroundStyle(PulseTheme.textSecondary)
-            // WHOOP sets the unit bold, about 0.6 of the value and a space apart ("74 %", "50 ms").
+            // WHOOP sets "%" large and bold beside the value ("74 %", ≈24 pt) and a word unit small and
+            // medium ("50 ms", "8:03 hr", ≈15 pt), each a space apart (deep-dives-2026/37, 47).
             HStack(alignment: .firstTextBaseline, spacing: 5) {
                 Text(item.value)
                     .pulseText(.largeValue)
                     .foregroundStyle(item.valueColor)
                 if !item.unit.isEmpty {
                     Text(item.unit)
-                        .pulseText(.dialUnit)
+                        .pulseText(item.unit == "%" ? .mediumValue : .rowText)
                         .foregroundStyle(PulseTheme.textPrimary)
                 }
             }
@@ -322,7 +362,7 @@ private struct PulseTrendPage: View {
         .accessibilityLabel(item.accessibility + (item.chip.map { ", \($0.text), \($0.trend.accessibilityDescription)" } ?? ""))
     }
 
-    /// HOURS VS. NEEDED's stacked values: "7:40 hr ▼1%" over "AVG. NEED".
+    /// HOURS VS. NEEDED's stacked values: "7:40 ▼1%" over "AVG. NEED", no unit (deep-dives-2026/21).
     private func compactHeadline(_ item: PulseTrendHeadline) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
@@ -340,37 +380,43 @@ private struct PulseTrendPage: View {
 
     private var rangeColumn: some View {
         VStack(alignment: .trailing, spacing: 22) {
-            PulseSegmentedControl(options: snapshot.metric.ranges, selection: $range) { $0.segmentTitle }
+            PulseTrendSegments(label: String(localized: "Range"), options: snapshot.metric.ranges,
+                               selection: $range, title: { $0.segmentTitle }, spoken: { $0.spokenName })
                 .frame(width: PulseTheme.Trends.rangeColumnWidth)
-                .accessibilityLabel(String(localized: "Range"))
             PulseTrendRangePager(pager: snapshot.pager, onBack: onBack, onForward: onForward)
                 .frame(width: PulseTheme.Trends.rangeColumnWidth)
         }
+        .padding(.trailing, PulseTheme.Trends.rangeColumnTrailing)
     }
 
     // MARK: Legend, footnotes, rows
 
+    /// The chart's legend, right-aligned and ending with the band; with the cycle overlay's phases in it
+    /// the legend wraps from the left instead (deep-dives-2026/32, 38; /30's two stages stay right).
     private var legend: some View {
-        PulseWordFlow(alignment: .trailing, spacing: 16, lineSpacing: 10) {
+        let fromLeft = snapshot.legend.contains { $0.swatch == .dot }
+        return PulseWordFlow(alignment: fromLeft ? .leading : .trailing, spacing: 16, lineSpacing: 10) {
             ForEach(snapshot.legend) { item in
-                HStack(spacing: 7) {
+                HStack(spacing: PulseTheme.Trends.legendSwatchGap) {
                     swatch(item)
                     Text(item.title)
                         .pulseText(.label)
-                        .foregroundStyle(PulseTheme.textSecondary)
+                        .foregroundStyle(PulseTheme.textPrimary)
                         .lineLimit(1)
                 }
                 .accessibilityElement(children: .combine)
             }
         }
-        .frame(maxWidth: .infinity, alignment: .trailing)
+        .padding(.trailing, fromLeft ? 0 : PulseTheme.Trends.legendTrailing)
+        .frame(maxWidth: .infinity, alignment: fromLeft ? .leading : .trailing)
     }
 
     @ViewBuilder
     private func swatch(_ item: PulseTrendLegendItem) -> some View {
+        let side = PulseTheme.Trends.legendSwatch
         switch item.swatch {
         case .square:
-            RoundedRectangle(cornerRadius: 1.5).fill(item.color).frame(width: 10, height: 10)
+            Rectangle().fill(item.color).frame(width: side, height: side)
         case .dot:
             Capsule().fill(item.color).frame(width: 14, height: 7)
         case .ring:
@@ -378,36 +424,37 @@ private struct PulseTrendPage: View {
         }
     }
 
+    /// "i" then the note, the text starting ≈36 pt from the screen edge (deep-dives-2026/45).
     private func footnote(_ text: String) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 12) {
+        HStack(alignment: .firstTextBaseline, spacing: PulseTheme.Trends.footnoteGap) {
             Image(systemName: "info")
-                .font(.system(size: 15, weight: .semibold))
+                .font(.system(size: footnoteGlyph, weight: .semibold))
                 .foregroundStyle(PulseTheme.textSecondary)
-                .frame(width: 12)
+                .frame(width: PulseTheme.Trends.footnoteGlyphColumn)
                 .accessibilityHidden(true)
             Text(text)
                 .pulseText(.rowSubline)
                 .foregroundStyle(PulseTheme.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
-        .padding(.leading, 6)
     }
 
+    /// The cycle overlay's note: recovery blue on #1D2B36 (deep-dives-2026/38).
     private var cycleNote: some View {
         HStack(alignment: .center, spacing: 16) {
             Image(systemName: "info")
-                .font(.system(size: 17, weight: .semibold))
-                .foregroundStyle(PulseTheme.Activity.infoBannerText)
+                .font(.system(size: cycleGlyph, weight: .semibold))
+                .foregroundStyle(PulseTheme.recoveryBlue)
                 .accessibilityHidden(true)
             Text(String(localized: "See patterns in your trends data across your menstrual cycle. Phases follow your nightly temperature; menstrual days are the five from each period start you log. You can turn cycle awareness off in Automations at any time."))
                 .pulseText(.body)
-                .foregroundStyle(PulseTheme.Activity.infoBannerText)
+                .foregroundStyle(PulseTheme.recoveryBlue)
                 .fixedSize(horizontal: false, vertical: true)
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(RoundedRectangle(cornerRadius: PulseTheme.Radius.card, style: .circular)
-            .fill(PulseTheme.Activity.infoBannerFill.opacity(0.6)))
+            .fill(PulseTheme.Trends.cycleNoteFill))
     }
 
     private func ctaRow(_ cta: PulseTrendCTA) -> some View {
@@ -415,7 +462,7 @@ private struct PulseTrendPage: View {
         return PulseLink(route) {
             HStack(spacing: 16) {
                 Image(systemName: symbol)
-                    .font(.system(size: 20, weight: .light))
+                    .font(.system(size: ctaIcon, weight: .light))
                     .foregroundStyle(PulseTheme.textSecondary)
                     .frame(width: 26)
                     .accessibilityHidden(true)
@@ -449,35 +496,62 @@ private struct PulseTrendPage: View {
     }
 }
 
+// MARK: - Range control
+
+/// The shared segmented control with a spoken name per segment. `PulseSegmentedControl` is a row of plain
+/// buttons titled "W", "6M"; VoiceOver gets a picker in its place, so each segment reads "Week", "6 months"
+/// and the control as a whole carries its own label instead of lending it to every segment.
+struct PulseTrendSegments<Value: Hashable>: View {
+    let label: String
+    let options: [Value]
+    @Binding var selection: Value
+    let title: (Value) -> String
+    let spoken: (Value) -> String
+
+    var body: some View {
+        PulseSegmentedControl(options: options, selection: $selection, title: title)
+            .accessibilityRepresentation {
+                Picker(label, selection: $selection) {
+                    ForEach(options, id: \.self) { option in
+                        Text(spoken(option)).tag(option)
+                    }
+                }
+                .pickerStyle(.segmented)
+            }
+    }
+}
+
 // MARK: - What correlates
 
-/// WHAT CORRELATES (§3.12 [Z]): the other metrics that move with this one over the page's period, each
-/// opening its own Trend View. Pearson r on the days both have a reading; |r| ≥ 0.30 on 10 or more days.
+/// WHAT CORRELATES (§3.12 [Z]): the other metrics that move with this one over the page's period (W: the
+/// 30 days to its end), each opening its own Trend View. Pearson r on the days both have a reading;
+/// |r| ≥ 0.30 on 10 or more days; a metric computed from this one is left out.
 private struct PulseTrendCorrelationsCard: View {
-    let rows: [PulseTrendCorrelation]
+    let scan: PulseTrendCorrelations
     let metric: PulseTrendMetric
-    let range: PulseTrendMath.Range
+
+    @ScaledMetric(relativeTo: .body) private var iconSize = PulseTheme.Trends.rowIcon
 
     var body: some View {
         PulseCard {
             VStack(alignment: .leading, spacing: 0) {
                 PulseCardTitle(String(localized: "What correlates"))
-                Text(String(localized: "Metrics whose days moved with \(metric.sentenceName) over this period"))
+                Text(String(localized: "Metrics whose days moved with \(metric.sentenceName) over \(scan.period)"))
                     .pulseText(.secondary)
                     .foregroundStyle(PulseTheme.textTertiary)
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.top, 4)
-                if rows.isEmpty {
-                    Text(range == .week
-                         ? String(localized: "A week is too short to tell. Try M or a longer range.")
-                         : String(localized: "Nothing moved clearly with \(metric.sentenceName) over this period."))
+                if scan.rows.isEmpty {
+                    Text(scan.hasEnoughDays
+                         ? String(localized: "Nothing moved clearly with \(metric.sentenceName) over \(scan.period).")
+                         : String(localized: "Too few days with \(metric.sentenceName) readings over \(scan.period) to tell yet."))
                         .pulseText(.body)
                         .foregroundStyle(PulseTheme.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
                         .padding(.top, 12)
                 } else {
                     VStack(spacing: 0) {
-                        ForEach(Array(rows.enumerated()), id: \.element.id) { index, row in
+                        ForEach(Array(scan.rows.enumerated()), id: \.element.id) { index, row in
                             if index > 0 { PulseDivider() }
                             PulseLink(.trendView(metric: row.id)) { line(row) }
                                 .buttonStyle(PulsePressStyle())
@@ -492,7 +566,7 @@ private struct PulseTrendCorrelationsCard: View {
     private func line(_ row: PulseTrendCorrelation) -> some View {
         HStack(spacing: 14) {
             Image(systemName: row.symbol)
-                .font(.system(size: 18, weight: .regular))
+                .font(.system(size: iconSize, weight: .regular))
                 .foregroundStyle(PulseTheme.textTertiary)
                 .frame(width: 22)
                 .accessibilityHidden(true)
@@ -528,6 +602,8 @@ struct PulseTrendRangePager: View {
     let onBack: () -> Void
     let onForward: () -> Void
 
+    @ScaledMetric(relativeTo: .caption) private var chevronSize = PulseTheme.Trends.pagerChevron
+
     var body: some View {
         HStack(spacing: 0) {
             chevron("chevron.left", enabled: pager.canGoBack, label: String(localized: "Previous period"), action: onBack)
@@ -546,7 +622,7 @@ struct PulseTrendRangePager: View {
     private func chevron(_ symbol: String, enabled: Bool, label: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: symbol)
-                .font(.system(size: 16, weight: .bold))
+                .font(.system(size: chevronSize, weight: .bold))
                 .foregroundStyle(enabled ? PulseTheme.textPrimary : PulseTheme.textDisabled)
                 .frame(width: 22, height: 24)
                 .contentShape(Rectangle().inset(by: -11))
@@ -559,8 +635,9 @@ struct PulseTrendRangePager: View {
 
 // MARK: - Breakdown
 
-/// "RECOVERY BREAKDOWN (DAYS)": the title, a 12 pt stacked bar with 3 pt gaps, then a row per band: a
-/// square swatch, the count ("11x") or time ("0:30"), and the band's name and range in grey.
+/// "RECOVERY BREAKDOWN (DAYS)": the title, a 12 pt stacked bar with 3 pt gaps, then a row per band: an 8 pt
+/// square swatch, the count ("11x") or time ("0:30") in a column as wide as the widest, and the band's name
+/// and range in grey. The whole block sits 8 pt inside the page margin (deep-dives-2026/44–47).
 struct PulseTrendBreakdownView: View {
     let breakdown: PulseTrendBreakdown
 
@@ -597,16 +674,22 @@ struct PulseTrendBreakdownView: View {
                         Rectangle()
                             .fill(row.color)
                             .frame(width: PulseTheme.Trends.breakdownSwatch, height: PulseTheme.Trends.breakdownSwatch)
-                            .alignmentGuide(.firstTextBaseline) { d in d[.bottom] }
-                        Text(row.amount)
-                            .pulseText(.rowValue)
-                            .foregroundStyle(PulseTheme.textPrimary)
-                            .frame(minWidth: 44, alignment: .leading)
-                            .padding(.leading, 12)
+                            // Centred on the amount's caps, as the captures set it.
+                            .alignmentGuide(.firstTextBaseline) { d in d[.bottom] + 2 }
+                        // Every row's amount column is as wide as the widest amount, so the names line up.
+                        ZStack(alignment: .leading) {
+                            ForEach(breakdown.rows) { other in
+                                Text(other.amount).pulseText(.rowValue).hidden()
+                            }
+                            Text(row.amount)
+                                .pulseText(.rowValue)
+                                .foregroundStyle(PulseTheme.textPrimary)
+                        }
+                        .padding(.leading, PulseTheme.Trends.breakdownSwatchGap)
                         Text(row.range.isEmpty ? row.name : "\(row.name) \(row.range)")
                             .pulseText(.subtitle)
                             .foregroundStyle(PulseTheme.textSecondary)
-                            .padding(.leading, 6)
+                            .padding(.leading, PulseTheme.Trends.breakdownNameGap)
                     }
                     .frame(minHeight: PulseTheme.Trends.breakdownRowPitch)
                     .accessibilityElement(children: .ignore)
@@ -615,6 +698,7 @@ struct PulseTrendBreakdownView: View {
             }
             .padding(.top, 6)
         }
+        .padding(.horizontal, PulseTheme.Trends.breakdownInset)
     }
 }
 
@@ -671,6 +755,10 @@ enum PulseTrendDebugLaunch {
         default: return nil
         }
     }
+
+    /// `--trend-anchor N`: open the Trend View route with its latest window ending N days back, as a past
+    /// day's dashboard row would (`PulseTrendDayRoute`).
+    static var anchorOffset: Int? { value("--trend-anchor").flatMap(Int.init) }
 }
 #endif
 #endif
