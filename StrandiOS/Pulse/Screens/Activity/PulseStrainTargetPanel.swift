@@ -534,6 +534,8 @@ struct PulseTrainingStateView: View {
                 legend(String(localized: "Estimated day strain*"), PulseFormat.oneDecimal(estimated),
                        swatch: AnyView(splitSwatch))
             }
+            // Columns as tall as the tallest, so the three values share one line however the captions wrap.
+            .fixedSize(horizontal: false, vertical: true)
             VStack(alignment: .leading, spacing: 6) {
                 Text(String(localized: "Day Strain"))
                     .activityText(.panelChartTitle)
@@ -562,11 +564,9 @@ struct PulseTrainingStateView: View {
     private func legend(_ title: String, _ value: String, swatch: AnyView) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             swatch.frame(width: 20, height: 20)
-            Text(title)
-                .activityText(.panelLegend)
+            PulseActivityWordWrap(title, style: .panelLegend)
                 .foregroundStyle(PulseActivityStyle.panelInkLegend)
-                .fixedSize(horizontal: false, vertical: true)
-                .frame(minHeight: 30, alignment: .topLeading)
+                .frame(maxWidth: .infinity, minHeight: 30, maxHeight: .infinity, alignment: .topLeading)
             Text(value)
                 .font(PulseType.numeral(32))
                 .foregroundStyle(PulseActivityStyle.panelInk)

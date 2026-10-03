@@ -270,6 +270,36 @@ private struct PulseActivityNumeralModifier: ViewModifier {
     }
 }
 
+/// `PulseWordWrapText` for the group's own styles: one line when it fits, else wrapped between words only,
+/// a word too wide for the line shrinking rather than splitting (DR §2: never "ESTIMATE / D").
+struct PulseActivityWordWrap: View {
+    let text: String
+    let style: PulseActivityTextStyle
+
+    init(_ text: String, style: PulseActivityTextStyle) {
+        self.text = text
+        self.style = style
+    }
+
+    var body: some View {
+        ViewThatFits(in: .horizontal) {
+            Text(text)
+                .activityText(style)
+                .lineLimit(1)
+            PulseWordFlow(alignment: .leading, spacing: style.spec.size * 0.3, lineSpacing: 2) {
+                ForEach(Array(text.split(separator: " ").map(String.init).enumerated()), id: \.offset) { _, word in
+                    Text(word)
+                        .activityText(style)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.6)
+                }
+            }
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(text)
+    }
+}
+
 extension View {
     /// Style text with one of the activity group's own text styles.
     func activityText(_ style: PulseActivityTextStyle) -> some View {
