@@ -446,63 +446,6 @@ struct StrainSnapshot: Equatable {
     let workouts: [PulseWorkoutItem]
 }
 
-/// A stage span on the hypnogram, seconds from the night's start.
-struct PulseStageSpan: Equatable {
-    let stage: SleepStage
-    let start: TimeInterval
-    let end: TimeInterval
-}
-
-/// One sleep-performance contributor.
-struct PulseSleepContributor: Identifiable, Equatable {
-    let id: String
-    let title: String
-    /// 0-100, or nil when the night cannot support it.
-    let percent: Double?
-    let detail: String?
-}
-
-/// One stage's share of the night.
-struct PulseStageRow: Identifiable, Equatable {
-    let stage: SleepStage
-    let minutes: Double
-    let share: Double
-    var id: String { stage.rawValue }
-}
-
-/// The Sleep deep dive for one night.
-struct SleepSnapshot: Equatable {
-    let seq: Int
-    /// The wake day the night was looked up from (Home's day, or the night ‹ › stepped to).
-    let anchorKey: String
-    /// Index into the newest-first night list (0 = the most recent night).
-    let nightIndex: Int
-    /// Every banked night's wake day, newest first: ‹ › step through these by KEY, so a night banked
-    /// while the screen is open cannot shift what it shows.
-    let nightKeys: [String]
-    var nightCount: Int { nightKeys.count }
-    /// The wake day the night belongs to (sleep is keyed by the local day it ends on).
-    let wakeDayKey: String?
-    let onset: Date?
-    let wake: Date?
-    let dial: PulseDialData
-    let asleepMin: Double?
-    let inBedMin: Double?
-    let needMin: Double?
-    let contributors: [PulseSleepContributor]
-    let spans: [PulseStageSpan]
-    let stages: [PulseStageRow]
-    let sleepingHR: Int?
-    let lowestHR: Int?
-    let respRate: Double?
-    let naps: [PulseNap]
-    /// True when the night has no decodable stages (the honest stage-less stub).
-    let isStub: Bool
-
-    var hasOlder: Bool { nightIndex + 1 < nightCount }
-    var hasNewer: Bool { nightIndex > 0 }
-}
-
 /// One vital on the Health Monitor.
 struct PulseVital: Identifiable, Equatable {
     let id: String
