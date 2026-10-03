@@ -4,11 +4,11 @@ import StrandAnalytics
 
 /// Day Streak (WHOOP_UI_SPEC §3.30, reviews/r48, profile-community-2026/15, 37, 38, 60–64), pushed from
 /// the Home flame and Profile's DAY STREAK row, on WHOOP's flat #101518: the flame in its tier's colour
-/// and the count, "Day Streak / Wear your strap daily", when the streak started and the longest one,
+/// and the count, "Day Streak / Wear your strap daily", when the streak started and the max streak,
 /// THIS WEEK, the milestone card and the tier's message.
 ///
 /// The count is `StreakCalculator`'s current run, the rule the Home pill reads, so the two always agree.
-/// WHOOP's "Top 2%" column is [POP]: ZENO shows the start and the longest streak only (as WHOOP's own
+/// WHOOP's "Top 2%" column is [POP]: ZENO shows "Streak started" and "Max streak" only (as WHOOP's own
 /// two-column variant does, /60).
 struct PulseStreakView: View {
     static let isRebuilt = true
@@ -75,7 +75,7 @@ struct PulseStreakView: View {
         HStack(spacing: 0) {
             stat(value: s.startKey.map(ProfileFormat.day) ?? "--", caption: String(localized: "Streak started"))
             Rectangle().fill(PulseTheme.divider).frame(width: 1, height: 44)
-            stat(value: PulseFormat.grouped(Double(s.longest)), caption: String(localized: "Longest streak"))
+            stat(value: PulseFormat.grouped(Double(s.longest)), caption: String(localized: "Max streak"))
         }
     }
 
@@ -280,7 +280,7 @@ private struct StreakInfoSheet: View {
                     .pulseText(.subtitle)
                     .foregroundStyle(PulseTheme.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
-                Text(String(localized: "Miss a whole day and the streak starts again; your longest streak is kept."))
+                Text(String(localized: "Miss a whole day and the streak starts again; your max streak is kept."))
                     .pulseText(.subtitle)
                     .foregroundStyle(PulseTheme.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
