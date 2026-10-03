@@ -89,7 +89,22 @@ struct PulseStressMonitorView: View {
         .sheet(isPresented: $showsInfo) {
             HealthInfoSheet(title: String(localized: "How stress is scored"), paragraphs: Self.infoParagraphs)
         }
+        #if DEBUG
+        .task(id: shown != nil) { openDebugBreatheIfAsked() }
+        #endif
     }
+
+    #if DEBUG
+    @MainActor private static var openedDebugBreathe = false
+
+    /// `--pulse-stress-breathe`: open the Sessions card's Breathe once the day has drawn, for captures.
+    private func openDebugBreatheIfAsked() {
+        guard shown != nil, !Self.openedDebugBreathe,
+              CommandLine.arguments.contains("--pulse-stress-breathe") else { return }
+        Self.openedDebugBreathe = true
+        navigator.open(HealthBreatheSession.destination.route)
+    }
+    #endif
 
     /// The local key of the day `offset` back from Home's today, the logical day that rolls at 04:00, as
     /// `PulseModel` dates a request and the builder keys the snapshot (`stressDayStart`), so the pager's
@@ -143,7 +158,7 @@ struct PulseStressMonitorView: View {
             }
             .padding(.top, 8)
 
-            HealthBreatheSession(onOpen: { navigator.open(.classic(.breathe)) })
+            HealthBreatheSession(onOpen: { navigator.open(HealthBreatheSession.destination.route) })
                 .id("pulse.sessions")
                 .padding(.top, 32)
         }
@@ -361,11 +376,27 @@ struct HealthTotalDayCard: View {
     }
 }
 
-/// "Sessions" (§3.22 item 8 [Z]): ZENO's Breathe in WHOOP's slot, as one BREATHE › card. Breathe opens on
-/// its own pace picker (`BreathingView` takes no preselected pace yet), so a card per pace would promise a
-/// session it could not start; once it can, this grows into RELAX · COHERENCE · BOX · 4-7-8 · ALERTNESS.
+/// Breathe opened on one pace (a `BreathProtocolCatalog` id) with that pace's recommended length: the
+/// classic `BreathingView` in the wrapper every classic destination is pushed in (`PulseClassicScreen`).
+struct HealthBreatheRoute: PulseScreenRoute {
+    let protocolId: String
+    var view: some View { PulseClassicScreen { BreathingView(preselectedProtocolId: protocolId) } }
+}
+
+/// "Sessions" (§3.22 item 8 [Z]): ZENO's Breathe in WHOOP's slot, as one BREATHE › card that opens Breathe
+/// on Relax 4-6, the long-exhale pace that does what WHOOP's Increase Relaxation session does; Breathe's own
+/// picker holds the other paces. A card per pace (COHERENCE · BOX · 4-7-8 · ALERTNESS) would each open its
+/// own `HealthBreatheRoute`.
 struct HealthBreatheSession: View {
+    /// What the card opens.
+    static let destination = HealthBreatheRoute(protocolId: "relax_4_6")
+
     let onOpen: () -> Void
+
+    /// The pace's name as Breathe titles it.
+    private var paceName: String {
+        BreathProtocolCatalog.protocolById(Self.destination.protocolId)?.title ?? String(localized: "Relax 4-6")
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: PulseTheme.Layout.headerGap) {
@@ -379,7 +410,7 @@ struct HealthBreatheSession: View {
                         .accessibilityHidden(true)
                     VStack(alignment: .leading, spacing: 4) {
                         PulseCardTitle(String(localized: "Breathe"), accessory: .chevron)
-                        Text(String(localized: "Guided breathing to calm down or wake up: relaxation, coherence, box, 4-7-8 and more, paced by your strap if you like."))
+                        Text(String(localized: "Opens on \(paceName), a calming pace with a long exhale. Coherence, box, 4-7-8 and more are a tap away, paced by your strap if you like."))
                             .pulseText(.secondary)
                             .foregroundStyle(PulseTheme.textSecondary)
                             .fixedSize(horizontal: false, vertical: true)
@@ -393,7 +424,7 @@ struct HealthBreatheSession: View {
             }
             .buttonStyle(PulsePressStyle())
             .accessibilityLabel(String(localized: "Breathe"))
-            .accessibilityHint(String(localized: "Opens Breathe"))
+            .accessibilityHint(String(localized: "Opens Breathe on \(paceName)"))
         }
     }
 }
