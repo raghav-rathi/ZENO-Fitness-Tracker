@@ -164,6 +164,32 @@ enum PulseExtrasTheme {
         static let summaryRow = Color.white.opacity(0.07)
         static let summaryRowIcon = Color(hex: "#C9A15A")
     }
+
+    /// Challenges (profile-community-2026/13, 42, 76, 84, sampled at full size).
+    enum Challenge {
+        /// The tick gauge: 292 pt across, 270° from the lower left to the lower right, 120 radial ticks
+        /// 20 pt long; lit ticks run from the challenge's colour to white at the head, unlit ones are grey.
+        static let gaugeDiameter: CGFloat = 292
+        static let gaugeSweep: Double = 270
+        static let tickCount = 120
+        static let tickLength: CGFloat = 20
+        static let tickWidth: CGFloat = 2.6
+        static let unlitTick = Color.white.opacity(0.20)
+        static let unlitTickInner = Color.white.opacity(0.05)
+        /// A soft light behind the gauge's centre (#7A7E81 at the top of /76's gauge).
+        static let gaugeGlow = Color.white.opacity(0.07)
+        /// The value in the gauge: 66 pt Bold condensed over "/250" at 28.
+        static let valueSize: CGFloat = 66
+        static let targetSize: CGFloat = 28
+        /// The page's top light (/76: #929699 at the top centre, tinted by the challenge's colour at the sides).
+        static let topLight = Color.white.opacity(0.32)
+        static let topTint = 0.32
+        /// The day list's card (#282C2F on the page, white ≈8%) with its pointer, and its rows (+10%).
+        static let listCard = Color.white.opacity(0.08)
+        static let pointer = CGSize(width: 18, height: 9)
+        /// The pinned button's line: it shares the floating Coach button's row.
+        static let buttonHeight: CGFloat = 50
+    }
 }
 
 /// A Dynamic Type-scaled SF Pro font for the extras screens' story sizes, which the shared type scale

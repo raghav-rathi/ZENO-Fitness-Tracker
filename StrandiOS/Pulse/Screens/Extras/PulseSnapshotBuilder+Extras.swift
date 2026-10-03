@@ -281,4 +281,119 @@ extension PulseSnapshotBuilder {
         return first.uppercased() + t.dropFirst()
     }
 }
+
+// MARK: - Challenges (§3.41)
+
+extension PulseSnapshotBuilder {
+
+    /// Measures each challenge through the readers the rest of Pulse uses: the workouts Home lists
+    /// (activity minutes), time in Zone 2 from the day's heart rate scored as the Strain dive scores its
+    /// zones (Zone 2 minutes), the steps resolver (steps) and the night each sleep merges to, by the
+    /// evening it began (bedtime).
+    func challenges(_ r: PulseRequest, stored: [PulseStoredChallenge]) async -> ChallengesSnapshot? {
+        begin(r.seq)
+        let today = Repository.localDayKey(r.now)
+        let kinds = Set(stored.map(\.definition.kind))
+        let workouts = kinds.contains(.activityMinutes) ? await workoutRows() : []
+        let groups = kinds.contains(.bedtime) ? await nightGroups(r) : []
+        let habitual = kinds.contains(.bedtime) ? await habitualMidsleep() : nil
+        guard isCurrent(r) else { return nil }
+
+        var items: [ChallengeSnapshot] = []
+        for challenge in stored {
+            let d = challenge.definition
+            // Count to today, or to the day the wearer left it.
+            let last = min(d.endDay, challenge.leftOn ?? d.endDay, today)
+            var perDay: [String: Double] = [:]
+            var entries: [String: [ChallengeEntry]] = [:]
+            if last >= d.startDay {
+                switch d.kind {
+                case .activityMinutes:
+                    // Only activities that have happened (a pre-added one still in the future does not count).
+                    for w in workouts where w.startTs <= Int(r.now.timeIntervalSince1970) {
+                        let start = Date(timeIntervalSince1970: TimeInterval(w.startTs))
+                        let day = Repository.localDayKey(start)
+                        guard day >= d.startDay, day <= last else { continue }
+                        let seconds = w.durationS ?? Double(max(w.endTs - w.startTs, 0))
+                        perDay[day, default: 0] += seconds / 60
+                        let item = PulseWorkoutItem(
+                            id: "\(w.startTs)|\(w.sport)|\(w.source)", title: WorkoutSource.displaySport(w.sport),
+                            sport: w.sport, start: start, durationMin: Int((seconds / 60).rounded()),
+                            strain: w.strain.map { UnitFormatter.effortValue($0, scale: .whoop) },
+                            kcal: w.energyKcal, route: PulseWorkoutRoute(row: w))
+                        entries[day, default: []].append(.workout(item, end: start.addingTimeInterval(seconds)))
+                    }
+                case .zoneMinutes:
+                    for day in d.dayKeys where day <= last {
+                        let minutes = await zone2Minutes(day: day, today: today, zoneSet: r.profile.zoneSet)
+                        guard minutes >= 1 else { continue }
+                        perDay[day] = minutes
+                        entries[day] = [.amount(id: "zone-\(day)", title: String(localized: "Zone 2"),
+                                                value: String(localized: "\(Int(minutes.rounded())) min"), met: nil)]
+                    }
+                case .steps:
+                    let steps = await repo.resolvedStepDays(from: d.startDay, to: last).days
+                    for s in steps where s.day >= d.startDay && s.day <= last && s.steps > 0 {
+                        perDay[s.day] = Double(s.steps)
+                        entries[s.day] = [.amount(id: "steps-\(s.day)", title: String(localized: "Steps"),
+                                                  value: PulseFormat.grouped(Double(s.steps)), met: nil)]
+                    }
+                case .bedtime:
+                    let target = d.bedtimeMinute ?? 23 * 60
+                    let cal = Calendar.current
+                    for g in groups {
+                        guard let night = SleepModel.mergeDay(g, habitualMidsleepSec: habitual, motionByStart: [:]) else { continue }
+                        let onset = night.onsetDate
+                        let c = cal.dateComponents([.hour, .minute], from: onset)
+                        let minute = (c.hour ?? 0) * 60 + (c.minute ?? 0)
+                        let key = ChallengeProgress.nightKey(onsetDayKey: Repository.localDayKey(onset), onsetMinute: minute)
+                        guard key >= d.startDay, key <= last, onset <= r.now, perDay[key] == nil else { continue }
+                        let met = ChallengeProgress.isInBedBy(onsetMinute: minute, target: target)
+                        perDay[key] = met ? 1 : 0
+                        entries[key] = [.amount(id: "night-\(key)", title: String(localized: "Asleep"),
+                                                value: PulseFormat.clock(onset), met: met)]
+                    }
+                }
+            }
+            guard isCurrent(r) else { return nil }
+            let status = ChallengeProgress.status(d, perDay: perDay, today: today, endedEarly: challenge.leftOn != nil)
+            let days = entries.keys.sorted(by: >).map { key in
+                ChallengeDay(id: key, entries: (entries[key] ?? []).sorted { lhs, rhs in
+                    if case .workout(let a, _) = lhs, case .workout(let b, _) = rhs { return a.start > b.start }
+                    return false
+                })
+            }
+            items.append(ChallengeSnapshot(id: challenge.id, definition: d, status: status,
+                                           leftOn: challenge.leftOn, days: days))
+        }
+        return ChallengesSnapshot(seq: r.seq, today: today, items: items)
+    }
+
+    /// Minutes in Zone 2 on a local day, from that day's heart rate (`HRZones.timeInZone`, the Strain
+    /// dive's zone scoring). A finished day is read once per refresh.
+    private func zone2Minutes(day: String, today: String, zoneSet: HRZoneSet) async -> Double {
+        guard let bounds = Self.localDayBounds(day) else { return 0 }
+        let read: () async -> Double = { [repo] in
+            let hr = await repo.hrSamples(from: bounds.from, to: bounds.to, limit: 200_000)
+            let tiz = HRZones.timeInZone(hr, zoneSet: zoneSet)
+            return tiz.seconds.count > 1 ? tiz.seconds[1] / 60 : 0
+        }
+        if day >= today { return await read() }
+        let z2 = zoneSet.zones.first { $0.number == 2 }
+        let key = "extras.zone2.\(day).\(z2?.lower ?? 0)-\(z2?.upper ?? 0)"
+        return await cached(key) { await read() }
+    }
+
+    /// A local day key's midnight-to-midnight span, epoch seconds.
+    nonisolated static func localDayBounds(_ day: String) -> (from: Int, to: Int)? {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.timeZone = .current
+        f.dateFormat = "yyyy-MM-dd"
+        guard let date = f.date(from: day) else { return nil }
+        let start = Calendar.current.startOfDay(for: date)
+        guard let next = Calendar.current.date(byAdding: .day, value: 1, to: start) else { return nil }
+        return (Int(start.timeIntervalSince1970), Int(next.timeIntervalSince1970) - 1)
+    }
+}
 #endif

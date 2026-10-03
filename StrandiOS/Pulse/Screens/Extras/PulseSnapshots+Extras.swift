@@ -112,4 +112,46 @@ struct YearReviewBehavior: Equatable, Identifiable {
     let daysWith: Int
     let daysWithout: Int
 }
+
+// MARK: Challenges (§3.41)
+
+/// The wearer's challenges, measured.
+struct ChallengesSnapshot: Equatable {
+    let seq: Int
+    /// The local day the build measured to.
+    let today: String
+    let items: [ChallengeSnapshot]
+}
+
+/// One challenge: where it stands and what counted, by day.
+struct ChallengeSnapshot: Equatable, Identifiable {
+    let id: String
+    let definition: ChallengeProgress.Definition
+    let status: ChallengeProgress.Status
+    /// The day the wearer left it, if they did.
+    let leftOn: String?
+    /// The days that counted something (or whose night was judged), newest first.
+    let days: [ChallengeDay]
+}
+
+/// One day of a challenge's list.
+struct ChallengeDay: Equatable, Identifiable {
+    /// The day key.
+    let id: String
+    let entries: [ChallengeEntry]
+}
+
+/// One line under a day: a workout (activity challenges) or the day's amount.
+enum ChallengeEntry: Equatable, Identifiable {
+    case workout(PulseWorkoutItem, end: Date)
+    /// "Zone 2 · 34 min", "8,412 steps", "Asleep 10:52 PM" and whether a night met the bedtime.
+    case amount(id: String, title: String, value: String, met: Bool?)
+
+    var id: String {
+        switch self {
+        case .workout(let item, _): return item.id
+        case .amount(let id, _, _, _): return id
+        }
+    }
+}
 #endif
