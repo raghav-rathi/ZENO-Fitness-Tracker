@@ -81,4 +81,35 @@ struct DayTimelineMarker: Equatable {
     /// The Recovery band (its colour); nil for Strain.
     let band: PulseDisplay.RecoveryBand?
 }
+
+// MARK: Year in Review (§3.39)
+
+/// ZENO's local Year in Review: the wearer's own year, with no other members to compare against.
+struct YearInReviewSnapshot: Equatable {
+    let seq: Int
+    let year: Int
+    /// The year is still running: the review covers 1 January to `through` (a "so far" review).
+    let isPartial: Bool
+    /// The last day counted (today, or 31 December), a day key.
+    let through: String
+    let summary: YearInReview.Summary
+    /// Journal behaviours ranked by how Recovery differed on the days they were logged, this year.
+    let behaviors: [YearReviewBehavior]
+    /// The most logged activity's glyph.
+    let topActivitySymbol: String?
+}
+
+/// One behaviour on the "Behavior impacts on Recovery" slide.
+struct YearReviewBehavior: Equatable, Identifiable {
+    /// The journal question, verbatim (the behaviour's key).
+    let id: String
+    /// A short name for the bar ("Drink any alcohol").
+    let title: String
+    /// Recovery on days with the behaviour against days without, as a percent of the without-days' mean.
+    let percent: Double
+    /// The ranker's false-discovery-corrected verdict; the rest are drawn muted.
+    let significant: Bool
+    let daysWith: Int
+    let daysWithout: Int
+}
 #endif

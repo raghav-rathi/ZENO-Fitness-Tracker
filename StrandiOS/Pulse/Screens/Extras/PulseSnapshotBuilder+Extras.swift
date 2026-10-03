@@ -156,4 +156,129 @@ extension PulseSnapshotBuilder {
         return f.string(from: max(0, minutes.rounded()) * 60) ?? PulseFormat.duration(minutes: minutes)
     }
 }
+
+// MARK: - Year in Review (§3.39)
+
+extension PulseSnapshotBuilder {
+
+    /// The year Year in Review covers on `now`: last year until 15 January (WHOOP's window runs from early
+    /// December to mid-January), this year from then on, as a review of the year so far.
+    nonisolated static func reviewYear(now: Date, calendar: Calendar = .current) -> Int {
+        let c = calendar.dateComponents([.year, .month, .day], from: now)
+        let year = c.year ?? 2026
+        return c.month == 1 && (c.day ?? 1) <= 15 ? year - 1 : year
+    }
+
+    /// The year's highlights from the wearer's own data: the stored days, the night each day's sleep came
+    /// from (the same merge Home's sleep row and the Sleep dive read), Sleep performance through the one
+    /// resolver, steps through the steps resolver, the logged workouts, and the journal behaviours ranked
+    /// against Recovery by the engine Behavior Insights uses.
+    func yearInReview(_ r: PulseRequest, year: Int) async -> YearInReviewSnapshot? {
+        begin(r.seq)
+        let prefix = String(format: "%04d-", year)
+        let todayKey = Repository.localDayKey(r.now)
+        let lastOfYear = String(format: "%04d-12-31", year)
+        let through = min(todayKey, lastOfYear)
+        let inYear: (String) -> Bool = { $0.hasPrefix(prefix) && $0 <= through }
+
+        let rest = await restSeries()
+        let groups = await nightGroups(r)
+        let habitual = await habitualMidsleep()
+        let workouts = await workoutRows()
+        guard isCurrent(r) else { return nil }
+
+        // Each night by the day it ended on, merged as Home and the Sleep dive merge it.
+        var asleepByDay: [String: Double] = [:]
+        for g in groups {
+            guard let end = g.first?.endTs else { continue }
+            let key = Repository.localDayKey(Date(timeIntervalSince1970: TimeInterval(end)))
+            guard inYear(key), asleepByDay[key] == nil,
+                  let night = SleepModel.mergeDay(g, habitualMidsleepSec: habitual, motionByStart: [:]) else { continue }
+            asleepByDay[key] = night.stages.asleep
+        }
+
+        let stepDays = await repo.resolvedStepDays(from: prefix + "01-01", to: through).days
+        guard isCurrent(r) else { return nil }
+        var stepsByDay: [String: Int] = [:]
+        for d in stepDays where inYear(d.day) { stepsByDay[d.day] = d.steps }
+
+        let rows = Dictionary(r.days.map { ($0.day, $0) }, uniquingKeysWith: { _, last in last })
+        var keys = Set(r.days.map(\.day).filter(inYear))
+        keys.formUnion(asleepByDay.keys)
+        keys.formUnion(stepsByDay.keys)
+        let days = keys.sorted().map { key -> YearInReview.Day in
+            let row = rows[key]
+            return YearInReview.Day(
+                day: key, recovery: row?.recovery,
+                strain: row?.strain.map { UnitFormatter.effortValue($0, scale: .whoop) },
+                sleepPerformance: sleepPerformance(dayKey: key, rest: rest, days: r.days),
+                asleepMinutes: asleepByDay[key], steps: stepsByDay[key])
+        }
+
+        var symbolByName: [String: String] = [:]
+        let activities = workouts.compactMap { w -> YearInReview.Activity? in
+            let key = Repository.localDayKey(Date(timeIntervalSince1970: TimeInterval(w.startTs)))
+            guard inYear(key) else { return nil }
+            let name = WorkoutSource.displaySport(w.sport)
+            if symbolByName[name] == nil {
+                symbolByName[name] = WorkoutTypeIconography.systemSymbolName(for: w.sport)
+            }
+            let seconds = w.durationS ?? Double(max(w.endTs - w.startTs, 0))
+            return YearInReview.Activity(day: key, name: name, minutes: seconds / 60)
+        }
+
+        // Strain's optimal range for a Recovery: the band rule the Strain target and the dial use.
+        let summary = YearInReview.summarize(year: year, through: through, days: days, activities: activities,
+                                             strainRange: { pct in
+            CoupledView.optimalStrainRange(recovery: pct).map { Double($0.lowerBound)...Double($0.upperBound) }
+        })
+
+        let behaviors = await yearBehaviors(r, inYear: inYear)
+        guard isCurrent(r) else { return nil }
+        return YearInReviewSnapshot(seq: r.seq, year: year, isPartial: through < lastOfYear, through: through,
+                                    summary: summary, behaviors: behaviors,
+                                    topActivitySymbol: summary.topActivity.flatMap { symbolByName[$0.name] })
+    }
+
+    /// Journal behaviours against Recovery over the year: yes-days against no-days (an unanswered day is
+    /// neither), Recovery from the stored series with the day rows filling gaps, ranked by `EffectRanker`
+    /// (at least 5 days each side, Benjamini-Hochberg across every behaviour and lag), as Behavior
+    /// Insights ranks them.
+    private func yearBehaviors(_ r: PulseRequest, inYear: (String) -> Bool) async -> [YearReviewBehavior] {
+        let entries = await cached("extras.journalEntries") { await repo.journalEntries() }
+        let stored = await repo.series(key: "recovery", source: "my-whoop")
+        var yes: [String: Set<String>] = [:]
+        var no: [String: Set<String>] = [:]
+        for e in entries where inYear(e.day) {
+            if e.answeredYes { yes[e.question, default: []].insert(e.day) }
+            else { no[e.question, default: []].insert(e.day) }
+        }
+        guard !yes.isEmpty else { return [] }
+        var recovery: [String: Double] = [:]
+        for row in stored where inYear(row.day) { recovery[row.day] = row.value }
+        for d in r.days where inYear(d.day) && recovery[d.day] == nil {
+            if let v = d.recovery { recovery[d.day] = v }
+        }
+        let outcome = PulseScore.recovery.displayName
+        return EffectRanker.rank(behaviors: yes, controls: no, outcomeByDay: recovery, outcome: outcome)
+            .compactMap { ranked -> YearReviewBehavior? in
+                guard let pct = ranked.effect.pctChange, pct.isFinite else { return nil }
+                return YearReviewBehavior(id: ranked.behavior, title: Self.behaviorTitle(ranked.behavior),
+                                          percent: pct, significant: ranked.effect.significant,
+                                          daysWith: ranked.effect.nWith, daysWithout: ranked.effect.nWithout)
+            }
+    }
+
+    /// A short name for a journal question: "Did you drink any alcohol?" reads "Drink any alcohol".
+    nonisolated static func behaviorTitle(_ question: String) -> String {
+        var t = question.trimmingCharacters(in: .whitespacesAndNewlines)
+        for lead in ["Did you ", "Do you ", "Were you ", "Was there "] where t.hasPrefix(lead) {
+            t = String(t.dropFirst(lead.count))
+            break
+        }
+        if t.hasSuffix("?") { t = String(t.dropLast()) }
+        guard let first = t.first else { return question }
+        return first.uppercased() + t.dropFirst()
+    }
+}
 #endif

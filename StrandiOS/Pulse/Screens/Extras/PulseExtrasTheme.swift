@@ -81,5 +81,121 @@ enum PulseExtrasTheme {
         static let zoomFactor: CGFloat = 3
         static let minimumZoomedSpan: TimeInterval = 2 * 3_600
     }
+
+    /// Year in Review (completeness-critic/08-11, profile-community-2026/45-53, sampled at full size).
+    enum Story {
+        /// The near-black page every slide sits on (#07080D).
+        static let page = PulseTheme.Gradients.yearInReviewPage
+        /// The glows rising from the foot of a slide: red (#5C1118 at the foot of /10), indigo (#3E3F5D,
+        /// /45), green (#2B5338, /47) from the theme, and three more sampled here: the steps slide's blue
+        /// (#013F64, /50), the second persona's purple (#563A66, /48) and the behaviour slide's slate
+        /// (#141D23, /11).
+        static let glowRed = PulseTheme.Gradients.yearInReviewGlowRed
+        static let glowIndigo = PulseTheme.Gradients.yearInReviewGlowIndigo
+        static let glowGreen = PulseTheme.Gradients.yearInReviewGlowGreen
+        static let glowBlue = Color(hex: "#0B3D60")
+        static let glowPurple = Color(hex: "#4E3560")
+        static let glowSlate = Color(hex: "#141D23")
+        /// The glow starts rising at this fraction of the height.
+        static let glowStart = 0.5
+        /// The year beside the wordmark: italic Bold, #758FFE → #5CBEFF.
+        static let year = PulseTheme.Gradients.yearInReviewYear
+        static let yearSize: CGFloat = 20
+        static let wordmark = CGSize(width: 84, height: 14)
+
+        /// The progress segments at the foot: done and current white, upcoming white 30%; the current one
+        /// is long (the story does not auto-advance, so it is shown full rather than filling).
+        static let segmentDone = Color.white
+        static let segmentUpcoming = Color.white.opacity(0.30)
+        static let segmentHeight: CGFloat = 3
+        static let segmentWidth: CGFloat = 8
+        static let segmentCurrentWidth: CGFloat = 26
+        static let segmentGap: CGFloat = 4
+
+        /// The month ruler (a comb of ticks with an orb on the month) and the orb.
+        static let rulerTick = Color.white.opacity(0.22)
+        static let rulerMajorTick = Color.white.opacity(0.40)
+        static let orbFill = Color(hex: "#0B0C11")
+        static let orbRing = Color.white.opacity(0.85)
+        static let orbSize: CGFloat = 44
+
+        /// The moment card: a dark outer frame around a stroked shield (/10: #0B0C11 frame, 3 pt rim).
+        static let cardFill = Color(hex: "#111216")
+        static let cardRim = Color.white.opacity(0.08)
+        static let cardSize = CGSize(width: 236, height: 258)
+        static let cardTopRadius: CGFloat = 36
+        static let cardBottomRadius: CGFloat = 112
+        static let shieldInset: CGFloat = 13
+        static let shieldStroke: CGFloat = 3
+
+        /// Type sizes (they scale with Dynamic Type from these): the sentence at the foot of a slide
+        /// (≈26 pt in WHOOP's face, 24 Medium in SF Pro), a slide's title, its caption.
+        static let sentenceSize: CGFloat = 24
+        static let titleSize: CGFloat = 22
+        static let headlineSize: CGFloat = 26
+        static let bigNumberSize: CGFloat = 96
+        static let stepsNumberSize: CGFloat = 104
+        static let momentValueSize: CGFloat = 58
+
+        /// The steps figure's blue (/50: #1A6EB0 at the top of the digits to #0B4C7C at their foot).
+        static let stepsTop = Color(hex: "#2A7CC0")
+        static let stepsBottom = Color(hex: "#0B4C7C")
+        static let mountain = Color(hex: "#8C8F95")
+
+        /// Behaviour bars (/11): helps teal, hurts orange, brightest for the largest effect; tall for
+        /// large effects, short for small ones; labels 11 pt Bold caps inside, values at the right.
+        static let barTall: CGFloat = 84
+        static let barShort: CGFloat = 42
+        static let barRadius: CGFloat = 10
+        static let barMinimumWidth = 0.32
+
+        /// Persona titles (/47 #73F88B green, /48 #D87DF6 purple) and the card's frame.
+        static let personaGreen = Color(hex: "#73F88B")
+        static let personaPurple = Color(hex: "#D87DF6")
+        static let personaCardRim = Color.white.opacity(0.10)
+        /// The card's height and side margins (/47: 323 × 486 pt on a 393 pt screen).
+        static let personaCardHeight: CGFloat = 480
+        static let personaCardMargin: CGFloat = 34
+        static let personaCardFill = Color(hex: "#0C1012")
+        static let personaWave = Color.white.opacity(0.07)
+
+        /// The summary share card's surfaces (/09): the stat card and the row cards.
+        static let summaryCard = Color.white.opacity(0.06)
+        static let summaryRow = Color.white.opacity(0.07)
+        static let summaryRowIcon = Color(hex: "#C9A15A")
+    }
+}
+
+/// A Dynamic Type-scaled SF Pro font for the extras screens' story sizes, which the shared type scale
+/// does not carry (`PulseTextStyle` covers everything else).
+struct ExtrasScaledFont: ViewModifier {
+    let weight: Font.Weight
+    let italic: Bool
+    let condensed: Bool
+    @ScaledMetric private var size: CGFloat
+
+    init(size: CGFloat, weight: Font.Weight, relativeTo: Font.TextStyle, italic: Bool = false,
+         condensed: Bool = false) {
+        self.weight = weight
+        self.italic = italic
+        self.condensed = condensed
+        _size = ScaledMetric(wrappedValue: size, relativeTo: relativeTo)
+    }
+
+    func body(content: Content) -> some View {
+        var font = Font.system(size: size, weight: weight)
+        if condensed { font = font.width(.condensed).monospacedDigit() }
+        if italic { font = font.italic() }
+        return content.font(font)
+    }
+}
+
+extension View {
+    /// SF Pro at `size`, scaling with Dynamic Type relative to `relativeTo`.
+    func extrasFont(_ size: CGFloat, weight: Font.Weight, relativeTo: Font.TextStyle = .body,
+                    italic: Bool = false, condensed: Bool = false) -> some View {
+        modifier(ExtrasScaledFont(size: size, weight: weight, relativeTo: relativeTo, italic: italic,
+                                  condensed: condensed))
+    }
 }
 #endif
