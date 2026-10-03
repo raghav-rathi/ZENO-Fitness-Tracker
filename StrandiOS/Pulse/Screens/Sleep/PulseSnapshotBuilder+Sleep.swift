@@ -693,7 +693,7 @@ extension PulseSnapshotBuilder {
     static func stressTicks(from: Date, to: Date, calendar cal: Calendar = .current) -> [SleepStressSnapshot.XTick] {
         let span = to.timeIntervalSince(from)
         guard span > 0 else { return [] }
-        var ticks = [SleepStressSnapshot.XTick(fraction: 0, text: PulseFormat.clock(from), isEnd: false)]
+        var ticks = [SleepStressSnapshot.XTick(date: from, fraction: 0, text: PulseFormat.clock(from), isEnd: false)]
         var used = Set<Int>()
         for third in [1.0 / 3, 2.0 / 3] {
             let target = from.addingTimeInterval(span * third)
@@ -704,9 +704,9 @@ extension PulseSnapshotBuilder {
             let id = Int(snapped.timeIntervalSince1970)
             guard fraction > 0.15, fraction < 0.85, !used.contains(id) else { continue }
             used.insert(id)
-            ticks.append(.init(fraction: fraction, text: PulseFormat.clock(snapped), isEnd: false))
+            ticks.append(.init(date: snapped, fraction: fraction, text: PulseFormat.clock(snapped), isEnd: false))
         }
-        ticks.append(.init(fraction: 1, text: PulseFormat.clock(to), isEnd: true))
+        ticks.append(.init(date: to, fraction: 1, text: PulseFormat.clock(to), isEnd: true))
         return ticks
     }
 

@@ -272,6 +272,8 @@ struct SleepStressSnapshot: Equatable {
 
     /// A time under the stress chart: its start, two half hours, and its end (bold).
     struct XTick: Equatable {
+        /// The time itself, where the chart draws a faint vertical rule at the middle times (19b).
+        let date: Date
         /// 0…1 along the chart's span.
         let fraction: Double
         let text: String
