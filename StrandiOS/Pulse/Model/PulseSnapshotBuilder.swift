@@ -85,7 +85,6 @@ actor PulseSnapshotBuilder {
         var habitual: Int?
         var habitualLoaded = false
         var nights: [[CachedSleepSession]]?
-        var todayStressScore: Double??
         var weekly: Weekly?
         /// Heart rate for a day window, keyed "dayKey|from". At most a few entries.
         var hr: [String: [HRSample]] = [:]
@@ -767,27 +766,14 @@ actor PulseSnapshotBuilder {
 
     // MARK: Stress
 
+    /// The day's stress for Home's STRESS MONITOR tile and dashboard card, past days included: the Stress
+    /// Monitor's own day (`stressDay`, Screens/Health, which caches its reads per refresh), so its level, the
+    /// reading's time and the curve are the ones the screen the tile opens shows.
     func stressSummary(_ r: PulseRequest) async -> PulseStressSummary? {
-        let stored = await stressStoredSeries()
-        if r.day.isToday {
-            let score: Double?
-            if r.seq == cacheSeq, let cached = cache.todayStressScore {
-                score = cached
-            } else {
-                // StressModel folds the full history for its baseline; it is built here, off the main actor.
-                score = StressModel(days: r.days, stored: stored)?.score
-                if r.seq == cacheSeq { cache.todayStressScore = .some(score) }
-            }
-            let curve = await StressDayCurve.today(repo: repo, now: r.now,
-                                                   personalBaseline: r.prefs.stressPersonalBaseline)
-            return PulseStressSummary(score: score, bandTitle: score.map { StressBand(score: $0).title },
-                                      hours: curve?.result.timeline ?? [],
-                                      maskedHours: curve?.result.activityMaskedHours ?? 0, isToday: true)
-        }
-        guard let v = stored.last(where: { $0.day == r.day.key })?.value else { return nil }
-        let score = min(max(v, 0), 3)
-        return PulseStressSummary(score: score, bandTitle: StressBand(score: score).title, hours: [],
-                                  maskedHours: 0, isToday: false)
+        guard let day = await stressDay(r) else { return nil }
+        return PulseStressSummary(score: day.gaugeLevel?.level, at: day.latest?.at, dayKey: day.dayKey,
+                                  points: day.points, chartEnd: day.chartEnd, hours: day.hours,
+                                  maskedHours: day.maskedHours, isToday: day.isToday)
     }
 
     // MARK: - Recovery

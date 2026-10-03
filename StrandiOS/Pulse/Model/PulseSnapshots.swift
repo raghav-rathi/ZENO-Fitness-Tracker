@@ -298,17 +298,31 @@ struct PulseWeekDay: Identifiable, Equatable {
     let recovery: Double?
 }
 
-/// The day's stress read.
+/// The day's stress as Home's STRESS MONITOR tile and dashboard card show it: the Stress Monitor's own day
+/// (`PulseSnapshotBuilder.stressDay`), so the three can never print different levels or times.
 struct PulseStressSummary: Equatable {
-    /// 0-3, or nil.
+    /// The gauge's level, 0-3: the curve's latest reading, else the day's daily score; nil with neither.
+    /// Print it as `shown`, never directly.
     let score: Double?
-    let bandTitle: String?
-    /// Today's hourly curve; empty for a past day (the curve is scored for today only).
+    /// When the reading was taken (the end of its hour, at most the build's now); nil when `score` is the
+    /// daily score rather than a reading.
+    let at: Date?
+    /// The day the stress is for, to tell a reading from the evening before.
+    let dayKey: String
+    /// The Stress Monitor's chart: its points over the 24 hours it covers (nil values are gaps), and where
+    /// they end (now today, the last reading on a past day, nil on a past day without one).
+    let points: [PulseTimeValue]
+    let chartEnd: Date?
+    /// The day's own scored hours.
     let hours: [DaytimeStress.HourPoint]
     let maskedHours: Int
     let isToday: Bool
 
-    var scoreText: String { score.map { PulseFormat.oneDecimal($0) } ?? "–" }
+    /// The level as the Stress Monitor's gauge prints it: cut to one decimal (`HealthStressGauge.printed`),
+    /// so a level word taken from it always matches the figure beside it.
+    @MainActor var shown: Double? { score.map(HealthStressGauge.printed) }
+    @MainActor var scoreText: String { shown.map { PulseFormat.oneDecimal($0) } ?? "–" }
+    @MainActor var bandTitle: String? { shown.map { StressBand(score: $0).title } }
     var hasCurve: Bool { hours.contains { $0.level != nil } }
 }
 

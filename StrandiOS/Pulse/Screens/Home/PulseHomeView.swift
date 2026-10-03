@@ -194,8 +194,8 @@ struct PulseHomeSections: View {
     private var isNewMember: Bool { isToday && home.scoredDays == 0 }
 
     var body: some View {
-        // The stress reading's update time, resolved once with one clock for the tile and the card.
-        let stressUpdated = PulseHomeStress.updated(home.stress, now: Date())
+        // The stress reading's time, resolved once for the tile and the card.
+        let stressUpdated = PulseHomeStress.updated(home.stress)
         VStack(alignment: .leading, spacing: 0) {
             // The new member's Home goes straight from the dials to Get Started (onboarding/31a,
             // completeness-critic/24): no coaching card and no monitor tiles yet.

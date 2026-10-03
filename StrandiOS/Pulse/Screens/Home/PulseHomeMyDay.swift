@@ -76,22 +76,27 @@ struct PulseMonitorTiles: View {
                      wordColor: PulseTheme.negative, detail: detail)
     }
 
+    /// The Stress Monitor's level as its gauge prints it, the reading's time under the word, or "Daily
+    /// score" when the figure is the day's score rather than a reading.
     private var stressStatus: PulseMonitorTile.Status {
-        guard let stress = home.stress, let score = stress.score else { return .pending }
-        let level = PulseTheme.Stress.Level(value: score)
-        return .init(badge: .value(PulseFormat.oneDecimal(score)), tint: level.tint, word: PulseHomeStress.word(level),
-                     wordColor: level.color, detail: stressUpdated)
+        guard let shown = home.stress?.shown else { return .pending }
+        let level = PulseTheme.Stress.Level(value: shown)
+        return .init(badge: .value(PulseFormat.oneDecimal(shown)), tint: level.tint, word: PulseHomeStress.word(level),
+                     wordColor: level.color, detail: stressUpdated ?? String(localized: "Daily score"))
     }
 }
 
 /// The stress reading's words and update time, ONE helper for the STRESS MONITOR tile and the dashboard's
 /// STRESS MONITOR card, so the two can never print different times or words for one reading.
 enum PulseHomeStress {
-    /// When the day's stress was last updated: the end of the last scored hour, or `now` while that hour
-    /// is still running. Home resolves it once per pass, with one `now`, for both readouts.
-    static func updated(_ stress: PulseStressSummary?, now: Date) -> String? {
-        guard let hour = stress?.hours.last(where: { $0.level != nil }) else { return nil }
-        return PulseFormat.clock(min(Date(timeIntervalSince1970: TimeInterval(hour.startTs + 3600)), now))
+    /// When the figure was read, worded as the Stress Monitor's gauge words it: the reading's time, with its
+    /// weekday when it is from the evening before ("Fri 10:30 PM"). nil when the figure is the day's daily
+    /// score rather than a reading, or there is none. Home resolves it once per pass for both readouts.
+    static func updated(_ stress: PulseStressSummary?) -> String? {
+        guard let stress, let at = stress.at else { return nil }
+        if Repository.localDayKey(at) == stress.dayKey { return PulseFormat.clock(at) }
+        let weekday = at.formatted(.dateTime.weekday(.abbreviated).locale(AppLanguage.activeLocale))
+        return "\(weekday) \(PulseFormat.clock(at))"
     }
 
     static func word(_ level: PulseTheme.Stress.Level) -> String {
