@@ -289,9 +289,11 @@ extension PulseSnapshotBuilder {
 
 // MARK: - Zone-time cache
 
-/// Each day's seconds in zones, kept across refreshes while the day's heart rate is unchanged: the key
-/// carries the day window, the heart-rate fingerprint and the zone set, so new beats, a backfilled night
-/// or a changed maximum heart rate each make a new key. Holds at most `capacity` finished days.
+/// Days' seconds in heart-rate zones, kept across refreshes while a day's heart rate is unchanged: the key
+/// carries the day window, the heart-rate fingerprint and the zone bounds the seconds were binned by, so new
+/// beats, a backfilled night or a changed maximum heart rate each make a new key. The Strain dive keeps
+/// each day's five zones here, the Challenges each finished day's Zone 2 (`zone2Minutes`, keys "zone2|…").
+/// Holds at most `capacity` finished days.
 actor PulseZoneDayCache {
     static let shared = PulseZoneDayCache()
 

@@ -402,7 +402,9 @@ extension PulseSnapshotBuilder {
     }
 
     /// Minutes in Zone 2 on a local day, from that day's heart rate (`HRZones.timeInZone`, the Strain
-    /// dive's zone scoring). A finished day is read once per refresh.
+    /// dive's zone scoring). Today is read on every build. A finished day is read once per refresh and kept
+    /// across refreshes (`PulseZoneDayCache`) while its heart-rate fingerprint and Zone 2's bounds hold, so
+    /// the running challenges Home's coaching stack measures on every refresh re-read only days that moved.
     private func zone2Minutes(day: String, today: String, zoneSet: HRZoneSet) async -> Double {
         guard let bounds = Self.localDayBounds(day) else { return 0 }
         let read: () async -> Double = { [repo] in
@@ -412,8 +414,18 @@ extension PulseSnapshotBuilder {
         }
         if day >= today { return await read() }
         let z2 = zoneSet.zones.first { $0.number == 2 }
-        let key = "extras.zone2.\(day).\(z2?.lower ?? 0)-\(z2?.upper ?? 0)"
-        return await cached(key) { await read() }
+        let zone = "\(z2?.lower ?? 0)-\(z2?.upper ?? 0)"
+        return await cached("extras.zone2.\(day).\(zone)") { [repo] () async -> Double in
+            // No fingerprint (no store yet) cannot tell a changed day from an unchanged one: nothing is kept.
+            let fingerprint = await repo.hrFingerprintUnion(from: bounds.from, to: bounds.to)
+            let key = "zone2|\(bounds.from)|\(bounds.to)|\(fingerprint)|\(zone)"
+            if !fingerprint.isEmpty, let kept = await PulseZoneDayCache.shared.lookup(key), let seconds = kept?.first {
+                return seconds / 60
+            }
+            let minutes = await read()
+            if !fingerprint.isEmpty { await PulseZoneDayCache.shared.store(key, [minutes * 60]) }
+            return minutes
+        }
     }
 
     /// A local day key's midnight-to-midnight span, epoch seconds.
