@@ -27,8 +27,12 @@ extension PulseSnapshotBuilder {
     /// feeds the chart, the zones and the minimum), its zone split (an import's own percentages when it
     /// has them, never overwritten), this sport's last 30 days for every comparison, heart-rate recovery,
     /// the recorded route and a paired Lift Log session.
-    func activityDetail(_ r: PulseRequest, row handed: WorkoutRow,
-                        inputs: ActivityBuildInputs) async -> ActivityDetailSnapshot? {
+    ///
+    /// `liveSamples` are a live session's own samples, handed over at End & Save. The strap's history
+    /// reaches the store only when it offloads, so until it covers the session the screen draws these
+    /// (the same samples the saved Strain was scored from) rather than whatever fragment is stored.
+    func activityDetail(_ r: PulseRequest, row handed: WorkoutRow, inputs: ActivityBuildInputs,
+                        liveSamples: [HRSample] = []) async -> ActivityDetailSnapshot? {
         begin(r.seq)
         let rows = await workoutRows()
         guard isCurrent(r) else { return nil }
@@ -45,12 +49,40 @@ extension PulseSnapshotBuilder {
         let activeStrap = await repo.deviceId
         let imported = await repo.importedReadIds
         let ids = Repository.workoutHrDeviceIds(source: row.source, activeStrapId: activeStrap, importedIds: imported)
-        let samples = await repo.hrSamples(deviceIds: ids, from: row.startTs - pad, to: row.endTs + pad, limit: 60_000)
+        var samples = await repo.hrSamples(deviceIds: ids, from: row.startTs - pad, to: row.endTs + pad, limit: 60_000)
         guard isCurrent(r) else { return nil }
-        let window = samples.filter { $0.ts >= row.startTs && $0.ts <= row.endTs }
+        var window = samples.filter { $0.ts >= row.startTs && $0.ts <= row.endTs }
+
+        // Which heart rate the screen draws (§3.6 item 6): the store when it covers the activity, else the
+        // live session's own samples, else an honest pending / partial / none state.
+        let storedCoverage = Self.coverage(window, from: row.startTs, to: row.endTs)
+        let liveWindow = liveSamples.filter { $0.ts >= row.startTs && $0.ts <= row.endTs }
+        let heartRate: ActivityHeartRateState
+        if storedCoverage >= Self.fullCoverage {
+            heartRate = .stored
+        } else if liveWindow.count >= 2, Self.coverage(liveWindow, from: row.startTs, to: row.endTs) > storedCoverage {
+            heartRate = .session
+            window = liveWindow
+            samples = (samples.filter { $0.ts < row.startTs || $0.ts > row.endTs } + liveWindow).sorted { $0.ts < $1.ts }
+        } else {
+            // Has the strap offloaded anything recorded after the activity? Until it has, what the store
+            // holds for the window is not the whole story yet.
+            let later = await repo.hrSamples(deviceIds: ids, from: row.endTs + 1,
+                                             to: Int(r.now.timeIntervalSince1970), limit: 1)
+            guard isCurrent(r) else { return nil }
+            let origin = WorkoutSource.classify(row.source)
+            let recordedHere = origin == .manual || origin == .detected
+            if recordedHere && later.isEmpty {
+                heartRate = .pending
+            } else if window.isEmpty {
+                heartRate = .none
+            } else {
+                heartRate = .partial(missingSeconds: max(0, duration * (1 - storedCoverage)))
+            }
+        }
 
         // The paired Lift Log session, when there is one.
-        let lift = await liftSummary(for: row, inputs: inputs)
+        let lift = await liftSummary(for: row, inputs: inputs, heartRate: window)
         guard isCurrent(r) else { return nil }
 
         let variant: ActivityDetailSnapshot.Variant = lift != nil ? .strength
@@ -104,7 +136,9 @@ extension PulseSnapshotBuilder {
         let strainAverage = Self.mean(others.compactMap { $0.strain }).map { UnitFormatter.effortValue($0, scale: .whoop) }
         var strainNote: String?
         if strain == nil {
-            if window.count < 2 || credited < 600 {
+            if heartRate == .pending {
+                strainNote = String(localized: "This activity's Strain is calculated from your strap's heart rate once the strap syncs it.")
+            } else if window.count < 2 || credited < 600 {
                 strainNote = String(localized: "There wasn't enough heart-rate data during this activity to calculate its Strain.")
             } else if WorkoutSource.classify(row.source) == .manual {
                 strainNote = String(localized: "This activity's Strain is calculated from your strap's heart rate the next time ZENO analyses your data.")
@@ -126,9 +160,22 @@ extension PulseSnapshotBuilder {
         guard isCurrent(r) else { return nil }
         let keyStats = Self.keyStats(row: row, variant: variant, duration: duration, steps: steps, minHR: minHR,
                                      others: others, historyMinHR: otherMinHRs, inputs: inputs)
-        let insight = Self.insight(row: row, variant: variant, zoneSeconds: zoneSeconds, hasZones: credited > 0,
+        // A zone sentence only from heart rate that spans the activity: "most of it was in Zone 0" over a
+        // ten-minute fragment of a 28-minute session would be false.
+        let zonesTrusted = fromImport || heartRate.coversActivity
+        let insight = Self.insight(row: row, variant: variant, zoneSeconds: zoneSeconds,
+                                   hasZones: credited > 0 && zonesTrusted,
                                    typicalHighZoneSeconds: history.typicalHighZoneSeconds,
                                    duration: duration, durationAverage: durationAverage, lift: lift)
+
+        // The recovery variant's stress and impact (§3.6 "Recovery activity").
+        var stress: ActivityStressSummary?
+        var impact: ActivityRecoveryImpact?
+        if variant == .recovery {
+            stress = await activityStress(r, row: row)
+            guard isCurrent(r) else { return nil }
+            impact = Self.recoveryImpact(sport: row.sport, rows: rows, days: r.days, now: r.now)
+        }
 
         return ActivityDetailSnapshot(
             seq: r.seq, row: row, variant: variant, ownership: ownership,
@@ -142,11 +189,29 @@ extension PulseSnapshotBuilder {
             hr: Self.displayPoints(samples),
             chartSpan: Date(timeIntervalSince1970: TimeInterval(row.startTs - pad))...Date(timeIntervalSince1970: TimeInterval(row.endTs + pad)),
             windowSampleCount: window.count,
+            heartRate: heartRate,
             zones: zones, zonesFromImport: fromImport,
-            zoneFootnote: Self.zoneFootnote(zoneSet: zoneSet, fromImport: fromImport),
+            zoneFootnote: Self.zoneFootnote(zoneSet: zoneSet, fromImport: fromImport, heartRate: heartRate),
             keyStats: keyStats, hrRecovery: hrr?.hasMeasurement == true ? hrr : nil, route: route, lift: lift,
+            stress: stress, impact: impact,
             insight: insight)
     }
+
+    /// The share of the window's minutes a reading falls in, 0…1: how much of an activity a heart-rate
+    /// stream covers, whatever its sample rate.
+    static func coverage(_ samples: [HRSample], from: Int, to: Int) -> Double {
+        let span = to - from
+        guard span > 0 else { return samples.isEmpty ? 0 : 1 }
+        let minutes = max(1, (span + 59) / 60)
+        var hit = Set<Int>()
+        for s in samples where s.ts >= from && s.ts <= to {
+            hit.insert(min(minutes - 1, (s.ts - from) / 60))
+        }
+        return Double(hit.count) / Double(minutes)
+    }
+
+    /// Coverage from which a heart-rate stream counts as the activity's whole.
+    static let fullCoverage = 0.9
 
     /// The heart rate of a row's own strap around it (half its length either side, at least 15 minutes,
     /// never past now), bucketed for a chart: the Edit sheet's scrubber [Z].
@@ -222,15 +287,26 @@ extension PulseSnapshotBuilder {
         }
     }
 
-    static func zoneFootnote(zoneSet: HRZoneSet, fromImport: Bool) -> String {
+    static func zoneFootnote(zoneSet: HRZoneSet, fromImport: Bool, heartRate: ActivityHeartRateState) -> String {
         if fromImport {
             return String(localized: "This split came with the import, in its own zones (% of max heart rate).")
         }
         let max = Int(zoneSet.maxHR.rounded())
+        let zones: String
         if let resting = zoneSet.restingHR {
-            return String(localized: "Zones use your heart-rate reserve: max \(max) bpm, resting \(Int(resting.rounded())) bpm.")
+            zones = String(localized: "Zones use your heart-rate reserve: max \(max) bpm, resting \(Int(resting.rounded())) bpm.")
+        } else {
+            zones = String(localized: "Zones use your max heart rate of \(max) bpm.")
         }
-        return String(localized: "Zones use your max heart rate of \(max) bpm.")
+        switch heartRate {
+        case .session:
+            return String(localized: "From this session's live heart rate until your strap syncs its own recording.") + " " + zones
+        case .partial(let missing):
+            return String(localized: "Your strap recorded no heart rate for \(ActivityFormat.clock(seconds: missing)) of this activity, so these times don't add up to its duration.")
+                + " " + zones
+        case .stored, .pending, .none:
+            return zones
+        }
     }
 
     /// This sport's typical zone shares (the middle half of up to eight recent sessions, needing three) and
@@ -286,6 +362,97 @@ extension PulseSnapshotBuilder {
             }
             return out
         }
+    }
+
+    // MARK: Stress and impact (the recovery variant)
+
+    /// The Stress Monitor's readings around a recovery activity (§3.6, e01–e03, e08, e10): the activity's
+    /// local day scored exactly as the Stress Monitor scores a day (`DaytimeStress.analyze` over the day's
+    /// heart rate, R-R and wrist motion, in the lens Settings picks, with the half-hourly display
+    /// timeline), then the reading nearest the activity's start and the next one nearest its end. Nil when
+    /// no reading covers it: outside the 6 AM–10 PM scoring window, too little heart rate, or an hour the
+    /// motion gate masked as exercise.
+    func activityStress(_ r: PulseRequest, row: WorkoutRow) async -> ActivityStressSummary? {
+        let cal = Calendar.current
+        let dayStart = cal.startOfDay(for: Date(timeIntervalSince1970: TimeInterval(row.startTs)))
+        guard let nextStart = cal.date(byAdding: .day, value: 1, to: dayStart) else { return nil }
+        let isToday = cal.isDate(dayStart, inSameDayAs: r.now)
+        let from = Int(dayStart.timeIntervalSince1970)
+        let to = isToday ? Int(r.now.timeIntervalSince1970) : Int(nextStart.timeIntervalSince1970) - 1
+        let personal = r.prefs.stressPersonalBaseline
+        let key = "activity.stress.\(from).\(isToday ? to / 300 : 0).\(personal)"
+        let result: DaytimeStress.Result = await cached(key) { () async -> DaytimeStress.Result in
+            let hr = await repo.hrSamples(from: from, to: to, limit: 200_000)
+            guard hr.count >= DaytimeStress.minHourHRSamples else { return .empty }
+            let rr = await repo.rrIntervals(from: from, to: to, limit: 200_000)
+            let gravity = await repo.gravitySamplesUnion(from: from, to: to, limit: 200_000)
+            let mode = await DaytimeStressMode.selected(repo: repo, startOfToday: dayStart, calendar: cal,
+                                                        personalBaseline: personal)
+            let tz = TimeZone.current.secondsFromGMT(for: dayStart)
+            return DaytimeStress.analyze(hr: hr, rr: rr, gravity: gravity, tzOffsetSeconds: tz, mode: mode,
+                                         includeTimeline: true)
+        }
+        return Self.stressSummary(result.timeline, startTs: row.startTs, endTs: row.endTs)
+    }
+
+    /// The start and end readings and the chart for an activity from a day's stress timeline. A reading is
+    /// an hour of heart rate, shown at its centre; the start reading is the last centred at or before the
+    /// start (within half a step), the end reading the next one centred at or after the end, so a short
+    /// session still compares two readings rather than one with itself. Each must sit within an hour of
+    /// its edge, or there is no reading to report.
+    static func stressSummary(_ timeline: [DaytimeStress.HourPoint], startTs: Int, endTs: Int) -> ActivityStressSummary? {
+        let half = DaytimeStress.bucketSeconds / 2
+        let slack = DaytimeStress.timelineStepSeconds / 2
+        let ordered = timeline.sorted { $0.startTs < $1.startTs }
+        let scored = ordered.filter { $0.level != nil }
+        guard let first = scored.last(where: { $0.startTs + half <= startTs + slack }),
+              abs(first.startTs + half - startTs) <= DaytimeStress.bucketSeconds,
+              let last = scored.first(where: { $0.startTs > first.startTs && $0.startTs + half >= endTs - slack }),
+              abs(last.startTs + half - endTs) <= DaytimeStress.bucketSeconds,
+              let a = first.level, let b = last.level else { return nil }
+        let lo = min(first.startTs + half - DaytimeStress.timelineStepSeconds, startTs - 600)
+        let hi = max(last.startTs + half + DaytimeStress.timelineStepSeconds, endTs + 600)
+        let points = ordered.filter { $0.startTs + half >= lo && $0.startTs + half <= hi }.map {
+            PulseTimeValue(date: Date(timeIntervalSince1970: TimeInterval($0.startTs + half)), value: $0.level)
+        }
+        return ActivityStressSummary(points: points,
+                                     span: Date(timeIntervalSince1970: TimeInterval(lo))...Date(timeIntervalSince1970: TimeInterval(hi)),
+                                     start: a, end: b)
+    }
+
+    /// IMPACT ON RECOVERY (§3.6, e03): over the 90 days before today, each day this activity was done and
+    /// each day it was not, counted only when the next morning's Recovery scored (a day the strap was not
+    /// worn is no evidence either way), and that next-day Recovery compared through `BehaviorInsights`
+    /// once both sides reach five days (WHOOP's rule, the Behavior Insights rule).
+    static func recoveryImpact(sport: String, rows: [WorkoutRow], days: [DailyMetric],
+                               now: Date) -> ActivityRecoveryImpact {
+        let cal = Calendar.current
+        var recoveryByDay: [String: Double] = [:]
+        for d in days { if let rec = d.recovery { recoveryByDay[d.day] = rec } }
+        let sportDays = Set(rows.filter { $0.sport.caseInsensitiveCompare(sport) == .orderedSame }
+            .map { Repository.localDayKey(Date(timeIntervalSince1970: TimeInterval($0.startTs))) })
+        var withDays = Set<String>(), withoutDays = Set<String>()
+        var nextDayRecovery: [String: Double] = [:]
+        for back in 1...90 {
+            guard let day = cal.date(byAdding: .day, value: -back, to: now),
+                  let next = cal.date(byAdding: .day, value: 1, to: day) else { continue }
+            let key = Repository.localDayKey(day)
+            guard let recovery = recoveryByDay[Repository.localDayKey(next)] else { continue }
+            nextDayRecovery[key] = recovery
+            if sportDays.contains(key) { withDays.insert(key) } else { withoutDays.insert(key) }
+        }
+        let required = ActivityRecoveryImpact.required
+        guard withDays.count >= required, withoutDays.count >= required,
+              let effect = BehaviorInsights.effect(behaviorDays: withDays, controlDays: withoutDays,
+                                                   outcomeByDay: nextDayRecovery, behavior: sport,
+                                                   outcome: "Recovery"),
+              let change = effect.pctChange
+        else {
+            return ActivityRecoveryImpact(daysWith: withDays.count, daysWithout: withoutDays.count,
+                                          percentChange: nil, significant: false)
+        }
+        return ActivityRecoveryImpact(daysWith: withDays.count, daysWithout: withoutDays.count,
+                                      percentChange: change, significant: effect.significant)
     }
 
     /// The lowest heart rate of each of this sport's sessions over the 30 days before this one (the
@@ -365,8 +532,10 @@ extension PulseSnapshotBuilder {
     }
 
     /// The Lift Log session paired with this workout (same start and sport), summarised: exercises, working
-    /// sets, reps, tonnage (working sets only) and each exercise's best set by estimated 1RM.
-    func liftSummary(for row: WorkoutRow, inputs: ActivityBuildInputs) async -> ActivityLiftSummary? {
+    /// sets, reps, tonnage (working sets only), each exercise's best set by estimated 1RM, and every set in
+    /// order with its own average heart rate when it carries its times.
+    func liftSummary(for row: WorkoutRow, inputs: ActivityBuildInputs,
+                     heartRate: [HRSample] = []) async -> ActivityLiftSummary? {
         guard let store = await repo.storeHandle() else { return nil }
         let owner = await repo.deviceId
         guard let sessions = try? await store.liftSessions(deviceId: owner, fromTs: row.startTs, toTs: row.startTs),
@@ -380,11 +549,25 @@ extension PulseSnapshotBuilder {
         }
         let performed = sets.filter { LiftMetrics.isPerformed(reps: $0.reps) }
         let working = performed.filter { !$0.isWarmup }
-        let exercises = LiftMetrics.perExercise(sets).map { e in
-            ActivityLiftSummary.Exercise(
+        let exercises = LiftMetrics.perExercise(sets).map { e -> ActivityLiftSummary.Exercise in
+            let own = performed.filter { $0.exercise == e.exercise }.sorted { $0.ord < $1.ord }
+            let rows = own.map { set -> ActivityLiftSummary.Exercise.SetRow in
+                var avg: Int?
+                if let from = set.startTs, let to = set.endTs, to > from {
+                    let bpm = heartRate.filter { $0.ts >= from && $0.ts <= to }.map(\.bpm)
+                    if bpm.count >= 3 { avg = Int((Double(bpm.reduce(0, +)) / Double(bpm.count)).rounded()) }
+                }
+                return .init(id: set.ord, reps: set.reps.map { "\($0)" } ?? "–",
+                             weight: set.weightKg.flatMap { $0 > 0 ? mass($0) : nil },
+                             avgHR: avg, isWarmup: set.isWarmup)
+            }
+            return ActivityLiftSummary.Exercise(
                 name: e.exercise, workingSets: e.workingSets,
                 bestSet: e.bestWeightKg.flatMap { w in e.bestReps.map { "\(mass(w)) \(unit) × \($0)" } },
-                estimatedOneRepMax: e.bestEstimatedOneRepMaxKg.map { "\(mass($0)) \(unit)" })
+                estimatedOneRepMax: e.bestEstimatedOneRepMaxKg.map { "\(mass($0)) \(unit)" },
+                sets: rows,
+                totalReps: own.filter { !$0.isWarmup }.compactMap(\.reps).reduce(0, +),
+                tonnage: e.volumeKg.map(mass))
         }
         return ActivityLiftSummary(sessionId: session.id, exercises: exercises, workingSets: working.count,
                                    totalReps: working.compactMap(\.reps).reduce(0, +),
@@ -399,9 +582,12 @@ extension PulseSnapshotBuilder {
                          inputs: ActivityBuildInputs) -> [ActivityKeyStat] {
         var out: [ActivityKeyStat] = []
         func stat(_ id: String, _ title: String, _ icon: String, value: Double?, unit: String,
-                  text: (Double) -> String, average: Double?) {
+                  text: (Double) -> String, average: Double?, smallSeconds: Bool = false) {
             guard let value else { return }
             let shown = text(value)
+            // A clock's seconds are drawn smaller (g15 "1:22 :18"), as the zone rows draw them.
+            let head = smallSeconds && shown.count > 3 ? String(shown.dropLast(3)) : shown
+            let tail = smallSeconds && shown.count > 3 ? String(shown.suffix(3)) : nil
             var direction: PulseTrend.Direction?
             var averageText: String?
             var spoken: String?
@@ -414,7 +600,7 @@ extension PulseSnapshotBuilder {
                     : (direction == .up ? String(localized: "above your 30-day average of \(avg) \(unit)")
                                         : String(localized: "below your 30-day average of \(avg) \(unit)"))
             }
-            out.append(ActivityKeyStat(id: id, title: title, icon: icon, value: shown, unit: unit,
+            out.append(ActivityKeyStat(id: id, title: title, icon: icon, value: head, unit: unit, valueTail: tail,
                                        average: averageText, direction: direction, accessibilityComparison: spoken))
         }
         let cals = String(localized: "cals")
@@ -433,7 +619,7 @@ extension PulseSnapshotBuilder {
         if variant == .strength {
             stat("duration", String(localized: "Duration"), "stopwatch", value: duration > 0 ? duration : nil, unit: "",
                  text: { ActivityFormat.clock(seconds: $0) },
-                 average: avg { $0.durationS ?? Double(max($0.endTs - $0.startTs, 0)) })
+                 average: avg { $0.durationS ?? Double(max($0.endTs - $0.startTs, 0)) }, smallSeconds: true)
         }
         stat("calories", String(localized: "Calories"), "flame", value: row.energyKcal, unit: cals,
              text: PulseFormat.grouped, average: avg(\.energyKcal))
@@ -444,7 +630,7 @@ extension PulseSnapshotBuilder {
         if variant == .strain {
             stat("duration", String(localized: "Duration"), "stopwatch", value: duration > 0 ? duration : nil, unit: "",
                  text: { ActivityFormat.clock(seconds: $0) },
-                 average: avg { $0.durationS ?? Double(max($0.endTs - $0.startTs, 0)) })
+                 average: avg { $0.durationS ?? Double(max($0.endTs - $0.startTs, 0)) }, smallSeconds: true)
         }
         if let steps {
             stat("steps", String(localized: "Steps"), "figure.walk", value: Double(steps), unit: "",
@@ -552,10 +738,12 @@ extension PulseSnapshotBuilder {
         let hr = await heartRate(dayKey: r.day.key, from: window.from, to: window.to, isToday: true)
         guard isCurrent(r) else { return nil }
         let strain = strainValue(r, row: row, hr: hr)
-        let target = strainTarget(charge, strain: strain, isToday: true)
         let percent = charge.pct.map { PulseDisplay.displayedPercent($0) }
         let carried: Bool
         if case .carried = charge { carried = true } else { carried = false }
+        // No target from an earlier night's Recovery: the Strain dial draws no band or tick then either
+        // (`PulseDialData.dialContent`), and the panel must not promise a target the dial does not show.
+        let target = carried ? nil : strainTarget(charge, strain: strain, isToday: true)
         let midpoint = target.map { ($0.range.lowerBound + $0.range.upperBound) / 2 }
         return StartActivitySnapshot(
             seq: r.seq, recoveryPercent: percent,

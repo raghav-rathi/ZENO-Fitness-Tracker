@@ -43,16 +43,27 @@ struct PulseActivityEditTarget: Identifiable {
     let id = UUID()
 }
 
-/// EDIT ACTIVITY presented from Activity Details: its own stack, "✕" at its root.
+/// EDIT ACTIVITY presented from Activity Details: its own stack, "✕" at its root. Given the window's height
+/// it stops ≈119 pt down, as WHOOP's does (d04: the sheet's edge at 120 pt), so Activity Details stays in
+/// place, dimmed, rather than shrinking into the card stack the large detent makes.
 struct PulseActivityFormSheet: View {
     let mode: PulseActivityFormMode
+    /// The presenting screen's full height, or nil for the large detent.
+    var windowHeight: CGFloat?
     let onDone: (WorkoutRow?) -> Void
+
+    /// d04 / c03: the edit sheet's top edge 119–121 pt down.
+    static let editSheetTop: CGFloat = 119
+    static let reclassifySheetTop: CGFloat = 121
 
     var body: some View {
         NavigationStack {
-            PulseActivityForm(mode: mode, onDone: onDone)
+            PulseActivityForm(mode: mode,
+                              reclassifyHeight: windowHeight.map { $0 - Self.reclassifySheetTop },
+                              onDone: onDone)
                 .environment(\.pulseModalRoot, true)
         }
+        .presentationDetents(windowHeight.map { [.height($0 - Self.editSheetTop)] } ?? [.large])
     }
 }
 
@@ -66,6 +77,8 @@ struct PulseActivityFormSheet: View {
 /// OVERLAPPING ACTIVITIES dialog.
 struct PulseActivityForm: View {
     let mode: PulseActivityFormMode
+    /// SELECT YOUR ACTIVITY's height over Edit (c03: its edge 121 pt down); nil for the large detent.
+    var reclassifyHeight: CGFloat?
     let onDone: (WorkoutRow?) -> Void
 
     @Environment(PulseModel.self) private var model
@@ -80,7 +93,7 @@ struct PulseActivityForm: View {
     @State private var editing: EditingField?
     @State private var showsPicker = false
     @State private var showsReclassify = false
-    @State private var overlap: String?
+    @State private var overlap: AttributedString?
     @State private var saving = false
     /// The heart rate around the edited activity, for the scrubber [Z].
     @State private var heartRate: [PulseTimeValue] = []
@@ -88,8 +101,9 @@ struct PulseActivityForm: View {
 
     enum EditingField: Hashable { case start, end, location }
 
-    init(mode: PulseActivityFormMode, onDone: @escaping (WorkoutRow?) -> Void) {
+    init(mode: PulseActivityFormMode, reclassifyHeight: CGFloat? = nil, onDone: @escaping (WorkoutRow?) -> Void) {
         self.mode = mode
+        self.reclassifyHeight = reclassifyHeight
         self.onDone = onDone
         let now = Date()
         switch mode {
@@ -140,6 +154,16 @@ struct PulseActivityForm: View {
                     validationBanner(message)
                         .padding(.top, 16)
                 }
+                if isSleep {
+                    // One entry for both: ZENO files the session with the night's sleep or as a nap by its
+                    // time, so asking which it was would record nothing.
+                    Text(String(localized: "Saved as a sleep. ZENO counts it toward your night or as a nap from when it happened."))
+                        .pulseText(.secondary)
+                        .foregroundStyle(PulseTheme.textTertiary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.horizontal, 20)
+                        .padding(.top, 14)
+                }
                 if !isSleep {
                     sectionHeader(String(localized: "Location"))
                         .padding(.top, 28)
@@ -165,17 +189,17 @@ struct PulseActivityForm: View {
             }
         }
         .sheet(isPresented: $showsReclassify) {
-            PulseReclassifySheet(selected: kind?.name, isAutoDetected: isAutoDetected) { picked in
+            PulseReclassifySheet(selected: kind?.name, isAutoDetected: isAutoDetected, height: reclassifyHeight) { picked in
                 kind = picked
                 showsReclassify = false
             }
         }
         .fullScreenCover(isPresented: Binding(get: { overlap != nil }, set: { if !$0 { overlap = nil } })) {
-            PulseDialogCard(title: String(localized: "Overlapping activities"),
-                            message: overlap ?? "",
-                            primaryTitle: String(localized: "Got it"),
-                            primary: { overlap = nil },
-                            onClose: { overlap = nil })
+            PulseActivityDialogCard(title: String(localized: "Overlapping activities"),
+                                    message: overlap ?? AttributedString(),
+                                    primaryTitle: String(localized: "Got it"),
+                                    primary: { overlap = nil },
+                                    onClose: { overlap = nil })
                 .presentationBackground(.clear)
         }
         .task { await loadHeartRate() }
@@ -227,9 +251,12 @@ struct PulseActivityForm: View {
     private var infoBanner: some View {
         HStack(alignment: .top, spacing: 12) {
             Image(systemName: "sparkles")
-                .font(.system(size: 15, weight: .semibold))
+                .font(.system(size: PulseActivityStyle.Glyph.banner, weight: .semibold))
                 .padding(.top, 1)
                 .accessibilityHidden(true)
+            // Not the spec's [Z] "Your edits help ZENO recognise your activities.": ZENO's activity detection
+            // is a fixed heuristic that learns nothing from edits, so that sentence would promise something
+            // false. This one says what adding does (ARCHITECTURE §9).
             Text(String(localized: "ZENO scores an activity you add from your strap's heart rate over that time."))
                 .pulseText(.body)
                 .fixedSize(horizontal: false, vertical: true)
@@ -247,7 +274,7 @@ struct PulseActivityForm: View {
         } label: {
             HStack(spacing: 16) {
                 Image(systemName: kind?.symbol ?? "square.grid.2x2")
-                    .font(.system(size: 20, weight: .regular))
+                    .font(.system(size: PulseActivityStyle.Glyph.formRow, weight: .regular))
                     .foregroundStyle(PulseTheme.textSecondary)
                     .frame(width: 28)
                     .accessibilityHidden(true)
@@ -257,7 +284,7 @@ struct PulseActivityForm: View {
                     .lineLimit(2)
                 Spacer(minLength: 8)
                 Image(systemName: "chevron.right")
-                    .font(.system(size: 16, weight: .semibold))
+                    .font(.system(size: PulseActivityStyle.Glyph.chevron, weight: .semibold))
                     .foregroundStyle(PulseTheme.textPrimary)
                     .accessibilityHidden(true)
             }
@@ -319,9 +346,11 @@ struct PulseActivityForm: View {
         return String(localized: "\(day) at \(PulseFormat.clock(date))")
     }
 
-    /// The inline wheel for the active pill: date · hour · minute · AM/PM, never past now.
+    /// The inline wheel for the active pill: date · hour · minute · AM/PM. It reaches past now, as WHOOP's
+    /// does (c01): a future time shows the amber "cannot start or end in the future" banner and SAVE turns
+    /// off, rather than the wheel silently refusing and the pill and wheel disagreeing.
     private var wheel: some View {
-        DatePicker("", selection: editing == .start ? startBinding : $end, in: ...Date(),
+        DatePicker("", selection: editing == .start ? startBinding : $end,
                    displayedComponents: [.date, .hourAndMinute])
             .datePickerStyle(.wheel)
             .labelsHidden()
@@ -329,21 +358,20 @@ struct PulseActivityForm: View {
             .accessibilityLabel(editing == .start ? String(localized: "Start time") : String(localized: "End time"))
     }
 
-    /// Moving the start keeps the activity's length and carries the end with it, clamped so the end never
-    /// lands in the future (the classic sheet's rule, `WorkoutSource.endAfterStartMove`).
+    /// Moving the start keeps the activity's length and carries the end with it (the classic sheet's rule,
+    /// `WorkoutSource.endAfterStartMove`). A move into the future is shown, not refused: the banner says why
+    /// it cannot be saved.
     private var startBinding: Binding<Date> {
         Binding(get: { start }, set: { picked in
-            let length = end.timeIntervalSince(start)
-            let newStart = min(picked, Date().addingTimeInterval(-max(0, length)))
-            end = WorkoutSource.endAfterStartMove(oldStart: start, oldEnd: end, newStart: newStart)
-            start = newStart
+            end = WorkoutSource.endAfterStartMove(oldStart: start, oldEnd: end, newStart: picked)
+            start = picked
         })
     }
 
     private func validationBanner(_ message: String) -> some View {
         HStack(alignment: .top, spacing: 12) {
             Text(verbatim: "!")
-                .font(.system(size: 17, weight: .heavy))
+                .activityText(.bannerBang)
                 .accessibilityHidden(true)
             Text(message)
                 .pulseText(.body)
@@ -473,6 +501,7 @@ struct PulseActivityForm: View {
             return
         }
         if kind.category == .sleep {
+            // A sleep or nap: the sleep pipeline's own manual session (it files it as the night or a nap).
             await repo.addManualNap(startTs: row.startTs, endTs: row.endTs)
             await intelligence.analyzeRecent()
             await repo.refresh()
@@ -495,12 +524,12 @@ struct PulseActivityForm: View {
         dismiss()
     }
 
-    /// WHOOP's OVERLAPPING ACTIVITIES words when the span meets something already recorded (another
-    /// activity, or a sleep when adding a sleep or nap), else nil. The row being edited (or copied) is not
-    /// an overlap with itself.
-    private func overlapMessage(for row: WorkoutRow) async -> String? {
+    /// WHOOP's OVERLAPPING ACTIVITIES words when the span meets something already recorded, else nil: a
+    /// stored activity, or a stored sleep (§3.9: "an overlap check against stored workouts and sleeps"),
+    /// whatever is being added. The row being edited (or copied) is not an overlap with itself. The times
+    /// and the activities are set in white bold, as c06 sets them.
+    private func overlapMessage(for row: WorkoutRow) async -> AttributedString? {
         let ignore = mode.original
-        let sleepEntry = kind?.category == .sleep
         let hits: [(String, Int, Int)]? = await model.build(dayOffset: 0) { builder, r in
             let rows = await builder.workoutRows()
             var out: [(String, Int, Int)] = rows.filter { other in
@@ -509,20 +538,23 @@ struct PulseActivityForm: View {
                 return true
             }
             .map { (WorkoutSource.displaySport($0.sport), $0.startTs, $0.endTs) }
-            if sleepEntry {
-                let groups = await builder.nightGroups(r)
-                for block in groups.flatMap({ $0 }) where block.effectiveStartTs < row.endTs && row.startTs < block.endTs {
-                    out.append((String(localized: "Sleep"), block.effectiveStartTs, block.endTs))
-                }
+            let groups = await builder.nightGroups(r)
+            for block in groups.flatMap({ $0 }) where block.effectiveStartTs < row.endTs && row.startTs < block.endTs {
+                out.append((String(localized: "Sleep"), block.effectiveStartTs, block.endTs))
             }
-            return out
+            return out.sorted { $0.1 < $1.1 }
         }
         guard let hits, !hits.isEmpty else { return nil }
         func clock(_ ts: Int) -> String { PulseFormat.clock(Date(timeIntervalSince1970: TimeInterval(ts))) }
-        let lines = hits.prefix(3).map { "\($0.0) - \(clock($0.1)) - \(clock($0.2))" }.joined(separator: "\n")
-        return String(localized: "You added an activity from \(clock(row.startTs)) to \(clock(row.endTs)). ZENO already has these activities during this time:")
-            + "\n\n" + lines + "\n\n"
-            + String(localized: "Please go back and edit your activity or delete the overlapping activities to continue.")
+        var message = AttributedString(String(localized: "You added an activity from "))
+        message += PulseActivityDialogCard.emphasised(String(localized: "\(clock(row.startTs)) to \(clock(row.endTs))"))
+        message += AttributedString(String(localized: ". ZENO already has these activities during this time:"))
+        for hit in hits.prefix(3) {
+            message += AttributedString("\n")
+            message += PulseActivityDialogCard.emphasised("\(hit.0) - \(clock(hit.1)) - \(clock(hit.2))")
+        }
+        message += AttributedString("\n\n" + String(localized: "Please go back and edit your activity or delete the overlapping activities to continue."))
+        return message
     }
 
     #if DEBUG
@@ -545,6 +577,8 @@ struct PulseActivityForm: View {
 struct PulseReclassifySheet: View {
     var selected: String?
     var isAutoDetected = false
+    /// The sheet's height (c03: its edge 121 pt down, over Edit), or nil for the large detent.
+    var height: CGFloat?
     let onPick: (PulseActivityKind) -> Void
     @Environment(\.dismiss) private var dismiss
 
@@ -575,7 +609,7 @@ struct PulseReclassifySheet: View {
         .environment(\.colorScheme, .dark)
         .presentationDragIndicator(.visible)
         .presentationCornerRadius(PulseTheme.Radius.card)
-        .presentationDetents([.large])
+        .presentationDetents(height.map { [.height($0)] } ?? [.large])
     }
 }
 

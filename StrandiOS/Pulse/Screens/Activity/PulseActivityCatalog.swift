@@ -13,8 +13,11 @@ import StrandDesign
 // suggestion set, not a whitelist", #519): the names are stored exactly as listed, never localised, and an
 // Android build displays them verbatim. Android's picker does not offer them yet.
 //
-// SLEEP: the add flow can log a missed Sleep or Nap (`Repository.addManualNap`); a live session cannot be a
-// sleep, so the Start picker leaves that tab out.
+// SLEEP: the add flow can log a missed sleep (`Repository.addManualNap`). It is ONE entry, "Sleep or nap":
+// both would save the same manual sleep session, and the sleep pipeline itself files it with the night or as
+// a nap by its time, so two entries would ask a question whose answer is never recorded. A live session
+// cannot be a sleep (ZENO's live engine records workouts; a sleep is detected from the strap or added
+// afterwards), so the Start picker leaves the SLEEP tab out [Z] (ARCHITECTURE §9).
 
 /// One entry in an activity list.
 struct PulseActivityKind: Identifiable, Hashable {
@@ -42,14 +45,15 @@ struct PulseActivityKind: Identifiable, Hashable {
     var symbol: String { PulseActivityCatalog.symbol(for: name) }
 
     /// The UPPERCASE row title.
-    var displayName: String { WorkoutSource.displaySport(name) }
+    var displayName: String {
+        category == .sleep ? String(localized: "Sleep or nap") : WorkoutSource.displaySport(name)
+    }
 }
 
 enum PulseActivityCatalog {
 
-    /// The sleep entries the add flow offers (stored as a manual sleep session, not a workout).
+    /// The sleep entry the add flow offers (stored as a manual sleep session, not a workout).
     static let sleepName = "Sleep"
-    static let napName = "Nap"
 
     /// Recovery activities beyond the shared catalogue's Meditation [Z]. Stored verbatim.
     static let recoveryExtras: [String] = [
@@ -75,10 +79,9 @@ enum PulseActivityCatalog {
         return out
     }()
 
-    /// The two sleep entries (add flow only).
+    /// The sleep entry (add flow only): one for a sleep or a nap, which the sleep pipeline tells apart.
     static let sleepKinds: [PulseActivityKind] = [
         PulseActivityKind(name: sleepName, category: .sleep, isDistanceSport: false),
-        PulseActivityKind(name: napName, category: .sleep, isDistanceSport: false),
     ]
 
     /// The entry for a stored sport name (case-insensitive), or a free-typed one classified as strain.
@@ -130,8 +133,8 @@ enum PulseActivityCatalog {
         "spa": ["Sauna", "Steam room", "Massage"],
         "breath": ["Breathwork", "Meditation"],
         "mindful": ["Meditation", "Breathwork"],
-        "nap": [napName],
-        "sleep": [sleepName, napName],
+        "nap": [sleepName],
+        "sleep": [sleepName],
         "stairs": ["Stair climber"],
         "rope": ["Jump rope"],
         "erg": ["Row machine", "Rowing"],
@@ -162,7 +165,6 @@ enum PulseActivityCatalog {
     static func symbol(for name: String) -> String {
         switch name.lowercased() {
         case "sleep": return "moon.fill"
-        case "nap": return "powersleep"
         case "sauna": return "flame"
         case "steam room": return "humidity"
         case "ice bath", "cold plunge": return "snowflake"

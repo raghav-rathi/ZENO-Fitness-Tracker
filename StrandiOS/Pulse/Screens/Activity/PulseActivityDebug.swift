@@ -14,7 +14,12 @@ import WhoopProtocol
 //   --activity-workout <pick>     Activity Details on a stored workout instead of the shell's launch stand-in:
 //                                 "latest", an index (0 = newest) or part of a sport name ("running")
 //   --activity-menu / --activity-edit / --activity-delete / --activity-export / --activity-scrub /
-//   --activity-zones-tab          that state of Activity Details once it has loaded
+//   --activity-zones-tab / --activity-heart-rate-tab
+//                                 that state of Activity Details once it has loaded
+//   --activity-tap-zones          switch EXERCISES → HR ZONES two seconds after load, alone, through the
+//                                 segmented control's binding (the update a tap makes)
+//   --activity-lift-page N        the strength EXERCISES pager on page N (0 = the summary card)
+//   --activity-view-all           open EXERCISE SUMMARY (VIEW ALL) once Activity Details has loaded
 //   --activity-wheel / --activity-invalid / --activity-overlap / --activity-reclassify
 //                                 that state of the Add / Edit form; --activity-form-sport <name> picks one
 //   --activity-sport <name>       the pre-start screen's activity

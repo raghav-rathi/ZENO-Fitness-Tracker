@@ -16,7 +16,8 @@ import MapKit
 struct PulseActivityAverageChip: View {
     let text: String
     let direction: PulseTrend.Direction
-    /// On a card the chip darkens the card; on the page it lightens the page.
+    /// On a card the chip is the card's nested white 10% (f02: #474C50 on a #34393D tile); on the page,
+    /// a card's white 10% (h01: #383D41 on #212830). Either way it lightens what it sits on.
     var onCard = false
 
     var body: some View {
@@ -33,7 +34,7 @@ struct PulseActivityAverageChip: View {
         .padding(.horizontal, 6)
         .frame(height: 20)
         .background(RoundedRectangle(cornerRadius: PulseTheme.Radius.badge, style: .circular)
-            .fill(onCard ? Color.black.opacity(0.25) : PulseTheme.card))
+            .fill(onCard ? PulseTheme.nested : PulseTheme.card))
         .accessibilityHidden(true)
     }
 }
@@ -98,7 +99,7 @@ struct PulseActivityStatTile: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 8) {
                 Image(systemName: stat.icon)
-                    .font(.system(size: 17, weight: .light))
+                    .font(.system(size: PulseActivityStyle.Glyph.tile, weight: .light))
                     .foregroundStyle(PulseTheme.textSecondary)
                     .frame(width: 22)
                 Text(stat.title)
@@ -109,11 +110,19 @@ struct PulseActivityStatTile: View {
             }
             Spacer(minLength: 10)
             HStack(alignment: .firstTextBaseline, spacing: 4) {
-                Text(stat.value)
-                    .font(PulseType.font(.largeValue))
-                    .foregroundStyle(PulseTheme.textPrimary)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.6)
+                Group {
+                    if let tail = stat.valueTail {
+                        // A clock's seconds smaller and grey, as the zone rows draw them (g15 ":18").
+                        Text(stat.value).font(PulseType.font(.largeValue)).foregroundColor(PulseTheme.textPrimary)
+                            + Text(tail).font(PulseType.font(.tileValue)).foregroundColor(PulseTheme.textSecondary)
+                    } else {
+                        Text(stat.value)
+                            .font(PulseType.font(.largeValue))
+                            .foregroundStyle(PulseTheme.textPrimary)
+                    }
+                }
+                .lineLimit(1)
+                .minimumScaleFactor(0.6)
                 if !stat.unit.isEmpty {
                     Text(stat.unit)
                         .pulseText(.tileUnit)
@@ -132,7 +141,7 @@ struct PulseActivityStatTile: View {
         .pulseCardBackground()
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(stat.title)
-        .accessibilityValue([stat.unit.isEmpty ? stat.value : "\(stat.value) \(stat.unit)",
+        .accessibilityValue([stat.unit.isEmpty ? stat.value + (stat.valueTail ?? "") : "\(stat.value) \(stat.unit)",
                              stat.accessibilityComparison].compactMap { $0 }.joined(separator: ", "))
     }
 }
@@ -144,7 +153,7 @@ struct PulseActivityStatsRow: View {
     let stats: [ActivityKeyStat]
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: 9) {
             HStack(alignment: .firstTextBaseline) {
                 Text(title)
                     .pulseText(.cardTitle)
@@ -171,11 +180,16 @@ struct PulseActivityStatsRow: View {
 // MARK: Zone rows
 
 /// One heart-rate zone in its own card (§2.6 item 18 as the 2026 captures draw it, h01, 82, g16): "ZONE 4
-/// 162-171 BPM 2%" with the time at the right (seconds smaller and grey), then the zone-coloured bar over
-/// the hatched track with this sport's typical share boxed. A zone with no time is a short dimmed card
-/// with no bar.
+/// 162-171 BPM 2%" with the time at the right (seconds smaller), then the zone-coloured bar over the hatched
+/// track with this sport's typical share boxed. A zone with no time is a short card whose TEXT dims, the
+/// card's fill staying as its neighbours' (hc82). Without heart rate that spans the activity there is no
+/// share to state, so the row shows the time alone.
 struct PulseActivityZoneRow: View {
     let row: ActivityZoneRow
+    var showsShare = true
+
+    @ScaledMetric(relativeTo: .body) private var timeSize: CGFloat = 19
+    @ScaledMetric(relativeTo: .footnote) private var secondsSize: CGFloat = 13
 
     private var color: Color { PulseTheme.Zone.color(row.zone) }
 
@@ -192,20 +206,23 @@ struct PulseActivityZoneRow: View {
                     .pulseText(.cardTitle)
                     .foregroundStyle(PulseTheme.textPrimary)
                     .fixedSize()
+                // The range at 70% (§2.6.18; h01 #C8CBCE, hc82 #CACDD1).
                 Text(row.range)
                     .pulseText(.cardTitle)
-                    .foregroundStyle(PulseTheme.textTertiary)
+                    .foregroundStyle(PulseTheme.textSecondary)
                     .lineLimit(1)
                     .minimumScaleFactor(0.8)
-                Text(shareText)
-                    .font(PulseType.numeral(13))
-                    .foregroundStyle(row.zone == 0 ? PulseTheme.textPrimary : color)
-                    .fixedSize()
+                if showsShare {
+                    Text(shareText)
+                        .activityNumeral(13, relativeTo: .caption)
+                        .foregroundStyle(row.zone == 0 ? PulseTheme.textPrimary : color)
+                        .fixedSize()
+                }
                 Spacer(minLength: 6)
                 durationText
                     .fixedSize()
             }
-            if row.seconds > 0 {
+            if showsShare && row.seconds > 0 {
                 GeometryReader { geo in
                     ZStack(alignment: .leading) {
                         PulseHatchedTrack()
@@ -222,25 +239,28 @@ struct PulseActivityZoneRow: View {
                 .frame(height: 14)
             }
         }
+        // Zero zones dim their content to 40% (§2.6.18); the card keeps its fill (hc82).
+        .opacity(row.seconds > 0 ? 1 : 0.4)
         // 66 pt with its bar and 44 pt without, as the 2026 captures measure (h01, 82).
         .padding(.horizontal, 14)
         .padding(.top, 9)
         .padding(.bottom, 12)
         .frame(maxWidth: .infinity, alignment: .leading)
         .pulseCardBackground()
-        .opacity(row.seconds > 0 ? 1 : 0.4)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(String(localized: "Zone \(row.zone), \(row.range)"))
-        .accessibilityValue(String(localized: "\(shareText), \(ActivityFormat.clock(seconds: row.seconds))"))
+        .accessibilityValue(showsShare ? String(localized: "\(shareText), \(ActivityFormat.clock(seconds: row.seconds))")
+                                       : ActivityFormat.clock(seconds: row.seconds))
     }
 
-    /// "0:21:04" with the seconds smaller and grey (§2.6 item 18).
+    /// "0:21:04" with the seconds smaller, at 70% (hc82 ":04" #D2D4D5).
     private var durationText: some View {
         let clock = ActivityFormat.clock(seconds: row.seconds)
         let head = String(clock.dropLast(3))
         let tail = String(clock.suffix(3))
-        return (Text(head).font(PulseType.numeral(19)).foregroundColor(PulseTheme.textPrimary)
-                + Text(tail).font(PulseType.numeral(13)).foregroundColor(PulseTheme.textTertiary))
+        let big = min(timeSize, 19 * 1.5), small = min(secondsSize, 13 * 1.5)
+        return (Text(head).font(PulseType.numeral(big)).foregroundColor(PulseTheme.textPrimary)
+                + Text(tail).font(PulseType.numeral(small)).foregroundColor(PulseTheme.textSecondary))
     }
 }
 
@@ -267,7 +287,7 @@ struct PulseActivityZoneLegend: View {
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
             Text(ActivityFormat.clock(seconds: duration))
-                .font(PulseType.numeral(13))
+                .activityNumeral(13, relativeTo: .caption)
                 .foregroundStyle(PulseTheme.textPrimary)
         }
         .accessibilityElement(children: .combine)
@@ -407,18 +427,18 @@ struct PulseActivityHRChart: View {
                 : geo.size.width
             ZStack(alignment: .topLeading) {
                 Text(PulseFormat.clock(window.lowerBound))
-                    .font(PulseType.numeral(12))
+                    .activityNumeral(12, relativeTo: .caption, maxScale: 1.4)
                     .foregroundStyle(PulseTheme.textPrimary)
                     .fixedSize()
                     .offset(x: max(4, startX - 2))
                 Text(PulseFormat.clock(window.upperBound))
-                    .font(PulseType.numeral(12))
+                    .activityNumeral(12, relativeTo: .caption, maxScale: 1.4)
                     .foregroundStyle(PulseTheme.textPrimary)
                     .fixedSize()
                     .frame(width: max(0, endX + 2), alignment: .trailing)
             }
         }
-        .frame(height: 16)
+        .frame(height: 20)
     }
 
     private func scrubGesture(proxy: ChartProxy, plotMinX: CGFloat) -> some Gesture {
@@ -480,16 +500,16 @@ struct PulseActivityRouteCard: View {
                         Circle()
                             .fill(PulseTheme.Activity.mapRoute)
                             .frame(width: 18, height: 18)
-                            .overlay(Circle().strokeBorder(Color.white, lineWidth: 3))
+                            .overlay(Circle().strokeBorder(PulseActivityStyle.mapMarker, lineWidth: 3))
                     }
                 }
                 if let last = coordinates.last {
                     Annotation("", coordinate: last) {
                         Image(systemName: "flag.checkered")
-                            .font(.system(size: 11, weight: .bold))
-                            .foregroundStyle(Color.black)
+                            .font(.system(size: PulseActivityStyle.Glyph.mapMarker, weight: .bold))
+                            .foregroundStyle(PulseActivityStyle.mapInk)
                             .frame(width: 24, height: 24)
-                            .background(Circle().fill(Color.white))
+                            .background(Circle().fill(PulseActivityStyle.mapMarker))
                     }
                 }
             }
@@ -505,17 +525,17 @@ struct PulseActivityRouteCard: View {
         .overlay(alignment: .topLeading) {
             Text(String(localized: "Route"))
                 .pulseText(.cardTitle)
-                .foregroundStyle(Color.black)
+                .foregroundStyle(PulseActivityStyle.mapInk)
                 .padding(.leading, 20)
                 .padding(.top, 24)
         }
         .overlay(alignment: .topTrailing) {
             Button(action: onExport) {
                 Image(systemName: "square.and.arrow.up")
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(Color.white)
+                    .font(.system(size: PulseActivityStyle.Glyph.share, weight: .semibold))
+                    .foregroundStyle(PulseTheme.textPrimary)
                     .frame(width: 34, height: 32)
-                    .background(RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .background(RoundedRectangle(cornerRadius: PulseTheme.Radius.well, style: .circular)
                         .fill(PulseTheme.Activity.routeShare))
                     .frame(width: 44, height: 44)
                     .contentShape(Rectangle())
@@ -526,7 +546,7 @@ struct PulseActivityRouteCard: View {
             .accessibilityLabel(String(localized: "Export route"))
         }
         .frame(height: 390)
-        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: PulseActivityStyle.routeCardRadius, style: .circular))
         .accessibilityElement(children: .contain)
         .accessibilityLabel(String(localized: "Route, \(route.distance.value) \(route.distance.unit)"))
     }
@@ -539,25 +559,95 @@ struct PulseActivityRouteCard: View {
         }
         .padding(.horizontal, 18)
         .padding(.vertical, 16)
-        .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(PulseTheme.Activity.routeShare))
+        .background(RoundedRectangle(cornerRadius: PulseTheme.Radius.control, style: .circular)
+            .fill(PulseTheme.Activity.routeShare))
     }
 
     private func stat(_ value: String, _ unit: String, _ title: String) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             HStack(alignment: .firstTextBaseline, spacing: 2) {
-                Text(value).font(PulseType.numeral(26)).foregroundStyle(Color.white)
+                Text(value).font(PulseType.numeral(26)).foregroundStyle(PulseTheme.textPrimary)
                 if !unit.isEmpty {
-                    Text(unit).font(.system(size: 14, weight: .medium)).foregroundStyle(Color.white.opacity(0.8))
+                    Text(unit).pulseText(.tileUnit).foregroundStyle(PulseActivityStyle.mapStatUnit)
                 }
             }
             .lineLimit(1)
             .minimumScaleFactor(0.6)
             Text(title)
                 .pulseText(.label)
-                .foregroundStyle(Color.white.opacity(0.6))
+                .foregroundStyle(PulseActivityStyle.mapStatLabel)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .combine)
+    }
+}
+
+// MARK: Dialog card
+
+/// The dialog card (§2.6 item 30) as the activity flows need it: a message that can carry emphasised runs
+/// (c06 sets the times and the overlapping activities in white bold) and a TEXT second action (§3.8 [Z]:
+/// "END & SAVE" on the white capsule, "DISCARD" as text). Built from the same tokens as `PulseDialogCard`,
+/// which offers neither (a candidate for the foundation's card).
+struct PulseActivityDialogCard: View {
+    let title: String
+    let message: AttributedString
+    let primaryTitle: String
+    let primary: () -> Void
+    var secondaryTitle: String?
+    var secondary: (() -> Void)?
+    let onClose: () -> Void
+
+    var body: some View {
+        ZStack {
+            PulseTheme.dialogScrim.ignoresSafeArea()
+            VStack(spacing: 16) {
+                HStack {
+                    Spacer()
+                    PulseCloseButton(action: onClose)
+                }
+                .padding(.bottom, -12)
+                Text(title)
+                    .pulseText(.cardTitle)
+                    .foregroundStyle(PulseTheme.textPrimary)
+                    .multilineTextAlignment(.center)
+                    .accessibilityAddTraits(.isHeader)
+                Text(message)
+                    .pulseText(.body)
+                    .foregroundStyle(PulseTheme.textSecondary)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+                Button(primaryTitle, action: primary)
+                    .buttonStyle(.pulseFilledWhite)
+                if let secondaryTitle, let secondary {
+                    Button(action: secondary) {
+                        Text(secondaryTitle)
+                            .pulseText(.capsuleLabel)
+                            .foregroundStyle(PulseTheme.textPrimary)
+                            .frame(maxWidth: .infinity, minHeight: PulseTheme.Layout.minTapTarget)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(PulsePressStyle())
+                }
+            }
+            .padding(.horizontal, 20)
+            .padding(.bottom, secondaryTitle == nil ? 20 : 8)
+            .padding(.top, 8)
+            .background(RoundedRectangle(cornerRadius: PulseTheme.Radius.dialog, style: .circular)
+                .fill(LinearGradient(colors: [PulseTheme.dialogTop, PulseTheme.dialogBottom], startPoint: .top,
+                                     endPoint: .bottom)))
+            .padding(.horizontal, 32)
+            .accessibilityElement(children: .contain)
+            .accessibilityAddTraits(.isModal)
+        }
+        .environment(\.colorScheme, .dark)
+    }
+
+    /// A run set in white bold inside a dialog's grey message.
+    static func emphasised(_ text: String) -> AttributedString {
+        var run = AttributedString(text)
+        run.inlinePresentationIntent = .stronglyEmphasized
+        run.foregroundColor = PulseTheme.textPrimary
+        return run
     }
 }
 
@@ -595,7 +685,7 @@ struct PulseActivityScrubber: View {
                 let x = { (date: Date) -> CGFloat in geo.size.width * CGFloat(date.timeIntervalSince(span.lowerBound) / total) }
                 ZStack(alignment: .topLeading) {
                     Rectangle()
-                        .fill(Color.white.opacity(0.06))
+                        .fill(PulseActivityStyle.scrubberWindow)
                         .frame(width: max(0, x(end) - x(start)), height: geo.size.height)
                         .offset(x: x(start))
                     Chart(points) { p in
@@ -615,15 +705,19 @@ struct PulseActivityScrubber: View {
                     .chartXAxis(.hidden)
                     .chartYAxis(.hidden)
                     handle(at: min(max(0, x(start)), geo.size.width), height: geo.size.height,
-                           label: String(localized: "Start")) { location in
+                           label: String(localized: "Start"), value: start, move: { location in
                         let date = span.lowerBound.addingTimeInterval(total * Double(max(0, min(1, location / geo.size.width))))
                         start = min(date, end.addingTimeInterval(-60))
-                    }
+                    }, step: { minutes in
+                        start = min(start.addingTimeInterval(minutes * 60), end.addingTimeInterval(-60))
+                    })
                     handle(at: min(max(0, x(end)), geo.size.width), height: geo.size.height,
-                           label: String(localized: "End")) { location in
+                           label: String(localized: "End"), value: end, move: { location in
                         let date = span.lowerBound.addingTimeInterval(total * Double(max(0, min(1, location / geo.size.width))))
                         end = min(Date(), max(date, start.addingTimeInterval(60)))
-                    }
+                    }, step: { minutes in
+                        end = min(Date(), max(end.addingTimeInterval(minutes * 60), start.addingTimeInterval(60)))
+                    })
                 }
                 .coordinateSpace(name: "pulse.scrubber")
             }
@@ -635,17 +729,18 @@ struct PulseActivityScrubber: View {
         .accessibilityElement(children: .contain)
     }
 
-    private func handle(at x: CGFloat, height: CGFloat, label: String, move: @escaping (CGFloat) -> Void) -> some View {
+    /// A dashed handle with a white knob. VoiceOver adjusts it a minute at a time.
+    private func handle(at x: CGFloat, height: CGFloat, label: String, value: Date,
+                        move: @escaping (CGFloat) -> Void, step: @escaping (Double) -> Void) -> some View {
         ZStack(alignment: .bottom) {
             Path { p in
                 p.move(to: CGPoint(x: 22, y: 0))
                 p.addLine(to: CGPoint(x: 22, y: height - 10))
             }
-            .stroke(Color.white.opacity(0.85), style: StrokeStyle(lineWidth: 1.2, dash: [3, 3]))
+            .stroke(PulseActivityStyle.scrubberHandle, style: StrokeStyle(lineWidth: 1.2, dash: [3, 3]))
             Circle()
-                .fill(Color.white)
+                .fill(PulseTheme.textPrimary)
                 .frame(width: 20, height: 20)
-                .shadow(color: .black.opacity(0.3), radius: 2, y: 1)
         }
         .frame(width: 44, height: height)
         .contentShape(Rectangle())
@@ -655,7 +750,15 @@ struct PulseActivityScrubber: View {
         })
         .accessibilityElement()
         .accessibilityLabel(label)
-        .accessibilityHint(String(localized: "Drag to change the time"))
+        .accessibilityValue(PulseFormat.clock(value))
+        .accessibilityHint(String(localized: "Swipe up or down to move it by a minute"))
+        .accessibilityAdjustableAction { direction in
+            switch direction {
+            case .increment: step(1)
+            case .decrement: step(-1)
+            @unknown default: break
+            }
+        }
     }
 }
 #endif

@@ -16,8 +16,9 @@ import WhoopProtocol
 /// Strain is shown on the 0–21 scale (the classic screen defaulted to Effort 0–100). End & Save goes through
 /// `endWorkout`, Discard through `discardWorkout`.
 struct PulseLiveSessionView: View {
-    /// Called after End & Save with the row the engine saved, or nil when it kept nothing.
-    let onFinish: (WorkoutRow?) -> Void
+    /// Called after End & Save with the row the engine saved (or nil when it kept nothing) and the
+    /// session's own heart-rate samples, which the store gains only once the strap offloads them.
+    let onFinish: (WorkoutRow?, [HRSample]) -> Void
     /// Called after Discard.
     let onDiscard: () -> Void
 
@@ -41,8 +42,18 @@ struct PulseLiveSessionView: View {
     private var kind: PulseActivityKind { PulseActivityCatalog.kind(named: workout?.sport ?? "") }
     /// The session records a route: a distance sport whose Track Route stayed on.
     private var hasMap: Bool { kind.isDistanceSport && (session?.trackRoute ?? true) }
-    /// The session's Activity Strain, 0–21.
-    private var strain: Double { UnitFormatter.effortValue(workout?.liveStrain ?? 0, scale: .whoop) }
+    /// The session's Activity Strain, 0–21, scored exactly as End & Save scores the saved row
+    /// (`AppModel.endWorkout`: the profile's max heart rate and today's MEASURED resting heart rate). The
+    /// engine's running `liveStrain` assumes a resting 60 bpm, a different scale from the saved row and from
+    /// the day's Strain the target is worked out on, so the knob compared two scales and the value jumped
+    /// at End & Save. Memoised by the scorer on the samples' fingerprint.
+    private var strain: Double {
+        guard let w = workout, w.samples.count >= 2 else { return 0 }
+        let resting = app.repo.today?.restingHr.map(Double.init) ?? StrainScorer.defaultRestingHR
+        let effort = StrainScorer.strain(w.samples, maxHR: Double(app.profile.hrMax), restingHR: resting,
+                                         method: PuffinExperiment.effortMethod, sex: app.profile.sex) ?? 0
+        return UnitFormatter.effortValue(effort, scale: .whoop)
+    }
     private var zoneSet: HRZoneSet { app.profile.hrZoneSet }
     private var zone: Int? { app.bpm.map { zoneSet.zoneNumber(forBPM: Double($0)) } }
     private var distanceSystem: UnitSystem {
@@ -83,24 +94,25 @@ struct PulseLiveSessionView: View {
         }
         .task(id: (workout?.samples.count ?? 0) / 10) { await estimateCalories() }
         .fullScreenCover(item: $endDialog) { dialog in
+            // §3.8 [Z]: END & SAVE on the white capsule, DISCARD as text.
             switch dialog {
             case .end:
-                PulseDialogCard(title: String(localized: "End this activity?"),
-                                message: String(localized: "This stops recording and saves what's captured so far."),
-                                primaryTitle: String(localized: "End & Save"),
-                                primary: { endDialog = nil; endAndSave() },
-                                secondaryTitle: String(localized: "Discard"),
-                                secondary: { endDialog = .discard },
-                                onClose: { endDialog = nil })
+                PulseActivityDialogCard(title: String(localized: "End this activity?"),
+                                        message: AttributedString(String(localized: "This stops recording and saves what's captured so far.")),
+                                        primaryTitle: String(localized: "End & Save"),
+                                        primary: { endDialog = nil; endAndSave() },
+                                        secondaryTitle: String(localized: "Discard"),
+                                        secondary: { endDialog = .discard },
+                                        onClose: { endDialog = nil })
                     .presentationBackground(.clear)
             case .discard:
-                PulseDialogCard(title: String(localized: "Discard this activity?"),
-                                message: String(localized: "Nothing from this session is saved. This can't be undone."),
-                                primaryTitle: String(localized: "Keep recording"),
-                                primary: { endDialog = nil },
-                                secondaryTitle: String(localized: "Discard"),
-                                secondary: { endDialog = nil; discard() },
-                                onClose: { endDialog = nil })
+                PulseActivityDialogCard(title: String(localized: "Discard this activity?"),
+                                        message: AttributedString(String(localized: "Nothing from this session is saved. This can't be undone.")),
+                                        primaryTitle: String(localized: "Keep recording"),
+                                        primary: { endDialog = nil },
+                                        secondaryTitle: String(localized: "Discard"),
+                                        secondary: { endDialog = nil; discard() },
+                                        onClose: { endDialog = nil })
                     .presentationBackground(.clear)
             }
         }
@@ -146,9 +158,12 @@ struct PulseLiveSessionView: View {
     }
 
     private func endAndSave() {
+        // The session's own samples, taken before the engine clears the session: the saved Strain was scored
+        // from these, and the store holds this window only once the strap offloads it.
+        let samples = workout?.samples ?? []
         app.endWorkout()
         PulseActivitySessionStore.clear()
-        onFinish(app.lastWorkout)
+        onFinish(app.lastWorkout, samples)
     }
 
     private func discard() {
@@ -181,10 +196,10 @@ struct PulseLiveSessionView: View {
             Spacer(minLength: 0)
             Button(action: togglePause) {
                 Image(systemName: workout?.isPaused == true ? "play.fill" : "pause.fill")
-                    .font(.system(size: 14, weight: .bold))
-                    .foregroundStyle(Color.white)
+                    .font(.system(size: PulseActivityStyle.Glyph.bandControl, weight: .bold))
+                    .foregroundStyle(PulseTheme.textPrimary)
                     .frame(width: 34, height: 34)
-                    .background(Circle().fill(Color.white.opacity(0.22)))
+                    .background(Circle().fill(PulseActivityStyle.bandControl))
                     .frame(width: PulseTheme.Layout.minTapTarget, height: PulseTheme.Layout.minTapTarget)
                     .contentShape(Rectangle())
             }
@@ -193,14 +208,14 @@ struct PulseLiveSessionView: View {
             Button { endDialog = .end } label: {
                 HStack(spacing: 10) {
                     Image(systemName: "flag.fill")
-                        .font(.system(size: 18, weight: .semibold))
+                        .font(.system(size: PulseActivityStyle.Glyph.flag, weight: .semibold))
                     TimelineView(.periodic(from: .now, by: 1)) { _ in
                         Text(ActivityFormat.paddedClock(seconds: workout?.elapsed() ?? 0))
-                            .font(PulseType.numeral(22))
+                            .font(PulseType.font(.mediumValue))
                             .monospacedDigit()
                     }
                 }
-                .foregroundStyle(Color.white)
+                .foregroundStyle(PulseTheme.textPrimary)
                 .frame(minHeight: PulseTheme.Layout.minTapTarget)
                 .contentShape(Rectangle())
             }
@@ -220,7 +235,7 @@ struct PulseLiveSessionView: View {
             if workout?.isPaused == true {
                 Text(String(localized: "Paused"))
                     .pulseText(.label)
-                    .foregroundStyle(Color.white.opacity(0.85))
+                    .foregroundStyle(PulseActivityStyle.bandCaption)
                     .padding(.bottom, 4)
             }
         }
@@ -272,7 +287,7 @@ struct PulseLiveSessionView: View {
     private func statColumn(icon: String, title: String, value: String) -> some View {
         VStack(spacing: 6) {
             Image(systemName: icon)
-                .font(.system(size: 20, weight: .regular))
+                .font(.system(size: PulseActivityStyle.Glyph.stat, weight: .regular))
                 .foregroundStyle(PulseTheme.textTertiary)
                 .frame(height: 24)
             Text(title)
@@ -301,14 +316,14 @@ struct PulseLiveSessionView: View {
     private var heartRatePage: some View {
         VStack(spacing: 0) {
             ZStack {
-                Circle().fill(Color.black)
+                Circle().fill(PulseActivityStyle.liveHRDisc)
                 VStack(spacing: 0) {
                     Image(systemName: "heart.fill")
-                        .font(.system(size: 17, weight: .regular))
+                        .font(.system(size: PulseActivityStyle.Glyph.liveHeart, weight: .regular))
                     Text(app.bpm.map { "\($0)" } ?? "--")
-                        .font(PulseType.numeral(44))
+                        .font(PulseType.font(.strengthTimer))
                     Text(zone.map { String(localized: "Zone \($0)") } ?? String(localized: "No reading"))
-                        .font(.system(size: 13, weight: .semibold))
+                        .activityText(.liveDiscCaption)
                         .foregroundStyle(PulseTheme.textSecondary)
                 }
                 .foregroundStyle(PulseTheme.textPrimary)
@@ -326,7 +341,7 @@ struct PulseLiveSessionView: View {
                 statColumn(icon: "heart.fill", title: String(localized: "Avg HR"),
                            value: (workout?.avgHr ?? 0) > 0 ? "\(workout?.avgHr ?? 0)" : "--")
                 hairline
-                statColumn(icon: "figure.strengthtraining.traditional", title: String(localized: "Strain"),
+                statColumn(icon: "bolt.heart.fill", title: String(localized: "Strain"),
                            value: PulseFormat.oneDecimal(strain))
                 hairline
                 statColumn(icon: "flame.fill", title: String(localized: "Calories"),
@@ -367,11 +382,13 @@ struct PulseLiveSessionView: View {
         if let target {
             Button { page = target } label: {
                 HStack(spacing: 4) {
-                    if leading { Image(systemName: "arrow.left").font(.system(size: 12, weight: .regular)) }
+                    if leading { Image(systemName: "arrow.left").imageScale(.small) }
                     Text(title(target))
-                    if !leading { Image(systemName: "arrow.right").font(.system(size: 12, weight: .regular)) }
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
+                    if !leading { Image(systemName: "arrow.right").imageScale(.small) }
                 }
-                .font(.system(size: 16, weight: .regular))
+                .activityText(.liveFooter)
                 .foregroundStyle(PulseTheme.textSecondary)
                 .frame(minWidth: 110, minHeight: PulseTheme.Layout.minTapTarget, alignment: leading ? .leading : .trailing)
                 .contentShape(Rectangle())
@@ -410,7 +427,7 @@ struct PulseLiveStrainRing: View {
         let targetFraction = target.map { max(0, min(1, $0 / 21)) }
         ZStack {
             Circle()
-                .strokeBorder(Color.white.opacity(0.045), lineWidth: stroke)
+                .strokeBorder(PulseActivityStyle.liveRingEmpty, lineWidth: stroke)
             if let targetFraction, targetFraction > fraction {
                 PulseRingSegment(start: fraction, end: targetFraction, thickness: stroke, cornerRadius: 0)
                     .fill(PulseTheme.Activity.liveRingTrack)
@@ -425,26 +442,27 @@ struct PulseLiveStrainRing: View {
                 PulseRingTick(fraction: targetFraction, thickness: stroke)
                     .stroke(Color.white, style: StrokeStyle(lineWidth: 2))
                 PulseAvatar(imageData: avatar, name: nil, size: 22)
-                    .overlay(Circle().strokeBorder(Color.white, lineWidth: 1.5))
+                    .overlay(Circle().strokeBorder(PulseTheme.textPrimary, lineWidth: 1.5))
                     .offset(knobOffset(targetFraction))
             }
             VStack(spacing: 4) {
                 Text(String(localized: "Activity Strain"))
-                    .font(.system(size: 15, weight: .bold))
-                    .tracking(1.2)
-                    .textCase(.uppercase)
+                    .activityText(.liveRingLabel)
                     .foregroundStyle(PulseTheme.textPrimary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
                 Text(PulseFormat.oneDecimal(strain))
                     .font(PulseType.font(.liveStrain))
                     .foregroundStyle(PulseTheme.textPrimary)
                     .pulseNumericTransition()
                     .padding(.vertical, -6)
                 Text(ActivityFormat.intensity(activityStrain: strain))
-                    .font(.system(size: 13, weight: .bold))
-                    .tracking(1.3)
-                    .textCase(.uppercase)
+                    .activityText(.liveRingState)
                     .foregroundStyle(PulseTheme.textTertiary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
             }
+            .frame(maxWidth: diameter - 2 * stroke - 24)
         }
         .frame(width: diameter, height: diameter)
         .accessibilityElement(children: .ignore)
@@ -509,7 +527,7 @@ struct PulseLiveZoneBar: View {
             HStack(spacing: 1.5) {
                 ForEach(0...5, id: \.self) { z in
                     Text(String(localized: "Zone \(z)"))
-                        .font(.system(size: 13, weight: z == zone ? .bold : .semibold))
+                        .activityText(z == zone ? .liveZoneLabelCurrent : .liveZoneLabel)
                         .foregroundStyle(z == zone ? PulseTheme.textPrimary : PulseTheme.Zone.color(z).opacity(0.38))
                         .lineLimit(1)
                         .minimumScaleFactor(0.7)
@@ -578,6 +596,8 @@ struct PulseLiveMapPage: View {
     let showsPace: Bool
 
     @State private var route: [CLLocationCoordinate2D] = []
+    @State private var lastRouteRead = Date.distantPast
+    @State private var pendingRouteRead: Task<Void, Never>?
     @State private var locationDenied = PulseLiveMapPage.isLocationDenied
 
     private static var isLocationDenied: Bool {
@@ -601,11 +621,13 @@ struct PulseLiveMapPage: View {
                     Text(locationDenied ? String(localized: "Location is off for ZENO, so no route is recorded.")
                          : (isPaused ? String(localized: "Paused. The route resumes with the session.")
                                      : String(localized: "Waiting for a GPS fix…")))
-                        .font(.system(size: 15, weight: .medium))
-                        .foregroundStyle(Color.black.opacity(0.7))
+                        .pulseText(.rowText)
+                        .foregroundStyle(PulseActivityStyle.mapNoticeInk)
+                        .multilineTextAlignment(.center)
                         .padding(.horizontal, 14)
                         .padding(.vertical, 10)
-                        .background(Capsule().fill(Color.white.opacity(0.9)))
+                        .background(Capsule().fill(PulseActivityStyle.mapNoticeFill))
+                        .padding(.horizontal, 24)
                 }
             }
             HStack(alignment: .top, spacing: 0) {
@@ -625,8 +647,35 @@ struct PulseLiveMapPage: View {
             .padding(.horizontal, 10)
             .background(LinearGradient(gradient: PulseTheme.Activity.mapStatsPanel, startPoint: .top, endPoint: .bottom))
         }
-        .onChange(of: recorder.pointCount, initial: true) { _, _ in
-            guard let captured = recorder.capturedRoute() else { route = []; return }
+        .onChange(of: recorder.pointCount, initial: true) { _, count in scheduleRouteRead(count: count) }
+        .onDisappear { pendingRouteRead?.cancel() }
+    }
+
+    /// Reads the recorder's route at most once a second, appending only the fixes that are new. Every fix
+    /// used to rebuild and decode the whole polyline on the main actor, O(n) a fix and O(n²) over a run.
+    private func scheduleRouteRead(count: Int) {
+        guard count > 0 else {
+            pendingRouteRead?.cancel()
+            route = []
+            return
+        }
+        guard pendingRouteRead == nil else { return }
+        let wait = max(0, 1 - Date().timeIntervalSince(lastRouteRead))
+        pendingRouteRead = Task { @MainActor in
+            if wait > 0 { try? await Task.sleep(for: .seconds(wait)) }
+            guard !Task.isCancelled else { return }
+            readRoute()
+            lastRouteRead = Date()
+            pendingRouteRead = nil
+        }
+    }
+
+    private func readRoute() {
+        guard let captured = recorder.capturedRoute() else { route = []; return }
+        if let points = captured.points, points.count >= route.count {
+            // The recorder's points only grow during a session: keep what is drawn, add the rest.
+            route += points[route.count...].map { CLLocationCoordinate2D(latitude: $0.lat, longitude: $0.lon) }
+        } else {
             route = RouteMath.decode(captured.polyline).map { CLLocationCoordinate2D(latitude: $0.lat, longitude: $0.lon) }
         }
     }
@@ -653,15 +702,20 @@ struct PulseLiveMapPage: View {
 
     private func stat(icon: String, title: String, value: String, unit: String) -> some View {
         VStack(alignment: .leading, spacing: 6) {
+            // A fixed slot for the glyph, so the three labels share one baseline whatever each symbol's
+            // height (b05).
             Image(systemName: icon)
-                .font(.system(size: 18, weight: .regular))
+                .font(.system(size: PulseActivityStyle.Glyph.mapStat, weight: .regular))
                 .foregroundStyle(PulseTheme.textTertiary)
+                .frame(height: 22, alignment: .center)
             Text(title)
                 .pulseText(.label)
                 .foregroundStyle(PulseTheme.textTertiary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
             HStack(alignment: .firstTextBaseline, spacing: 1) {
                 Text(value).font(PulseType.numeral(28))
-                if !unit.isEmpty { Text(unit).font(.system(size: 15, weight: .semibold)) }
+                if !unit.isEmpty { Text(unit).activityText(.statUnit) }
             }
             .foregroundStyle(PulseTheme.textPrimary)
             .lineLimit(1)

@@ -58,8 +58,8 @@ struct PulseActivityFormRoute: PulseScreenRoute, Identifiable {
 
 /// Every activity list in Pulse (§3.8 picker, §3.9 SELECT ACTIVITY / SELECT YOUR ACTIVITY): search, the
 /// category tabs, MOST RECENT (the last five picked) and ALL A-Z. `.borderless` rows are the pre-start
-/// dropdown's (white glyph and caps name on a 52 pt pitch, the current one on a white-8% card); `.cards`
-/// rows are the add and edit flows' rounded dark cards.
+/// dropdown's (white glyph and caps name on a 62 pt pitch, completeness-critic/05; the current one on a
+/// white-8% card); `.cards` rows are the add and edit flows' rounded dark cards.
 struct PulseActivityPickerList: View {
     enum Style { case borderless, cards }
 
@@ -160,10 +160,10 @@ struct PulseActivityPickerList: View {
     private var searchField: some View {
         HStack(spacing: 8) {
             Image(systemName: "magnifyingglass")
-                .font(.system(size: 16, weight: .regular))
+                .font(.system(size: PulseActivityStyle.Glyph.search, weight: .regular))
                 .foregroundStyle(PulseTheme.textTertiary)
             TextField("", text: $query, prompt: Text(searchPlaceholder).foregroundColor(PulseTheme.textTertiary))
-                .font(.system(size: 17))
+                .activityText(.searchField)
                 .foregroundStyle(PulseTheme.textPrimary)
                 .focused($searchFocused)
                 .autocorrectionDisabled()
@@ -172,7 +172,7 @@ struct PulseActivityPickerList: View {
             if !query.isEmpty {
                 Button { query = "" } label: {
                     Image(systemName: "xmark.circle.fill")
-                        .font(.system(size: 16))
+                        .font(.system(size: PulseActivityStyle.Glyph.search))
                         .foregroundStyle(PulseTheme.textTertiary)
                         .frame(width: 32, height: 32)
                         .contentShape(Rectangle())
@@ -182,7 +182,7 @@ struct PulseActivityPickerList: View {
             }
         }
         .padding(.horizontal, 12)
-        .frame(height: 44)
+        .frame(minHeight: 44)
         .background(RoundedRectangle(cornerRadius: PulseTheme.Radius.control, style: .circular)
             .fill(style == .cards ? PulseTheme.Activity.searchField : PulseTheme.card))
         .overlay(RoundedRectangle(cornerRadius: PulseTheme.Radius.control, style: .circular)
@@ -190,32 +190,46 @@ struct PulseActivityPickerList: View {
                           lineWidth: 1))
     }
 
-    /// ALL · STRAIN · RECOVERY · SLEEP, underlined, left-aligned like the captures (completeness-critic/05).
+    /// The underlined tabs. Four (ALL · STRAIN · RECOVERY · SLEEP) take four equal columns with their labels
+    /// centred (completeness-critic/05); three (the reclassify sheet's ALL · STRAIN · RECOVERY) sit at the
+    /// left with fixed gaps (c03). The underline is the label's width.
+    @ViewBuilder
     private var tabBar: some View {
-        HStack(spacing: 0) {
-            ForEach(tabs, id: \.self) { t in
-                Button { tab = t } label: {
-                    VStack(spacing: 7) {
-                        Text(t.title)
-                            .pulseText(.label)
-                            .foregroundStyle(tab == t ? PulseTheme.textPrimary : PulseTheme.textTertiary)
-                            .lineLimit(1)
-                        Rectangle()
-                            .fill(tab == t ? PulseTheme.textPrimary : Color.clear)
-                            .frame(height: 2)
-                    }
-                    .fixedSize()
-                    .padding(.horizontal, tabs.count > 3 ? 0 : 0)
-                    .frame(minHeight: PulseTheme.Layout.minTapTarget, alignment: .bottom)
-                    .contentShape(Rectangle())
+        if tabs.count > 3 {
+            HStack(spacing: 0) {
+                ForEach(tabs, id: \.self) { t in
+                    tabButton(t)
+                        .frame(maxWidth: .infinity)
                 }
-                .buttonStyle(PulsePressStyle())
-                .accessibilityAddTraits(tab == t ? .isSelected : [])
-                .frame(maxWidth: tabs.count > 3 ? .infinity : nil, alignment: .leading)
-                .padding(.trailing, tabs.count > 3 ? 0 : 32)
             }
-            Spacer(minLength: 0)
+        } else {
+            HStack(spacing: 32) {
+                ForEach(tabs, id: \.self) { t in
+                    tabButton(t)
+                }
+                Spacer(minLength: 0)
+            }
         }
+    }
+
+    private func tabButton(_ t: Tab) -> some View {
+        Button { tab = t } label: {
+            VStack(spacing: 7) {
+                Text(t.title)
+                    .pulseText(.label)
+                    .foregroundStyle(tab == t ? PulseTheme.textPrimary : PulseTheme.textTertiary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+                Rectangle()
+                    .fill(tab == t ? PulseTheme.textPrimary : Color.clear)
+                    .frame(height: 2)
+            }
+            .fixedSize(horizontal: true, vertical: false)
+            .frame(minHeight: PulseTheme.Layout.minTapTarget, alignment: .bottom)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(PulsePressStyle())
+        .accessibilityAddTraits(tab == t ? .isSelected : [])
     }
 
     private func sectionHeader(_ title: String) -> some View {
@@ -237,7 +251,7 @@ struct PulseActivityPickerList: View {
         Button { onPick(kind) } label: {
             HStack(spacing: 18) {
                 Image(systemName: kind.symbol)
-                    .font(.system(size: 21, weight: .regular))
+                    .font(.system(size: PulseActivityStyle.Glyph.row, weight: .regular))
                     .foregroundStyle(style == .cards ? PulseTheme.textSecondary : PulseTheme.textPrimary)
                     .frame(width: 30)
                     .accessibilityHidden(true)
@@ -249,14 +263,14 @@ struct PulseActivityPickerList: View {
                 Spacer(minLength: 8)
             }
             .padding(.horizontal, style == .cards ? 16 : 14)
-            .frame(maxWidth: .infinity, minHeight: style == .cards ? 56 : 52, alignment: .leading)
+            .frame(maxWidth: .infinity, minHeight: style == .cards ? 56 : 62, alignment: .leading)
             .background {
                 if style == .cards {
                     RoundedRectangle(cornerRadius: PulseTheme.Radius.control, style: .circular)
                         .fill(PulseTheme.Activity.selectRowCard)
                 } else if isSelected {
                     RoundedRectangle(cornerRadius: PulseTheme.Radius.control, style: .circular)
-                        .fill(Color.white.opacity(0.08))
+                        .fill(PulseActivityStyle.selectedRow)
                 }
             }
             .contentShape(Rectangle())

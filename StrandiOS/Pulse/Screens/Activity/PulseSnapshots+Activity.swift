@@ -73,6 +73,8 @@ struct ActivityDetailSnapshot: Equatable {
     let chartSpan: ClosedRange<Date>
     /// Heart-rate readings inside the activity's own window.
     let windowSampleCount: Int
+    /// Where the heart rate on screen came from, and whether it covers the activity.
+    let heartRate: ActivityHeartRateState
 
     // Zones
     /// ZONE 5 down to ZONE 0.
@@ -88,11 +90,75 @@ struct ActivityDetailSnapshot: Equatable {
     let route: ActivityRouteSummary?
     let lift: ActivityLiftSummary?
 
+    // The recovery variant (§3.6 "Recovery activity", e01–e03, e08, e10)
+    /// Stress over the activity from the Stress Monitor's resolver; nil when no reading covers it.
+    let stress: ActivityStressSummary?
+    /// IMPACT ON RECOVERY: next-day Recovery on days with this activity against days without.
+    let impact: ActivityRecoveryImpact?
+
     /// The local insight sentence (`**bold**` markdown), for the coach pill or the recovery card.
     let insight: String?
 
     var isRecoveryActivity: Bool { variant == .recovery }
     var hasHeartRate: Bool { windowSampleCount > 0 }
+    /// Time-in-zone shares are meaningful: the heart rate on screen covers the activity (or an import
+    /// brought its own split).
+    var zoneSharesShown: Bool { zonesFromImport || heartRate.coversActivity }
+}
+
+/// Where Activity Details' heart rate came from (§3.6 item 6). A live session's own samples reach the store
+/// only when the strap offloads its history, so right after End & Save the store usually covers little of
+/// the session: the screen then draws the session's samples, and says so, rather than a fragment.
+enum ActivityHeartRateState: Equatable {
+    /// The strap's stored heart rate covers at least 90% of the activity's minutes.
+    case stored
+    /// The live session's own samples, handed over at End & Save: the store does not cover it yet.
+    case session
+    /// Recorded on this iPhone, but the strap has not synced past the activity yet, so nothing is stored.
+    case pending
+    /// The strap has synced past the activity but its heart rate covers only part of it.
+    case partial(missingSeconds: Double)
+    /// No heart rate is stored for this activity at all.
+    case none
+
+    /// The heart rate on screen spans the activity (≥ 90% of its minutes).
+    var coversActivity: Bool {
+        switch self {
+        case .stored, .session: return true
+        case .pending, .partial, .none: return false
+        }
+    }
+}
+
+/// The recovery variant's STRESS CHANGE and STRESS tab: the Stress Monitor's own readings (each an hour of
+/// heart rate, re-read every half hour) around the activity, never a second stress model.
+struct ActivityStressSummary: Equatable {
+    /// The readings across the chart, at each reading's centre; nil is a gap.
+    let points: [PulseTimeValue]
+    /// The chart's time span.
+    let span: ClosedRange<Date>
+    /// The reading nearest the activity's start and the next one nearest its end, 0–3.
+    let start: Double
+    let end: Double
+    /// The change printed in the headline, as the readings round: end − start.
+    var change: Double { (end * 10).rounded() / 10 - (start * 10).rounded() / 10 }
+}
+
+/// IMPACT ON RECOVERY (§3.6, e03): locked until there are five days with this activity and five without
+/// (each followed by a scored Recovery) in the last 90 days, then the difference in next-day Recovery.
+struct ActivityRecoveryImpact: Equatable {
+    let daysWith: Int
+    let daysWithout: Int
+    /// Next-day Recovery on days with it against days without, in percent of the latter; nil while locked.
+    let percentChange: Double?
+    /// The difference cleared the Behavior Insights significance rule.
+    let significant: Bool
+
+    /// Both sides need five days (WHOOP's rule, `BehaviorInsights.minGroupForSignificance`).
+    static let required = 5
+    /// The five circles: the side still short of five sets the progress.
+    var progress: Int { min(Self.required, min(daysWith, daysWithout)) }
+    var isUnlocked: Bool { percentChange != nil }
 }
 
 /// One zone's row (§2.6 item 18): "ZONE 4  162-171 BPM  2%" and its time.
@@ -120,6 +186,8 @@ struct ActivityKeyStat: Identifiable, Equatable {
     let value: String
     /// "cals", "bpm"; empty for a clock value.
     let unit: String
+    /// A clock value's seconds, drawn smaller after `value` (g15: "1:22 :18"), or nil.
+    var valueTail: String? = nil
     /// The 30-day average printed in the chip ("137cals"), or nil when there is none to compare with.
     let average: String?
     /// How the value sits against that average: ▲ above, ▼ below, ● equal as printed.
@@ -151,16 +219,35 @@ struct ActivityRouteSummary: Equatable {
     }
 }
 
-/// A Lift Log session paired with the workout (the strength variant's EXERCISES tab).
-struct ActivityLiftSummary: Equatable {
-    struct Exercise: Identifiable, Equatable {
+/// A Lift Log session paired with the workout (the strength variant's EXERCISES tab and its summary page).
+struct ActivityLiftSummary: Equatable, Hashable {
+    struct Exercise: Identifiable, Equatable, Hashable {
+        /// One performed set, in the order it was done.
+        struct SetRow: Identifiable, Equatable, Hashable {
+            let id: Int
+            /// "10", or "–" when the reps were not typed.
+            let reps: String
+            /// "100", in `massUnit`, or nil for a set with no weight.
+            let weight: String?
+            /// The set's own average heart rate, when it carries its times and the strap covers them.
+            let avgHR: Int?
+            let isWarmup: Bool
+        }
+
         let name: String
         let workingSets: Int
         /// "100 kg × 5", or nil when no set carried a weight.
         let bestSet: String?
         /// "112 kg", Epley, or nil past the rep ceiling.
         let estimatedOneRepMax: String?
+        let sets: [SetRow]
+        /// Reps over the working sets.
+        let totalReps: Int
+        /// The working sets' tonnage ("2,000"), in `massUnit`, or nil when no set carried a weight.
+        let tonnage: String?
         var id: String { name }
+        /// Some set carries its own average heart rate (the AVG HR column).
+        var hasSetHeartRate: Bool { sets.contains { $0.avgHR != nil } }
     }
 
     /// The Lift Log session's id (deleting the activity deletes the session, as the Lift Log does).
@@ -180,14 +267,16 @@ struct ActivityLiftSummary: Equatable {
 /// What the pre-start screen and its Strain Target panel need (§3.8), for today.
 struct StartActivitySnapshot: Equatable {
     let seq: Int
-    /// Today's Recovery as the dial prints it, and its band; nil before Recovery scores.
+    /// The Recovery Home's dial prints today, and its band; nil before any Recovery scores.
     let recoveryPercent: Int?
     let recoveryBand: PulseDisplay.RecoveryBand?
-    /// The Recovery behind the target is an earlier night's.
+    /// That Recovery is an earlier night's, carried until today's scores. The target is withheld then, as
+    /// the Strain dial withholds its band and tick (`PulseDialData.dialContent`): one rule for both.
     let recoveryCarried: Bool
     /// Today's Strain so far, 0–21.
     let dayStrain: Double?
-    /// Today's optimal range and its target (the range midpoint, §2.5), 0–21; nil without a Recovery.
+    /// Today's optimal range and its target (the range midpoint, §2.5), 0–21; nil until today's Recovery
+    /// scores.
     let optimalRange: ClosedRange<Double>?
     let targetDayStrain: Double?
     /// The scoring recipe's log-map denominator (Edwards' 7201 or Banister's), for the target math.
@@ -215,6 +304,19 @@ struct StartActivitySnapshot: Equatable {
     var recommendedActivityStrain: Double? {
         guard let targetDayStrain else { return nil }
         return activityStrain(toReach: targetDayStrain)
+    }
+
+    /// Today has already reached its Strain Target (the range midpoint): there is no Activity Strain left
+    /// to recommend, and the panel says where the day stands instead of offering a 0.0 target.
+    var targetReached: Bool {
+        guard let targetDayStrain, let dayStrain else { return false }
+        return dayStrain >= targetDayStrain || (recommendedActivityStrain ?? 1) < 0.05
+    }
+
+    /// Today is already past the top of its optimal range.
+    var pastOptimalRange: Bool {
+        guard let optimalRange, let dayStrain else { return false }
+        return dayStrain > optimalRange.upperBound
     }
 
     /// Where a day of `estimated` (0–21) sits against today's range.

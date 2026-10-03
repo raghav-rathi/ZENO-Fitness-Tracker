@@ -4,6 +4,7 @@ import MapKit
 import CoreLocation
 import StrandAnalytics
 import WhoopStore
+import WhoopProtocol
 
 /// Start Activity (WHOOP_UI_SPEC §3.8), a full-screen modal: the pre-start screen (the activity list
 /// dropping from the header, Track Route, the live heart-rate circle, the Strain Target panel), then the
@@ -21,17 +22,24 @@ struct PulseStartActivityView: View {
     @Environment(\.dismiss) private var dismiss
     /// Whether the engine has a session running; nil until the probe has looked.
     @State private var isLive: Bool?
-    /// The row End & Save produced, shown as Activity Details in place.
-    @State private var finished: WorkoutRow?
+    /// The row End & Save produced and the session's own heart rate, shown as Activity Details in place.
+    @State private var finished: Finished?
     @State private var nothingSaved = false
+
+    private struct Finished {
+        let row: WorkoutRow
+        /// The samples the saved Strain was scored from: the details draw these until the strap's history
+        /// covers the session.
+        let samples: [HRSample]
+    }
 
     var body: some View {
         ZStack {
             if let finished {
-                PulseActivityDetailView(workout: PulseWorkoutRoute(row: finished))
+                PulseActivityDetailView(workout: PulseWorkoutRoute(row: finished.row), liveSamples: finished.samples)
             } else if isLive == true {
-                PulseLiveSessionView(onFinish: { saved in
-                    if let saved { finished = saved } else { nothingSaved = true }
+                PulseLiveSessionView(onFinish: { saved, samples in
+                    if let saved { finished = Finished(row: saved, samples: samples) } else { nothingSaved = true }
                 }, onDiscard: { dismiss() })
                 .transition(.opacity)
             } else if isLive == false {
@@ -136,7 +144,6 @@ struct PulsePreStartView: View {
     @State private var customTarget: Double?
     @State private var panelExpanded = false
     @State private var locationAllowed = PulsePreStartView.locationAuthorized
-    @ScaledMetric(relativeTo: .footnote) private var trackRouteSize: CGFloat = 13
 
     private static var initialKind: PulseActivityKind {
         #if DEBUG
@@ -154,10 +161,13 @@ struct PulsePreStartView: View {
     private var isRecovery: Bool { kind.category == .recovery }
     private var showsMap: Bool { kind.isDistanceSport && trackRoute && locationAllowed }
 
-    /// The Activity Strain the session aims at: the dragged one, else the recommendation.
+    /// The Activity Strain the session aims at: the dragged one, else the recommendation; none once today
+    /// has reached its target (a 0.0 target would park the live ring's knob at 12 o'clock).
     private var activityTarget: Double? {
         guard targetOn, let snapshot else { return nil }
-        return customTarget ?? snapshot.recommendedActivityStrain
+        if let customTarget { return customTarget }
+        guard !snapshot.targetReached else { return nil }
+        return snapshot.recommendedActivityStrain
     }
 
     var body: some View {
@@ -227,24 +237,28 @@ struct PulsePreStartView: View {
 
     // MARK: Header
 
+    /// ✕ · glyph · NAME · ⌄. While the list is open the ✕ goes and the name moves to the left edge, as
+    /// completeness-critic/05 draws it: ⌃ is then the only way out of the list.
     private func header(height: CGFloat, safeTop: CGFloat) -> some View {
         HStack(spacing: 0) {
-            Button { dismiss() } label: {
-                Image(systemName: "xmark")
-                    .font(.system(size: 19, weight: .light))
-                    .foregroundStyle(PulseTheme.textPrimary)
-                    .frame(width: PulseTheme.Layout.minTapTarget, height: PulseTheme.Layout.minTapTarget)
-                    .contentShape(Rectangle())
+            if !pickerOpen {
+                Button { dismiss() } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: PulseActivityStyle.Glyph.close, weight: .light))
+                        .foregroundStyle(PulseTheme.textPrimary)
+                        .frame(width: PulseTheme.Layout.minTapTarget, height: PulseTheme.Layout.minTapTarget)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(PulsePressStyle())
+                .accessibilityLabel(String(localized: "Close"))
             }
-            .buttonStyle(PulsePressStyle())
-            .accessibilityLabel(String(localized: "Close"))
             Button { pickerOpen.toggle() } label: {
                 HStack(spacing: 0) {
                     Image(systemName: kind.symbol)
-                        .font(.system(size: 24, weight: .regular))
+                        .font(.system(size: PulseActivityStyle.Glyph.preStartHeader, weight: .regular))
                         .foregroundStyle(PulseTheme.textPrimary)
                         .frame(width: 36)
-                        .padding(.leading, 14)
+                        .padding(.leading, pickerOpen ? 8 : 14)
                         .accessibilityHidden(true)
                     Text(kind.displayName)
                         .pulseText(.menuLabel)
@@ -254,7 +268,7 @@ struct PulsePreStartView: View {
                         .padding(.leading, 18)
                     Spacer(minLength: 8)
                     Image(systemName: pickerOpen ? "chevron.up" : "chevron.down")
-                        .font(.system(size: 17, weight: .semibold))
+                        .font(.system(size: PulseActivityStyle.Glyph.headerChevron, weight: .semibold))
                         .foregroundStyle(PulseTheme.textPrimary)
                         .frame(width: PulseTheme.Layout.minTapTarget, height: PulseTheme.Layout.minTapTarget)
                 }
@@ -286,9 +300,8 @@ struct PulsePreStartView: View {
                 UserAnnotation()
             }
             .mapStyle(.standard)
-            // A light standard map dimmed about 60%, as a01 draws it (not the dark map style).
-            .environment(\.colorScheme, .light)
-            .overlay(Color.black.opacity(0.58))
+            // Apple's own dark map, as a01 draws it, with nothing laid over it.
+            .environment(\.colorScheme, .dark)
             .allowsHitTesting(false)
             .accessibilityHidden(true)
         } else {
@@ -297,7 +310,7 @@ struct PulsePreStartView: View {
                 LinearGradient(gradient: PulseTheme.Activity.preStartBackdrop, startPoint: .top, endPoint: .bottom)
                 GeometryReader { geo in
                     // The outer of the two halos (a07); the circle draws the inner one.
-                    Circle().fill(Color.white.opacity(0.035)).frame(width: 364, height: 364)
+                    Circle().fill(PulseActivityStyle.preStartOuterHalo).frame(width: 364, height: 364)
                         .position(x: geo.size.width / 2, y: centreY)
                 }
             }
@@ -310,11 +323,10 @@ struct PulsePreStartView: View {
     private var trackRouteRow: some View {
         HStack(spacing: 10) {
             Text(String(localized: "Track Route"))
-                .font(.system(size: min(trackRouteSize, 18), weight: .medium))
-                .tracking(0.6)
-                .foregroundStyle(showsMap ? Color.white.opacity(0.75) : PulseTheme.textSecondary)
+                .activityText(.trackRoute)
+                .foregroundStyle(PulseTheme.textSecondary)
             PulseLightToggle(isOn: $trackRoute, onKnob: PulseTheme.Activity.startCapsule,
-                             offKnob: Color.white, track: Color.white.opacity(0.22))
+                             offKnob: PulseTheme.textPrimary, track: PulseActivityStyle.toggleTrackOnDark)
                 .accessibilityLabel(String(localized: "Track route"))
         }
         .frame(minHeight: PulseTheme.Layout.minTapTarget)
@@ -337,7 +349,7 @@ struct PulsePreStartView: View {
         }
         .padding(.horizontal, 12)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color.black.opacity(0.92).ignoresSafeArea())
+        .background(PulseActivityStyle.pickerBackdrop.ignoresSafeArea())
     }
 
     // MARK: Start
@@ -388,27 +400,28 @@ struct PulsePreStartHeartCircle: View {
                 .frame(width: 181, height: 181)
             VStack(spacing: 2) {
                 Image(systemName: "heart.fill")
-                    .font(.system(size: 22, weight: .regular))
+                    .font(.system(size: PulseActivityStyle.Glyph.circleHeart, weight: .regular))
                 Text(app.bpm.map { "\($0)" } ?? "--")
                     .font(PulseType.font(.preStartHR))
                     .monospacedDigit()
                     .contentTransition(.identity)
                     .padding(.vertical, -6)
+                // Fixed sizes: everything here sits inside the fixed 181 pt circle.
                 if let pct = live.batteryPct, live.connected {
                     HStack(spacing: 5) {
                         Image(systemName: Self.batterySymbol(pct))
-                            .font(.system(size: 13, weight: .regular))
+                            .font(.system(size: PulseActivityStyle.Glyph.circleBattery, weight: .regular))
                         Text("\(Int(pct.rounded()))%")
-                            .font(.system(size: 14, weight: .medium))
+                            .activityText(.circleCaption)
                     }
-                    .foregroundStyle(Color.black.opacity(0.55))
+                    .foregroundStyle(PulseActivityStyle.circleInkMuted)
                 } else {
                     Text(String(localized: "No strap"))
-                        .font(.system(size: 13, weight: .medium))
-                        .foregroundStyle(Color.black.opacity(0.5))
+                        .activityText(.circleCaption)
+                        .foregroundStyle(PulseActivityStyle.circleInkMuted)
                 }
             }
-            .foregroundStyle(Color.white)
+            .foregroundStyle(PulseTheme.textPrimary)
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(String(localized: "Heart rate"))
@@ -447,13 +460,13 @@ struct PulseStartActivityButton: View {
         } label: {
             Text(String(localized: "Start activity"))
                 .pulseText(.capsuleLabel)
-                .foregroundStyle(Color.white)
+                .foregroundStyle(PulseTheme.textPrimary)
                 .frame(maxWidth: .infinity, minHeight: 49)
                 .background {
                     if style == .filled {
                         Capsule(style: .circular).fill(PulseTheme.Activity.startCapsule)
                     } else {
-                        Capsule(style: .circular).strokeBorder(Color.white, lineWidth: 1.5)
+                        Capsule(style: .circular).strokeBorder(PulseTheme.textPrimary, lineWidth: 1.5)
                     }
                 }
                 .contentShape(Capsule())
@@ -463,11 +476,12 @@ struct PulseStartActivityButton: View {
     }
 }
 
-/// The panel's switch (§2.1 activity-flow tokens): a light track with a black knob when on.
+/// The panel's switch (§2.1 activity-flow tokens): a light track with a black knob when on. The white off
+/// knob takes a hairline rim against the light track, not a drop shadow (DR §9).
 struct PulseLightToggle: View {
     @Binding var isOn: Bool
     var onKnob: Color = PulseTheme.Activity.panelToggleKnob
-    var offKnob: Color = Color.white
+    var offKnob: Color = PulseActivityStyle.mapMarker
     var track: Color = PulseTheme.Activity.panelGrabber
     var disabled = false
 
@@ -477,8 +491,8 @@ struct PulseLightToggle: View {
                 Capsule(style: .circular).fill(track).frame(width: 52, height: 30)
                 Circle()
                     .fill(isOn ? onKnob : offKnob)
+                    .overlay(Circle().strokeBorder(isOn ? Color.clear : PulseActivityStyle.panelKnobRim, lineWidth: 1))
                     .frame(width: 30, height: 30)
-                    .shadow(color: Color.black.opacity(isOn ? 0 : 0.18), radius: 2, y: 1)
             }
             .frame(width: 52, height: 30)
             .opacity(disabled ? 0.4 : 1)
