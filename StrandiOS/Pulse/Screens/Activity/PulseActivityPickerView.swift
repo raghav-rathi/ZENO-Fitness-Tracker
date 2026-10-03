@@ -57,9 +57,9 @@ struct PulseActivityFormRoute: PulseScreenRoute, Identifiable {
 // MARK: - The list
 
 /// Every activity list in Pulse (§3.8 picker, §3.9 SELECT ACTIVITY / SELECT YOUR ACTIVITY): search, the
-/// category tabs, MOST RECENT (the last five picked) and ALL A-Z. `.borderless` rows are the pre-start
-/// dropdown's (white glyph and caps name on a 62 pt pitch, completeness-critic/05; the current one on a
-/// white-8% card); `.cards` rows are the add and edit flows' rounded dark cards.
+/// category tabs, MOST RECENT (the last five sports picked or logged) and ALL A-Z. `.borderless` rows are
+/// the pre-start dropdown's (white glyph and caps name on a 62 pt pitch, completeness-critic/05; the current
+/// one on a white-8% card); `.cards` rows are the add and edit flows' rounded dark cards.
 struct PulseActivityPickerList: View {
     enum Style { case borderless, cards }
 
@@ -87,6 +87,10 @@ struct PulseActivityPickerList: View {
     @State private var query = ""
     @State private var tab: Tab = .all
     @FocusState private var searchFocused: Bool
+    /// The sports most recently logged (`PulseSnapshotBuilder.recentActivitySports`), read as the list
+    /// appears. Optional: a list shown without the shell's model still offers the picks.
+    @Environment(PulseModel.self) private var model: PulseModel?
+    @State private var historySports: [String] = []
 
     private var catalogue: [PulseActivityKind] {
         tabs.contains(.sleep) ? PulseActivityCatalog.all + PulseActivityCatalog.sleepKinds : PulseActivityCatalog.all
@@ -101,8 +105,16 @@ struct PulseActivityPickerList: View {
         }
     }
 
+    /// MOST RECENT: the sports picked in Start, Add and Edit (newest first), then the ones most recently
+    /// logged, so imported and synced history counts too; one entry per sport, five at most (s01, s04:
+    /// WHOOP's "5 most recent activity types"), then filtered to the tab, with sleep only where it is offered.
     private var recent: [PulseActivityKind] {
-        PulseActivityCatalog.recent().filter { kind in inTab(kind) && (tabs.contains(.sleep) || kind.category != .sleep) }
+        var seen = Set<String>()
+        let names = (RecentSportsPrefs.recent() + historySports)
+            .filter { seen.insert(WorkoutSource.sportKey($0)).inserted }
+        return names.prefix(RecentSportsPrefs.maxCount)
+            .map { PulseActivityCatalog.kind(named: $0) }
+            .filter { kind in inTab(kind) && (tabs.contains(.sleep) || kind.category != .sleep) }
     }
 
     private var alphabetical: [PulseActivityKind] {
@@ -150,6 +162,9 @@ struct PulseActivityPickerList: View {
             .scrollDismissesKeyboard(.interactively)
             .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
         }
+        .task {
+            historySports = await model?.build(dayOffset: 0) { builder, _ in await builder.recentActivitySports() } ?? []
+        }
         #if DEBUG
         .onAppear { PulseActivityDebug.applyRecentsIfRequested() }
         #endif
@@ -185,6 +200,7 @@ struct PulseActivityPickerList: View {
         .frame(minHeight: 44)
         .background(RoundedRectangle(cornerRadius: PulseTheme.Radius.control, style: .circular)
             .fill(style == .cards ? PulseTheme.Activity.searchField : PulseTheme.card))
+        // The card lists' field keeps a 1 pt rim, lighter while focused (c03); the pre-start one has none.
         .overlay(RoundedRectangle(cornerRadius: PulseTheme.Radius.control, style: .circular)
             .strokeBorder(style == .cards
                           ? (searchFocused ? PulseTheme.Activity.searchFocusBorder : PulseActivityStyle.searchBorder)
@@ -203,7 +219,6 @@ struct PulseActivityPickerList: View {
                 ForEach(tabs, id: \.self) { t in
                     tabButton(t)
                         .frame(maxWidth: .infinity)
-        // The card lists' field keeps a 1 pt rim, lighter while focused (c03); the pre-start one has none.
                 }
             }
         } else {
@@ -282,8 +297,6 @@ struct PulseActivityPickerList: View {
         .accessibilityAddTraits(isSelected ? .isSelected : [])
         .accessibilityHint(kind.category == .recovery ? String(localized: "Recovery activity") : "")
     }
-}
-#endif
 
     /// A row's name: the card lists' smaller caps (c03), the pre-start dropdown's menu caps
     /// (completeness-critic/05).
@@ -295,3 +308,5 @@ struct PulseActivityPickerList: View {
             Text(name).pulseText(.menuLabel)
         }
     }
+}
+#endif

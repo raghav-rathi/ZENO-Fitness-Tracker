@@ -746,5 +746,27 @@ extension PulseSnapshotBuilder {
             recoveryCarried: carried, dayStrain: strain, optimalRange: target?.range, targetDayStrain: midpoint,
             denominator: StrainScorer.logMapDenominator(method: r.prefs.effortMethod, sex: r.profile.sex))
     }
+
+    // MARK: - The activity lists (§3.9)
+
+    /// The sports most recently logged, newest first, one entry per sport, at most `limit`: MOST RECENT's
+    /// history half ("your 5 most recent activity types", §3.9 ZENO data). Every stored workout counts
+    /// (WHOOP and Apple Health imports, live sessions, added activities), not only the picks made in Start or
+    /// Add. Auto-detected bouts and "Other" name no sport, so they are left out.
+    /// Names come back in their editable form ("Traditional Strength Training" for WHOOP's camelCase token).
+    func recentActivitySports(limit: Int = RecentSportsPrefs.maxCount) async -> [String] {
+        let rows = await workoutRows()
+        var seen = Set<String>()
+        var out: [String] = []
+        for row in rows.sorted(by: { $0.startTs > $1.startTs }) {
+            if out.count >= limit { break }
+            guard WorkoutSource.classify(row.source) != .detected, row.sport != "detected",
+                  row.sport.caseInsensitiveCompare(WorkoutCatalog.defaultSportName) != .orderedSame else { continue }
+            let key = WorkoutSource.sportKey(row.sport)
+            guard !key.isEmpty, seen.insert(key).inserted else { continue }
+            out.append(WorkoutSource.editableSport(row.sport))
+        }
+        return out
+    }
 }
 #endif
