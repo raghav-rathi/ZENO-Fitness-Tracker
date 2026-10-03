@@ -110,11 +110,13 @@ struct PulseChallengesView: View {
     }
 
     #if DEBUG
-    /// `--pulse-challenge <id>` opens a challenge's page, `--pulse-challenge-join <kind>` a join page, so
-    /// simctl (which cannot tap) can capture them.
+    /// `--pulse-challenge <id>` opens a challenge's page, `--pulse-challenge-join <kind>` a join page and
+    /// `--pulse-zeno-live` the ZENO Live composer, so simctl (which cannot tap) can capture them.
     private func openDebugRoute() {
         let args = CommandLine.arguments
-        if let i = args.firstIndex(of: "--pulse-challenge"), i + 1 < args.count {
+        if args.contains("--pulse-zeno-live") {
+            navigator.open(PulseZenoLiveRoute().route)
+        } else if let i = args.firstIndex(of: "--pulse-challenge"), i + 1 < args.count {
             navigator.push(PulseChallengeDetailRoute(id: args[i + 1]).route)
         } else if let i = args.firstIndex(of: "--pulse-challenge-join"), i + 1 < args.count,
                   let kind = ChallengeProgress.Kind(rawValue: args[i + 1]) {

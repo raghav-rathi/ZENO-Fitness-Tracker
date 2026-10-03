@@ -882,7 +882,7 @@ private struct YearReviewSummarySlide: View {
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("ZENO-\(String(snapshot.year))-Year-in-Review.png")
         do { try data.write(to: url, options: .atomic) } catch { return }
-        YearReviewShareSheet.present(url)
+        PulseExtrasShareSheet.present(url)
     }
 }
 
@@ -1009,31 +1009,6 @@ struct YearReviewSummaryCard: View {
         .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(S.summaryRow))
         .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(PulseTheme.divider, lineWidth: 1))
         .accessibilityElement(children: .combine)
-    }
-}
-
-/// Presents the share sheet for a rendered image from the top-most controller. Saving to Photos is
-/// excluded: the app does not declare NSPhotoLibraryAddUsageDescription, and "Save Image" would end the
-/// app without it (Files, AirDrop and Messages still take the PNG).
-enum YearReviewShareSheet {
-    @MainActor
-    static func present(_ url: URL) {
-        let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
-        guard let scene = scenes.first(where: { $0.activationState == .foregroundActive }) ?? scenes.first,
-              var presenter = scene.windows.first(where: \.isKeyWindow)?.rootViewController
-                ?? scene.windows.first?.rootViewController else { return }
-        while let next = presenter.presentedViewController, !next.isBeingDismissed { presenter = next }
-        let sheet = UIActivityViewController(activityItems: [url], applicationActivities: nil)
-        sheet.excludedActivityTypes = [.saveToCameraRoll]
-        sheet.completionWithItemsHandler = { _, _, _, _ in
-            try? FileManager.default.removeItem(at: url)
-        }
-        if let pop = sheet.popoverPresentationController {
-            pop.sourceView = presenter.view
-            pop.sourceRect = CGRect(x: presenter.view.bounds.midX, y: presenter.view.bounds.midY, width: 0, height: 0)
-            pop.permittedArrowDirections = []
-        }
-        presenter.present(sheet, animated: true)
     }
 }
 

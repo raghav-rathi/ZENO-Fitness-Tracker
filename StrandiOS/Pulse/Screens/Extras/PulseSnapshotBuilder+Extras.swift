@@ -396,4 +396,31 @@ extension PulseSnapshotBuilder {
         return (Int(start.timeIntervalSince1970), Int(next.timeIntervalSince1970) - 1)
     }
 }
+
+// MARK: - ZENO Live (§3.10)
+
+extension PulseSnapshotBuilder {
+    /// A reading this old or newer counts as the current heart rate on the overlay.
+    static let liveHeartRateAge: TimeInterval = 15 * 60
+
+    /// Today's dials, through the same resolvers as Home's (so the overlay and Home never disagree), and the
+    /// newest heart rate from today's window when it is recent.
+    func zenoLive(_ r: PulseRequest) async -> ZenoLiveSnapshot? {
+        begin(r.seq)
+        let row = displayRow(r)
+        let rest = await restSeries()
+        let window = await dayWindow(r)
+        let hr = await heartRate(dayKey: r.day.key, from: window.from, to: window.to, isToday: r.day.isToday)
+        guard isCurrent(r) else { return nil }
+        let (charge, _) = chargeDisplay(r, row: row)
+        let latest = hr.last.flatMap { sample -> HRSample? in
+            r.now.timeIntervalSince1970 - TimeInterval(sample.ts) <= Self.liveHeartRateAge ? sample : nil
+        }
+        return ZenoLiveSnapshot(seq: r.seq, day: r.day, sleep: sleepDial(r, rest: rest),
+                                recovery: recoveryDial(charge),
+                                strain: strainDial(strainValue(r, row: row, hr: r.day.isToday ? hr : nil)),
+                                heartRate: latest.map(\.bpm),
+                                heartRateAt: latest.map { Date(timeIntervalSince1970: TimeInterval($0.ts)) })
+    }
+}
 #endif

@@ -154,4 +154,18 @@ enum ChallengeEntry: Equatable, Identifiable {
         }
     }
 }
+
+// MARK: ZENO Live (§3.10)
+
+/// Today's numbers for the ZENO Live overlay: Home's three dials and the newest heart rate.
+struct ZenoLiveSnapshot: Equatable {
+    let seq: Int
+    let day: PulseDay
+    let sleep: PulseDialData
+    let recovery: PulseDialData
+    let strain: PulseDialData
+    /// The newest heart-rate reading, when it is recent enough to call current (the last 15 minutes).
+    let heartRate: Int?
+    let heartRateAt: Date?
+}
 #endif
