@@ -18,6 +18,9 @@ struct PulseMemoryView: View {
     var onOpenDetail: ((UUID) -> Void)?
 
     @EnvironmentObject private var profile: ProfileStore
+    /// Observed so the avatar's initials follow an edit; read through `PulseProfileIdentity.storedName`, the
+    /// trimmed name Profile shows.
+    @AppStorage(PulseProfileIdentity.nameKey) private var storedName = ""
     @Environment(\.pulseNavigator) private var navigator
     @State private var composer: PulseMemoryComposer.Mode?
     @State private var filter: PulseMemoryItem.Category?
@@ -71,7 +74,7 @@ struct PulseMemoryView: View {
                     .foregroundStyle(PulseTheme.textSecondary)
             }
             Spacer(minLength: 0)
-            PulseAvatar(imageData: profile.avatarImageData, name: nil, size: 56)
+            PulseAvatar(imageData: profile.avatarImageData, name: PulseProfileIdentity.storedName, size: 56)
         }
     }
 
