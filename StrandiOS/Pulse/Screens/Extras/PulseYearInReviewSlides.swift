@@ -153,7 +153,8 @@ private struct YearReviewSentence: View {
 
 // MARK: - Intro
 
-/// How many days the strap scored this year, and over what span.
+/// How many days the strap scored this year, and over what span, with the Level, the year's Recoveries and
+/// its activities under them.
 private struct YearReviewIntroSlide: View {
     let snapshot: YearInReviewSnapshot
 
@@ -935,9 +936,9 @@ private struct YearReviewSummarySlide: View {
     }
 }
 
-/// The card WHOOP members share: the lock-up with ZENO Age at its right, days tracked and the longest
-/// streak, the three best days as rings with their dates, and the longest sleep, lowest Recovery and top
-/// activity.
+/// The card WHOOP members share: the lock-up with ZENO Age at its right, the Level over its Recoveries and
+/// the longest streak, the three best days as rings with their dates, and the longest sleep, lowest
+/// Recovery and top activity.
 struct YearReviewSummaryCard: View {
     let snapshot: YearInReviewSnapshot
     /// The wearer's age in years, to say how far ZENO Age sits from it.
