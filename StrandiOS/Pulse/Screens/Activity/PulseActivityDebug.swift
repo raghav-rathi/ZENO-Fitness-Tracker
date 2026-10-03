@@ -26,6 +26,7 @@ import WhoopProtocol
 //   --activity-picker-open        the pre-start screen with its activity list dropped down
 //   --activity-panel ring|chart   the Strain Target panel expanded on that view
 //   --activity-demo-live [min]    a live session N minutes in (default 28) fed demo heart rate
+//   --activity-no-route           start that session with Track Route off (a distance sport records no route)
 //   --activity-live-page hr|strain|map   the live pager on that page
 //   --activity-end-dialog         the live session's END THIS ACTIVITY? card
 //   --activity-live-camera        the live session's LIVE button: ZENO Live pushed over the session
@@ -176,7 +177,7 @@ enum PulseActivityDebug {
             let bpm = 102 + 48 * min(1, progress * 3) + 8 * sin(Double(t - start) / 90) + noise * 6
             samples.append(HRSample(ts: t, bpm: Int(bpm.rounded())))
         }
-        app.startWorkout(sport: sport)
+        app.startWorkout(sport: sport, trackRoute: !has("--activity-no-route"))
         guard var w = app.activeWorkout else { return }
         w = AppModel.ActiveWorkout(start: Date(timeIntervalSince1970: TimeInterval(start)), sport: sport)
         w.samples = samples
