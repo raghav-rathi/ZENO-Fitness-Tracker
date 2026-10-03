@@ -154,8 +154,8 @@ extension PulseSnapshotBuilder {
 
     /// Where the cycle is today for a card outside the page (the Health tab's): the page's own summary and
     /// header (`cycleSummary`, `header`), so the card states the cycle day and phase the page it opens
-    /// states, and, where the page draws phases, today's place in the cycle for the card's phase bar. The
-    /// logs are read here, off the main actor.
+    /// states, and, where the page draws phases, today's place in the cycle (its day and the cycle's length)
+    /// for the card's phase bar. The logs are read here, off the main actor.
     func cycleToday(_ r: PulseRequest, today: String, engine: CyclePhaseEngine.Result?, mode: PulseCycleLog.Mode,
                     contraception: PulseCycleLog.Contraception) async -> CycleTodaySnapshot {
         var logs = PulseCycleLog.Logs()
@@ -166,21 +166,20 @@ extension PulseSnapshotBuilder {
                                                      today: today, phasesApply: phasesApply).first
         let header = header(summary: summary, inputs: inputs, active: active, phasesApply: phasesApply,
                             predicts: predicts, todayInfo: todayInfo)
-        var position: Double?
+        var place: CycleTodaySnapshot.Place?
         if active, let cd = summary.cycleDay {
-            // The logs' cycle day. The bar draws phases, so not where the page withholds them (hormonal
-            // contraception).
-            if phasesApply, summary.modelCycleLength > 0 { position = Double(cd) / Double(summary.modelCycleLength) }
+            // The logs' cycle day. A card draws phases around it, so not where the page withholds them
+            // (hormonal contraception).
+            if phasesApply, summary.modelCycleLength > 0 { place = .init(day: cd, length: summary.modelCycleLength) }
         } else if header.cycleDay != nil, let lo = engine?.cycleDayLow, let hi = engine?.cycleDayHigh,
                   let length = engine?.cycleLengthDays, length > 0 {
             // No usable logs: the header's cycle day is the temperature engine's estimate, which it states
             // only where phases apply.
-            position = (Double(lo + hi) / 2) / Double(length)
+            place = .init(day: max(1, (lo + hi) / 2), length: length)
         }
         let headline = header.cardDay
             ?? (mode == .menopause ? String(localized: "Symptom tracking") : String(localized: "Log a period to start"))
-        return CycleTodaySnapshot(seq: r.seq, header: header, headline: headline,
-                                  position: position.map { min(1, max(0, $0)) })
+        return CycleTodaySnapshot(seq: r.seq, header: header, headline: headline, place: place)
     }
 
     // MARK: Header

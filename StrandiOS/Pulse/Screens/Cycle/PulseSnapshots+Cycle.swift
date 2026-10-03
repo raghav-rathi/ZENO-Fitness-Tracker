@@ -205,8 +205,18 @@ struct CycleTodaySnapshot: Equatable {
     /// The line under the card's label: the header's cycle day as a card prints it ("Day 3"), or what there
     /// is instead ("Log a period to start").
     let headline: String
-    /// Today's place in the cycle, 0…1, for the card's phase bar; nil without a cycle day to place, and
-    /// where phases do not apply (menopause, hormonal contraception), as the page then draws none.
-    let position: Double?
+    /// Today's place in the cycle, for a card that draws the cycle's phases; nil without a cycle day to place,
+    /// and where phases do not apply (menopause, hormonal contraception), as the page then draws none.
+    let place: Place?
+
+    /// Today's cycle day (the middle of the temperature engine's range where the engine is the voice) in a
+    /// cycle of `length` days (the logs' modelled length, or the engine's).
+    struct Place: Equatable {
+        let day: Int
+        let length: Int
+
+        /// 0…1 along the cycle: where a bar puts today's marker.
+        var fraction: Double { min(1, max(0, Double(day) / Double(max(1, length)))) }
+    }
 }
 #endif

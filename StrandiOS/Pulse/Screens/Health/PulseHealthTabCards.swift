@@ -617,8 +617,8 @@ struct HealthCycleCard: View, Equatable {
                                     .foregroundStyle(PulseTheme.textPrimary)
                             }
                             Spacer(minLength: 8)
-                            if let position = today?.position {
-                                bar(position)
+                            if let place = today?.place {
+                                bar(place.fraction)
                                     .frame(width: 150)
                             }
                         }
