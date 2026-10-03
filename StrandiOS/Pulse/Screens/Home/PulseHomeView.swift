@@ -331,7 +331,9 @@ enum PulseHomeSpacing {
 /// stored layout. `--pulse-home-open outlook|review`: open the local Daily Outlook or Day in Review once
 /// Home has loaded. `--pulse-monitor elevated|low|very-elevated|out`: the Health Monitor tile with that
 /// grade, for a capture (the demo seed's vitals are all in range). `--pulse-home-milestones`: one
-/// milestone card of each kind in the coaching stack (`PulseHomeMilestones.debugCards`). Under
+/// milestone card of each kind in the coaching stack (`PulseHomeMilestones.debugCards`).
+/// `--pulse-coaching-top <id prefix>`: lift the coaching cards whose id starts so ("challenge",
+/// "milestone-badge", "week-review") to the top of the stack, which simctl cannot page with ✓. Under
 /// `--demo-seed` the unlock modal stays off Home unless `--more-unlock` asks for it. No-op in Release.
 enum PulseHomeDebug {
     /// Whether Home presents the unlock modal. A `--demo-seed` store fills in after the modal's silent
@@ -384,6 +386,14 @@ enum PulseHomeDebug {
         return nil
         #endif
     }
+
+    #if DEBUG
+    static var coachingTop: String? {
+        let args = CommandLine.arguments
+        guard let i = args.firstIndex(of: "--pulse-coaching-top"), i + 1 < args.count else { return nil }
+        return args[i + 1]
+    }
+    #endif
 
     static var dashboard: [PulseDashboardItem]? {
         #if DEBUG

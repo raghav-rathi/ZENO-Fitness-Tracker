@@ -12,7 +12,8 @@ import StrandAnalytics
 // week in review, release notes) swap the fill for a gradient border.
 //
 // The cards come from `HomeCoachingRules` (StrandAnalytics), fed by the day's own data, then the wearer's own
-// milestones (`PulseHomeMilestones`, §3.30): no server feed, so there is no "Couldn't load" state.
+// milestones (`PulseHomeMilestones`, §3.30) and running challenges (`PulseChallengeFeed`, §3.41): no server
+// feed, so there is no "Couldn't load" state.
 
 /// One card, with its copy and destination resolved.
 struct PulseCoachingCardModel: Identifiable, Equatable {
@@ -169,10 +170,10 @@ struct PulseCoachingStack: View {
 
 /// Places the stack on Home, with the monitor tiles under it (their gap follows whether a card shows):
 /// evaluates the rules from the day's inputs plus the app state they need (the illness heads-up, unseen
-/// release notes, the current minute for this morning's alarm), adds today's milestones, drops the cards
-/// completed today, and opens a card's destination. Its own leaf because the illness flag lives on
-/// `AppModel`, which publishes every heart-rate tick: the content below only redraws when its inputs
-/// change.
+/// release notes, the current minute for this morning's alarm), adds today's milestones and the running
+/// challenges, drops the cards completed today, and opens a card's destination. Its own leaf because the
+/// illness flag lives on `AppModel`, which publishes every heart-rate tick: the content below only redraws
+/// when its inputs change.
 struct PulseCoachingStackHost: View {
     let base: HomeCoachingRules.Inputs
     let home: HomeSnapshot
@@ -184,6 +185,10 @@ struct PulseCoachingStackHost: View {
     let profile: ProfileSnapshot?
 
     @EnvironmentObject private var app: AppModel
+    @Environment(PulseModel.self) private var model
+    /// The challenges running today, measured by the builder the Challenges pages use, so a card and the
+    /// page it opens state the same progress.
+    @State private var challenges: [ChallengeSnapshot] = []
 
     private var milestones: [PulseHomeMilestones.Card] {
         #if DEBUG
@@ -195,8 +200,15 @@ struct PulseCoachingStackHost: View {
     var body: some View {
         PulseCoachingStackContent(base: base, home: home, grades: grades, stressUpdated: stressUpdated,
                                   illness: app.healthAlert.map { localizedHealthAlertCopy($0) },
-                                  milestones: milestones)
+                                  milestones: milestones, challenges: challenges)
             .equatable()
+            // The Challenges page's own reload key: a refresh, or a challenge started, left or removed.
+            .task(id: PulseChallengesView.key(model: model, store: PulseChallengeStore.shared)) {
+                #if DEBUG
+                PulseChallengeStore.shared.seedDemoIfRequested(today: Repository.localDayKey(Date()))
+                #endif
+                challenges = await PulseChallengeFeed.running(model)
+            }
     }
 }
 
@@ -209,6 +221,8 @@ private struct PulseCoachingStackContent: View, Equatable {
     let illness: String?
     /// Today's achievements, day-streak milestone and level-up (§3.30).
     let milestones: [PulseHomeMilestones.Card]
+    /// The challenges running today (§3.41).
+    let challenges: [ChallengeSnapshot]
 
     @Environment(\.pulseNavigator) private var navigator
     /// Cards completed with ✓, as "yyyy-MM-dd:id" (only today's are kept).
@@ -222,7 +236,7 @@ private struct PulseCoachingStackContent: View, Equatable {
     static func == (lhs: PulseCoachingStackContent, rhs: PulseCoachingStackContent) -> Bool {
         lhs.base == rhs.base && lhs.home == rhs.home && lhs.grades == rhs.grades
             && lhs.stressUpdated == rhs.stressUpdated && lhs.illness == rhs.illness
-            && lhs.milestones == rhs.milestones
+            && lhs.milestones == rhs.milestones && lhs.challenges == rhs.challenges
     }
 
     var body: some View {
@@ -243,8 +257,8 @@ private struct PulseCoachingStackContent: View, Equatable {
     // TODO(auto-workout-card): the opt-in auto-detected workout (Save / Dismiss, §3.14 [Z]) needs
     // `Repository.autoDetectCandidate()` split so its detection can run off the main actor first.
     /// The heads-ups that cannot wait (the illness heads-up, an alarm still to come), today's milestones,
-    /// the rest of the rules' cards for the day, then the announcements (the week in review, release
-    /// notes), less the ones completed today.
+    /// the rest of the rules' cards for the day, the running challenges, then the announcements (the week
+    /// in review, release notes), less the ones completed today.
     private var models: [PulseCoachingCardModel] {
         var inputs = base
         inputs.illness = illness != nil
@@ -257,7 +271,14 @@ private struct PulseCoachingStackContent: View, Equatable {
         let day = rest.filter { $0.style != .feature }
         let announcements = rest.filter { $0.style == .feature }
         let done = completedToday
-        return (urgent + milestones.map(model) + day + announcements).filter { !done.contains($0.id) }
+        let cards = (urgent + milestones.map(model) + day + challenges.map(model) + announcements)
+            .filter { !done.contains($0.id) }
+        #if DEBUG
+        if let top = PulseHomeDebug.coachingTop {
+            return cards.filter { $0.id.hasPrefix(top) } + cards.filter { !$0.id.hasPrefix(top) }
+        }
+        #endif
+        return cards
     }
 
     private static func isUrgent(_ card: HomeCoachingRules.Card) -> Bool {
@@ -420,6 +441,15 @@ private struct PulseCoachingStackContent: View, Equatable {
             return .init(id: milestone.id, title: String(localized: "Level Up"), body: body,
                          cta: String(localized: "View levels"), symbol: "medal", route: .levels)
         }
+    }
+
+    /// A running challenge in its page's own words (`PulseChallengeText`): its name and the page's
+    /// headline, the page's sentence on where it stands, and the page itself behind it.
+    private func model(_ challenge: ChallengeSnapshot) -> PulseCoachingCardModel {
+        .init(id: "challenge-\(challenge.id)",
+              title: String(localized: "\(PulseChallengeText.navTitle(challenge.definition)): \(PulseChallengeText.headline(challenge))"),
+              body: PulseChallengeText.detail(challenge), cta: String(localized: "View challenge"),
+              symbol: challenge.definition.kind.symbol, route: PulseChallengeDetailRoute(id: challenge.id).route)
     }
 
     /// A minutes-after-midnight time in the device's clock format.
