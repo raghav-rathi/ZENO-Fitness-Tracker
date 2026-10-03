@@ -2,37 +2,32 @@
 import Foundation
 import StrandAnalytics
 
-// MARK: - The first message's context block (WHOOP_UI_SPEC §3.16, §1.2 "seeded with that page's context", §0.3)
+// MARK: - What goes with a question (WHOOP_UI_SPEC §3.16, §1.2 "seeded with that page's context", §0.3)
 //
-// The Coach sheet drives the EXISTING `AICoachEngine`, which builds its own system prompt and data summary
-// and offers no hook for extra context. Three things still have to reach the model with a new conversation:
+// The Coach sheet drives the EXISTING `AICoachEngine`. The engine itself speaks the Pulse interface's names
+// (Recovery, Strain on 0–21, Sleep) in its system prompt, data summary and brief while Pulse runs
+// (`CoachVocabulary`), so nothing here has to translate the classic charge / effort / rest. Two things still
+// reach the model from the sheet:
 //
-//   - the WORDS: the engine's prompt and data summary speak in the classic "charge / effort (0–100) / rest"
-//     names, and the rebuilt UI must say Recovery, Strain (0–21) and Sleep (§0.3), so the model is told how
-//     the names map and to use the WHOOP-structured ones;
-//   - the PAGE the sheet was opened from (a deep dive's summary pill, the Daily Outlook, the cycle page);
-//   - the wearer's ACTIVE memories (My Memory), while Memory is switched on.
-//
-// They ride the FIRST user message of a conversation in a fenced block, because that is the turn the engine
-// keeps at the head of every request it sends for the conversation (its sliding window always retains it).
-// The sheet never shows the block as text: it shows the question in the bubble and a "✧ Shared your Sleep
-// summary · Used 2 memories" receipt above it, so what was sent is still stated.
+//   - the wearer's ACTIVE memories (My Memory), while Memory is switched on, as standing system context
+//     (`AICoachEngine.systemContext`, `standingContext()` below): every request carries the memories active
+//     when it is sent, so one switched off stops going at once;
+//   - the PAGE the sheet was opened from (a deep dive's summary pill, the Daily Outlook, the cycle page), in a
+//     fenced block on the FIRST user message of a conversation, the turn the engine keeps at the head of
+//     every request it sends for the conversation (its sliding window always retains it). The sheet never
+//     shows the block as text: it shows the question in the bubble and a "✧ Shared your Sleep summary"
+//     receipt above it, read back from the stored block, so it names only what was attached.
 //
 // The page summary carries the wearer's numbers (a cycle day and phase, a night's sleep), so it goes only
 // while AI Settings › USE MY DATA is on, the same consent the engine asks before it sends its own data
-// summary; with it off the block carries the words and any memories only, and the sheet says the page was
-// not shared. The receipt is read back from the stored block, so it names only what was attached.
+// summary; with it off the question goes alone and the sheet says the page was not shared.
 //
-// `AICoachEngine` has no hook for extra system context today. When it gains one, this block should move
-// there and `wrap` is the one place to change.
+// Conversations from before the engine spoke Pulse's names carry "Words" and "About me" lines in their
+// block. They still parse (their receipt still says how many memories went with them), and a conversation
+// reopened from the history drops them (`droppingLegacyContext`), so neither an outdated memory nor a second
+// copy of the names rides it again.
 
 enum PulseCoachEnvelope {
-    /// How the engine's data names map onto the names the wearer sees (the block's "Words" line).
-    static let vocabulary = """
-    in this app the daily scores are called Recovery (your data's "charge", 0-100%), Strain (your data's \
-    "effort" times 0.21, on a 0-21 scale) and Sleep (your data's "rest"). Call them Recovery, Strain and Sleep, \
-    give Strain on the 0-21 scale, and never call them charge, effort or rest.
-    """
 
     /// What a stored first message holds.
     struct Parsed: Equatable {
@@ -45,13 +40,38 @@ enum PulseCoachEnvelope {
         let hasContext: Bool
     }
 
-    /// The first question of a conversation with its context block (`CoachContextEnvelope`, the format the
-    /// analytics package pins with tests).
-    static func wrap(_ question: String, page: String?, memories: [PulseMemoryItem]) -> String {
-        // The detail holds the whole memory (its title is the detail's first sentence).
-        let about = memories.map(\.detail).joined(separator: memorySeparator)
-        return CoachContextEnvelope.wrap(question, fields: [("Words", vocabulary), ("Page", page ?? ""),
-                                                            ("About me", about)])
+    /// The first question of a conversation with the page it was asked from (`CoachContextEnvelope`, the
+    /// format the analytics package pins with tests), or the bare question when there is no page to share.
+    static func wrap(_ question: String, page: String?) -> String {
+        guard let page, !page.isEmpty else { return question }
+        return CoachContextEnvelope.wrap(question, fields: [("Page", page)])
+    }
+
+    /// A stored first question as it should go again when its conversation is reopened: a block from before
+    /// the engine spoke Pulse's names keeps only its page (its "Words" and "About me" lines go, the memories
+    /// now riding the system context as they stand). Anything else is returned unchanged.
+    static func droppingLegacyContext(_ text: String) -> String {
+        let parsed = CoachContextEnvelope.parse(text)
+        guard parsed.hasBlock, parsed.fields.keys.contains(where: { $0 != "Page" }) else { return text }
+        return wrap(parsed.question, page: parsed.fields["Page"])
+    }
+
+    /// The wearer's active memories as standing context for the engine's system prompt, or nil with none.
+    /// The detail holds the whole memory (its title is the detail's first sentence), each on one line.
+    static func memoryContext(_ memories: [PulseMemoryItem]) -> String? {
+        let lines = memories.map { "- " + $0.detail.split(whereSeparator: \.isNewline).joined(separator: " ") }
+        guard !lines.isEmpty else { return nil }
+        return (["About the user, in their own words (My Memory). Let it shape your advice; never quote it back:"]
+                + lines).joined(separator: "\n")
+    }
+
+    /// The engine's standing-context hook (`AICoachEngine.systemContext`): the active memories while Memory is
+    /// on (`PulseMemoryStore.promptItems`), and only while the Pulse interface, the one that shows and manages
+    /// them, runs.
+    @MainActor
+    static func standingContext() -> String? {
+        guard CoachVocabulary.current == .pulse else { return nil }
+        return memoryContext(PulseMemoryStore.shared.promptItems)
     }
 
     /// Split a stored message into its question and context. Text without a block is all question.
@@ -64,8 +84,9 @@ enum PulseCoachEnvelope {
 
     private static let memorySeparator = " | "
 
-    /// "✧ Shared your Sleep summary · Used 2 memories", or nil when nothing but the words went along. Read
-    /// from the stored block, so it names only what was attached.
+    /// "✧ Shared your Sleep summary", with "· Used 2 memories" on a turn from before memories moved to the
+    /// system context, or nil when no page went along. Read from the stored block, so it names only what was
+    /// attached.
     static func receipt(_ parsed: Parsed) -> String? {
         var parts: [String] = []
         if let page = parsed.page { parts.append(String(localized: "Shared \(pageLabel(page))")) }
@@ -107,8 +128,8 @@ enum PulseCoachEnvelope {
 // MARK: - Suggestion chips (§3.16 "Suggestion chips")
 
 enum PulseCoachSuggestions {
-    /// The chip that asks for today's brief (the engine's own brief speaks the classic names, so the sheet
-    /// asks for it through a normal question, which carries the words above).
+    /// The chip that asks for today's brief, as a normal question (the sheet never asks the engine for its
+    /// own brief on opening: the first request is always one the wearer made).
     static var brief: String { String(localized: "Give me today's brief") }
 
     /// Chips for a conversation opened from `seed`'s page.

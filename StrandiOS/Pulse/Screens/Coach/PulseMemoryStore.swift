@@ -9,10 +9,9 @@ import Observation
 // of their own messages); nothing is extracted from conversations behind their back. One JSON file in
 // Application Support, on this iPhone only.
 //
-// Only ACTIVE memories reach the provider, and only while AI Settings' MEMORY switch is on. `AICoachEngine`
-// has no system-prompt hook for them, so they ride the first message of each new conversation inside the
-// context block (`PulseCoachEnvelope`), which the engine keeps at the head of every request it sends for
-// that conversation; the sheet shows a "✧ Used 2 memories" receipt above it.
+// Only ACTIVE memories reach the provider, and only while AI Settings' MEMORY switch is on: they go with
+// every request as standing system context (`AICoachEngine.systemContext`, `PulseCoachEnvelope.standingContext`),
+// as they stand when it is sent, so switching one off takes effect on the next question.
 
 struct PulseMemoryItem: Codable, Identifiable, Equatable {
     enum Category: String, Codable, CaseIterable, Identifiable {

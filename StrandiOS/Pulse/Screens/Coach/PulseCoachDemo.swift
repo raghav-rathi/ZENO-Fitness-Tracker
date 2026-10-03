@@ -76,8 +76,7 @@ enum PulseCoachDemo {
         await threads.loadIfNeeded()
         if threads.threads.isEmpty {
             let earlier = [
-                ChatMessage(role: .user, text: PulseCoachEnvelope.wrap("How should I taper before race day?", page: nil,
-                                                                       memories: memory.promptItems)),
+                ChatMessage(role: .user, text: "How should I taper before race day?"),
                 ChatMessage(role: .assistant, text: "Cut your weekly volume by about a third in the final ten days and keep two short runs at race pace, so you arrive fresh without losing sharpness."),
             ]
             threads.sync(earlier, now: Date().addingTimeInterval(-2 * 86_400))
@@ -109,8 +108,7 @@ enum PulseCoachDemo {
         reply += " and Strain averaged **\(PulseFormat.oneDecimal(strainAvg))** on the 0–21 scale.\n\n"
         reply += "You're recovering steadily. With your half marathon in May, keep one hard session this week and make the next run an easy Zone 2 run so tomorrow's Recovery has room to climb."
         coach.messages = [
-            ChatMessage(role: .user, text: PulseCoachEnvelope.wrap("How did I recover this week?", page: nil,
-                                                                   memories: memory.promptItems)),
+            ChatMessage(role: .user, text: "How did I recover this week?"),
             ChatMessage(role: .assistant, text: reply),
         ]
         threads.sync(coach.messages)

@@ -26,11 +26,12 @@ enum PulseCoachDestination: Hashable {
 /// assistant turn.
 ///
 /// It drives the EXISTING `AICoachEngine` (its providers, keys, data summary, persistence, day boundary and
-/// scheduled brief); everything Pulse adds sits beside it: the conversation archive behind the history list
-/// (`PulseCoachThreadStore`), My Memory (`PulseMemoryStore`) and the first message's context block that
-/// carries the page summary, the active memories and the Recovery / Strain / Sleep vocabulary
-/// (`PulseCoachEnvelope`). Opening the sheet sends nothing: unlike the classic screen it never asks for a
-/// brief on its own, so the first request is always one the wearer made.
+/// scheduled brief), which speaks Pulse's Recovery / Strain / Sleep while Pulse runs (`CoachVocabulary`);
+/// everything Pulse adds sits beside it: the conversation archive behind the history list
+/// (`PulseCoachThreadStore`), My Memory (`PulseMemoryStore`, handed to the engine as standing system context)
+/// and the first message's context block that carries the page summary (`PulseCoachEnvelope`). Opening the
+/// sheet sends nothing: unlike the classic screen it never asks for a brief on its own, so the first request
+/// is always one the wearer made.
 struct PulseCoachSheet: View {
     /// The page the sheet was opened from (a summary pill's sentence, the Daily Outlook), if any.
     var seed: String?
@@ -448,6 +449,9 @@ struct PulseCoachSheet: View {
     private func open() async {
         guard !opened else { return }
         opened = true
+        // The wearer's active memories go with every request as system context. Set here as well as at
+        // launch (where a scheduled brief needs it), so the sheet never depends on the launch having done so.
+        coach.systemContext = PulseCoachEnvelope.standingContext
         await threads.loadIfNeeded()
         PulseMemoryStore.shared.loadIfNeeded()
         await coach.loadPersistedMessagesIfNeeded()
@@ -516,12 +520,10 @@ struct PulseCoachSheet: View {
             threads.sync(coach.messages)
             if !coach.messages.isEmpty { coach.clearConversation() }
         }
-        // The engine retires yesterday's conversation inside `send`; do it first so the context block lands
-        // on the turn that really is first.
+        // The engine retires yesterday's conversation inside `send`; do it first so the page's block lands on
+        // the turn that really is first.
         coach.retireStaleConversationIfNeeded()
-        let payload = coach.messages.isEmpty
-            ? PulseCoachEnvelope.wrap(question, page: page, memories: PulseMemoryStore.shared.promptItems)
-            : question
+        let payload = coach.messages.isEmpty ? PulseCoachEnvelope.wrap(question, page: page) : question
         draft = ""
         Task {
             await coach.send(payload)
@@ -547,18 +549,18 @@ struct PulseCoachSheet: View {
         draft = ""
     }
 
-    /// Reopen an archived conversation in the engine (its newest 40 turns, the engine's own cap), with the
-    /// context block re-attached to its first question when the cap cut the original off.
+    /// Reopen an archived conversation in the engine (its newest 40 turns, the engine's own cap). Its first
+    /// question keeps the page it was asked from; an older block's names and memories are dropped, since the
+    /// engine now speaks Pulse's names itself and sends the memories active today.
     private func restore(_ thread: PulseCoachThread) {
         threads.sync(coach.messages)
         coach.clearConversation()
         var turns = thread.messages.suffix(40).map {
             ChatMessage(id: $0.id, role: ChatMessage.Role(rawValue: $0.role) ?? .user, text: $0.text)
         }
-        if let i = turns.firstIndex(where: { $0.role == .user }), !PulseCoachEnvelope.parse(turns[i].text).hasContext {
+        if let i = turns.firstIndex(where: { $0.role == .user }) {
             turns[i] = ChatMessage(id: turns[i].id, role: .user,
-                                   text: PulseCoachEnvelope.wrap(turns[i].text, page: nil,
-                                                                 memories: PulseMemoryStore.shared.promptItems))
+                                   text: PulseCoachEnvelope.droppingLegacyContext(turns[i].text))
         }
         coach.messages = turns
         seedPending = false
