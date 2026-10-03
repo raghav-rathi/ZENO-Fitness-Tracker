@@ -27,7 +27,8 @@ final class LiftSessionController: ObservableObject {
     @Published private(set) var engine: LiftSessionEngine? { didSet { scheduleRestTimers() } }
     @Published private(set) var programId: String?
     @Published private(set) var programName: String?
-    /// True while the full sheet is presented; false when minimised to the bottom bar.
+    /// True while the session's screen is presented (the classic sheet, or on iOS Pulse's full-screen live
+    /// session); false when minimised to the bottom bar.
     @Published var isPresented = false
 
     /// Bumped each time a finished session is written. The session sheet is presented above every
@@ -88,9 +89,11 @@ final class LiftSessionController: ObservableObject {
     /// the middle layer of `LiftSessionEngine.carry(for:lastSession:)`.
     ///
     /// It lives here rather than in the sheet because the minimised bar and the Lock Screen show a
-    /// set's numbers too, and they must be the grey numbers the sheet shows. `LiftSessionView` loads it
-    /// and hands it over; until it does (a session resumed straight into the bar after a relaunch, say)
-    /// the grey numbers fall through to the program's target, which is the layer below.
+    /// set's numbers too, and they must be the grey numbers the sheet shows. A session screen loads it as
+    /// it opens (`LiftSessionView.loadLastTime`; on iOS the rebuilt live screen through
+    /// `loadLastSession(from:)`), and on iOS the app root loads it for a session resumed straight into
+    /// the bar after a relaunch (`StrandiOSApp.init`). Until it is loaded the grey numbers fall through
+    /// to the program's target, which is the layer below.
     @Published private var lastSession: [String: [Int: LiftSetCarry]] = [:]
     /// The running rest's warning and end, and the end they were set for — see `scheduleRestTimers`.
     private var restTimers: [Task<Void, Never>] = []
@@ -358,8 +361,8 @@ final class LiftSessionController: ObservableObject {
         }
     }
 
-    /// Hand over what the store knows about previous sessions. Called by the sheet once it has read
-    /// it; safe to call again if it reloads.
+    /// Hand over what the store knows about previous sessions, once it has been read
+    /// (`LiftSessionView.loadLastTime`; on iOS `loadLastSession(from:)`); safe to call again if it reloads.
     func setLastSession(_ values: [String: [Int: LiftSetCarry]]) {
         lastSession = values
     }
