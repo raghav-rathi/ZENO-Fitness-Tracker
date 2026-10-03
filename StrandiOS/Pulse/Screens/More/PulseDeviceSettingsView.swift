@@ -76,7 +76,8 @@ private struct PulseDeviceSettingsContent: View {
     var body: some View {
         // reviews/r01, help-center/96: "CONNECTED TO" sits 61-70 pt under the bar's centre.
         PulseScreenScaffold(title: String(localized: "Device settings"),
-                            trailing: .info { showInfo = true },
+                            trailing: .custom(accessibilityLabel: String(localized: "About device settings"),
+                                              action: { showInfo = true }, draw: DeviceInfoGlyph.draw),
                             spacing: 0, horizontalPadding: MoreLayout.deviceMargin, topPadding: 38) {
             DeviceHeader(device: active, onRename: active == nil ? nil : {
                 renameDraft = String((active?.nickname ?? active?.displayName ?? "").prefix(strapNameLimit))
@@ -797,5 +798,25 @@ private struct DeviceInfoSheet: View {
         (String(localized: "Battery"), String(localized: "The level is the strap's own reading. ZENO can remind you to charge before bed in App Settings › Notifications.")),
         (String(localized: "Broadcast heart rate"), String(localized: "Shares your live heart rate as a standard Bluetooth heart-rate sensor, so a treadmill, a bike computer or a fitness app can read it. Local Bluetooth only, while Device Settings is open.")),
     ]
+}
+
+/// The bar's ⓘ as WHOOP draws it on Device Settings: full white like the "✕" and the title, a 30 pt ring of
+/// 2 pt round an 11 pt "i" (help-center/97 at 3x: a 90 px ring, 6 px stroke, 33 px "i"; onboarding/43a
+/// 30.3 pt). The deep dives' ⓘ is the shared grey 27.5 pt one.
+private enum DeviceInfoGlyph {
+    private static let ring: CGFloat = 30
+    private static let stroke: CGFloat = 2
+    private static let mark = Font.system(size: 14, weight: .bold)
+
+    /// Paints into the bar's 44 pt slot with `.foreground`, the bar's white.
+    static func draw(_ context: inout GraphicsContext, size: CGSize) {
+        let box = CGRect(x: (size.width - ring) / 2, y: (size.height - ring) / 2, width: ring, height: ring)
+        // Inset by half the line, as a stroked border sits inside its circle.
+        context.stroke(Path(ellipseIn: box.insetBy(dx: stroke / 2, dy: stroke / 2)), with: .foreground,
+                       lineWidth: stroke)
+        var glyph = context.resolve(Text(Image(systemName: "info")).font(mark))
+        glyph.shading = .foreground
+        context.draw(glyph, at: CGPoint(x: size.width / 2, y: size.height / 2))
+    }
 }
 #endif
