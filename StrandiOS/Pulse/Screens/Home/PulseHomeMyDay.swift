@@ -435,6 +435,8 @@ struct PulseTonightsSleepCard: View {
             .font(spec.font(size: size))
             .tracking(spec.tracking * size / spec.size)
             .textCase(.uppercase)
+            // reviews/r41 sets the two lines of RECOMMENDED BEDTIME 15 pt apart.
+            .lineSpacing(2)
             .multilineTextAlignment(.center)
             .foregroundStyle(color)
             .fixedSize(horizontal: false, vertical: true)
