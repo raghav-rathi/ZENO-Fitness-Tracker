@@ -249,6 +249,13 @@ private struct PulseRecoveryBehaviorCard: View {
 private struct PulseRecoveryWeeklyTrends: View {
     let week: RecoveryDiveSnapshot.Week
 
+    /// The smallest spread a line card scales to, so a flat week is not stretched edge to edge.
+    private enum Floor {
+        static let hrv = 4.0
+        static let rhr = 2.0
+        static let resp = 0.6
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: PulseTheme.Layout.headerGap) {
             PulseSectionHeader(String(localized: "Weekly Trends"), style: .weeklyTrendsTitle)
@@ -259,22 +266,32 @@ private struct PulseRecoveryWeeklyTrends: View {
                                   emptyMessage: String(localized: "No Recovery scored this week"))
                 }
                 PulseWeeklyTrendCard(String(localized: "Heart rate variability"), route: PulseDiveRoutes.trend("hrv")) {
-                    line(week.hrv, empty: String(localized: "No heart rate variability this week"))
+                    line(week.hrv, floor: Floor.hrv, empty: String(localized: "No heart rate variability this week"))
                 }
                 PulseWeeklyTrendCard(String(localized: "Resting heart rate"), route: PulseDiveRoutes.trend("rhr")) {
-                    line(week.rhr, empty: String(localized: "No resting heart rate this week"))
+                    line(week.rhr, floor: Floor.rhr, empty: String(localized: "No resting heart rate this week"))
                 }
                 .id("pulse.weekly-rhr")
                 PulseWeeklyTrendCard(String(localized: "Respiratory rate"), route: PulseDiveRoutes.trend("resp_rate")) {
-                    line(week.resp, empty: String(localized: "No respiratory rate this week"))
+                    line(week.resp, floor: Floor.resp, empty: String(localized: "No respiratory rate this week"))
                 }
             }
         }
     }
 
-    private func line(_ data: [PulseChartDatum], empty: String) -> some View {
-        PulseLineChart(data: data, color: PulseTheme.recoveryBlue, highlightID: week.highlightID,
-                       height: PulseWeeklyChart.height, emptyMessage: empty)
+    private func line(_ data: [PulseChartDatum], floor: Double, empty: String) -> some View {
+        PulseLineChart(data: data, color: PulseTheme.recoveryBlue,
+                       yDomain: Self.domain(data.compactMap(\.value), floor: floor),
+                       highlightID: week.highlightID, height: PulseWeeklyChart.height, emptyMessage: empty)
+    }
+
+    /// The week in the middle of the plot, as deep-dives-2026/16 draws it: the highest point a third of
+    /// the way down, the lowest about three quarters, so the value labels above the markers clear the top
+    /// and the lowest marker clears the bottom gridline. `floor` is the least spread scaled to.
+    static func domain(_ values: [Double], floor: Double) -> ClosedRange<Double>? {
+        guard let low = values.min(), let high = values.max() else { return nil }
+        let span = max(high - low, floor)
+        return (low - 0.6 * span)...(high + 0.8 * span)
     }
 }
 

@@ -180,7 +180,7 @@ struct PulseWeeklyLegendItem: Identifiable, Equatable {
     var id: String { title }
 }
 
-/// "■ ZONE 1 ■ ZONE 2 ■ ZONE 3": 8 pt swatches and 11 pt caps at 70%; wraps when it cannot fit.
+/// "■ ZONE 1 ■ ZONE 2 ■ ZONE 3": 8 pt square swatches and 11 pt caps at 70%; wraps when it cannot fit.
 struct PulseWeeklyLegend: View {
     let items: [PulseWeeklyLegendItem]
 
@@ -188,7 +188,7 @@ struct PulseWeeklyLegend: View {
         PulseWordFlow(alignment: .trailing, spacing: 12, lineSpacing: 6) {
             ForEach(items) { item in
                 HStack(spacing: 5) {
-                    RoundedRectangle(cornerRadius: 1.5, style: .circular)
+                    Rectangle()
                         .fill(item.color)
                         .frame(width: 8, height: 8)
                     Text(item.title)
