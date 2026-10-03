@@ -200,7 +200,8 @@ struct PulseAchievementDetailsRoute: PulseScreenRoute {
 
 /// The record of which unlocks the wearer has been shown, and the modal that shows a new one (spec §3.30
 /// "Unlock modal"). The first look records a baseline silently, so years of history do not announce
-/// every badge at once; after that each new milestone (and each badge's first occurrence) shows once.
+/// every badge at once; after that each new milestone (and each badge's first occurrence) shows once, in
+/// turn: closing the modal acknowledges only the unlock it showed, and the next pending one follows.
 enum ProfileUnlockStore {
     private static let badgesKey = "pulse.achievements.acknowledged"
     private static let streakKey = "pulse.streak.acknowledgedMilestone"
@@ -210,8 +211,17 @@ enum ProfileUnlockStore {
         return try? JSONDecoder().decode([String: Int].self, from: data)
     }
 
-    static func acknowledge(_ badges: [PulseAchievements.Badge]) {
-        let record = PulseAchievements.acknowledging(badges)
+    /// The silent baseline: every badge as it stands.
+    static func acknowledgeBaseline(_ badges: [PulseAchievements.Badge]) {
+        store(PulseAchievements.acknowledging(badges))
+    }
+
+    /// The one badge the wearer was shown, merged into the record.
+    static func acknowledge(_ badge: PulseAchievements.Badge) {
+        store(PulseAchievements.acknowledging(badge, into: acknowledged ?? [:]))
+    }
+
+    private static func store(_ record: [String: Int]) {
         if let data = try? JSONEncoder().encode(record) { UserDefaults.standard.set(data, forKey: badgesKey) }
     }
 
@@ -219,8 +229,14 @@ enum ProfileUnlockStore {
         UserDefaults.standard.object(forKey: streakKey) as? Int
     }
 
+    /// The streak's silent baseline: the last milestone at or below `days`.
     static func acknowledgeStreak(days: Int) {
         UserDefaults.standard.set(PulseDayStreak.lastMilestone(atOrBelow: days) ?? 0, forKey: streakKey)
+    }
+
+    /// The streak milestone the wearer was shown.
+    static func acknowledgeStreak(milestone: Int) {
+        UserDefaults.standard.set(max(milestone, acknowledgedStreakMilestone ?? 0), forKey: streakKey)
     }
 }
 
@@ -244,9 +260,22 @@ extension View {
     }
 }
 
+/// Which presenter holds the modal. Profile, Achievements and Day Streak each carry a presenter and can be
+/// alive at once (Profile under a pushed Achievements), so one refresh would otherwise present the same
+/// unlock twice: the first presenter to claim it shows it, the others wait.
+@MainActor
+private enum ProfileUnlockGate {
+    static var holder: UUID?
+    #if DEBUG
+    /// `--more-unlock` shows one badge once per launch, not again after every close.
+    static var debugShown = false
+    #endif
+}
+
 private struct ProfileUnlockPresenter: ViewModifier {
     let snapshot: ProfileSnapshot?
     @State private var unlock: ProfileUnlock?
+    @State private var id = UUID()
     @Environment(\.pulseNavigator) private var navigator
 
     func body(content: Content) -> some View {
@@ -255,9 +284,15 @@ private struct ProfileUnlockPresenter: ViewModifier {
             // catching up carries the old seq with a loaded store.
             .onChange(of: snapshot.map { "\($0.seq)|\($0.storeLoaded)" }) { _, _ in evaluate() }
             .onAppear(perform: evaluate)
-            .fullScreenCover(item: $unlock) { unlock in
-                PulseUnlockModal(unlock: unlock, onClose: { finish() }, onView: {
-                    finish()
+            .onDisappear { release() }
+            // Once a modal closes, the next pending unlock (a badge behind a streak milestone, a second
+            // badge from the same night) gets its turn.
+            .fullScreenCover(item: $unlock, onDismiss: {
+                release()
+                evaluate()
+            }) { unlock in
+                PulseUnlockModal(unlock: unlock, onClose: { finish(unlock) }, onView: {
+                    finish(unlock)
                     switch unlock {
                     case .badge(let badge): navigator.open(PulseAchievementDetailsRoute(badgeID: badge.id).route)
                     case .streak: navigator.open(.dayStreak)
@@ -271,16 +306,20 @@ private struct ProfileUnlockPresenter: ViewModifier {
         // A build from before the store's first load sees no days at all. Taking it as the first look would
         // record a zero baseline, and the real history would then arrive as a run of "new" unlocks.
         guard let snapshot, snapshot.storeLoaded, unlock == nil else { return }
+        guard ProfileUnlockGate.holder == nil || ProfileUnlockGate.holder == id else { return }
         #if DEBUG
-        if PulseMoreDebug.flag("--more-unlock"), let first = snapshot.unlockedBadges.first {
-            unlock = .badge(first)
+        if PulseMoreDebug.flag("--more-unlock") {
+            if !ProfileUnlockGate.debugShown, let first = snapshot.unlockedBadges.first {
+                ProfileUnlockGate.debugShown = true
+                present(.badge(first))
+            }
             return
         }
         #endif
         // The day streak first: it is the one WHOOP announces over Home.
         if let milestone = PulseDayStreak.newMilestone(days: snapshot.streak.current,
                                                        acknowledged: ProfileUnlockStore.acknowledgedStreakMilestone) {
-            unlock = .streak(milestone: milestone, days: snapshot.streak.current)
+            present(.streak(milestone: milestone, days: snapshot.streak.current))
             return
         }
         if ProfileUnlockStore.acknowledgedStreakMilestone == nil {
@@ -288,20 +327,30 @@ private struct ProfileUnlockPresenter: ViewModifier {
         }
         let known = ProfileUnlockStore.acknowledged
         guard known != nil else {
-            ProfileUnlockStore.acknowledge(snapshot.badges)      // the first look is a baseline
+            ProfileUnlockStore.acknowledgeBaseline(snapshot.badges)      // the first look is a baseline
             return
         }
         if let fresh = PulseAchievements.newUnlocks(snapshot.badges, acknowledged: known).first {
-            unlock = .badge(fresh)
+            present(.badge(fresh))
         }
     }
 
-    private func finish() {
-        if let snapshot {
-            ProfileUnlockStore.acknowledge(snapshot.badges)
-            ProfileUnlockStore.acknowledgeStreak(days: snapshot.streak.current)
+    private func present(_ next: ProfileUnlock) {
+        ProfileUnlockGate.holder = id
+        unlock = next
+    }
+
+    /// Acknowledge exactly what the modal showed, and close it.
+    private func finish(_ shown: ProfileUnlock) {
+        switch shown {
+        case .badge(let badge): ProfileUnlockStore.acknowledge(badge)
+        case .streak(let milestone, _): ProfileUnlockStore.acknowledgeStreak(milestone: milestone)
         }
         unlock = nil
+    }
+
+    private func release() {
+        if unlock == nil, ProfileUnlockGate.holder == id { ProfileUnlockGate.holder = nil }
     }
 }
 

@@ -173,6 +173,33 @@ final class PulseAchievementsTests: XCTestCase {
         XCTAssertFalse(fresh.contains { $0.id == PulseAchievements.Rule.nearPerfect.rawValue })
     }
 
+    func testAcknowledgingTheUnlockShownLeavesTheOthersPending() {
+        // Two unlocks land in one refresh (a green-day milestone and a first 99% day): closing the modal
+        // on the first must not swallow the second.
+        let before = keys(from: "2026-06-01", count: 4).map { PulseAchievements.Day(day: $0, recovery: 90) }
+        let seen = PulseAchievements.acknowledging(PulseAchievements.evaluate(days: before, activities: []))
+        let after = PulseAchievements.evaluate(
+            days: before + [PulseAchievements.Day(day: "2026-06-05", recovery: 99.4)], activities: [])
+        let fresh = PulseAchievements.newUnlocks(after, acknowledged: seen)
+        XCTAssertEqual(fresh.count, 2)
+        guard let shown = fresh.first, let other = fresh.last else { return }
+        let record = PulseAchievements.acknowledging(shown, into: seen)
+        XCTAssertEqual(PulseAchievements.newUnlocks(after, acknowledged: record).map(\.id), [other.id])
+        let both = PulseAchievements.acknowledging(other, into: record)
+        XCTAssertTrue(PulseAchievements.newUnlocks(after, acknowledged: both).isEmpty)
+    }
+
+    func testAcknowledgingOneBadgeNeverLowersItsRecord() {
+        // A cumulative badge acknowledged at 25 stays at 25 even when an older build (shown 10) is merged.
+        let days = keys(from: "2026-06-01", count: 12).map { PulseAchievements.Day(day: $0, recovery: 90) }
+        guard let green = badge(.greenLight, in: PulseAchievements.evaluate(days: days, activities: []))
+        else { return }
+        XCTAssertEqual(green.shown, 10)
+        let record = PulseAchievements.acknowledging(green, into: [green.id: 25])
+        XCTAssertEqual(record[green.id], 25)
+        XCTAssertEqual(PulseAchievements.acknowledging(green, into: [:])[green.id], 10)
+    }
+
     func testASportFirstLoggedAfterTheBaselineIsAnnounced() {
         let seen = PulseAchievements.acknowledging(PulseAchievements.evaluate(days: [], activities: []))
         let fresh = PulseAchievements.newUnlocks(

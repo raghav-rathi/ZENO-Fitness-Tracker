@@ -261,9 +261,18 @@ public enum PulseAchievements {
         badge.kind == .event ? min(badge.shown, 1) : badge.shown
     }
 
-    /// The acknowledgement record for `badges` as they stand.
+    /// The acknowledgement record for `badges` as they stand (the first look's silent baseline).
     public static func acknowledging(_ badges: [Badge]) -> [String: Int] {
         Dictionary(badges.map { ($0.id, acknowledgementValue($0)) }, uniquingKeysWith: { a, _ in a })
+    }
+
+    /// `record` with ONE badge acknowledged as it stands: the unlock the wearer was actually shown, so
+    /// every other pending unlock stays pending and is announced in its turn. Never lowers a value
+    /// already recorded.
+    public static func acknowledging(_ badge: Badge, into record: [String: Int]) -> [String: Int] {
+        var out = record
+        out[badge.id] = max(record[badge.id] ?? 0, acknowledgementValue(badge))
+        return out
     }
 
     // MARK: - Rule helpers
