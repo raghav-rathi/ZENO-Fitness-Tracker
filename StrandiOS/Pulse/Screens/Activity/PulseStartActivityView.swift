@@ -243,7 +243,7 @@ struct PulsePreStartView: View {
             if !pickerOpen {
                 Button { dismiss() } label: {
                     Image(systemName: "xmark")
-                        .font(.system(size: PulseActivityStyle.Glyph.close, weight: .light))
+                        .font(.system(size: PulseActivityStyle.Glyph.close, weight: .semibold))
                         .foregroundStyle(PulseTheme.textPrimary)
                         .frame(width: PulseTheme.Layout.minTapTarget, height: PulseTheme.Layout.minTapTarget)
                         .contentShape(Rectangle())

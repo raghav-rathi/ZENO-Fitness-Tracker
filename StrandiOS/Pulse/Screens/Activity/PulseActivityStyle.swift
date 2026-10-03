@@ -102,7 +102,9 @@ enum PulseActivityStyle {
     enum Glyph {
         static let header: CGFloat = 22
         static let preStartHeader: CGFloat = 24
-        static let close: CGFloat = 19
+        /// The pre-start "✕", Semibold: ≈17 pt across with ≈2.5 pt strokes, as a01, a04 and WHOOP's other
+        /// modal roots draw it (g01, journal-plan-2026/07), not the spec's "thin" ✕.
+        static let close: CGFloat = 22
         static let headerChevron: CGFloat = 17
         static let chip: CGFloat = 12
         static let tile: CGFloat = 17
