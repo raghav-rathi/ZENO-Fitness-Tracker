@@ -400,7 +400,8 @@ struct MoreArrowLabel: View {
 }
 
 /// The black "FIRST WEEK WITH ZENO" card with the Get Started gradient border (reviews/r05): a
-/// graduation cap, the caps title and a two-line sentence. New members only (the first seven days).
+/// graduation cap, the caps title and a two-line sentence (no one-word widow, so the card keeps WHOOP's
+/// 72 pt). New members only (the first seven days).
 struct MoreFirstWeekCard: View {
     let action: () -> Void
 
@@ -417,7 +418,7 @@ struct MoreFirstWeekCard: View {
                     Text(String(localized: "First week with ZENO"))
                         .modifier(MoreLabelText())
                         .foregroundStyle(PulseTheme.textPrimary)
-                    Text(String(localized: "Wear your strap to bed every night, then check back here to see your sleep and what it means."))
+                    Text(String(localized: "Wear your strap to bed nightly, then check back here to see your sleeps."))
                         .pulseText(.rowSubline)
                         .foregroundStyle(PulseTheme.rowSubline)
                         .fixedSize(horizontal: false, vertical: true)
@@ -426,7 +427,8 @@ struct MoreFirstWeekCard: View {
             }
             .padding(.leading, MoreLayout.iconInset)
             .padding(.trailing, 16)
-            .padding(.vertical, 16)
+            // reviews/r05: the title's caps sit 14 pt under the card's top edge, two lines of copy, 72 pt.
+            .padding(.vertical, 14)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background {
                 let shape = RoundedRectangle(cornerRadius: PulseTheme.Radius.card, style: .circular)
