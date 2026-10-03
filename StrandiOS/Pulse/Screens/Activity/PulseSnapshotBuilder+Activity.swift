@@ -456,6 +456,27 @@ extension PulseSnapshotBuilder {
             stat("distance", String(localized: "Distance"), "point.topleft.down.to.point.bottomright.curvepath",
                  value: meters * factor, unit: unit, text: PulseFormat.oneDecimal,
                  average: avg { $0.distanceM.map { $0 * factor } })
+            // Pace on foot, speed otherwise (§3.6 item 10 "PACE/SPEED for GPS"), each against this sport's
+            // sessions that carried a distance.
+            func seconds(_ w: WorkoutRow) -> Double { w.durationS ?? Double(max(w.endTs - w.startTs, 0)) }
+            if duration > 0 {
+                if WorkoutCatalog.isOnFoot(row.sport) {
+                    let pace = { (w: WorkoutRow) -> Double? in
+                        guard let m = w.distanceM, m > 0, seconds(w) > 0 else { return nil }
+                        return seconds(w) / (m * factor)
+                    }
+                    stat("pace", String(localized: "Pace"), "speedometer", value: pace(row), unit: "/\(unit)",
+                         text: { v in let t = Int(v.rounded()); return String(format: "%d:%02d", t / 60, t % 60) },
+                         average: avg(pace))
+                } else {
+                    let speed = { (w: WorkoutRow) -> Double? in
+                        guard let m = w.distanceM, m > 0, seconds(w) > 0 else { return nil }
+                        return m * factor / (seconds(w) / 3600)
+                    }
+                    stat("speed", String(localized: "Speed"), "speedometer", value: speed(row),
+                         unit: inputs.distanceImperial ? "mph" : "km/h", text: PulseFormat.oneDecimal, average: avg(speed))
+                }
+            }
         }
         return out
     }

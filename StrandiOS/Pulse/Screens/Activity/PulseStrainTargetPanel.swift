@@ -22,6 +22,7 @@ struct PulseStrainTargetPanel: View {
     let onStart: (AppModel) -> Void
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.pulseNavigator) private var navigator
     @State private var page = 0
     @State private var drag: CGFloat = 0
     @State private var showsHelp = false
@@ -207,10 +208,27 @@ struct PulseStrainTargetPanel: View {
                 }
                 .frame(width: 40, height: 40)
                 .accessibilityHidden(true)
-                Text(sentence(s, value: value, recommended: recommended, estimated: estimated, state: state))
-                    .font(.system(size: 18, weight: .medium))
-                    .foregroundStyle(Color.black)
-                    .fixedSize(horizontal: false, vertical: true)
+                VStack(alignment: .leading, spacing: 10) {
+                    Text(sentence(s, value: value, recommended: recommended, estimated: estimated, state: state))
+                        .font(.system(size: 18, weight: .medium))
+                        .foregroundStyle(Color.black)
+                        .fixedSize(horizontal: false, vertical: true)
+                    // The guided Live Session, offered here (§3.8 ZENO data): it keeps you in a band instead.
+                    Button { navigator.open(.guidedSession) } label: {
+                        HStack(spacing: 6) {
+                            Text(String(localized: "Guided session (beta)"))
+                                .font(.system(size: 12, weight: .bold))
+                                .tracking(1.0)
+                                .textCase(.uppercase)
+                            Image(systemName: "arrow.right").font(.system(size: 12, weight: .semibold))
+                        }
+                        .foregroundStyle(PulseTheme.Activity.startCapsule)
+                        .frame(minHeight: PulseTheme.Layout.minTapTarget)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(PulsePressStyle())
+                    .accessibilityHint(String(localized: "Opens a session that keeps your heart rate in a band"))
+                }
                 Spacer(minLength: 0)
             }
             .padding(.horizontal, 22)
