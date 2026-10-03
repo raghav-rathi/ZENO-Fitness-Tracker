@@ -37,6 +37,7 @@ extension PulseSnapshotBuilder {
             let scored = todayHours.contains { $0.level != nil }
             let start = Self.stressDayStart(r)
             return HealthStressCard(
+                level: day.gaugeLevel?.level, readAt: day.latest?.at,
                 highMinutes: scored ? StressDayTotals.totals(todayHours).highMinutes : nil,
                 points: day.points.filter { $0.date >= start },
                 span: start...max(r.now, start.addingTimeInterval(60)),

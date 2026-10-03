@@ -151,12 +151,7 @@ struct PulseStressMonitorView: View {
 
     /// The gauge's line: the reading's time, with its day when it is not the day shown, or what the value is.
     private func gaugeCaption(_ s: StressMonitorSnapshot) -> String? {
-        if let latest = s.day.latest {
-            let sameDay = Repository.localDayKey(latest.at) == s.day.dayKey
-            if sameDay { return PulseFormat.clock(latest.at) }
-            let weekday = latest.at.formatted(.dateTime.weekday(.abbreviated).locale(AppLanguage.activeLocale))
-            return "\(weekday) \(PulseFormat.clock(latest.at))"
-        }
+        if let time = PulseStressDay.readingTime(s.day.latest?.at, dayKey: s.day.dayKey) { return time }
         if s.day.daily != nil { return String(localized: "Daily score from your vitals") }
         return nil
     }

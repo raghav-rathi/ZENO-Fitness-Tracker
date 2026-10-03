@@ -149,10 +149,26 @@ struct PulseStressDay: Equatable {
     var chartEnd: Date? {
         isToday || latest != nil ? window.upperBound : nil
     }
+
+    /// When a gauge level was read, as the stress readouts word it: the reading's time, with its weekday
+    /// when the reading is from another day than `dayKey` ("Fri 10:30 PM", the evening before early in the
+    /// morning); nil when `at` is nil (the level is the daily score, not a reading).
+    static func readingTime(_ at: Date?, dayKey: String) -> String? {
+        guard let at else { return nil }
+        if Repository.localDayKey(at) == dayKey { return PulseFormat.clock(at) }
+        let weekday = at.formatted(.dateTime.weekday(.abbreviated).locale(AppLanguage.activeLocale))
+        return "\(weekday) \(PulseFormat.clock(at))"
+    }
 }
 
 /// The Health tab's STRESS MONITOR card.
 struct HealthStressCard: Equatable {
+    /// The Stress Monitor's gauge level for today (`PulseStressDay.gaugeLevel`, the funnel Home's tile
+    /// reads): the curve's latest scored hour, the evening before until today's first one, else today's
+    /// daily score; nil with neither.
+    let level: Double?
+    /// When `level` was read (`PulseStressDay.latest`); nil when it is the daily score.
+    let readAt: Date?
     /// Minutes in the HIGH band so far today; nil while today has no scored hour.
     let highMinutes: Int?
     /// Today's curve so far, for the sparkline. (The typical weekday it is set against comes in a second,
