@@ -152,14 +152,16 @@ struct PulseCoachingStack: View {
     }
 
     /// A decision's two caps actions where the CTA sits: the accept in the CTA's blue, the decline grey, each
-    /// a full 44 pt tap target (its height stands in for the CTA's top gap).
+    /// a full 44 × 44 pt tap target however short its word (its height stands in for the CTA's top gap, and
+    /// the word stays flush with the body above it).
     private func decisionRow(_ model: PulseCoachingCardModel, _ decision: PulseCoachingCardModel.Decision) -> some View {
         HStack(spacing: PulseTheme.Space.l) {
             Button { onDecide(model, true) } label: {
                 Text(decision.accept)
                     .pulseText(.label)
                     .foregroundStyle(ctaStyle(model))
-                    .frame(minHeight: PulseTheme.Layout.minTapTarget)
+                    .frame(minWidth: PulseTheme.Layout.minTapTarget, minHeight: PulseTheme.Layout.minTapTarget,
+                           alignment: .leading)
                     .contentShape(Rectangle())
             }
             .buttonStyle(PulsePressStyle())
@@ -167,7 +169,8 @@ struct PulseCoachingStack: View {
                 Text(decision.decline)
                     .pulseText(.label)
                     .foregroundStyle(PulseTheme.textSecondary)
-                    .frame(minHeight: PulseTheme.Layout.minTapTarget)
+                    .frame(minWidth: PulseTheme.Layout.minTapTarget, minHeight: PulseTheme.Layout.minTapTarget,
+                           alignment: .leading)
                     .contentShape(Rectangle())
             }
             .buttonStyle(PulsePressStyle())
