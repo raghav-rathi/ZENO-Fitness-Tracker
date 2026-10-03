@@ -393,9 +393,11 @@ struct HealthBreatheSession: View {
 
     let onOpen: () -> Void
 
-    /// The pace's name as Breathe titles it.
+    /// The pace's name as Breathe titles it: the catalogue's English title through the same string catalog
+    /// entry Breathe's picker localizes it with.
     private var paceName: String {
-        BreathProtocolCatalog.protocolById(Self.destination.protocolId)?.title ?? String(localized: "Relax 4-6")
+        BreathProtocolCatalog.protocolById(Self.destination.protocolId)
+            .map { String(localized: String.LocalizationValue($0.title)) } ?? String(localized: "Relax 4-6")
     }
 
     var body: some View {
