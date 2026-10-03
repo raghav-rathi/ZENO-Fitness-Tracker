@@ -178,8 +178,9 @@ private struct YearReviewIntroSlide: View {
                 .pulseText(.rowSubline)
                 .foregroundStyle(PulseTheme.textTertiary)
                 .padding(.top, 6)
+            // The Level leads, as WHOOP's story and share card do (§3.39 [Z]: "days worn and level").
             HStack(alignment: .top, spacing: 0) {
-                stat(String(localized: "Nights"), sum.nights)
+                stat(String(localized: "Level"), snapshot.level.level)
                 stat(String(localized: "Recoveries"), sum.recoveries)
                 stat(String(localized: "Activities"), sum.activities)
             }
@@ -960,9 +961,12 @@ struct YearReviewSummaryCard: View {
                     YearReviewAgeBadge(zenoAge: age, chronologicalAge: chronologicalAge)
                 }
             }
+            // "LEVEL 25 / 1907 Recoveries · DAY STREAK" (completeness-critic/09): the Level over the scored
+            // Recoveries it counts, then the longest streak.
             HStack(spacing: 0) {
-                headline(symbol: "calendar", title: String(localized: "Days tracked"),
-                         value: PulseChallengeText.inflected("^[\(s.trackedDays) day](inflect: true)"))
+                headline(symbol: "rosette", title: String(localized: "Level \(snapshot.level.level)"),
+                         value: snapshot.level.recoveries == 1 ? String(localized: "1 Recovery")
+                             : String(localized: "\(PulseFormat.grouped(Double(snapshot.level.recoveries))) Recoveries"))
                 Rectangle().fill(PulseTheme.divider).frame(width: 1, height: 36)
                 headline(symbol: "flame.fill", title: String(localized: "Longest streak"),
                          value: PulseChallengeText.inflected("^[\(s.longestStreak) day](inflect: true)"))
