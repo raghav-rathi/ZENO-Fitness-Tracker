@@ -8,7 +8,8 @@ import StrandDesign
 // dark square:
 //   - card: radius 20, vertical gradient #464D56 → #32383D, 16 pt from the screen edge, right-aligned to
 //     the button; it drops down below the button, or opens upward (rows mirrored, START ACTIVITY still
-//     nearest the button) when the button sits low on the screen;
+//     nearest the button) when only the room above fits it. Where neither does, it opens toward the
+//     larger room, held inside the safe area over the button, with the "✕" on top;
 //   - rows on a 52 pt pitch, no dividers: a 28 pt line icon at white 70% and an UPPERCASE Bold 13 pt label
 //     tracked 10%; START ACTIVITY · ADD ACTIVITY · STRENGTH TRAINER · COMPLETE YOUR JOURNAL · CREATE ZENO
 //     LIVE, a hairline, then ZENO's two extras BREATHE · MARK MOMENT;
@@ -136,11 +137,13 @@ struct PulseActionMenuHost: View {
     private static let estimatedHeight = CGFloat(PulseActionMenuItem.allCases.count) * 52 + 17 + 16
 
     var body: some View {
+        // The reader keeps to the safe area, so the card is placed clear of the status bar, the Dynamic
+        // Island and the home indicator; only the dim reaches the screen's edges.
         GeometryReader { geo in
             let origin = geo.frame(in: .global).origin
             let local = anchor.offsetBy(dx: -origin.x, dy: -origin.y)
-            let bottomLimit = geo.size.height - geo.safeAreaInsets.bottom - 8
-            let opensUp = local.maxY + 8 + Self.estimatedHeight > bottomLimit
+            let placement = Placement.resolve(anchor: local, height: geo.size.height,
+                                              cardHeight: Self.estimatedHeight)
             ZStack(alignment: .topLeading) {
                 PulseTheme.menuDim
                     .ignoresSafeArea()
@@ -149,15 +152,16 @@ struct PulseActionMenuHost: View {
                     .accessibilityAddTraits(.isButton)
                     .accessibilityLabel(String(localized: "Close menu"))
 
-                card(opensUp: opensUp)
-                    .scaleEffect(shown || reduceMotion ? 1 : 0.85, anchor: opensUp ? .bottomTrailing : .topTrailing)
+                card(opensUp: placement.opensUp)
+                    .scaleEffect(shown || reduceMotion ? 1 : 0.85,
+                                 anchor: placement.opensUp ? .bottomTrailing : .topTrailing)
                     .opacity(shown ? 1 : 0)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity,
-                           alignment: opensUp ? .bottomTrailing : .topTrailing)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: placement.alignment)
                     .padding(.trailing, PulseTheme.Layout.pageMargin)
-                    .padding(.top, opensUp ? 0 : local.maxY + 8)
-                    .padding(.bottom, opensUp ? geo.size.height - local.minY + 8 : 0)
+                    .padding(.top, placement.top)
+                    .padding(.bottom, placement.bottom)
 
+                // Drawn after the card, so it stays on top where a held card covers the "+".
                 Button(action: onClose) {
                     PulsePlusSquare(isClose: true)
                 }
@@ -166,13 +170,44 @@ struct PulseActionMenuHost: View {
                 .accessibilityLabel(String(localized: "Close menu"))
             }
         }
-        .ignoresSafeArea()
         .onAppear {
             withAnimation(PulseMotion.resolved(PulseMotion.menu, reduceMotion: reduceMotion) ?? .linear(duration: 0)) {
                 shown = true
             }
         }
         .environment(\.colorScheme, .dark)
+    }
+
+    /// Where the card sits, in the safe area's coordinates: its row order, the corner it is held by, and
+    /// that corner's distance from the safe area's top or bottom edge.
+    private struct Placement {
+        var opensUp: Bool
+        var alignment: Alignment
+        var top: CGFloat = 0
+        var bottom: CGFloat = 0
+
+        /// Below the "+" where the card fits (8 pt from it and from the safe area's edge), else above it
+        /// where it fits, rows mirrored. Where it fits neither way, it opens toward the larger room and is
+        /// held 8 pt inside the safe area, over the "+".
+        ///
+        /// - Parameters:
+        ///   - anchor: the "+" in the safe area's coordinates.
+        ///   - height: the safe area's height.
+        ///   - cardHeight: the card's height.
+        static func resolve(anchor: CGRect, height: CGFloat, cardHeight: CGFloat) -> Placement {
+            let gap: CGFloat = 8
+            let roomBelow = height - gap - (anchor.maxY + gap)
+            let roomAbove = anchor.minY - gap - gap
+            if cardHeight <= roomBelow {
+                return Placement(opensUp: false, alignment: .topTrailing, top: anchor.maxY + gap)
+            }
+            if cardHeight <= roomAbove {
+                return Placement(opensUp: true, alignment: .bottomTrailing, bottom: height - anchor.minY + gap)
+            }
+            return roomBelow >= roomAbove
+                ? Placement(opensUp: false, alignment: .bottomTrailing, bottom: gap)
+                : Placement(opensUp: true, alignment: .topTrailing, top: gap)
+        }
     }
 
     private func card(opensUp: Bool) -> some View {
