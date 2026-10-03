@@ -12,9 +12,21 @@ import StrandDesign
 extension PulseTheme {
     /// The Sleep Planner (§3.11).
     enum Planner {
-        /// The upper zone's lighter slate over the page gradient: #2F3C44 at the top and #242B33 lower down
-        /// on reviews/r134 and r135, the page's own #2A3139 / #22282F plus ≈2.5% white.
-        static let upperZone = Color.white.opacity(0.025)
+        /// The upper zone, a top-lit blue slate from the very top of the screen down to its 1 pt edge, where it
+        /// meets the page: sampled on reviews/r134 at 0, 60, 100, 150, 200, 250, 300 and 350 pt of its ≈402
+        /// (r135 runs close) and placed by share of the zone. Opaque, in place of the page gradient, where the
+        /// spec's ≈white 6% over it reads flat and grey.
+        static let upperZone = LinearGradient(stops: [
+            .init(color: Color(hex: "#3B4952"), location: 0),
+            .init(color: Color(hex: "#36434C"), location: 0.15),
+            .init(color: Color(hex: "#313E47"), location: 0.25),
+            .init(color: Color(hex: "#2E3841"), location: 0.37),
+            .init(color: Color(hex: "#2A353B"), location: 0.5),
+            .init(color: Color(hex: "#282F37"), location: 0.62),
+            .init(color: Color(hex: "#232A32"), location: 0.75),
+            .init(color: Color(hex: "#1E252D"), location: 0.87),
+            .init(color: Color(hex: "#1D222A"), location: 1)
+        ], startPoint: .top, endPoint: .bottom)
         /// The goal capsule's fill, opaque so the zone's edge does not show through it (#1D2528 inside the
         /// capsule on reviews/r134, the zone's own colour at that height).
         static let capsuleFill = Color(hex: "#1D2528")

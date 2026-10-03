@@ -40,6 +40,8 @@ struct PulseSleepPlannerView: View {
     @State private var actions = SleepAlarmActions()
     @State private var sheet: PulseSleepPlannerSheet?
     @State private var choosingGoal = false
+    /// The status bar's height: the upper zone runs up behind it, where the scroll content does not reach.
+    @State private var topInset: CGFloat = 0
     #if DEBUG
     @State private var debugApplied = false
     #endif
@@ -63,6 +65,7 @@ struct PulseSleepPlannerView: View {
         }
         .scrollBounceBehavior(.basedOnSize)
         .background(PulseBackground())
+        .onGeometryChange(for: CGFloat.self) { $0.safeAreaInsets.top } action: { topInset = $0 }
         .safeAreaInset(edge: .bottom, spacing: 0) {
             PulseSleepAlarmPanel(plan: plan, alarmOn: settings.alarmEnabled, warning: warning(settings),
                                  onToggle: { setAlarm($0, plan: plan, settings: settings) },
@@ -135,12 +138,13 @@ struct PulseSleepPlannerView: View {
         }
         .frame(maxWidth: .infinity)
         .background(alignment: .bottom) {
-            // The lighter slate of the upper zone, up to its 1 pt edge behind the capsule's centre line.
+            // The upper zone's slate, from the top of the screen (behind the status bar, which the scroll
+            // content starts under) down to its 1 pt edge behind the capsule's centre line.
             VStack(spacing: 0) {
                 PulseTheme.Planner.upperZone
                 PulseTheme.divider.frame(height: 1)
             }
-            .ignoresSafeArea(edges: .top)
+            .padding(.top, -topInset)
         }
         .overlay(alignment: .bottom) {
             PulseSleepGoalCapsule(title: (plan?.goal ?? goal).title) { choosingGoal = true }
