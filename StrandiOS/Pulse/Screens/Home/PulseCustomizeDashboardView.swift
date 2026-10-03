@@ -2,11 +2,11 @@
 import SwiftUI
 
 /// Customize Dashboard (WHOOP_UI_SPEC §3.13, reviews/04, reviews/r110), presented as a full-screen modal:
-/// "✕ · CUSTOMIZE DASHBOARD"; the dashboard's items as 57 pt cards in their order, each with a "–" at the
-/// left [Z] (WHOOP members could not find how to remove one) and the ≡ drag handle at the right, a small
-/// bar-chart glyph on the two chart cards; then "ADD TO MY DASHBOARD" and every other item with a "+";
-/// and SAVE pinned at the bottom, a recovery-blue outline capsule (322 × 52) that wakes once something
-/// changed.
+/// "✕ · CUSTOMIZE DASHBOARD"; the dashboard's items as 57 pt cards in their order, each with a "–" [Z]
+/// (WHOOP members could not find how to remove one) beside the ≡ drag handle at the right, a small
+/// bar-chart glyph on the two chart cards; then "ADD TO MY DASHBOARD" and every other item with a "+".
+/// Both lists keep their names in one column ≈42 pt in from the card, as WHOOP's do. SAVE is pinned at the
+/// bottom, a recovery-blue outline capsule (322 × 52) that wakes once something changed.
 ///
 /// Edits are a draft (`EditableLayoutDraft`, the classic Today layout editor's model): nothing is stored
 /// until SAVE, "✕" discards, and a removed item only moves to the add list. The dashboard keeps at least
@@ -19,6 +19,9 @@ struct PulseCustomizeDashboardView: View {
 
     @AppStorage(PulseDashboardLayout.storageKey) private var stored = ""
     @State private var draft: EditableLayoutDraft<PulseDashboardItem>?
+    /// The icon column (20 pt) and the "–" / "+" column (28 pt), scaling with their glyphs.
+    @ScaledMetric(relativeTo: .body) private var iconWidth: CGFloat = 20
+    @ScaledMetric(relativeTo: .title3) private var controlWidth: CGFloat = 28
     @Environment(\.dismiss) private var dismiss
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -72,30 +75,24 @@ struct PulseCustomizeDashboardView: View {
 
     // MARK: Rows
 
+    /// A current item: icon and name in the same column as the add list's (≈42 pt in, reviews/04 and
+    /// r110), then the chart mark, the "–" [Z] and the system's ≡ handle at the right.
     private func currentRow(_ item: PulseDashboardItem, canRemove: Bool) -> some View {
         HStack(spacing: PulseTheme.Space.xs) {
-            // The "–" [Z] sits in the card's leading inset; its 44 pt hit area overflows the glyph.
+            rowLabel(item)
+            chartMark(item)
             Button {
                 withAnimation(animation) { draft?.hide(item) }
             } label: {
                 Image(systemName: "minus.circle.fill")
-                    .font(.system(size: 20, weight: .regular))
+                    .pulseHomeGlyph(.customizeControl)
                     .foregroundStyle(canRemove ? PulseTheme.textSecondary : PulseTheme.textDisabled)
-                    .frame(width: 24, height: PulseTheme.Layout.minTapTarget)
-                    .padding(.horizontal, PulseTheme.Space.xs)
+                    .frame(minWidth: controlWidth, minHeight: PulseTheme.Layout.minTapTarget)
                     .contentShape(Rectangle())
-                    .padding(.horizontal, -PulseTheme.Space.xs)
             }
             .buttonStyle(PulsePressStyle())
             .disabled(!canRemove)
             .accessibilityLabel(String(localized: "Remove \(item.title)"))
-            rowLabel(item)
-            if item.isChart {
-                Image(systemName: "chart.bar.xaxis")
-                    .font(.system(size: 15, weight: .regular))
-                    .foregroundStyle(PulseTheme.textTertiary)
-                    .accessibilityLabel(String(localized: "Chart"))
-            }
         }
         .modifier(PulseCustomizeRowStyle())
     }
@@ -104,18 +101,13 @@ struct PulseCustomizeDashboardView: View {
         Button {
             withAnimation(animation) { draft?.show(item) }
         } label: {
-            HStack(spacing: PulseTheme.Space.s) {
+            HStack(spacing: PulseTheme.Space.xs) {
                 rowLabel(item)
-                if item.isChart {
-                    Image(systemName: "chart.bar.xaxis")
-                        .font(.system(size: 15, weight: .regular))
-                        .foregroundStyle(PulseTheme.textTertiary)
-                        .accessibilityHidden(true)
-                }
+                chartMark(item)
                 Image(systemName: "plus")
-                    .font(.system(size: 20, weight: .regular))
+                    .pulseHomeGlyph(.customizeControl)
                     .foregroundStyle(PulseTheme.textPrimary)
-                    .frame(width: 28)
+                    .frame(minWidth: controlWidth)
                     .accessibilityHidden(true)
             }
             .contentShape(Rectangle())
@@ -125,16 +117,28 @@ struct PulseCustomizeDashboardView: View {
         .modifier(PulseCustomizeRowStyle())
     }
 
+    /// The icon in a fixed column, then the name: the same leading slot in both lists.
     private func rowLabel(_ item: PulseDashboardItem) -> some View {
-        HStack(spacing: PulseTheme.Space.xs + 2) {
+        HStack(spacing: PulseTheme.Space.xs) {
             Image(systemName: item.symbol)
-                .font(.system(size: 17, weight: .light))
+                .pulseHomeGlyph(.customizeIcon)
                 .foregroundStyle(PulseTheme.textSecondary)
-                .frame(width: 24)
+                .frame(width: iconWidth)
                 .accessibilityHidden(true)
             PulseWordWrapText(item.title, style: .cardTitle)
                 .foregroundStyle(PulseTheme.textPrimary)
             Spacer(minLength: PulseTheme.Space.xs)
+        }
+    }
+
+    /// The small bar-chart mark on the two chart cards.
+    @ViewBuilder
+    private func chartMark(_ item: PulseDashboardItem) -> some View {
+        if item.isChart {
+            Image(systemName: "chart.bar.xaxis")
+                .pulseHomeGlyph(.chartMark)
+                .foregroundStyle(PulseTheme.textTertiary)
+                .accessibilityLabel(String(localized: "Chart"))
         }
     }
 
@@ -172,14 +176,14 @@ struct PulseCustomizeDashboardView: View {
 }
 
 /// A Customize row: its own 57 pt white-10% card, 12 pt apart, inside the page margins; the icon 14 pt in
-/// and the name at ≈42 pt (reviews/04), the "–" ahead of them on current items.
+/// and the name at 42 pt (reviews/04: ≈41-45 pt in both lists).
 private struct PulseCustomizeRowStyle: ViewModifier {
     func body(content: Content) -> some View {
         content
             .padding(.leading, PulseTheme.Space.s + 2)
             .padding(.trailing, PulseTheme.Space.xs)
             .padding(.vertical, PulseTheme.Space.xs)
-            .frame(minHeight: 57)
+            .frame(minHeight: PulseHomeMetrics.customizeRow)
             .listRowInsets(EdgeInsets(top: PulseTheme.Space.xs - 2, leading: PulseTheme.Layout.pageMargin,
                                       bottom: PulseTheme.Space.xs - 2, trailing: PulseTheme.Layout.pageMargin))
             .listRowBackground(

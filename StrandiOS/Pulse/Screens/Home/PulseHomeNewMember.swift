@@ -119,22 +119,22 @@ struct PulseGetStartedCard: View {
                         .fixedSize(horizontal: false, vertical: true)
                     HStack(spacing: 6) {
                         Text(card.cta).pulseText(.label)
-                        Image(systemName: "arrow.right").font(.system(size: 12, weight: .semibold))
+                        Image(systemName: "arrow.right").pulseText(.label)
                     }
                     .foregroundStyle(PulseTheme.Gradients.getStartedCTA)
                     .padding(.top, PulseTheme.Space.xs)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 Image(systemName: card.symbol)
-                    .font(.system(size: 44, weight: .ultraLight))
+                    .font(PulseHomeGlyph.art(44, weight: .ultraLight))
                     .foregroundStyle(PulseTheme.textTertiary)
-                    .frame(width: 76)
+                    .frame(width: PulseHomeMetrics.getStartedArtWidth)
                     .accessibilityHidden(true)
             }
             .padding(.leading, PulseTheme.Layout.cardPadding + 6)
             .padding(.trailing, PulseTheme.Layout.cardPadding + 18)
             .padding(.vertical, PulseTheme.Layout.cardPadding + 8)
-            .frame(maxWidth: .infinity, minHeight: 132, alignment: .leading)
+            .frame(maxWidth: .infinity, minHeight: PulseHomeMetrics.getStartedMinHeight, alignment: .leading)
             .background(surface)
             .contentShape(Rectangle())
         }
@@ -147,7 +147,7 @@ struct PulseGetStartedCard: View {
         .overlay(alignment: .topTrailing) {
             Button(action: onDismiss) {
                 Image(systemName: "xmark")
-                    .font(.system(size: 12, weight: .bold))
+                    .pulseHomeGlyph(.dismiss)
                     .foregroundStyle(PulseTheme.textTertiary)
                     .frame(width: PulseTheme.Layout.minTapTarget, height: PulseTheme.Layout.minTapTarget)
                     .contentShape(Rectangle())
