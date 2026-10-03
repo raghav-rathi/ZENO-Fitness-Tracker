@@ -203,12 +203,10 @@ struct HealthVitalChip: View {
 
     var body: some View {
         let s = style
-        HStack(spacing: 5) {
+        HStack(alignment: .firstTextBaseline, spacing: 5) {
             Text(verbatim: s.glyph).font(.system(size: vital.status == .noData ? 8 : 11, weight: .heavy))
-            Text(vital.chipText)
-                .pulseText(.chipStrong)
-                .lineLimit(1)
-                .minimumScaleFactor(0.75)
+            // One line at the default sizes; at the largest it wraps between words, never cut.
+            PulseWordWrapText(vital.chipText, style: .chipStrong, minimumScale: 0.8)
         }
         .foregroundStyle(s.text)
         .padding(.horizontal, 7)

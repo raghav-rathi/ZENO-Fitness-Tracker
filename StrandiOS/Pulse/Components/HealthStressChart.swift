@@ -21,7 +21,8 @@ struct HealthStressDayChart: View {
     var now: Date?
     /// The level the gauge shows, which colours the now-line's dot.
     var currentLevel: Double?
-    var height: CGFloat = 230
+    /// The plot's height (completeness-critic/14: ≈157 pt of plot, ≈210 pt with the glyphs and the times).
+    var height: CGFloat = 160
     /// Shown over the empty plot when there is no reading in the window.
     var emptyMessage: String = String(localized: "No stress readings for this day.")
 
@@ -161,7 +162,7 @@ struct HealthStressDayChart: View {
                             .frame(width: plot.width - 24)
                             .position(x: plot.midX, y: plot.midY)
                     }
-                    if window.upperBound.timeIntervalSince(window.lowerBound) > Self.zoomSpan + 60 {
+                    if hasReadings || zoomed, window.upperBound.timeIntervalSince(window.lowerBound) > Self.zoomSpan + 60 {
                         zoomButton
                             .position(x: plot.maxX - 24, y: plot.maxY - 24)
                     }

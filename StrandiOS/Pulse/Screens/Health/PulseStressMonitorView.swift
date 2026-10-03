@@ -96,7 +96,7 @@ struct PulseStressMonitorView: View {
             VStack(alignment: .leading, spacing: 10) {
                 ForEach(Array(sentences(s).enumerated()), id: \.offset) { _, line in
                     Text(line)
-                        .pulseText(.trendInsight)
+                        .pulseText(.subtitle)
                         .foregroundStyle(PulseTheme.textPrimary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -297,9 +297,12 @@ struct HealthTotalDayCard: View {
             }
             HStack(spacing: 5) {
                 Rectangle().fill(colour(level)).frame(width: 10, height: 10)
+                // A single word: it shrinks rather than breaking ("MEDIU / M").
                 Text(PulseStressMonitorView.levelName(level))
                     .pulseText(.label)
                     .foregroundStyle(PulseTheme.textTertiary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.6)
             }
         }
     }
@@ -355,7 +358,7 @@ struct HealthBreatheSessions: View {
         VStack(alignment: .leading, spacing: PulseTheme.Layout.headerGap) {
             HealthSectionHeader(title: String(localized: "Sessions"))
             ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: PulseTheme.Layout.gridGap) {
+                HStack(alignment: .top, spacing: PulseTheme.Layout.gridGap) {
                     ForEach(sessions) { session in
                         Button(action: onOpen) {
                             VStack(alignment: .leading, spacing: 8) {
@@ -363,18 +366,17 @@ struct HealthBreatheSessions: View {
                                     .font(.system(size: 18, weight: .light))
                                     .foregroundStyle(PulseTheme.recoveryBlue)
                                     .accessibilityHidden(true)
-                                Text(session.title)
-                                    .pulseText(.cardTitle)
+                                PulseWordWrapText(session.title, style: .cardTitle)
                                     .foregroundStyle(PulseTheme.textPrimary)
                                 Text(session.detail)
                                     .pulseText(.secondary)
                                     .foregroundStyle(PulseTheme.textSecondary)
-                                    .lineLimit(3)
                                     .fixedSize(horizontal: false, vertical: true)
                                 Spacer(minLength: 0)
                             }
                             .padding(14)
-                            .frame(width: 148, height: 132, alignment: .topLeading)
+                            .frame(width: 148, alignment: .topLeading)
+                            .frame(minHeight: 132, alignment: .topLeading)
                             .pulseCardBackground()
                             .contentShape(Rectangle())
                         }

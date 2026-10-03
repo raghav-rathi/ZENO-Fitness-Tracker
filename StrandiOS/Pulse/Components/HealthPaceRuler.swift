@@ -25,34 +25,34 @@ struct HealthPaceRuler: View {
 
     var body: some View {
         VStack(spacing: 6) {
-            HStack(alignment: .center, spacing: 6) {
-                HealthPaceEndGlyph(fast: false)
-                Text(String(localized: "Slow"))
-                    .pulseText(.subtitle)
-                    .foregroundStyle(PulseTheme.textTertiary)
-                Spacer(minLength: 8)
-                Text(String(localized: "Fast"))
-                    .pulseText(.subtitle)
-                    .foregroundStyle(PulseTheme.textTertiary)
-                HealthPaceEndGlyph(fast: true)
-            }
-            .accessibilityHidden(true)
             GeometryReader { geo in
                 let width = geo.size.width
                 // The needle's centre, on the same pitch the comb's ticks are laid on.
                 let x = fraction.map { CGFloat($0) * (width - 1.5) + 0.75 }
                 ZStack(alignment: .topLeading) {
+                    HStack(alignment: .center, spacing: 6) {
+                        HealthPaceEndGlyph(fast: false)
+                        Text(String(localized: "Slow"))
+                            .pulseText(.rowSubline)
+                            .foregroundStyle(PulseTheme.textTertiary)
+                        Spacer(minLength: 8)
+                        Text(String(localized: "Fast"))
+                            .pulseText(.rowSubline)
+                            .foregroundStyle(PulseTheme.textTertiary)
+                        HealthPaceEndGlyph(fast: true)
+                    }
+                    .frame(width: width, height: 20)
                     Text(valueText)
-                        .font(PulseType.font(.rowValue))
+                        .font(PulseType.font(.calloutValue))
                         .foregroundStyle(PulseTheme.textPrimary)
                         .fixedSize()
-                        .position(x: min(max(x ?? width / 2, 24), width - 24), y: 10)
+                        .position(x: min(max(x ?? width / 2, 26), width - 26), y: clear ? 22 : 36)
                     comb(needleX: x)
                         .frame(width: width, height: 30)
-                        .offset(y: 24)
+                        .offset(y: clear ? 44 : 52)
                 }
             }
-            .frame(height: 54)
+            .frame(height: clear ? 74 : 82)
             .dynamicTypeSize(...DynamicTypeSize.xxLarge)
             .accessibilityHidden(true)
             HStack {
@@ -69,6 +69,13 @@ struct HealthPaceRuler: View {
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(String(localized: "Pace of Aging"))
         .accessibilityValue(accessibility)
+    }
+
+    /// Whether the value can ride level with "Slow" / "Fast" (reviews/r119): not when the needle is out by
+    /// either end, where it would run into them, so it drops under them there.
+    private var clear: Bool {
+        guard let fraction else { return true }
+        return fraction > 0.26 && fraction < 0.74
     }
 
     private var accessibility: String {

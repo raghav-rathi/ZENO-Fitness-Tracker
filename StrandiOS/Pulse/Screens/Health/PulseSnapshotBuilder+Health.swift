@@ -421,7 +421,8 @@ extension PulseSnapshotBuilder {
         return derived[dayKey]?.score
     }
 
-    /// The typical same weekday over the previous six weeks (worn days only), up to the current hour today.
+    /// The typical same weekday over the previous six weeks (worn days only). Today it is cut after the
+    /// current hour, the same hours today's own totals count (the hour in progress included, once scored).
     func stressTypical(_ r: PulseRequest, dayStart: Date,
                        isToday: Bool) async -> (totals: StressDayTotals.Totals?, days: Int) {
         let cal = Calendar.current
@@ -431,7 +432,7 @@ extension PulseSnapshotBuilder {
             let result = await stressResult(dayStart: start, isToday: false, r: r)
             if !result.hours.isEmpty { days.append(result.hours) }
         }
-        let cut = isToday ? cal.component(.hour, from: r.now) : nil
+        let cut = isToday ? cal.component(.hour, from: r.now) + 1 : nil
         let typical = StressDayTotals.typical(days, beforeHour: cut)
         let worn = days.filter {
             StressDayTotals.totals($0, beforeHour: cut).scoredMinutes

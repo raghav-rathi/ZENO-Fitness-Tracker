@@ -130,6 +130,15 @@ private struct PulseHealthTabContent: View {
     @AppStorage(RhythmConsent.enabledKey) private var rhythmEnabled = false
     @AppStorage("pulse.health.calibratingDismissed") private var calibratingDismissedWeek = ""
 
+    /// DEBUG `--pulse-health-calibrating`: show the calibrating note on a settled history, for captures.
+    private static var forcesCalibratingNote: Bool {
+        #if DEBUG
+        return CommandLine.arguments.contains("--pulse-health-calibrating")
+        #else
+        return false
+        #endif
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: PulseTheme.Layout.healthStackGap) {
             switch snapshot.age {
@@ -137,7 +146,7 @@ private struct PulseHealthTabContent: View {
                 HealthUnlockHero(nights: nights, needed: needed)
             case .ready(let summary):
                 HealthAgeHero(summary: summary)
-                if summary.settling && calibratingDismissedWeek != summary.week.id {
+                if (summary.settling || Self.forcesCalibratingNote) && calibratingDismissedWeek != summary.week.id {
                     HealthCalibratingNote { calibratingDismissedWeek = summary.week.id }
                 }
                 HealthPaceCard(summary: summary)

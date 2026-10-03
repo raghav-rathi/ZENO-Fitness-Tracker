@@ -123,7 +123,7 @@ struct PulseHealthspanView: View {
                                  yearsLine: healthYearsLine(summary.week.yearsYounger), hue: summary.week.hue)
             }
             .frame(maxWidth: .infinity)
-            .padding(.top, 18)
+            .padding(.top, 34)
             .pulseScrolledPast($orbPassed, threshold: 150)
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(String(localized: "ZENO Age \(PulseFormat.oneDecimal(summary.week.zenoAge)), \(healthYearsLine(summary.week.yearsYounger))"))
@@ -608,6 +608,7 @@ struct HealthspanCompactHeader: View {
             HealthAgeOrb(hue: summary.week.hue, diameter: 84) {
                 HealthOrbReading(age: PulseFormat.oneDecimal(summary.week.zenoAge), yearsLine: nil,
                                  hue: summary.week.hue, ageSize: PulseTextStyle.mediumValue.spec.size)
+                    .dynamicTypeSize(...DynamicTypeSize.large)
             }
             stat(summary.pace.map { String(localized: "\(PulseFormat.oneDecimal($0))x") } ?? "--",
                  String(localized: "Pace of Aging"), colour: PulseTheme.textPrimary)
@@ -615,6 +616,8 @@ struct HealthspanCompactHeader: View {
         }
         .padding(.horizontal, PulseTheme.Layout.pageMargin)
         .padding(.vertical, 8)
+        // A fixed header over the page: its text stops growing where the small orb's label would not fit.
+        .dynamicTypeSize(...DynamicTypeSize.xLarge)
         .background(
             LinearGradient(stops: [
                 .init(color: PulseTheme.pageNearBlack, location: 0),

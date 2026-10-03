@@ -11,11 +11,13 @@ import WhoopProtocol
 ///
 /// The only view here that observes `LiveState`: it keeps the last five minutes of beats it has seen
 /// (seeded from the store's last five minutes, so the line is there when the screen opens) and hands an
-/// Equatable value to the drawing, so a heartbeat re-renders the strip and nothing around it.
+/// Equatable value to the drawing, so a heartbeat re-renders the strip and nothing around it. Tapping it
+/// opens ZENO's live console (§3.21 [Z]).
 struct HealthLiveHRStrip: View {
     @EnvironmentObject private var live: LiveState
     @EnvironmentObject private var repo: Repository
     @EnvironmentObject private var profile: ProfileStore
+    @Environment(\.pulseNavigator) private var navigator
 
     @State private var samples: [HealthHRPoint] = []
     #if DEBUG
@@ -36,16 +38,23 @@ struct HealthLiveHRStrip: View {
     }
 
     var body: some View {
-        HealthLiveHRStripContent(bpm: bpm,
-                                 zone: bpm.map { profile.hrZoneSet.zoneNumber(forBPM: Double($0)) },
-                                 connected: live.connected || bpm != nil,
-                                 samples: bpm == nil ? [] : samples)
-            .equatable()
-            .onChange(of: live.heartRate) { _, value in
-                guard let value, value > 0, live.connected else { return }
-                append(HealthHRPoint(date: Date(), bpm: Double(value)))
-            }
-            .task { await seed() }
+        Button {
+            navigator.open(.classic(.live))
+        } label: {
+            HealthLiveHRStripContent(bpm: bpm,
+                                     zone: bpm.map { profile.hrZoneSet.zoneNumber(forBPM: Double($0)) },
+                                     connected: live.connected || bpm != nil,
+                                     samples: bpm == nil ? [] : samples)
+                .equatable()
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(PulsePressStyle())
+        .accessibilityHint(String(localized: "Opens the live heart-rate console"))
+        .onChange(of: live.heartRate) { _, value in
+            guard let value, value > 0, live.connected else { return }
+            append(HealthHRPoint(date: Date(), bpm: Double(value)))
+        }
+        .task { await seed() }
     }
 
     private func append(_ point: HealthHRPoint) {

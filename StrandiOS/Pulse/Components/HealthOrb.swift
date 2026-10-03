@@ -87,9 +87,12 @@ private struct HealthOrbArt: View {
     let palette: HealthPalette.Orb
     let dormant: Bool
 
+    /// Room around the disc so the rim's glow is not cut by the canvas edge.
+    private static let bleed: CGFloat = 24
+
     var body: some View {
         Canvas { context, size in
-            let r = min(size.width, size.height) / 2
+            let r = min(size.width, size.height) / 2 - Self.bleed
             let centre = CGPoint(x: size.width / 2, y: size.height / 2)
             let disc = Path(ellipseIn: CGRect(x: centre.x - r, y: centre.y - r, width: r * 2, height: r * 2))
 
@@ -114,31 +117,38 @@ private struct HealthOrbArt: View {
                     center: centre, startRadius: 0, endRadius: r))
             }
 
-            // Particles on a golden-angle spiral: the ring thickens toward the rim (dormant: the whole disc).
-            let count = Int((r * r) / 95) + 40
+            // Particles on a golden-angle spiral: the ring thickens toward the rim (dormant: the whole disc,
+            // still densest at the rim, in brighter, larger specks).
+            let count = Int((r * r) / (dormant ? 70 : 95)) + 40
             let golden = Double.pi * (3 - 5.0.squareRoot())
             for i in 0..<count {
                 let u = (Double(i) + 0.5) / Double(count)
-                let inner = dormant ? 0.08 : 0.5
-                let radial = inner + (0.965 - inner) * (dormant ? u.squareRoot() : pow(u, 0.55))
+                let inner = dormant ? 0.06 : 0.5
+                let radial = inner + (0.965 - inner) * pow(u, dormant ? 0.42 : 0.55)
                 let angle = Double(i) * golden
                 let jitter = HealthOrbArt.noise(i, salt: 1)
                 let d = r * CGFloat(radial)
                 let p = CGPoint(x: centre.x + d * CGFloat(cos(angle)), y: centre.y + d * CGFloat(sin(angle)))
-                let rimWeight = dormant ? 1.0 : max(0, (radial - inner) / (0.965 - inner))
-                let size = CGFloat(0.7 + 2.1 * HealthOrbArt.noise(i, salt: 2) * (0.45 + 0.55 * rimWeight))
+                let rimWeight = max(0, (radial - inner) / (0.965 - inner))
+                let grain = HealthOrbArt.noise(i, salt: 2)
+                let size = (dormant ? CGFloat(1.1 + 2.6 * grain) : CGFloat(0.7 + 2.1 * grain * (0.45 + 0.55 * rimWeight)))
                     * max(1, r / 110)
-                let alpha = (0.25 + 0.7 * jitter) * (dormant ? 0.9 : 0.35 + 0.65 * rimWeight)
+                let alpha = dormant ? 0.55 + 0.45 * jitter : (0.25 + 0.7 * jitter) * (0.35 + 0.65 * rimWeight)
                 let dot = Path(ellipseIn: CGRect(x: p.x - size / 2, y: p.y - size / 2, width: size, height: size))
                 context.fill(dot, with: .color(palette.particles.opacity(alpha)))
             }
 
-            // The rim, a hair brighter at the foot as if lit from below.
+            // The rim: a soft glow just inside the edge, then a crisp line, a hair brighter at the foot.
+            context.drawLayer { layer in
+                layer.addFilter(.blur(radius: max(2, r / 30)))
+                layer.stroke(disc, with: .color(palette.rim.opacity(dormant ? 0.95 : 0.7)), lineWidth: max(3, r / 22))
+            }
             context.stroke(disc, with: .linearGradient(
-                Gradient(colors: [palette.rim.opacity(dormant ? 0.9 : 0.55), palette.rim]),
+                Gradient(colors: [palette.rim.opacity(dormant ? 0.95 : 0.6), palette.rim]),
                 startPoint: CGPoint(x: centre.x, y: centre.y - r), endPoint: CGPoint(x: centre.x, y: centre.y + r)),
-                lineWidth: max(1.2, r / 90))
+                lineWidth: max(1.2, r / 80))
         }
+        .padding(-Self.bleed)
         // The soft halo the page glow continues.
         .background(
             Circle()

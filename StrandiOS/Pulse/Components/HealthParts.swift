@@ -239,16 +239,19 @@ struct HealthPageBackground: View {
     }
 }
 
-/// Behind the pinned title once content scrolls under it: the same glowing page, opaque to the bar's foot
-/// and fading out over 24 pt, so the orb turns into the half sphere WHOOP shows when scrolled (reviews/r44)
-/// and cards slide under the title instead of over it.
+/// Behind the pinned title once content scrolls under it: the same glowing page, opaque to ≈12 pt under
+/// the title's baseline and fading out over 12 pt, so the orb turns into the half sphere WHOOP shows when
+/// scrolled, cut just under the title (reviews/r44: the cut 12.7 pt below the baseline), and cards slide
+/// under the title instead of over it.
 struct HealthTopBackdrop: View {
     let hue: HealthAgeHue
-    var fade: CGFloat = PulseTheme.Header.barFade
+    /// How far above the bar's foot the opaque part stops.
+    var trim: CGFloat = 14
+    var fade: CGFloat = 12
 
     var body: some View {
         GeometryReader { geo in
-            let solid = geo.safeAreaInsets.top
+            let solid = max(0, geo.safeAreaInsets.top - trim)
             HealthPageBackground(hue: hue)
                 .mask(alignment: .top) {
                     VStack(spacing: 0) {
