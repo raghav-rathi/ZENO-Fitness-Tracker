@@ -426,7 +426,7 @@ All take plain values, never snapshots. Map a snapshot to them in your group (se
 | `PulseRange` | `.week`, `.month`, `.sixMonths`, `.year`, `.all` (`title`, `days`) |
 | `PulseDayPager` | `(title:canGoBack:canGoForward:onBack:onForward:onTitleTap:)`: 30 pt, white 5% capsule + 10% pill |
 | `PulseRangePager` | `(title:canGoBack:canGoForward:onBack:onForward:)` |
-| Buttons | `.buttonStyle(.pulseNested)` (40 pt, 44 pt hit, 11 pt label), `.pulseNested(fill:)`, `.pulseOutline(color)`, `.pulseOutlineWhite`, `.pulseFilledWhite`, `.pulseFilledBlue` (15 pt labels); `PulseButtonRow { … }` keeps buttons at equal widths and stacks them full width once a label no longer fits its equal share (a 0.9 allowance for the label's own 0.8 shrink); `PulseTextCTA(title:tint: .ai \| .color(c), action:)` |
+| Buttons | `.buttonStyle(.pulseNested)` (40 pt, 44 pt hit, 11 pt label), `.pulseNested(fill:)`, `.pulseOutline(color)`, `.pulseOutlineWhite`, `.pulseFilledWhite`, `.pulseFilledBlue` (15 pt labels); `PulseButtonRow { … }` keeps buttons at equal widths and stacks them full width once a label no longer fits its equal share (a 0.9 allowance for the label's own 0.8 shrink); `PulseTextCTA(title:tint: .ai \| .color(c), compact:, action:)` (44 pt tall; `compact` lays out at the label's height with the 44 pt hit area overflowing, for the insight card) |
 
 ### Charts (Swift Charts, spec §2.7)
 

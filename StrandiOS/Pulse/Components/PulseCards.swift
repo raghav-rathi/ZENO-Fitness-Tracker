@@ -70,8 +70,10 @@ struct PulseMonitorTile: View {
 // MARK: Insight (coach) card (§2.6 item 10)
 
 /// The coach's inline insight: transparent, a 1.5 pt AI-gradient border (radius 12), 14 pt Medium white
-/// text, then 12 pt below the CTA in the AI text gradient ("BREAK DOWN MY RECOVERY →"). Only coach content
-/// uses this look (Strain dive, Activity Details, recovery-activity details).
+/// text on a ≈20 pt line pitch, then 12 pt below the CTA in the AI text gradient
+/// ("BREAK DOWN MY RECOVERY →") over the card's 16 pt padding: the CTA sits ≈18 pt under the last baseline
+/// and ≈18 pt above the border (deep-dives-2026/57, activity-flows-2026/e01). Only coach content uses this
+/// look (Strain dive, Activity Details, recovery-activity details).
 struct PulseInsightCard: View {
     let text: String
     var cta: String?
@@ -81,10 +83,11 @@ struct PulseInsightCard: View {
         VStack(alignment: .leading, spacing: 12) {
             Text(text)
                 .pulseText(.body)
+                .lineSpacing(3.5)
                 .foregroundStyle(PulseTheme.textPrimary)
                 .fixedSize(horizontal: false, vertical: true)
             if let cta, let action {
-                PulseTextCTA(title: cta, tint: .ai, action: action)
+                PulseTextCTA(title: cta, tint: .ai, compact: true, action: action)
             }
         }
         .padding(16)

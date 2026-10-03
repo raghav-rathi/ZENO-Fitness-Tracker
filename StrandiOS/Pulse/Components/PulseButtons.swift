@@ -181,7 +181,9 @@ extension ButtonStyle where Self == PulseButtonStyle {
 }
 
 /// (d) A text call to action: UPPERCASE 11 pt Bold tracked plus "→". `.ai` paints it with the AI text
-/// gradient (coach content only); otherwise it takes a flat colour.
+/// gradient (coach content only); otherwise it takes a flat colour. It lays out 44 pt tall; a `compact`
+/// one takes only its label's height, for a card whose own padding spaces it (the insight card), and its
+/// 44 pt hit area overflows above and below.
 struct PulseTextCTA: View {
     enum Tint {
         case ai
@@ -190,19 +192,29 @@ struct PulseTextCTA: View {
 
     let title: String
     var tint: Tint = .color(PulseTheme.recoveryBlue)
+    var compact = false
     let action: () -> Void
 
     var body: some View {
-        Button(action: action) {
-            HStack(spacing: 6) {
-                Text(title).pulseText(.label)
-                Image(systemName: "arrow.right").font(.system(size: 12, weight: .semibold))
+        if compact {
+            Button(action: action) { label }
+                .buttonStyle(PulseOverflowPressStyle(overflow: 16))
+        } else {
+            Button(action: action) {
+                label
+                    .frame(minHeight: PulseTheme.Layout.minTapTarget, alignment: .leading)
+                    .contentShape(Rectangle())
             }
-            .foregroundStyle(style)
-            .frame(minHeight: PulseTheme.Layout.minTapTarget, alignment: .leading)
-            .contentShape(Rectangle())
+            .buttonStyle(PulsePressStyle())
         }
-        .buttonStyle(PulsePressStyle())
+    }
+
+    private var label: some View {
+        HStack(spacing: 6) {
+            Text(title).pulseText(.label)
+            Image(systemName: "arrow.right").font(.system(size: 12, weight: .semibold))
+        }
+        .foregroundStyle(style)
     }
 
     private var style: AnyShapeStyle {
@@ -213,6 +225,22 @@ struct PulseTextCTA: View {
         case .color(let color):
             return AnyShapeStyle(color)
         }
+    }
+}
+
+/// `PulsePressStyle` whose hit area overflows the label by `overflow` above and below without adding
+/// layout height. The overflow sits outside the press style's own content shape, which would otherwise
+/// cut the hit area back to the label.
+private struct PulseOverflowPressStyle: ButtonStyle {
+    let overflow: CGFloat
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .opacity(configuration.isPressed ? 0.7 : 1)
+            .animation(configuration.isPressed ? nil : PulseMotion.pressRelease, value: configuration.isPressed)
+            .padding(.vertical, overflow)
+            .contentShape(Rectangle())
+            .padding(.vertical, -overflow)
     }
 }
 #endif
