@@ -610,6 +610,8 @@ private struct PulseOnboardingRingButtonBody: View {
         .padding(.bottom, PulseOnboardingMetrics.ringBottom)
         .onAppear { move(to: progress) }
         .onChange(of: progress) { _, new in move(to: new) }
+        // Chrome, capped like the top bar: at the accessibility sizes the label would be cut short.
+        .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
         .accessibilityLabel(title)
         .accessibilityValue(String(localized: "\(Int((progress * 100).rounded())) percent through setup"))
     }
@@ -691,6 +693,7 @@ struct PulseOnboardingFilledButton: View {
         .frame(maxWidth: .infinity, alignment: .trailing)
         .padding(.horizontal, PulseTheme.Layout.pageMargin)
         .padding(.bottom, PulseOnboardingMetrics.ringBottom)
+        .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
         .accessibilityLabel(title)
     }
 }
@@ -775,6 +778,9 @@ struct PulseOnboardingStatusPage<Art: View, Middle: View, Buttons: View>: View {
             PulseOnboardingTopBar(leading: leading, trailing: trailing, onLeading: onLeading)
         }
         .background(PulseOnboardingBackground())
+        // A status page does not scroll: past the first accessibility size its text pushed RETRY off the
+        // screen, so it stops growing there (DR §2 allows the cap where a layout breaks).
+        .dynamicTypeSize(...DynamicTypeSize.accessibility1)
     }
 
     private var titleBlock: some View {

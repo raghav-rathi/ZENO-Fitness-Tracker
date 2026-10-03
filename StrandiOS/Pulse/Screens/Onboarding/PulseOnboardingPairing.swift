@@ -378,6 +378,8 @@ private struct PulseOnboardingSearchScreen: View {
                 Text(String(localized: "Serial on the side"))
                     .pulseText(.label)
                     .foregroundStyle(PulseOnboardingColors.serialBlue)
+                    // Part of the drawing, which does not grow: past this size it ran off the screen.
+                    .dynamicTypeSize(...DynamicTypeSize.xLarge)
                 Path { p in
                     p.move(to: CGPoint(x: 0, y: 0))
                     p.addLine(to: CGPoint(x: 0, y: found ? 26 : 40))
