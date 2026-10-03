@@ -122,9 +122,12 @@ actor PulseSnapshotBuilder {
     ///     let plans = await cached("plan.goals") { await repo.planGoals() }
     ///
     /// Keys are namespaced by the caller ("<group>.<what>"). A load begun under an older refresh is
-    /// returned to its caller but not stored, exactly like the built-in readers.
+    /// returned to its caller but not stored, exactly like the built-in readers. An optional `T` works too:
+    /// a stored nil is a hit, a missing key loads.
     func cached<T>(_ key: String, load: () async -> T) async -> T {
-        if let value = extensionCache[key] as? T { return value }
+        // Unwrap the lookup before casting: `nil as? T` succeeds when T is itself optional, which would
+        // turn a missing key into a cached nil and never load.
+        if let hit = extensionCache[key], let value = hit as? T { return value }
         let seq = cacheSeq
         let value = await load()
         if seq == cacheSeq { extensionCache[key] = value }
