@@ -240,13 +240,14 @@ struct HealthStressSparkline: View {
     var endAt: Date? = nil
     var height: CGFloat = 64
 
-    /// The points in the span, the flat run to `endAt` appended, and the one the dot sits on.
+    /// The points in the span, the flat run to `endAt` appended in place of any unscored windows after the
+    /// latest reading (the hour still in progress), and the one the dot sits on.
     private var plotted: (points: [PulseTimeValue], last: PulseTimeValue?) {
         var pts = points.filter { span.contains($0.date) }
-        guard let reading = pts.last(where: { $0.value != nil }) else { return (pts, nil) }
-        guard pts.last?.date == reading.date, let endAt, span.contains(endAt), endAt > reading.date else {
-            return (pts, reading)
-        }
+        guard let i = pts.lastIndex(where: { $0.value != nil }) else { return (pts, nil) }
+        let reading = pts[i]
+        guard let endAt, span.contains(endAt), endAt > reading.date else { return (pts, reading) }
+        pts.removeSubrange((i + 1)...)
         let end = PulseTimeValue(date: min(endAt, span.upperBound), value: reading.value)
         pts.append(end)
         return (pts, end)
