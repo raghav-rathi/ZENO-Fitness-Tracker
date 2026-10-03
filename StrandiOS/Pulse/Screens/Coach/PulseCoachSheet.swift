@@ -487,6 +487,7 @@ struct PulseCoachSheet: View {
         case "memory-detail": if let first = PulseMemoryStore.shared.items.first { path = [.memory, .memoryDetail(first.id)] }
         default: break
         }
+        if PulseCoachDemo.asksFirstSuggestion, let first = suggestions.first { send(first) }
         #endif
     }
 

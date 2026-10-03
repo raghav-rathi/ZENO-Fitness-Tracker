@@ -9,13 +9,16 @@ import StrandAnalytics
 // conversation in an EMPTY transcript, built from the demo store's own numbers; saves two memories into an
 // EMPTY My Memory and files one earlier conversation in an EMPTY history. Nothing is sent anywhere unless a
 // question is asked, and then only to that local address. `--coach-open memory|settings|history|memory-detail`
-// opens that part of the sheet; `--coach-large` opens it at the large detent. Never runs without
-// `--demo-seed`; stripped from Release.
+// opens that part of the sheet; `--coach-large` opens it at the large detent; `--coach-ask` sends the first
+// suggestion. Never runs without `--demo-seed`; stripped from Release.
 enum PulseCoachDemo {
     private static var args: [String] { CommandLine.arguments }
 
     static var requested: Bool { args.contains("--demo-seed") && args.contains("--coach-demo") }
     static var opensLarge: Bool { args.contains("--coach-large") }
+    /// `--coach-ask`: send the first suggestion chip once the sheet is open, so a capture shows what a
+    /// question carries (its receipt, the page card's state). It goes to the demo's local address only.
+    static var asksFirstSuggestion: Bool { requested && args.contains("--coach-ask") }
 
     /// `--coach-seed outlook`: open as if from Home's Daily Outlook pill, with the seed Home builds from the
     /// demo store's own day (so a capture shows real numbers, never invented ones). `--coach-seed cycle`: as
