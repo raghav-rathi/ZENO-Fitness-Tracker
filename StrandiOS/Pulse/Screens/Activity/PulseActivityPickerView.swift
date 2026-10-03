@@ -24,7 +24,7 @@ struct PulseActivityPickerView: View {
 
     var body: some View {
         PulseActivityPickerList(style: .cards, tabs: PulseActivityPickerList.Tab.allCases, selected: selected,
-                                searchPlaceholder: String(localized: "Search")) { kind in
+                                searchPlaceholder: String(localized: "Search for Activities")) { kind in
             if let onPick {
                 onPick(kind)
                 dismiss()
@@ -186,24 +186,28 @@ struct PulseActivityPickerList: View {
         .background(RoundedRectangle(cornerRadius: PulseTheme.Radius.control, style: .circular)
             .fill(style == .cards ? PulseTheme.Activity.searchField : PulseTheme.card))
         .overlay(RoundedRectangle(cornerRadius: PulseTheme.Radius.control, style: .circular)
-            .strokeBorder(searchFocused && style == .cards ? PulseTheme.Activity.searchFocusBorder : .clear,
+            .strokeBorder(style == .cards
+                          ? (searchFocused ? PulseTheme.Activity.searchFocusBorder : PulseActivityStyle.searchBorder)
+                          : .clear,
                           lineWidth: 1))
     }
 
-    /// The underlined tabs. Four (ALL · STRAIN · RECOVERY · SLEEP) take four equal columns with their labels
-    /// centred (completeness-critic/05); three (the reclassify sheet's ALL · STRAIN · RECOVERY) sit at the
-    /// left with fixed gaps (c03). The underline is the label's width.
+    /// The underlined tabs. The card lists' sit at the left at their own widths, 30 pt apart (c03; the add
+    /// flow's four on s01 and s04 end about 70% across); the pre-start dropdown's three sit at the left too,
+    /// and four there would take four equal columns with their labels centred (completeness-critic/05). The
+    /// underline is the label's width.
     @ViewBuilder
     private var tabBar: some View {
-        if tabs.count > 3 {
+        if style == .borderless && tabs.count > 3 {
             HStack(spacing: 0) {
                 ForEach(tabs, id: \.self) { t in
                     tabButton(t)
                         .frame(maxWidth: .infinity)
+        // The card lists' field keeps a 1 pt rim, lighter while focused (c03); the pre-start one has none.
                 }
             }
         } else {
-            HStack(spacing: 32) {
+            HStack(spacing: style == .cards ? 30 : 32) {
                 ForEach(tabs, id: \.self) { t in
                     tabButton(t)
                 }

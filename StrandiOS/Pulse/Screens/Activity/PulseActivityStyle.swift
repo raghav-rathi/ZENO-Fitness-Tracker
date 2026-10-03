@@ -51,6 +51,8 @@ enum PulseActivityStyle {
 
     /// The current activity's row in the pre-start list (completeness-critic/05: white ≈8%).
     static let selectedRow = Color.white.opacity(0.08)
+    /// The card lists' search field rim while it is not focused (c03: #33383C over the field's fill).
+    static let searchBorder = Color.white.opacity(0.13)
     /// The pre-start list's backdrop over the map.
     static let pickerBackdrop = Color.black.opacity(0.92)
     /// The Track Route switch's track on the dark header.
