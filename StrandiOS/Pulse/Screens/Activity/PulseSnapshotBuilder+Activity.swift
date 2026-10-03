@@ -269,16 +269,23 @@ extension PulseSnapshotBuilder {
 
     /// "162-171 BPM", "172+ BPM" for Zone 5, "<118 BPM" below Zone 1: the bounds the zone set bins by.
     static func zoneRange(_ zone: Int, zoneSet: HRZoneSet) -> String {
-        let bpm = String(localized: "BPM")
         if zone == 0 {
             guard let z1 = zoneSet.zones.first(where: { $0.number == 1 }) else { return "" }
-            return "<\(Int(z1.lower.rounded(.up))) \(bpm)"
+            return "<\(Int(z1.lower.rounded(.up))) \(String(localized: "BPM"))"
         }
         guard let z = zoneSet.zones.first(where: { $0.number == zone }) else { return "" }
-        let lower = Int(z.lower.rounded(.up))
-        if zone == 5 { return "\(lower)+ \(bpm)" }
-        let upper = max(lower, Int(z.upper.rounded(.up)) - 1)
-        return "\(lower)-\(upper) \(bpm)"
+        return zoneRange(zone, lower: z.lower, upper: z.upper)
+    }
+
+    /// Zone 1–5's whole beats as `HRZoneSet.zoneNumber(forBPM:)` bins them (lower bound in, upper bound
+    /// out, Zone 5 open-ended), so neighbouring zones never share a beat: "162-171 BPM", "172+ BPM" (h01,
+    /// g16, help-center/82). Activity Details and the Strain dive's TIME IN ZONES both label their zone
+    /// rows through here, so one day's zones read the same on both.
+    static func zoneRange(_ zone: Int, lower: Double, upper: Double) -> String {
+        let bpm = String(localized: "BPM")
+        let low = Int(lower.rounded(.up))
+        if zone == 5 { return "\(low)+ \(bpm)" }
+        return "\(low)-\(max(low, Int(upper.rounded(.up)) - 1)) \(bpm)"
     }
 
     /// An import's zones are its own (% of max heart rate), so they keep its percentages, not ZENO's bpm.

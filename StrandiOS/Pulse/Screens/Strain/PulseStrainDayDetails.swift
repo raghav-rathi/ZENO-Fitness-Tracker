@@ -308,7 +308,8 @@ private struct PulseStrainHeartRateChart: View {
             AxisMarks(position: .trailing, values: base.zones.map(\.lower)) { value in
                 AxisGridLine(stroke: StrokeStyle(lineWidth: 1)).foregroundStyle(PulseTheme.gridOnCard)
                 AxisValueLabel {
-                    if let v = value.as(Double.self) { Text(verbatim: "\(Int(v.rounded()))") }
+                    // A zone's first whole beat, the figure its TIME IN ZONES row starts on ("161-173 BPM").
+                    if let v = value.as(Double.self) { Text(verbatim: "\(Int(v.rounded(.up)))") }
                 }
                 .font(PulseType.font(.axis))
                 .foregroundStyle(PulseTheme.textTertiary)
@@ -326,7 +327,9 @@ private struct PulseStrainHeartRateChart: View {
 // MARK: - Time in zones
 
 /// TIME IN ZONES: one zone row card per zone, Zone 5 to Zone 1 (§2.6 item 18), from the same time-in-zone
-/// figures as the contributor rows.
+/// figures as the contributor rows. The rows are Activity Details' own (`PulseActivityZoneRow`), labelled by
+/// the same rule, so one day's zones read the same on both screens: "174+ BPM" open-ended at the top, no
+/// beat in two zones, and a zone with no time a short title-only card with its text dimmed (g16, hc82).
 private struct PulseStrainTimeInZones: View {
     let zones: [PulseZoneBand]
     /// Seconds in zones 1-5; nil when the day has no heart rate.
@@ -340,10 +343,12 @@ private struct PulseStrainTimeInZones: View {
                 let total = seconds.reduce(0, +)
                 ForEach(zones.reversed()) { zone in
                     let s = seconds.indices.contains(zone.number - 1) ? seconds[zone.number - 1] : 0
-                    PulseZoneRowCard(zone: zone.number,
-                                     range: String(localized: "\(Int(zone.lower.rounded()))-\(Int(zone.upper.rounded())) BPM"),
-                                     share: total > 0 ? s / total : 0,
-                                     duration: Self.clock(seconds: s))
+                    PulseActivityZoneRow(row: ActivityZoneRow(
+                        zone: zone.number,
+                        range: PulseSnapshotBuilder.zoneRange(zone.number, lower: zone.lower, upper: zone.upper),
+                        share: total > 0 ? s / total : 0,
+                        seconds: s,
+                        typical: nil))
                 }
                 Text(String(localized: "Zones from your maximum heart rate of \(Int((zones.last?.upper ?? 0).rounded())) bpm."))
                     .pulseText(.legend)
@@ -357,12 +362,6 @@ private struct PulseStrainTimeInZones: View {
                 }
             }
         }
-    }
-
-    /// "0:00:48": hours, minutes and seconds.
-    static func clock(seconds: Double) -> String {
-        let total = max(0, Int(seconds.rounded()))
-        return String(format: "%d:%02d:%02d", total / 3600, (total % 3600) / 60, total % 60)
     }
 }
 
