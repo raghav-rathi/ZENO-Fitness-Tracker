@@ -218,10 +218,12 @@ extension PulsePlan.Template {
         }
     }
 
+    /// An outline glyph for each card on EDIT PLAN. ("face.smiling" draws a filled disc with cut-out features;
+    /// ".inverse" is the outline smiley that sits with the dumbbell, moon and pencil.)
     var symbol: String {
         switch self {
         case .boostFitness: return "dumbbell"
-        case .feelBetter: return "face.smiling"
+        case .feelBetter: return "face.smiling.inverse"
         case .sleepDeeper: return "moon"
         case .custom: return "square.and.pencil"
         }
