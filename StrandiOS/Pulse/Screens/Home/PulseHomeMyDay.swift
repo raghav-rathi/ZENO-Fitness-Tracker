@@ -313,10 +313,11 @@ enum PulseHomeActivity {
 
 // MARK: - Tonight's Sleep (§3.1 item 8c)
 
-/// TONIGHT'S SLEEP ›: the bedtime that meets tonight's need ("Now" once it has passed) and the wake time,
-/// side by side on one baseline (22 pt Bold condensed, no AM / PM), joined by a dashed connector; under
-/// them "RECOMMENDED BEDTIME" and the alarm state (orange "ALARM OFF", or teal "● ALARM ON" over "EXACT
-/// TIME"), both captions at one size; then SET ALARM (EDIT ALARM once set) with the strap-vibrate glyph.
+/// TONIGHT'S SLEEP ›: the Sleep Planner's plan for tonight (`PulseTonight`), its time to get into bed ("Now"
+/// once it has passed) and its wake time, side by side on one baseline (22 pt Bold condensed, no AM / PM),
+/// joined by a dashed connector; under them "RECOMMENDED BEDTIME" and the alarm state (orange "ALARM OFF",
+/// or teal "● ALARM ON" over "EXACT TIME" when the strap alarm will buzz at that wake), both captions at one
+/// size; then SET ALARM (EDIT ALARM once set) with the strap-vibrate glyph.
 /// The title and both times are one link to the Sleep Planner (WHOOP's whole card opens it); SET ALARM is
 /// its own button. Spacing measured on reviews/r41: times centred 41.5 pt under the title's, SET ALARM
 /// 19.6 pt under the captions.
@@ -365,15 +366,15 @@ struct PulseTonightsSleepCard: View {
     }
 
     private func columns(now: Date) -> some View {
-        let passed = now >= tonight.bedtime
+        let passed = now >= tonight.inBed
         return HStack(alignment: .top, spacing: PulseTheme.Space.xs) {
             column(icon: AnyView(sunIcon("sunset")),
-                   time: passed ? String(localized: "Now") : PulseFormat.clockNoMeridiem(tonight.bedtime)) {
+                   time: passed ? String(localized: "Now") : PulseFormat.clockNoMeridiem(tonight.inBed)) {
                 caption(String(localized: "Recommended bedtime"), color: PulseTheme.textSecondary)
             }
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(passed ? String(localized: "Recommended bedtime now")
-                                       : String(localized: "Recommended bedtime \(PulseFormat.clock(tonight.bedtime))"))
+                                       : String(localized: "Recommended bedtime \(PulseFormat.clock(tonight.inBed))"))
             Line()
                 .stroke(PulseTheme.dash, style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
                 .frame(maxWidth: PulseHomeMetrics.tonightConnector)

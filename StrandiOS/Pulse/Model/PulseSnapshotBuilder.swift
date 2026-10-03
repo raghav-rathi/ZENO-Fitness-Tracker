@@ -32,10 +32,10 @@ struct PulsePrefs: Equatable {
     var sleepOnsetDayCycle = true
     var effortMethod: StrainScorer.Method = .edwards
     var stressPersonalBaseline = false
-    /// Tomorrow's wake time from the wind-down reminder when it is on, minutes after midnight.
-    var alarmWakeMinute: Int?
-    /// The strap's silent wake alarm when it is armed for tomorrow, minutes after midnight.
-    var strapAlarmMinute: Int?
+    /// The strap alarm, the wind-down reminder and My Schedule's per-day times, as the Sleep Planner reads
+    /// them (`PulseSleepPlanSettings.stored`), whether the strap will arm included: what tonight's plan is
+    /// resolved from.
+    var sleepPlan = PulseSleepPlanSettings()
     /// The journal prompt's switch (Settings, shared with the classic Today).
     var journalReminder = true
 }
@@ -444,7 +444,7 @@ actor PulseSnapshotBuilder {
             }
             napList = naps(in: g, night: night)
         }
-        let tonight = r.day.isToday ? await tonightPlan(r, groups: groups, habitual: habitual) : nil
+        let tonight = r.day.isToday ? await tonightPlan(r) : nil
         let stats = await keyStats(r, row: row)
         let stress = await stressSummary(r)
         // The journal strip ends on the selected day; it stays on a past day (§2.9).
@@ -529,45 +529,14 @@ actor PulseSnapshotBuilder {
         })
     }
 
-    /// Tonight's need and bedtime from the unified sleep-need model (baseline + strain + debt − naps) —
-    /// the same breakdown the scoring pass stores and the wind-down reminder counts back from.
-    func tonightPlan(_ r: PulseRequest, groups: [[CachedSleepSession]], habitual: Int?) async -> PulseTonight? {
-        let breakdown = await repo.sleepNeedTonight(now: r.now)
-        let need = breakdown.totalMin
-        guard need > 0 else { return nil }
-
-        let cal = Calendar.current
-        let wakeMinute: Int
-        let source: PulseTonight.WakeSource
-        if let strapAlarm = r.prefs.strapAlarmMinute {
-            wakeMinute = strapAlarm
-            source = .strapAlarm
-        } else if let alarm = r.prefs.alarmWakeMinute {
-            wakeMinute = alarm
-            source = .alarm
-        } else {
-            let recent = groups.prefix(14).compactMap { g -> Int? in
-                guard let end = SleepView.mainNightGroup(g, habitualMidsleepSec: habitual).last?.endTs else { return nil }
-                let c = cal.dateComponents([.hour, .minute], from: Date(timeIntervalSince1970: TimeInterval(end)))
-                return (c.hour ?? 0) * 60 + (c.minute ?? 0)
-            }
-            if recent.count >= 3, let median = PulseDisplay.medianClockMinute(recent) {
-                wakeMinute = median
-                source = .habit
-            } else {
-                wakeMinute = 7 * 60
-                source = .fallback
-            }
-        }
-        let bedMinute = PulseDisplay.bedtimeMinute(wakeMinute: wakeMinute, needMinutes: need)
-        // Tonight: a bedtime after noon is this evening, one before noon is after midnight.
-        let base = cal.startOfDay(for: r.now)
-        let bedDay = bedMinute >= 12 * 60 ? base : (cal.date(byAdding: .day, value: 1, to: base) ?? base)
-        let bedtime = bedDay.addingTimeInterval(TimeInterval(bedMinute * 60))
-        return PulseTonight(baseNeedMin: breakdown.baselineMin, strainMin: breakdown.strainMin,
-                            debtMin: breakdown.debtMin, napCreditMin: breakdown.napCreditMin,
-                            needMin: need, bedtime: bedtime,
-                            wake: bedtime.addingTimeInterval(need * 60), wakeSource: source)
+    /// Tonight's plan through the Sleep Planner's own resolver (`tonightSleepPlan`, Screens/Sleep, which runs
+    /// `PulseSleepPlan.resolve` over the unified sleep need) on the settings the request captured: the wake
+    /// the strap is really armed for (per-day times included), the bedtime with time to fall asleep. Home's
+    /// TONIGHT'S SLEEP card and the planner it opens therefore print the same night.
+    func tonightPlan(_ r: PulseRequest) async -> PulseTonight? {
+        guard let plan = await tonightSleepPlan(r, settings: r.prefs.sleepPlan) else { return nil }
+        return PulseTonight(needMin: plan.needMin, inBed: plan.bedtime, asleepBy: plan.asleepBy, wake: plan.wake,
+                            wakeSource: plan.wakeSource)
     }
 
     // MARK: Key stats

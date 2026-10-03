@@ -503,7 +503,7 @@ extension PulseSnapshotBuilder {
         let isMonday = Calendar.current.component(.weekday, from: r.now) == 2
         // A target only from the day's own Recovery, exactly as the dial draws its band and tick.
         let ownTarget = home.target.flatMap { $0.fromCarriedRecovery ? nil : $0 }
-        let alarm = await alarmCheck(r, home: home)
+        let alarm = alarmCheck(r, home: home)
         return HomeCoachingRules.Inputs(
             dayKey: key, recovery: ownRecovery, recoveryHistory: history, calibration: calibration,
             strain: home.strain.value, optimalRange: ownTarget?.range, strainTarget: ownTarget?.targetValue,
@@ -516,18 +516,16 @@ extension PulseSnapshotBuilder {
 
     /// This morning's strap alarm against when last night ended. The alarm comes from
     /// `AppModel.nextSmartAlarmDate`, the function the strap is armed from (per-day overrides included),
-    /// on BehaviorStore's own settings, so the card names the alarm that will really ring. `nowMinute` is
-    /// the request's; the view moves it to the current minute.
-    private func alarmCheck(_ r: PulseRequest, home: HomeSnapshot) async -> HomeCoachingRules.AlarmCheck? {
-        let defaults = UserDefaults.standard
-        guard defaults.bool(forKey: "behavior.smartAlarmEnabled") else { return nil }
-        let minutes = defaults.object(forKey: "behavior.smartAlarmMinutes") as? Int ?? 7 * 60
-        let weekdays = Set(defaults.array(forKey: "behavior.smartAlarmWeekdays") as? [Int] ?? [])
-        let overrides = await MainActor.run { WindDownNudge.perDayWakeOverrides }
+    /// on the settings the request captured for tonight's plan (`PulsePrefs.sleepPlan`), and only when the
+    /// strap will arm it, so the card names the alarm that will really ring. `nowMinute` is the request's;
+    /// the view moves it to the current minute.
+    private func alarmCheck(_ r: PulseRequest, home: HomeSnapshot) -> HomeCoachingRules.AlarmCheck? {
+        let s = r.prefs.sleepPlan
+        guard s.alarmEnabled, s.strapWillArm else { return nil }
         let cal = Calendar.current
         let midnight = cal.startOfDay(for: r.now)
-        guard let fire = AppModel.nextSmartAlarmDate(minutes: minutes, weekdays: weekdays, overrides: overrides,
-                                                     from: midnight, calendar: cal),
+        guard let fire = AppModel.nextSmartAlarmDate(minutes: s.alarmMinutes, weekdays: s.alarmWeekdays,
+                                                     overrides: s.dayTimes, from: midnight, calendar: cal),
               cal.isDate(fire, inSameDayAs: midnight) else { return nil }
         func minuteOfDay(_ date: Date) -> Int {
             let c = cal.dateComponents([.hour, .minute], from: date)
@@ -611,7 +609,7 @@ extension PulseSnapshotBuilder {
             hasWorkout: !rows.isEmpty,
             hasJournal: !journal.isEmpty,
             hasHistoryImport: !r.importedSleep.isEmpty || !apple.isEmpty,
-            sleepScheduled: r.prefs.alarmWakeMinute != nil || r.prefs.strapAlarmMinute != nil)
+            sleepScheduled: r.prefs.sleepPlan.windDownEnabled || r.prefs.sleepPlan.alarmEnabled)
     }
 }
 #endif

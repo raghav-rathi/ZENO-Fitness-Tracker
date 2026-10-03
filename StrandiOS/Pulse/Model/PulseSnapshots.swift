@@ -185,36 +185,26 @@ struct PulseNap: Identifiable, Equatable {
     let asleepMin: Double
 }
 
-/// Tonight's plan: need and the bedtime that meets it.
+/// Tonight's plan as the Sleep Planner resolves it (`PulseSleepPlan`, REACH MY SLEEP NEED), so Home's
+/// TONIGHT'S SLEEP card and the planner it opens state the same night.
 struct PulseTonight: Equatable {
-    enum WakeSource: Equatable {
-        /// The strap's silent wake alarm, armed for tomorrow: "● ALARM ON · EXACT TIME".
-        case strapAlarm
-        /// The wake time set for the wind-down reminder.
-        case alarm
-        /// The median wake time of recent nights.
-        case habit
-        /// No wake time to go on; 07:00.
-        case fallback
-    }
-
-    /// The unified model's baseline need, minutes.
-    let baseNeedMin: Double
-    /// Extra need from the day's Strain above the wearer's typical, minutes (0 when none).
-    let strainMin: Double
-    /// Sleep debt carried into tonight, minutes (0 when none).
-    let debtMin: Double
-    /// Credit for today's naps, minutes (0 when none).
-    let napCreditMin: Double
-    /// Tonight's need: baseline + strain + debt − nap credit (`SleepNeedBreakdown.totalMin`).
+    /// Tonight's need: baseline + strain + debt − nap credit (`SleepNeedBreakdown.totalMin`), minutes.
     let needMin: Double
-    /// When to be asleep to meet it.
-    let bedtime: Date
+    /// When to get into bed, allowing the time it takes to fall asleep: the card's RECOMMENDED BEDTIME and
+    /// the planner's suggested time to bed.
+    let inBed: Date
+    /// When to be asleep by to meet the need.
+    let asleepBy: Date
     let wake: Date
-    let wakeSource: WakeSource
+    /// What named the wake: the strap alarm only when it will actually buzz that morning.
+    let wakeSource: TonightSleepPlan.WakeSource
 
-    /// True while the strap's wake alarm is armed for this wake time.
+    /// The strap alarm buzzes at `wake`: "● ALARM ON · EXACT TIME".
     var alarmOn: Bool { wakeSource == .strapAlarm }
+
+    /// The time to be asleep by, under the name this type used before it carried the in-bed time too.
+    @available(*, deprecated, renamed: "asleepBy")
+    var bedtime: Date { asleepBy }
 }
 
 /// A workout on the selected day.
