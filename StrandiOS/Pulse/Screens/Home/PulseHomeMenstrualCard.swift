@@ -9,8 +9,8 @@ import StrandAnalytics
 // logs first, ZENO's temperature-shift engine (`CyclePhaseEngine`) only where there are no usable logs. Its
 // day ("Day 3"), the phase in its colour and the line under it ("Logged Period Day • Next period in: 26–28
 // Days") are the page's header, so Home, the Health card and the page name the same day. Under them a dot per
-// day of the cycle, today large and white on that same day, coloured from what is actually known (a logged
-// period start, the detected temperature shift), and "+ LOG CYCLE", which opens the page's own log sheet.
+// day of the cycle, today large and white on that same day, coloured from what is actually known (the logged
+// period days, the detected temperature shift), and "+ LOG CYCLE", which opens the page's own log sheet.
 // Awareness only, never a fertility or medical claim.
 
 /// Builds the card's snapshot off the main actor, again whenever a refresh, a log, the cycle settings or the
@@ -27,7 +27,7 @@ struct PulseMenstrualCardHost: View {
     @AppStorage(PulseCycleLog.Mode.storageKey) private var modeRaw = PulseCycleLog.Mode.menstruating.rawValue
     @AppStorage(PulseCycleLog.Contraception.storageKey) private var contraceptionRaw = PulseCycleLog.Contraception.none.rawValue
     @State private var today: CycleTodaySnapshot?
-    @State private var periodStarts: [String] = []
+    @State private var periodDays: [String] = []
 
     /// What the card reloads on: the Health tab card's key (`HealthCycleSlot`).
     private struct LoadKey: Equatable {
@@ -41,7 +41,7 @@ struct PulseMenstrualCardHost: View {
     var body: some View {
         Group {
             if enabled {
-                PulseMenstrualCard(today: today, periodStarts: periodStarts,
+                PulseMenstrualCard(today: today, periodDays: periodDays,
                                    shiftMarkers: app.cyclePhase?.shiftMarkers ?? []) { logging = true }
                     .equatable()
             }
@@ -65,8 +65,8 @@ struct PulseMenstrualCardHost: View {
         }) {
             today = s
         }
-        if let starts = await model.build({ builder, _ in await builder.homePeriodStarts() }) {
-            periodStarts = starts
+        if let days = await model.build({ builder, _ in await builder.homePeriodDays() }) {
+            periodDays = days
         }
     }
 }
@@ -74,15 +74,16 @@ struct PulseMenstrualCardHost: View {
 struct PulseMenstrualCard: View, Equatable {
     /// Where the cycle is today, as Menstrual Cycle Insights states it (`cycleToday`); nil while it builds.
     let today: CycleTodaySnapshot?
-    /// Logged period starts (`Repository.periodStarts`), oldest first.
-    let periodStarts: [String]
+    /// The logged period days (`PulseSnapshotBuilder.homePeriodDays`: a logged start or a day of period flow,
+    /// as the page's calendar marks them), oldest first.
+    let periodDays: [String]
     /// The temperature engine's detected shifts, for the dot strip's luteal days.
     let shiftMarkers: [CyclePhaseEngine.ShiftMarker]
     /// "+ LOG CYCLE": opens the sheet Home presents (`PulseMenstrualCardHost.logging`).
     let onLog: () -> Void
 
     static func == (lhs: PulseMenstrualCard, rhs: PulseMenstrualCard) -> Bool {
-        lhs.today == rhs.today && lhs.periodStarts == rhs.periodStarts && lhs.shiftMarkers == rhs.shiftMarkers
+        lhs.today == rhs.today && lhs.periodDays == rhs.periodDays && lhs.shiftMarkers == rhs.shiftMarkers
     }
 
     var body: some View {
@@ -110,7 +111,7 @@ struct PulseMenstrualCard: View, Equatable {
                     // Only where the page places today in a cycle of phases (not under hormonal contraception,
                     // nor in menopause), as the Health card's bar.
                     if let place = today?.place {
-                        PulseCycleDotStrip(dots: PulseCycleDotStrip.dots(place: place, periodStarts: periodStarts,
+                        PulseCycleDotStrip(dots: PulseCycleDotStrip.dots(place: place, periodDays: periodDays,
                                                                          shiftMarkers: shiftMarkers,
                                                                          todayKey: Repository.localDayKey(Date())))
                     }
@@ -156,15 +157,17 @@ struct PulseCycleDotStrip: View {
 
     /// The strip for today's place in the cycle (`CycleTodaySnapshot.place`: the card's own cycle day, the
     /// logs' or else the middle of the engine's range, in a cycle of the modelled length), mapped to
-    /// `todayKey`, so today's dot is on the day the headline states.
-    static func dots(place: CycleTodaySnapshot.Place, periodStarts: [String],
+    /// `todayKey`, so today's dot is on the day the headline states. `periodDays` are the logged period days,
+    /// oldest first (`PulseSnapshotBuilder.homePeriodDays`), so a day the page shows as a logged period day is
+    /// one here too.
+    static func dots(place: CycleTodaySnapshot.Place, periodDays: [String],
                      shiftMarkers: [CyclePhaseEngine.ShiftMarker], todayKey: String) -> [Dot] {
         let today = max(1, place.day)
         let count = max(place.length, today)
         let firstDay = PulseDisplay.dayKey(todayKey, offsetBy: 1 - today) ?? todayKey
-        let logged = Set(periodStarts)
-        // The latest logged start and temperature shift inside this cycle, if any.
-        let start = periodStarts.last { $0 >= firstDay && $0 <= todayKey }
+        let logged = Set(periodDays)
+        // The last logged period day and the latest temperature shift inside this cycle, if any.
+        let lastPeriodDay = periodDays.last { $0 >= firstDay && $0 <= todayKey }
         let shift = shiftMarkers.map(\.day).last { $0 >= firstDay && $0 <= todayKey }
         return (1...count).map { day -> Dot in
             if day == today { return .today }
@@ -172,8 +175,8 @@ struct PulseCycleDotStrip: View {
             guard let key = PulseDisplay.dayKey(todayKey, offsetBy: day - today) else { return .unknown }
             if logged.contains(key) { return .period }
             if let shift, key >= shift { return .luteal }
-            // After a logged start and before the shift (or with no shift yet): the follicular phase.
-            if let start, key > start, shift.map({ key < $0 }) ?? true { return .follicular }
+            // After the logged bleed and before the shift (or with no shift yet): the follicular phase.
+            if let lastPeriodDay, key > lastPeriodDay, shift.map({ key < $0 }) ?? true { return .follicular }
             return .unknown
         }
     }

@@ -48,10 +48,13 @@ extension PulseSnapshotBuilder {
                                   outlook: outlook, monitor: monitor, start: start, stress: stress)
     }
 
-    /// Logged period starts (oldest first) for the Menstrual card's dot strip. Not cached: logging a
+    /// The logged period days (oldest first) for the Menstrual card's dot strip: a logged period start or a
+    /// day of logged period flow (light or heavier), over the logs Menstrual Cycle Insights reads
+    /// (`Repository.cycleLogs`), the days its calendar marks as logged period days. Not cached: logging a
     /// period bumps `Repository.cycleTrackingSeq`, not `refreshSeq`, and the card re-reads on that.
-    func homePeriodStarts() async -> [String] {
-        await repo.periodStarts()
+    func homePeriodDays() async -> [String] {
+        let logs = await repo.cycleLogs()
+        return Set(logs.starts).union(logs.flow.filter { $0.value.isPeriod }.keys).sorted()
     }
 
     /// The opt-in auto-detected workout Home offers to save (§3.14 [Z]): the classic Today card's
