@@ -387,6 +387,16 @@ struct WeeklyDigestSnapshot: Equatable {
     let highlights: [Highlight]
     let behaviors: [Behavior]
     let insight: String
+    /// The plan block (§3.40 item 3): the active plan's week as Plan Overview measures it; nil without a
+    /// plan, in the monthly digest, and for a week before the plan began.
+    var plan: Plan?
+
+    /// The plan's name and its week, from Plan Overview's own resolver (`PulseSnapshotBuilder.planWeek`).
+    struct Plan: Equatable {
+        /// "BOOST FITNESS PLAN" as the cards print it.
+        let title: String
+        let week: PlanWeekSnapshot
+    }
 }
 #endif
 
