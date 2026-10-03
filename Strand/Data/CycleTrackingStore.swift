@@ -1,5 +1,6 @@
 import Foundation
 import WhoopStore
+import StrandAnalytics
 
 // MARK: - Menstrual cycle tracker storage
 //
@@ -12,6 +13,9 @@ import WhoopStore
 enum CycleTrackingStore {
     static let sourceId = "noop-cycle"
     static let periodStartKey = "period_start"
+    /// A day's logged flow (0 no flow, 1 spotting, 2 light, 3 medium, 4 heavy), which the iPhone's Menstrual
+    /// Cycle Insights writes under this same source (`PulseCycleLog.flowKey`). Android reads starts only.
+    static let periodFlowKey = "period_flow"
     static let loggedValue = 1.0
     static let earliestDay = "0000-01-01"
     static let latestDay = "9999-12-31"
@@ -46,6 +50,36 @@ extension Repository {
         _ = try? await store.deleteMetricSeriesPoint(deviceId: CycleTrackingStore.sourceId,
                                                       day: day,
                                                       key: CycleTrackingStore.periodStartKey)
+        noteCycleTrackingChanged()
+    }
+
+    /// Remove one logged start together with the period it opened: the period-flow days (light or
+    /// heavier) in the `MenstrualCycleModel.periodRunMaxDays` from `day` that no other logged start still
+    /// covers. Deleting the start alone left those days behind, flow with no period to belong to (the
+    /// cycle page hides such a day, but it would outlive the delete in every backup). Spotting, "no flow"
+    /// and symptoms stay: they are not the period's, and a symptom log stands on its own.
+    func deletePeriod(startingOn day: String) async {
+        guard let store = await storeHandle() else { return }
+        let maxRun = MenstrualCycleModel.periodRunMaxDays
+        let rows = (try? await store.metricSeries(
+            deviceId: CycleTrackingStore.sourceId,
+            keys: [CycleTrackingStore.periodStartKey, CycleTrackingStore.periodFlowKey],
+            from: MenstrualCycleModel.shift(day, by: -(maxRun - 1)) ?? day,
+            to: MenstrualCycleModel.shift(day, by: maxRun - 1) ?? day)) ?? []
+        _ = try? await store.deleteMetricSeriesPoint(deviceId: CycleTrackingStore.sourceId, day: day,
+                                                      key: CycleTrackingStore.periodStartKey)
+        let otherStarts = rows.filter {
+            $0.key == CycleTrackingStore.periodStartKey && $0.value >= CycleTrackingStore.loggedValue && $0.day != day
+        }.map(\.day)
+        func within(_ start: String, _ flowDay: String) -> Bool {
+            start <= flowDay && (MenstrualCycleModel.days(from: start, to: flowDay) ?? .max) < maxRun
+        }
+        for row in rows where row.key == CycleTrackingStore.periodFlowKey && within(day, row.day) {
+            guard MenstrualCycleModel.Flow(rawValue: Int(row.value.rounded()))?.isPeriod == true,
+                  !otherStarts.contains(where: { within($0, row.day) }) else { continue }
+            _ = try? await store.deleteMetricSeriesPoint(deviceId: CycleTrackingStore.sourceId, day: row.day,
+                                                          key: CycleTrackingStore.periodFlowKey)
+        }
         noteCycleTrackingChanged()
     }
 
