@@ -82,6 +82,9 @@ struct PulseActivityForm: View {
     @State private var showsReclassify = false
     @State private var overlap: String?
     @State private var saving = false
+    /// The heart rate around the edited activity, for the scrubber [Z].
+    @State private var heartRate: [PulseTimeValue] = []
+    @ScaledMetric(relativeTo: .subheadline) private var pillSize: CGFloat = 15
 
     enum EditingField: Hashable { case start, end, location }
 
@@ -119,6 +122,10 @@ struct PulseActivityForm: View {
                         .padding(.bottom, 16)
                 }
                 activityRow
+                if !mode.isAdd && !isSleep && heartRate.count > 1 {
+                    PulseActivityScrubber(points: heartRate, start: $start, end: $end)
+                        .padding(.top, 22)
+                }
                 sectionHeader(String(localized: "Time"))
                     .padding(.top, 28)
                 timeRow(String(localized: "Start Time"), date: start, field: .start)
@@ -171,12 +178,15 @@ struct PulseActivityForm: View {
                             onClose: { overlap = nil })
                 .presentationBackground(.clear)
         }
+        .task { await loadHeartRate() }
         #if DEBUG
         .task {
             let args = CommandLine.arguments
             if args.contains("--activity-wheel") { editing = .end }
             if args.contains("--activity-invalid") { end = Date().addingTimeInterval(3600) }
             if args.contains("--activity-overlap") { await checkOverlapForDebug() }
+            if args.contains("--activity-reclassify") { showsReclassify = true }
+            if let sport = PulseActivityDebug.value("--activity-form-sport") { kind = PulseActivityCatalog.kind(named: sport) }
         }
         #endif
     }
@@ -195,6 +205,14 @@ struct PulseActivityForm: View {
         return false
     }
 
+    /// The heart rate around the row being edited (its own strap's), for the scrubber.
+    private func loadHeartRate() async {
+        guard let original = mode.original else { return }
+        if let points = await model.build(dayOffset: 0, { builder, _ in await builder.activityHeartRate(around: original) }) {
+            heartRate = points
+        }
+    }
+
     // MARK: Banner and activity row
 
     /// The info banner [Z]: what ZENO does with an added activity.
@@ -204,7 +222,7 @@ struct PulseActivityForm: View {
                 .font(.system(size: 15, weight: .semibold))
                 .padding(.top, 1)
                 .accessibilityHidden(true)
-            Text(String(localized: "ZENO scores what you add from your strap's heart rate over that time."))
+            Text(String(localized: "ZENO scores an activity you add from your strap's heart rate over that time."))
                 .pulseText(.body)
                 .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 0)
@@ -270,7 +288,7 @@ struct PulseActivityForm: View {
                 editing = editing == field ? nil : field
             } label: {
                 Text(Self.pillText(date))
-                    .font(PulseType.numeral(15))
+                    .font(PulseType.numeral(min(pillSize, 22)))
                     .foregroundStyle(editing == field ? Color.black : PulseTheme.textPrimary)
                     .padding(.horizontal, 10)
                     .frame(minHeight: 36)

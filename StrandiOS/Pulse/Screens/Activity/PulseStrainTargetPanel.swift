@@ -25,6 +25,7 @@ struct PulseStrainTargetPanel: View {
     @State private var page = 0
     @State private var drag: CGFloat = 0
     @State private var showsHelp = false
+    @ScaledMetric(relativeTo: .subheadline) private var titleSize: CGFloat = 14
 
     private var recommended: Double? { snapshot?.recommendedActivityStrain }
     private var available: Bool { recommended != nil }
@@ -126,7 +127,7 @@ struct PulseStrainTargetPanel: View {
 
     private var title: some View {
         Text(String(localized: "Strain Target"))
-            .font(.system(size: 14, weight: .bold))
+            .font(.system(size: min(titleSize, 19), weight: .bold))
             .tracking(1.4)
             .textCase(.uppercase)
             .foregroundStyle(Color.black)

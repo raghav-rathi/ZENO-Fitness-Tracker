@@ -146,6 +146,19 @@ extension PulseSnapshotBuilder {
             insight: insight)
     }
 
+    /// The heart rate of a row's own strap around it (half its length either side, at least 15 minutes,
+    /// never past now), bucketed for a chart: the Edit sheet's scrubber [Z].
+    func activityHeartRate(around row: WorkoutRow) async -> [PulseTimeValue] {
+        let pad = max(15 * 60, (row.endTs - row.startTs) / 2)
+        let now = Int(Date().timeIntervalSince1970)
+        let activeStrap = await repo.deviceId
+        let imported = await repo.importedReadIds
+        let ids = Repository.workoutHrDeviceIds(source: row.source, activeStrapId: activeStrap, importedIds: imported)
+        let samples = await repo.hrSamples(deviceIds: ids, from: row.startTs - pad, to: min(now, row.endTs + pad),
+                                           limit: 60_000)
+        return Self.displayPoints(samples)
+    }
+
     /// The same workout: its natural key (start and sport) and source.
     static func isSameWorkout(_ a: WorkoutRow, _ b: WorkoutRow) -> Bool {
         a.startTs == b.startTs && a.source == b.source && a.sport.caseInsensitiveCompare(b.sport) == .orderedSame

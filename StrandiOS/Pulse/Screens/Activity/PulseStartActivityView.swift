@@ -136,6 +136,7 @@ struct PulsePreStartView: View {
     @State private var customTarget: Double?
     @State private var panelExpanded = false
     @State private var locationAllowed = PulsePreStartView.locationAuthorized
+    @ScaledMetric(relativeTo: .footnote) private var trackRouteSize: CGFloat = 13
 
     private static var initialKind: PulseActivityKind {
         #if DEBUG
@@ -309,7 +310,7 @@ struct PulsePreStartView: View {
     private var trackRouteRow: some View {
         HStack(spacing: 10) {
             Text(String(localized: "Track Route"))
-                .font(.system(size: 13, weight: .medium))
+                .font(.system(size: min(trackRouteSize, 18), weight: .medium))
                 .tracking(0.6)
                 .foregroundStyle(showsMap ? Color.white.opacity(0.75) : PulseTheme.textSecondary)
             PulseLightToggle(isOn: $trackRoute, onKnob: PulseTheme.Activity.startCapsule,

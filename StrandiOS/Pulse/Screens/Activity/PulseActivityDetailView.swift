@@ -321,7 +321,8 @@ struct PulseActivityDetailView: View {
         PulseActivityHRChart(points: s.hr, window: s.start...s.end, span: s.chartSpan, color: color, scrub: $scrub)
             .padding(.horizontal, -PulseTheme.Layout.pageMargin)
             .overlay {
-                if !s.hasHeartRate {
+                // Without a Strain the headline already says why; an imported row with no heart rate says it here.
+                if !s.hasHeartRate && s.strain != nil {
                     Text(String(localized: "No heart rate was recorded during this activity."))
                         .pulseText(.body)
                         .foregroundStyle(PulseTheme.textSecondary)

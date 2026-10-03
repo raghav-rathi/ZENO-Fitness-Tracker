@@ -128,7 +128,7 @@ struct PulseActivityStatTile: View {
             }
         }
         .padding(16)
-        .frame(width: 162, height: 132, alignment: .topLeading)
+        .frame(width: 171, height: 128, alignment: .topLeading)
         .pulseCardBackground()
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(stat.title)
@@ -158,7 +158,7 @@ struct PulseActivityStatsRow: View {
                     .minimumScaleFactor(0.8)
             }
             ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: PulseTheme.Layout.gridGap) {
+                HStack(spacing: 10) {
                     ForEach(stats) { PulseActivityStatTile(stat: $0) }
                 }
                 .padding(.horizontal, PulseTheme.Layout.pageMargin)
@@ -256,11 +256,15 @@ struct PulseActivityZoneLegend: View {
                 Text(String(localized: "Typical range"))
                     .pulseText(.label)
                     .foregroundStyle(PulseTheme.textTertiary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
             }
             Spacer(minLength: 8)
             Text(String(localized: "Duration"))
                 .pulseText(.label)
                 .foregroundStyle(PulseTheme.textTertiary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
             Text(ActivityFormat.clock(seconds: duration))
                 .font(PulseType.numeral(13))
                 .foregroundStyle(PulseTheme.textPrimary)
@@ -553,6 +557,98 @@ struct PulseActivityRouteCard: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .combine)
+    }
+}
+
+// MARK: Edit scrubber [Z]
+
+/// The Edit sheet's heart-rate scrubber (§3.9 [Z]): the heart rate around the activity with two dashed
+/// handles for its start and end. Dragging a handle moves that time (it writes the same bindings the pills
+/// do), never closer than a minute to the other or past now.
+struct PulseActivityScrubber: View {
+    let points: [PulseTimeValue]
+    @Binding var start: Date
+    @Binding var end: Date
+
+    private var span: ClosedRange<Date> {
+        let dates = points.map(\.date)
+        let lo = min(dates.min() ?? start, start), hi = max(dates.max() ?? end, end)
+        return lo...max(hi, lo.addingTimeInterval(60))
+    }
+
+    private var domain: ClosedRange<Double> {
+        let values = points.compactMap(\.value)
+        guard let lo = values.min(), let hi = values.max() else { return 40...120 }
+        return (lo - 6)...(hi + 6)
+    }
+
+    var body: some View {
+        let span = self.span
+        let total = span.upperBound.timeIntervalSince(span.lowerBound)
+        VStack(alignment: .leading, spacing: 8) {
+            GeometryReader { geo in
+                let x = { (date: Date) -> CGFloat in geo.size.width * CGFloat(date.timeIntervalSince(span.lowerBound) / total) }
+                ZStack(alignment: .topLeading) {
+                    Rectangle()
+                        .fill(Color.white.opacity(0.06))
+                        .frame(width: max(0, x(end) - x(start)), height: geo.size.height)
+                        .offset(x: x(start))
+                    Chart(points) { p in
+                        if let v = p.value {
+                            AreaMark(x: .value("Time", p.date), yStart: .value("Base", domain.lowerBound),
+                                     yEnd: .value("BPM", v))
+                                .foregroundStyle(LinearGradient(colors: [PulseTheme.strain.opacity(0.4), PulseTheme.strain.opacity(0)],
+                                                                startPoint: .top, endPoint: .bottom))
+                                .opacity((start...end).contains(p.date) ? 1 : 0.4)
+                            LineMark(x: .value("Time", p.date), y: .value("BPM", v))
+                                .foregroundStyle(PulseTheme.strain.opacity((start...end).contains(p.date) ? 1 : 0.45))
+                                .lineStyle(StrokeStyle(lineWidth: 1.4, lineCap: .round, lineJoin: .round))
+                        }
+                    }
+                    .chartXScale(domain: span)
+                    .chartYScale(domain: domain)
+                    .chartXAxis(.hidden)
+                    .chartYAxis(.hidden)
+                    handle(at: x(start), height: geo.size.height, label: String(localized: "Start")) { location in
+                        let date = span.lowerBound.addingTimeInterval(total * Double(max(0, min(1, location / geo.size.width))))
+                        start = min(date, end.addingTimeInterval(-60))
+                    }
+                    handle(at: x(end), height: geo.size.height, label: String(localized: "End")) { location in
+                        let date = span.lowerBound.addingTimeInterval(total * Double(max(0, min(1, location / geo.size.width))))
+                        end = min(Date(), max(date, start.addingTimeInterval(60)))
+                    }
+                }
+                .coordinateSpace(name: "pulse.scrubber")
+            }
+            .frame(height: 130)
+            Text(String(localized: "Drag the handles to trim the activity."))
+                .pulseText(.secondary)
+                .foregroundStyle(PulseTheme.textTertiary)
+        }
+        .accessibilityElement(children: .contain)
+    }
+
+    private func handle(at x: CGFloat, height: CGFloat, label: String, move: @escaping (CGFloat) -> Void) -> some View {
+        ZStack(alignment: .bottom) {
+            Path { p in
+                p.move(to: CGPoint(x: 22, y: 0))
+                p.addLine(to: CGPoint(x: 22, y: height - 10))
+            }
+            .stroke(Color.white.opacity(0.85), style: StrokeStyle(lineWidth: 1.2, dash: [3, 3]))
+            Circle()
+                .fill(Color.white)
+                .frame(width: 20, height: 20)
+                .shadow(color: .black.opacity(0.3), radius: 2, y: 1)
+        }
+        .frame(width: 44, height: height)
+        .contentShape(Rectangle())
+        .offset(x: x - 22)
+        .gesture(DragGesture(minimumDistance: 0, coordinateSpace: .named("pulse.scrubber")).onChanged { value in
+            move(value.location.x)
+        })
+        .accessibilityElement()
+        .accessibilityLabel(label)
+        .accessibilityHint(String(localized: "Drag to change the time"))
     }
 }
 #endif

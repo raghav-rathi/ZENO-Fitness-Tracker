@@ -15,7 +15,8 @@ import WhoopProtocol
 //                                 "latest", an index (0 = newest) or part of a sport name ("running")
 //   --activity-menu / --activity-edit / --activity-delete / --activity-export / --activity-scrub /
 //   --activity-zones-tab          that state of Activity Details once it has loaded
-//   --activity-wheel / --activity-invalid / --activity-overlap   that state of the Add / Edit form
+//   --activity-wheel / --activity-invalid / --activity-overlap / --activity-reclassify
+//                                 that state of the Add / Edit form; --activity-form-sport <name> picks one
 //   --activity-sport <name>       the pre-start screen's activity
 //   --activity-picker-open        the pre-start screen with its activity list dropped down
 //   --activity-panel ring|chart   the Strain Target panel expanded on that view
@@ -62,6 +63,17 @@ enum PulseActivityDebug {
             ("Weightlifting", ts(yesterday, 17.5), ts(yesterday, 18.33)),
             ("Sauna", ts(yesterday, 12.5), ts(yesterday, 12.85)),
         ]
+        // And one typed in for a time the strap has no heart rate for (the not-enough-HR variant).
+        if let threeDaysAgo = cal.date(byAdding: .day, value: -3, to: today) {
+            let from = ts(threeDaysAgo, 10), to = ts(threeDaysAgo, 10.75)
+            if !(await repo.workoutRows(days: 5)).contains(where: { $0.startTs == from && $0.sport == "Yoga" }) {
+                _ = try? await store.upsertWorkouts([WorkoutRow(startTs: from, endTs: to, sport: "Yoga", source: "manual",
+                                                                durationS: Double(to - from), energyKcal: nil,
+                                                                avgHr: nil, maxHr: nil, strain: nil, distanceM: nil,
+                                                                zonesJSON: nil, notes: nil, steps: nil)],
+                                                    deviceId: repo.deviceId)
+            }
+        }
         let existing = await repo.workoutRows(days: 3)
         let up = UserProfile(weightKg: profile.weightKg, heightCm: profile.heightCm, age: Double(profile.age),
                              sex: profile.sex)
