@@ -70,6 +70,9 @@ extension PulseTheme {
         static let rowValueSize: CGFloat = 15
         /// A stage row's radio: 78 px at 3x on deep-dives-2026/14 and 15 (the spec's 22 pt measures small).
         static let stageRadio: CGFloat = 26
+        /// SLEEP CONSISTENCY's night-to-night pitch, centred in the plot (§2.7; 146–147 px at 3x on
+        /// deep-dives-2026/03, 18 and 19c).
+        static let consistencyPitch: CGFloat = 49
     }
 }
 #endif

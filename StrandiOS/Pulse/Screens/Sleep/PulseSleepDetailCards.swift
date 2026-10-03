@@ -197,13 +197,23 @@ struct PulseSleepConsistencyCard: View {
 }
 
 /// Five nights on an inverted clock (earlier at the top): past nights grey, last night sleep blue with its
-/// bed and wake times in pills, and the dashed optimal bed and wake curves across the whole plot.
+/// bed and wake times in pills, and the dashed optimal bed and wake curves across the whole plot. The nights
+/// sit on a fixed 49 pt pitch centred in the plot, empty plot either side, as WHOOP spaces them.
 struct PulseSleepConsistencyChart: View {
     let card: SleepConsistencyCard
+
+    /// The plot's width, measured (padding the night scale does not change it).
+    @State private var plotWidth: CGFloat = 0
 
     /// The PLOT, 40 pt per four-hour gridline step as WHOOP spaces them (deep-dives-2026/03, 18); the
     /// weekday labels under it add their own height.
     private var plotHeight: CGFloat { CGFloat(max(card.lines.count - 1, 2)) * 40 }
+
+    /// The space left either side of the nights so they keep the pitch.
+    private var sidePadding: CGFloat {
+        let nights = CGFloat(max(card.nights.count, 1)) * PulseTheme.SleepDive.consistencyPitch
+        return max(0, (plotWidth - nights) / 2)
+    }
 
     var body: some View {
         // Positions are minutes after noon; the y axis is drawn negated so the evening sits on top.
@@ -216,7 +226,8 @@ struct PulseSleepConsistencyChart: View {
                     .cornerRadius(PulseTheme.SleepDive.rangeBarRadius)
             }
         }
-        .chartXScale(domain: card.nights.map(\.id))
+        .chartXScale(domain: card.nights.map(\.id),
+                     range: .plotDimension(startPadding: sidePadding, endPadding: sidePadding))
         .chartYScale(domain: domain)
         .chartYAxis {
             AxisMarks(position: .leading, values: card.lines.map { -$0.position }) { value in
@@ -251,6 +262,10 @@ struct PulseSleepConsistencyChart: View {
                     optimalCurve(proxy: proxy, plot: plot, keyPath: \.bed)
                     optimalCurve(proxy: proxy, plot: plot, keyPath: \.wake)
                     pills(proxy: proxy, plot: plot)
+                    Color.clear
+                        .onAppear { plotWidth = plot.width }
+                        .onChange(of: plot.width) { _, width in plotWidth = width }
+                        .accessibilityHidden(true)
                 }
             }
         }
