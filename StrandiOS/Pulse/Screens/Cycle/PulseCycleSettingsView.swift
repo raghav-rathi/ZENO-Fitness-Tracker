@@ -2,22 +2,30 @@
 import SwiftUI
 
 /// "‹ HORMONAL INSIGHTS" (WHOOP_UI_SPEC §3.24 "Settings"; help-center/11), pushed from the cycle page's ⚙.
-/// More › App Settings › Hormonal Insights opens the same route.
+/// More › App Settings › Hormonal Insights opens the same route: this is the one Hormonal Insights page.
 struct PulseCycleSettingsRoute: PulseScreenRoute {
     var view: some View { PulseCycleSettingsView() }
 }
 
 // The master switch is the classic cycle-awareness opt-in (`AppModel.cycleAwarenessKey`, default off: the
 // most sensitive health category stays manual-first), so turning it on here also starts the temperature
-// engine the classic Health card reads. MODE adds perimenopause and menopause [Z]; CONTRACEPTION TYPE
-// decides whether phases and predictions apply. WHOOP's "Show cycle overlay on Trends" is left out until a
-// Trends screen draws one: a switch that changes nothing would be a promise the app does not keep.
+// engine the classic Health card reads. Turning it on also clears the "not for me" choice Hide Metrics
+// keeps (`AppModel.cycleAwarenessHiddenKey`, which switches the insights off when set), so the cards
+// show wherever the switch says the insights are on. MODE adds perimenopause and menopause [Z];
+// CONTRACEPTION TYPE decides whether phases and predictions apply. WHOOP's "Show cycle overlay on Trends"
+// is not offered yet: the Trend View draws its cycle overlay whenever the insights are on.
+//
+// The insights are offered to the profiles they apply to (`ProfileStore.cycleAwarenessApplies`); another
+// profile sees why, and a way to Edit Profile, unless the insights are already on, so the switch that
+// turns them off never disappears. Deleting the logs stays reachable either way.
 //
 // Laid out as help-center/11: the switch as a bare row with its help text under it (no card), then one row
 // per section showing the current value with "›", which pushes the choices with their explanations.
 struct PulseCycleSettingsView: View {
     @EnvironmentObject private var repo: Repository
+    @EnvironmentObject private var profile: ProfileStore
     @AppStorage(AppModel.cycleAwarenessKey) private var enabled = false
+    @AppStorage(AppModel.cycleAwarenessHiddenKey) private var hidden = false
     @AppStorage(PulseCycleLog.Mode.storageKey) private var modeRaw = PulseCycleLog.Mode.menstruating.rawValue
     @AppStorage(PulseCycleLog.Contraception.storageKey) private var contraceptionRaw = PulseCycleLog.Contraception.none.rawValue
     @State private var confirmDelete = false
@@ -31,46 +39,21 @@ struct PulseCycleSettingsView: View {
     var body: some View {
         PulseScreenScaffold(title: String(localized: "Hormonal Insights")) {
             VStack(alignment: .leading, spacing: 0) {
-                HStack(spacing: 12) {
-                    Text(String(localized: "Hormonal Insights"))
-                        .pulseText(.cardTitle)
-                        .foregroundStyle(PulseTheme.textPrimary)
-                    Spacer(minLength: 8)
-                    Toggle(String(localized: "Hormonal Insights"), isOn: $enabled)
-                        .labelsHidden()
-                        .tint(PulseTheme.positive)
+                if profile.cycleAwarenessApplies || enabled {
+                    settings
+                } else {
+                    notOffered
                 }
-                .frame(minHeight: PulseTheme.Layout.minTapTarget)
-                .padding(.horizontal, 4)
-                Text(String(localized: "See how your cycle shapes your Recovery, Strain and Sleep, with predictions and coaching worked out from your own logs on this iPhone."))
-                    .pulseText(.subtitle)
-                    .foregroundStyle(PulseTheme.textSecondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .padding(.top, 8)
-                    .padding(.horizontal, 4)
-
-                PulseListSectionHeader(String(localized: "Mode"))
-                    .padding(.top, 28)
-                PulseLink(PulseCycleChoiceRoute(kind: .mode).route) {
-                    PulseCycleValueRow(title: mode.title, showsDrop: true)
-                }
-                .buttonStyle(PulsePressStyle())
-                .padding(.top, 14)
-
-                PulseListSectionHeader(String(localized: "Contraception type"))
-                    .padding(.top, 28)
-                PulseLink(PulseCycleChoiceRoute(kind: .contraception).route) {
-                    PulseCycleValueRow(title: contraception.title, showsDrop: false)
-                }
-                .buttonStyle(PulsePressStyle())
-                .padding(.top, 14)
 
                 privacyCard
                     .padding(.top, 32)
             }
         }
         .background(PulseCycleEngineRefresher(request: engineRefresh))
-        .onChange(of: enabled) { _, _ in engineRefresh += 1 }
+        .onChange(of: enabled) { _, on in
+            if on { hidden = false }
+            engineRefresh += 1
+        }
         .confirmationDialog(String(localized: "Delete all cycle data?"), isPresented: $confirmDelete,
                             titleVisibility: .visible) {
             Button(String(localized: "Delete all cycle data"), role: .destructive) {
@@ -83,6 +66,59 @@ struct PulseCycleSettingsView: View {
         } message: {
             Text(String(localized: "This permanently removes every period, flow and symptom you logged on this iPhone. Your strap's data is not changed."))
         }
+    }
+
+    /// The switch with its help text, then MODE and CONTRACEPTION TYPE.
+    @ViewBuilder
+    private var settings: some View {
+        HStack(spacing: 12) {
+            Text(String(localized: "Hormonal Insights"))
+                .pulseText(.cardTitle)
+                .foregroundStyle(PulseTheme.textPrimary)
+            Spacer(minLength: 8)
+            Toggle(String(localized: "Hormonal Insights"), isOn: $enabled)
+                .labelsHidden()
+                .tint(PulseTheme.positive)
+        }
+        .frame(minHeight: PulseTheme.Layout.minTapTarget)
+        .padding(.horizontal, 4)
+        Text(String(localized: "See how your cycle shapes your Recovery, Strain and Sleep, with predictions and coaching worked out from your own logs on this iPhone. Awareness only: not contraception, fertility tracking or a medical service."))
+            .pulseText(.subtitle)
+            .foregroundStyle(PulseTheme.textSecondary)
+            .fixedSize(horizontal: false, vertical: true)
+            .padding(.top, 8)
+            .padding(.horizontal, 4)
+
+        PulseListSectionHeader(String(localized: "Mode"))
+            .padding(.top, 28)
+        PulseLink(PulseCycleChoiceRoute(kind: .mode).route) {
+            PulseCycleValueRow(title: mode.title, showsDrop: true)
+        }
+        .buttonStyle(PulsePressStyle())
+        .padding(.top, 14)
+
+        PulseListSectionHeader(String(localized: "Contraception type"))
+            .padding(.top, 28)
+        PulseLink(PulseCycleChoiceRoute(kind: .contraception).route) {
+            PulseCycleValueRow(title: contraception.title, showsDrop: false)
+        }
+        .buttonStyle(PulsePressStyle())
+        .padding(.top, 14)
+    }
+
+    /// For a profile the insights do not apply to: why, and the way to Edit Profile.
+    @ViewBuilder
+    private var notOffered: some View {
+        Text(String(localized: "Hormonal Insights follow the menstrual cycle, so they are offered for female and non-binary profiles. Change your sex in Edit Profile."))
+            .pulseText(.subtitle)
+            .foregroundStyle(PulseTheme.textSecondary)
+            .fixedSize(horizontal: false, vertical: true)
+            .padding(.horizontal, 4)
+        PulseLink(PulseEditProfileRoute().route) {
+            PulseCycleValueRow(title: String(localized: "Edit profile"), showsDrop: false)
+        }
+        .buttonStyle(PulsePressStyle())
+        .padding(.top, 20)
     }
 
     private var privacyCard: some View {

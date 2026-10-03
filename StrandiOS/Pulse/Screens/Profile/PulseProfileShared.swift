@@ -7,7 +7,8 @@ import StrandAnalytics
 
 /// The wearer's name, the one profile field ZENO did not store before Edit Profile. Kept beside
 /// `ProfileStore`'s own `profile.*` keys so it can move into the store unchanged; local to this iPhone
-/// like the rest of the profile.
+/// like the rest of the profile. ONE key: Profile shows it, and Edit Profile and onboarding's "Welcome to
+/// ZENO!" step write it through `setName`.
 enum PulseProfileIdentity {
     static let nameKey = "profile.displayName"
 
@@ -15,6 +16,16 @@ enum PulseProfileIdentity {
     static var storedName: String? {
         let raw = UserDefaults.standard.string(forKey: nameKey)?.trimmingCharacters(in: .whitespacesAndNewlines)
         return (raw?.isEmpty ?? true) ? nil : raw
+    }
+
+    /// Store `name`, trimmed; a blank one removes the stored name.
+    static func setName(_ name: String) {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty {
+            UserDefaults.standard.removeObject(forKey: nameKey)
+        } else {
+            UserDefaults.standard.set(trimmed, forKey: nameKey)
+        }
     }
 }
 

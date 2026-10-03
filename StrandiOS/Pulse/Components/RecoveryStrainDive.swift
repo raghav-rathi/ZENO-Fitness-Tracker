@@ -6,9 +6,10 @@ import StrandAnalytics
 //
 // What the two rebuilt dives share and no other group draws: the contributor callout with its
 // "Today vs. last 30 days" legend, the Weekly Trends card, the behaviour chips, the points and confidence
-// chips of "What shaped it", the carried-score line under the bar, and the route helper that links a
-// metric to its Trend View only once the trends group has rebuilt it. Everything takes plain values; the
-// snapshots that feed them live in Screens/Recovery and Screens/Strain.
+// chips of "What shaped it", the carried-score line under the bar, the route helper that links a metric
+// to its Trend View only once the trends group has rebuilt it, and the bar's achievement chip with the
+// HOW IT'S CALCULATED row it moves the explainer to. Everything takes plain values; the snapshots that
+// feed them live in Screens/Recovery and Screens/Strain.
 
 // MARK: Contributor rows
 
@@ -223,6 +224,57 @@ enum PulseDiveRoutes {
     static func trend(_ metric: String, fallback: PulseRoute? = nil) -> PulseRoute? {
         let route = PulseRoute.trendView(metric: metric)
         return route.isRebuilt ? route : fallback
+    }
+}
+
+// MARK: Achievement chip
+
+/// The pillar's achievement chip in a dive's bar (§1.5 [Z]; deep-dives-2026/17b, 57, profile-community-2026/83):
+/// the running count of the pillar's cumulative badge, Green Light's green Recoveries on Recovery and Big
+/// Days' days of 14+ Strain on Strain, read from the snapshot the Achievements pages read
+/// (`ProfileSnapshot.badges`), so the chip and Achievement Details' "Total so far" are one number. It opens
+/// that badge's Achievement Details. The explainer it displaces moves to HOW IT'S CALCULATED at the foot of
+/// the page (`PulseDiveExplainerRow`); before the badge counts anything the bar keeps ⓘ.
+enum PulseDiveAchievement {
+    case recovery, strain
+
+    /// The badge the chip counts.
+    var rule: PulseAchievements.Rule {
+        switch self {
+        case .recovery: return .greenLight
+        case .strain: return .bigDays
+        }
+    }
+
+    /// The family's mini badge, as `PulseAchievementChip` draws the families.
+    private var symbol: String {
+        switch self {
+        case .recovery: return "shield.fill"
+        case .strain: return "diamond.fill"
+        }
+    }
+
+    /// The bar's right accessory: nothing while the profile snapshot loads, then the chip, or ⓘ while
+    /// the badge has nothing to count.
+    func trailing(_ profile: ProfileSnapshot?, open: @escaping (PulseRoute) -> Void) -> PulseNavTrailing {
+        guard let profile else { return .none }
+        guard let badge = profile.badges.first(where: { $0.rule == rule }), badge.count > 0 else {
+            return .info { open(.classic(.scoringGuide)) }
+        }
+        return .achievement(symbol: symbol, tint: ProfileArtPalette.family(badge.family)[0], count: badge.count) {
+            open(PulseAchievementDetailsRoute(badgeID: badge.id).route)
+        }
+    }
+}
+
+/// HOW IT'S CALCULATED › at the foot of a dive (§1.5 [Z]): the explainer the bar's ⓘ opens, kept
+/// reachable once the achievement chip takes the bar.
+struct PulseDiveExplainerRow: View {
+    var body: some View {
+        PulseLink(.classic(.scoringGuide)) {
+            PulseListRow(symbol: "info.circle", title: String(localized: "How it's calculated"))
+        }
+        .buttonStyle(PulsePressStyle())
     }
 }
 

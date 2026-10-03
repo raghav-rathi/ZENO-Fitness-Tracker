@@ -13,7 +13,8 @@ import SwiftUI
 ///   INTEGRATIONS        Apple Health and the data sources
 ///   JOURNAL             the Home journal card
 ///   NOTIFICATIONS       strap alerts, the morning brief, Lock Screen activities, automations
-///   HORMONAL INSIGHTS   cycle insights (profiles they apply to)
+///   HORMONAL INSIGHTS   the cycle group's settings page (`PulseCycleSettingsRoute`): the switch, mode and
+///                       contraception; offered to the profiles it applies to, and to anyone it is on for
 ///   HIDE METRICS        the switches that hide a feature's cards
 struct PulseAppSettingsView: View {
     /// Rebuilt: existing entry points open this screen rather than the classic Settings.
@@ -21,6 +22,7 @@ struct PulseAppSettingsView: View {
 
     @Environment(\.pulseNavigator) private var navigator
     @EnvironmentObject private var profile: ProfileStore
+    @AppStorage(AppModel.cycleAwarenessKey) private var cycleAwareness = false
 
     var body: some View {
         // health-more-2026/08, 08b: the first card starts ≈62 pt under the ✕'s centre.
@@ -47,9 +49,10 @@ struct PulseAppSettingsView: View {
             MoreButtonRow(symbol: "bell", title: String(localized: "Notifications")) {
                 navigator.open(PulseNotificationsRoute().route)
             }
-            if profile.cycleAwarenessApplies {
+            // Also while the insights are on for another profile, so the switch that turns them off stays here.
+            if profile.cycleAwarenessApplies || cycleAwareness {
                 MoreButtonRow(symbol: "circle.dotted.circle", title: String(localized: "Hormonal insights")) {
-                    navigator.open(PulseHormonalInsightsRoute().route)
+                    navigator.open(PulseCycleSettingsRoute().route)
                 }
             }
             MoreButtonRow(symbol: "eye.slash", title: String(localized: "Hide metrics")) {
@@ -84,7 +87,7 @@ struct PulseAppSettingsView: View {
             navigator.open(PulseAppleHealthRoute().route)
         case "journal-settings": navigator.open(PulseJournalSettingsRoute().route)
         case "notifications": navigator.open(PulseNotificationsRoute().route)
-        case "hormonal-insights": navigator.open(PulseHormonalInsightsRoute().route)
+        case "hormonal-insights": navigator.open(PulseCycleSettingsRoute().route)
         case "hide-metrics": navigator.open(PulseHideMetricsRoute().route)
         default: break
         }
@@ -132,10 +135,7 @@ struct PulseNotificationsRoute: PulseScreenRoute {
     var view: some View { PulseNotificationsView() }
 }
 
-/// App Settings › HORMONAL INSIGHTS.
-struct PulseHormonalInsightsRoute: PulseScreenRoute {
-    var view: some View { PulseHormonalInsightsView() }
-}
+// App Settings › HORMONAL INSIGHTS opens `PulseCycleSettingsRoute`, defined with its page in Screens/Cycle/.
 
 /// App Settings › HIDE METRICS.
 struct PulseHideMetricsRoute: PulseScreenRoute {

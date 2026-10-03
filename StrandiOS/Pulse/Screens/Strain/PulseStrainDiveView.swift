@@ -10,7 +10,8 @@ import StrandAnalytics
 /// Activity Time, steps, each against its 30-day average), the inline insight (the band's meaning, or where
 /// the day stands against its optimal range), Today's Activities, Weekly Trends (Strain, the two zone
 /// groups stacked by zone, steps, calories, each opening its Trend View once that is rebuilt; steps opens
-/// the Steps screen until then), then ZENO's day details.
+/// the Steps screen until then), then ZENO's day details and HOW IT'S CALCULATED. The bar carries the Big
+/// Days achievement chip (§1.5 [Z], `PulseDiveAchievement`).
 ///
 /// Owned by group "recovery-strain".
 struct PulseStrainDiveView: View {
@@ -21,6 +22,8 @@ struct PulseStrainDiveView: View {
     @Environment(PulseModel.self) private var model
     @Environment(\.pulseNavigator) private var navigator
     @State private var snapshot: StrainDiveSnapshot?
+    /// The badges, for the bar's achievement chip.
+    @State private var profile: ProfileSnapshot?
 
     /// The snapshot, only while it is for the day Home is on.
     private var current: StrainDiveSnapshot? {
@@ -30,7 +33,7 @@ struct PulseStrainDiveView: View {
 
     var body: some View {
         PulseScreenScaffold(title: PulseFormat.navDayTitle(offset: model.dayOffset, date: model.selectedLogicalDate),
-                            trailing: .info { navigator.open(.classic(.scoringGuide)) },
+                            trailing: PulseDiveAchievement.strain.trailing(profile, open: navigator.open),
                             coach: current.map { PulseCoachAccessory.pill(summary: $0.summary) } ?? .button,
                             coachSeed: current?.coachSeed,
                             spacing: 0,
@@ -46,6 +49,7 @@ struct PulseStrainDiveView: View {
                 snapshot = s
             }
         }
+        .profileSnapshot($profile)
     }
 }
 
@@ -85,6 +89,10 @@ private struct PulseStrainDiveContent: View {
 
             PulseStrainDayDetails(snapshot: s)
                 .padding(.top, PulseTheme.Layout.sectionGap)
+
+            PulseDiveExplainerRow()
+                .padding(.top, PulseTheme.Layout.stackGap)
+                .id("pulse.explainer")
         }
     }
 }

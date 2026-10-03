@@ -313,6 +313,44 @@ struct PulseCycleLogSheet: View {
         Task { await repo.setCycleSymptom(id, logged: on, day: target) }
     }
 }
+
+/// LOG CYCLE on a cycle card outside the page (the Health tab's): this page's own log sheet on today, so a
+/// period or a symptom logged from a card looks and is saved exactly as on Menstrual Cycle Insights. It
+/// reads the logs itself for how far back its pager reaches (the page's own rule,
+/// `PulseCycleDates.firstLogDay`), so a card opens it with nothing in hand. Each log it saves bumps
+/// `Repository.cycleTrackingSeq`, on which the card re-reads the logs; closing the sheet re-runs the
+/// temperature engine, as closing the page's sheet does, so the engine's estimate and its check of the
+/// logged period start follow the new log too.
+struct PulseCycleCardLogSheet: View {
+    @EnvironmentObject private var repo: Repository
+    @State private var today = Repository.localDayKey(Date())
+    /// The pager's first day once the logs are read; until then the reach of an empty log.
+    @State private var earliest: String?
+
+    var body: some View {
+        PulseCycleLogSheet(initial: PulseCycleLogTarget(day: today),
+                           earliestDay: earliest ?? PulseCycleDates.firstLogDay(PulseCycleLog.Logs(), today: today),
+                           today: today)
+            .task {
+                let logs = await repo.cycleLogs()
+                earliest = PulseCycleDates.firstLogDay(logs, today: today)
+            }
+            .background(PulseCycleEngineRefreshOnClose())
+    }
+}
+
+/// Re-runs the temperature engine (`AppModel.refreshV5Signals`) when the sheet holding it closes. A leaf,
+/// so the sheet itself never observes the whole `AppModel`.
+private struct PulseCycleEngineRefreshOnClose: View {
+    @EnvironmentObject private var appModel: AppModel
+
+    var body: some View {
+        Color.clear
+            .onDisappear { Task { await appModel.refreshV5Signals() } }
+            .accessibilityHidden(true)
+    }
+}
+
 /// Each log section's top in the list, by section id.
 private struct PulseCycleSectionTopKey: PreferenceKey {
     static var defaultValue: [String: CGFloat] = [:]

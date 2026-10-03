@@ -539,32 +539,66 @@ struct HealthRhythmCard: View {
 
 // MARK: Menstrual cycle (opt-in)
 
-/// The cycle card's slot: the one view on the tab that reads the cycle phase from `AppModel`, so the live
-/// heart rate it also publishes re-renders this and not the page. Like the classic card
-/// (`SkinTempCardsView`), it asks for a fresh read when there is no phase yet, so logged periods show
-/// without waiting for AppModel's next 30-minute pass.
+/// The cycle card's slot: the one view on the tab that reads the cycle from `AppModel` (the temperature
+/// engine's result), so the live heart rate it also publishes re-renders this and not the page. It builds
+/// the card from Menstrual Cycle Insights' own funnel (`PulseSnapshotBuilder.cycleToday`: the logs first, the
+/// engine only where they say nothing), again whenever a log, the engine, the mode or the contraception
+/// changes. Like the classic card (`SkinTempCardsView`), it asks for a fresh engine read when there is no
+/// phase yet, so the engine's estimate shows without waiting for AppModel's next 30-minute pass.
 struct HealthCycleSlot: View {
     @EnvironmentObject private var appModel: AppModel
+    @EnvironmentObject private var repo: Repository
+    @Environment(PulseModel.self) private var model
+    @AppStorage(PulseCycleLog.Mode.storageKey) private var modeRaw = PulseCycleLog.Mode.menstruating.rawValue
+    @AppStorage(PulseCycleLog.Contraception.storageKey) private var contraceptionRaw = PulseCycleLog.Contraception.none.rawValue
+    @State private var today: CycleTodaySnapshot?
+
+    private struct LoadKey: Equatable {
+        let health: String
+        let logSeq: Int
+        let mode: String
+        let contraception: String
+        let engine: CyclePhaseEngine.Result?
+    }
 
     var body: some View {
-        HealthCycleCard(result: appModel.cyclePhase)
+        HealthCycleCard(today: today)
             .equatable()
             .task {
                 if appModel.cyclePhase == nil { await appModel.refreshV5Signals() }
             }
+            .task(id: LoadKey(health: model.healthKey, logSeq: repo.cycleTrackingSeq, mode: modeRaw,
+                              contraception: contraceptionRaw, engine: appModel.cyclePhase)) {
+                await load()
+            }
+    }
+
+    private func load() async {
+        let day = Repository.localDayKey(Date())
+        let engine = appModel.cyclePhase
+        let mode = PulseCycleLog.Mode(rawValue: modeRaw) ?? .menstruating
+        let contraception = PulseCycleLog.Contraception(rawValue: contraceptionRaw) ?? .none
+        if let s = await model.build(dayOffset: 0, { builder, request in
+            await builder.cycleToday(request, today: day, engine: engine, mode: mode, contraception: contraception)
+        }) {
+            today = s
+        }
     }
 }
 
-/// MENSTRUAL CYCLE INSIGHTS (§3.20 item 6), when cycle awareness is on: the phase over "Day 21", a
-/// coral-to-lavender bar with today's white marker, and "+ LOG CYCLE". The card opens Menstrual Cycle
-/// Insights; LOG CYCLE opens the cycle tracker that logs today.
+/// MENSTRUAL CYCLE INSIGHTS (§3.20 item 6), when cycle awareness is on: the phase over the cycle day ("Day
+/// 21" in WHOOP's), a coral-to-lavender bar with today's white marker, and "+ LOG CYCLE". The label, the
+/// day and the marker are the page's own header (`CycleTodaySnapshot`), so the card says what Menstrual
+/// Cycle Insights says, and the bar shows only where the page draws phases (not under hormonal
+/// contraception). The card opens that page; LOG CYCLE opens its own log sheet on today
+/// (`PulseCycleCardLogSheet`), so a log made here is the same log, saved the same way.
 struct HealthCycleCard: View, Equatable {
-    let result: CyclePhaseEngine.Result?
+    let today: CycleTodaySnapshot?
 
-    @State private var showsTracker = false
+    @State private var showsLog = false
 
     static func == (lhs: HealthCycleCard, rhs: HealthCycleCard) -> Bool {
-        lhs.result == rhs.result
+        lhs.today == rhs.today
     }
 
     var body: some View {
@@ -575,14 +609,16 @@ struct HealthCycleCard: View, Equatable {
                         PulseCardTitle(String(localized: "Menstrual Cycle Insights"), accessory: .trailingChevron)
                         HStack(alignment: .center, spacing: 16) {
                             VStack(alignment: .leading, spacing: 4) {
-                                PulseLabel(phaseTitle)
-                                Text(dayText)
+                                if let title = today?.header.title {
+                                    PulseLabel(title)
+                                }
+                                Text(today?.headline ?? "--")
                                     .pulseText(.cardHeadline)
                                     .foregroundStyle(PulseTheme.textPrimary)
                             }
                             Spacer(minLength: 8)
-                            if let position {
-                                bar(position)
+                            if let place = today?.place {
+                                bar(place.fraction)
                                     .frame(width: 150)
                             }
                         }
@@ -591,39 +627,31 @@ struct HealthCycleCard: View, Equatable {
                 }
                 .buttonStyle(PulsePressStyle())
                 Button {
-                    showsTracker = true
+                    showsLog = true
                 } label: {
                     Label(String(localized: "Log cycle"), systemImage: "plus")
                 }
                 .buttonStyle(.pulseNested(fill: PulseTheme.Menstrual.logButton))
             }
         }
-        .sheet(isPresented: $showsTracker) {
-            HealthCycleTrackerSheet()
+        .sheet(isPresented: $showsLog) {
+            PulseCycleCardLogSheet()
         }
+        #if DEBUG
+        .onAppear { openDebugLogIfAsked() }
+        #endif
     }
 
-    private var phaseTitle: String {
-        switch result?.phase {
-        case .follicular?: return String(localized: "Follicular phase")
-        case .periOvulatory?: return String(localized: "Mid-cycle shift")
-        case .luteal?: return String(localized: "Luteal phase")
-        case .unknown?: return String(localized: "No clear pattern")
-        case .learning?, nil: return String(localized: "Learning your pattern")
-        }
-    }
+    #if DEBUG
+    @MainActor private static var openedDebugLog = false
 
-    private var dayText: String {
-        guard let lo = result?.cycleDayLow, let hi = result?.cycleDayHigh else { return String(localized: "Log a period to start") }
-        return lo == hi ? String(localized: "Day \(lo)") : String(localized: "Day \(lo)–\(hi)")
+    /// `--pulse-health-log-cycle`: open LOG CYCLE's sheet once, for captures.
+    private func openDebugLogIfAsked() {
+        guard !Self.openedDebugLog, CommandLine.arguments.contains("--pulse-health-log-cycle") else { return }
+        Self.openedDebugLog = true
+        showsLog = true
     }
-
-    /// Today's place in the cycle, 0…1.
-    private var position: Double? {
-        guard let lo = result?.cycleDayLow, let hi = result?.cycleDayHigh,
-              let length = result?.cycleLengthDays, length > 0 else { return nil }
-        return min(1, max(0, (Double(lo + hi) / 2) / Double(length)))
-    }
+    #endif
 
     private func bar(_ position: Double) -> some View {
         GeometryReader { geo in
@@ -640,21 +668,6 @@ struct HealthCycleCard: View, Equatable {
         }
         .frame(height: 16)
         .accessibilityHidden(true)
-    }
-}
-
-/// LOG CYCLE's sheet: the classic cycle tracker, reading the phase and curve from `AppModel` while open.
-private struct HealthCycleTrackerSheet: View {
-    @EnvironmentObject private var appModel: AppModel
-
-    var body: some View {
-        if let result = appModel.cyclePhase {
-            CycleTrackerView(result: result, curve: appModel.cycleCurve)
-        } else {
-            PulseSkeleton.cards([120, 200])
-                .padding(PulseTheme.Layout.pageMargin)
-                .task { await appModel.refreshV5Signals() }
-        }
     }
 }
 

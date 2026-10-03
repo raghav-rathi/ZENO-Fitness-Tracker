@@ -88,6 +88,15 @@ struct BehaviorImpactRowData: Equatable, Identifiable {
     }
 }
 
+/// What `BehaviorNames` needs besides the journal catalog to name behaviours exactly as Behavior Insights
+/// does: the imported WHOOP questions and, per identity, the most recent stored question. A snapshot that
+/// shows behaviours outside the page (the Recovery dive's chips, the Weekly Digest) carries it from the
+/// same build as its analysis.
+struct BehaviorNameSources: Equatable {
+    var imported: [String] = []
+    var questions: [String: String] = [:]
+}
+
 /// The Behavior Insights page.
 struct BehaviorInsightsSnapshot: Equatable {
     let seq: Int

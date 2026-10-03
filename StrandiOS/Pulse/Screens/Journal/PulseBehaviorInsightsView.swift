@@ -361,6 +361,15 @@ struct BehaviorNames {
     }
 }
 
+extension BehaviorNames {
+    /// Names for behaviours shown outside the page, from the sources their snapshot's build carried.
+    @MainActor
+    init(catalog: JournalCatalogStore, customTitles: [String: String], sources: BehaviorNameSources) {
+        self.init(catalog: catalog, imported: sources.imported, customTitles: customTitles,
+                  questions: sources.questions)
+    }
+}
+
 /// Behavior Details for one behaviour, pushed from Behavior Insights (§1.6: push from Insights).
 struct PulseBehaviorDetailsRoute: PulseScreenRoute {
     let identity: String

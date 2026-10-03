@@ -254,7 +254,10 @@ enum PulseDigestBuilder {
         let hours: PulseTrendSeries
         let zones13: PulseTrendSeries
         let zones45: PulseTrendSeries
-        let journal: [JournalEntry]
+        /// Behavior Insights' analysis and the answers it was built from, by identity
+        /// (`PulseSnapshotBuilder.behaviorData`).
+        let behaviorAnalysis: BehaviorImpact.Analysis
+        let behaviorAnswers: [String: BehaviorImpact.Answers]
     }
 
     static func digest(seq: Int, today: String, mode: WeeklyDigestSnapshot.Mode, page requested: Int,
@@ -294,7 +297,7 @@ enum PulseDigestBuilder {
             hasData: hasData, pillars: pillars,
             note: period.strainSkipsToday ? String(localized: "Strain leaves out today until it ends") : nil,
             cards: cards, highlights: highlights(inputs, window: w),
-            behaviors: behaviors(inputs, window: w, today: today),
+            behaviors: behaviors(inputs, window: w),
             insight: insight(period, mode: mode, inputs: inputs))
     }
 
@@ -359,36 +362,38 @@ enum PulseDigestBuilder {
     }
 
     /// Journal behaviours answered "yes" in the period, most logged first, each with its effect on Recovery
-    /// over the last 90 days (`EffectRanker`, the "What moves you" ranker: lag-aware, 5 yes and 5 no days,
-    /// false-discovery corrected).
-    private static func behaviors(_ inputs: DigestInputs, window w: PulseTrendMath.Window,
-                                  today: String) -> [WeeklyDigestSnapshot.Behavior] {
+    /// exactly as Behavior Insights shows it: the page's own analysis of the last 90 days (behaviours folded
+    /// by identity, one corrected family), its colour rule and its bar scale, so a behaviour reads the same
+    /// here and there. The auto-tracked behaviours are not logged, so they stay on the page.
+    private static func behaviors(_ inputs: DigestInputs, window w: PulseTrendMath.Window) -> [WeeklyDigestSnapshot.Behavior] {
         var loggedInPeriod: [String: Int] = [:]
-        for e in inputs.journal where e.answeredYes && w.contains(e.day) {
-            loggedInPeriod[e.question, default: 0] += 1
+        for (identity, answers) in inputs.behaviorAnswers where PulseBehaviorLibrary.Auto(rawValue: identity) == nil {
+            let days = answers.yes.filter { w.contains($0) }.count
+            if days > 0 { loggedInPeriod[identity] = days }
         }
         guard !loggedInPeriod.isEmpty else { return [] }
-        let from = PulseTrendMath.addDays(today, -89)
-        var yes: [String: Set<String>] = [:]
-        var no: [String: Set<String>] = [:]
-        for e in inputs.journal where e.day >= from && e.day <= today {
-            if e.answeredYes { yes[e.question, default: []].insert(e.day) } else { no[e.question, default: []].insert(e.day) }
-        }
-        var recovery: [String: Double] = [:]
-        for p in inputs.recovery.points where p.day >= from { recovery[p.day] = p.value }
-        let label = PulseScore.recovery.displayName
-        let ranked = EffectRanker.rankAll(behaviors: yes, controls: no, outcomes: [label: recovery])[label] ?? []
-        let byBehavior = Dictionary(ranked.map { ($0.behavior, $0) }, uniquingKeysWith: { first, _ in first })
-        return loggedInPeriod.sorted { $0.value != $1.value ? $0.value > $1.value : $0.key < $1.key }.prefix(6).map { question, count in
+        let analysis = inputs.behaviorAnalysis
+        let rows = Dictionary((analysis.unlocked + analysis.locked).map { ($0.behavior, $0) },
+                              uniquingKeysWith: { first, _ in first })
+        let scale = BehaviorImpact.barScale(analysis.unlocked.compactMap(\.impactPercent))
+        return loggedInPeriod.sorted { $0.value != $1.value ? $0.value > $1.value : $0.key < $1.key }.prefix(6).map { identity, count in
             let logged = count == 1 ? String(localized: "Logged 1 day") : String(localized: "Logged \(count) days")
-            guard let r = byBehavior[question], let pct = r.effect.pctChange else {
-                return .init(id: question, title: question, logged: logged, effect: nil, fraction: 0, valueText: "",
-                             note: String(localized: "Needs 5 yes and 5 no days in 90 to measure"))
+            guard let row = rows[identity], let impact = row.impactPercent else {
+                let note: String
+                switch rows[identity]?.lock {
+                case .calibrating?:
+                    note = String(localized: "Measured once you have \(BehaviorImpact.recoveriesToUnlock) Recoveries")
+                case .needsRecoveryDays?:
+                    note = String(localized: "Not enough of these days have a Recovery yet")
+                default:
+                    note = String(localized: "Needs 5 yes and 5 no days in 90 to measure")
+                }
+                return .init(id: identity, logged: logged, effect: nil, fraction: 0, valueText: "", note: note)
             }
-            let effect: PulseImpactBar.Effect = r.effect.significant ? (r.effect.delta > 0 ? .helps : .hurts) : .notSignificant
-            let n = Int(pct.rounded())
-            return .init(id: question, title: question, logged: logged, effect: effect,
-                         fraction: max(-1, min(1, pct / 20)), valueText: n > 0 ? "+\(n)%" : "\(n)%", note: nil)
+            return .init(id: identity, logged: logged,
+                         effect: BehaviorImpactFormat.effect(impact: impact, significant: row.isSignificant),
+                         fraction: BehaviorImpactFormat.fraction(impact, scale: scale),
+                         valueText: BehaviorImpactFormat.text(impact), note: nil)
         }
     }
 

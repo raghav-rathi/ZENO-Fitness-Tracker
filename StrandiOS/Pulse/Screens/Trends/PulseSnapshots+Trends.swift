@@ -362,11 +362,12 @@ struct WeeklyDigestSnapshot: Equatable {
         let unit: String
     }
 
-    /// A journal behaviour logged in the period, with its effect on Recovery over the last 90 days.
+    /// A journal behaviour logged in the period, with its effect on Recovery over the last 90 days as
+    /// Behavior Insights shows it.
     struct Behavior: Equatable, Identifiable {
-        /// The journal question.
+        /// The behaviour's identity (`PulseBehaviorLibrary.identity(for:)`), which `behaviorNames` names as
+        /// the page does.
         let id: String
-        let title: String
         /// "Logged 3 days".
         let logged: String
         /// nil while there are too few yes / no days to measure it.
@@ -387,6 +388,18 @@ struct WeeklyDigestSnapshot: Equatable {
     let highlights: [Highlight]
     let behaviors: [Behavior]
     let insight: String
+    /// The plan block (§3.40 item 3): the active plan's week as Plan Overview measures it; nil without a
+    /// plan, in the monthly digest, and for a week before the plan began.
+    var plan: Plan?
+    /// What the behaviours are named from, as Behavior Insights names them (`BehaviorNames`).
+    var behaviorNames = BehaviorNameSources()
+
+    /// The plan's name and its week, from Plan Overview's own resolver (`PulseSnapshotBuilder.planWeek`).
+    struct Plan: Equatable {
+        /// "BOOST FITNESS PLAN" as the cards print it.
+        let title: String
+        let week: PlanWeekSnapshot
+    }
 }
 #endif
 

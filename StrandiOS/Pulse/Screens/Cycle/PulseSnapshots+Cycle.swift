@@ -39,6 +39,8 @@ struct CycleInsightsSnapshot: Equatable {
     struct Header: Equatable {
         /// "Cycle Day 3", "Cycle Day 18–22", or nil ("No Phase Predicted", "Menopause").
         let cycleDay: String?
+        /// The same day as a card prints it under its label (§3.20 item 6, §3.1 item 8e): "Day 3", "Day 18–22".
+        let cardDay: String?
         let phase: PulseCyclePhase?
         /// "Menstrual Phase", "No Phase Predicted", "Menopause"; nil where phases do not apply (hormonal
         /// contraception), leaving the cycle day alone.
@@ -190,6 +192,31 @@ struct CycleInsightsSnapshot: Equatable {
         let id: String
         let title: String
         let detail: String
+    }
+}
+
+/// Where the cycle is today, as Menstrual Cycle Insights' header states it, for a card outside the page (the
+/// Health tab's MENSTRUAL CYCLE INSIGHTS), built by the page's own funnel (`PulseSnapshotBuilder.cycleToday`)
+/// so the card and the page it opens state one cycle day and one phase.
+struct CycleTodaySnapshot: Equatable {
+    let seq: Int
+    /// The page's header: "Cycle Day 3" with "Menstrual Phase", "No Phase Predicted", "Menopause".
+    let header: CycleInsightsSnapshot.Header
+    /// The line under the card's label: the header's cycle day as a card prints it ("Day 3"), or what there
+    /// is instead ("Log a period to start").
+    let headline: String
+    /// Today's place in the cycle, for a card that draws the cycle's phases; nil without a cycle day to place,
+    /// and where phases do not apply (menopause, hormonal contraception), as the page then draws none.
+    let place: Place?
+
+    /// Today's cycle day (the middle of the temperature engine's range where the engine is the voice) in a
+    /// cycle of `length` days (the logs' modelled length, or the engine's).
+    struct Place: Equatable {
+        let day: Int
+        let length: Int
+
+        /// 0…1 along the cycle: where a bar puts today's marker.
+        var fraction: Double { min(1, max(0, Double(day) / Double(max(1, length)))) }
     }
 }
 #endif

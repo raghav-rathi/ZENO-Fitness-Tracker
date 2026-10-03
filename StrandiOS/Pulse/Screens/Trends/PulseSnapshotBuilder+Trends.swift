@@ -88,9 +88,11 @@ extension PulseSnapshotBuilder {
 
     // MARK: Weekly Digest
 
-    /// The Weekly Digest (or the monthly one) `page` periods back from the current one.
+    /// The Weekly Digest (or the monthly one) `page` periods back from the current one. With an active
+    /// `plan`, a week the plan covered carries the plan's week, measured by Plan Overview's own resolver
+    /// (`planWeek`) for that same Monday, so the digest and Plan Overview print the same numbers.
     func weeklyDigest(_ r: PulseRequest, mode: WeeklyDigestSnapshot.Mode, page: Int,
-                      units: PulseTrendUnits) async -> WeeklyDigestSnapshot? {
+                      units: PulseTrendUnits, plan: PulsePlan? = nil) async -> WeeklyDigestSnapshot? {
         begin(r.seq)
         let sleep = await trendSeries(r, metric: .sleepPerformance, units: units)
         let recovery = await trendSeries(r, metric: .recovery, units: units)
@@ -99,13 +101,27 @@ extension PulseSnapshotBuilder {
         let zones13 = await trendSeries(r, metric: .zones13, units: units)
         let zones45 = await trendSeries(r, metric: .zones45, units: units)
         guard isCurrent(r) else { return nil }
-        // Not cached: logging a journal entry does not bump the refresh, and this is one indexed read.
-        let journal = await repo.journalEntries(days: 400)
+        // The behaviours read Behavior Insights' own analysis (fresh each build: logging a journal entry
+        // does not bump the refresh), so "Behaviors this week" says what that page says.
+        guard let insights = await behaviorData(r) else { return nil }
+        let imported = await importedJournalQuestions()
         guard isCurrent(r) else { return nil }
-        return PulseDigestBuilder.digest(
+        guard var digest = PulseDigestBuilder.digest(
             seq: r.seq, today: r.day.key, mode: mode, page: page,
             inputs: .init(sleep: sleep, recovery: recovery, strain: strain, hours: hours, zones13: zones13,
-                          zones45: zones45, journal: journal))
+                          zones45: zones45, behaviorAnalysis: insights.analysis,
+                          behaviorAnswers: insights.answers)) else { return nil }
+        digest.behaviorNames = BehaviorNameSources(imported: imported, questions: insights.questions)
+        // The digest's week and the plan's are both Monday to Sunday around the same day; the block shows
+        // only when they are the same week and the plan had begun by its Sunday.
+        if let plan, mode == .week,
+           let window = PulseTrendMath.weekWindow(containing: r.day.key, weeksBack: digest.page),
+           plan.startedOn <= window.end,
+           let week = await planWeek(r, plan: plan, weekOffset: -digest.page), week.weekStart == window.start {
+            digest.plan = WeeklyDigestSnapshot.Plan(title: plan.cardTitle, week: week)
+        }
+        guard isCurrent(r) else { return nil }
+        return digest
     }
 
     // MARK: Training Load

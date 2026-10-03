@@ -8,9 +8,10 @@ import StrandAnalytics
 /// the band colour, the contributor callout (heart rate variability, resting heart rate, respiratory rate
 /// and sleep performance against their 30-day averages), BEHAVIOR INSIGHTS (the day's behaviour chips, or
 /// the compact row), Weekly Trends (Recovery, HRV, resting heart rate, respiratory rate, each opening its
-/// Trend View once that is rebuilt), then ZENO's "What shaped it". The inline insight card WHOOP dropped
-/// by Sep 2026 is gone while the floating coach summary pill carries the summary; with the Coach off, the
-/// same sentence sits in a plain card under the callout (§3.4 item 4 [Z]).
+/// Trend View once that is rebuilt), then ZENO's "What shaped it" and HOW IT'S CALCULATED. The bar carries
+/// the Green Light achievement chip (§1.5 [Z], `PulseDiveAchievement`). The inline insight card WHOOP
+/// dropped by Sep 2026 is gone while the floating coach summary pill carries the summary; with the Coach
+/// off, the same sentence sits in a plain card under the callout (§3.4 item 4 [Z]).
 ///
 /// Owned by group "recovery-strain".
 struct PulseRecoveryDiveView: View {
@@ -21,6 +22,8 @@ struct PulseRecoveryDiveView: View {
     @Environment(PulseModel.self) private var model
     @Environment(\.pulseNavigator) private var navigator
     @State private var snapshot: RecoveryDiveSnapshot?
+    /// The badges, for the bar's achievement chip.
+    @State private var profile: ProfileSnapshot?
 
     /// The snapshot, only while it is for the day Home is on (a day change shows the skeleton, never the
     /// previous day's figures under the new day's title).
@@ -31,7 +34,7 @@ struct PulseRecoveryDiveView: View {
 
     var body: some View {
         PulseScreenScaffold(title: PulseFormat.navDayTitle(offset: model.dayOffset, date: model.selectedLogicalDate),
-                            trailing: .info { navigator.open(.classic(.scoringGuide)) },
+                            trailing: PulseDiveAchievement.recovery.trailing(profile, open: navigator.open),
                             coach: current.map { PulseCoachAccessory.pill(summary: $0.summary) } ?? .button,
                             coachSeed: current?.coachSeed,
                             spacing: 0,
@@ -47,6 +50,7 @@ struct PulseRecoveryDiveView: View {
                 snapshot = s
             }
         }
+        .profileSnapshot($profile)
     }
 }
 
@@ -100,7 +104,7 @@ private struct PulseRecoveryDiveContent: View {
                     .padding(.top, PulseTheme.Layout.stackGap)
             }
 
-            PulseRecoveryBehaviorCard(behaviors: s.behaviors)
+            PulseRecoveryBehaviorCard(behaviors: s.behaviors, sources: s.behaviorNames)
                 .padding(.top, PulseTheme.Layout.stackGap)
                 .id("pulse.behavior")
 
@@ -113,6 +117,10 @@ private struct PulseRecoveryDiveContent: View {
                     .padding(.top, PulseTheme.Layout.stackGap)
                     .id("pulse.shaped")
             }
+
+            PulseDiveExplainerRow()
+                .padding(.top, PulseTheme.Layout.stackGap)
+                .id("pulse.explainer")
         }
     }
 }
@@ -157,19 +165,22 @@ private struct PulseRecoveryCalibrationCard: View {
 /// BEHAVIOR INSIGHTS (§3.4 item 5): the expanded card with the day's behaviour chips when at least one
 /// logged behaviour has a measurable effect on Recovery (deep-dives-2026/17b; grey chips may sit beside
 /// it), else the compact row (deep-dives-2026/17c), so the card never says behaviours "may have affected"
-/// the score above chips that all read "no clear effect". Both open Behavior Insights.
+/// the score above chips that all read "no clear effect". The card opens Behavior Insights; a chip, named
+/// as the page names it (`BehaviorNames`), opens its behaviour's Behavior Details.
 private struct PulseRecoveryBehaviorCard: View {
     let behaviors: [RecoveryDiveSnapshot.Behavior]
+    let sources: BehaviorNameSources
+
+    @StateObject private var catalog = JournalCatalogStore()
+    @State private var local = PulseJournalLocalStore.shared
 
     var body: some View {
-        PulseLink(PulseRoute.behaviorInsights.forExistingEntryPoint) {
-            if behaviors.contains(where: { $0.effect != .neutral }) {
-                expanded
-            } else {
-                compact
-            }
+        if behaviors.contains(where: { $0.effect != .neutral }) {
+            expanded
+        } else {
+            PulseLink(PulseRoute.behaviorInsights.forExistingEntryPoint) { compact }
+                .buttonStyle(PulsePressStyle())
         }
-        .buttonStyle(PulsePressStyle())
     }
 
     /// The outlined bulb, at the subsection title's size (light, as the captures draw it).
@@ -208,29 +219,42 @@ private struct PulseRecoveryBehaviorCard: View {
 
     /// Measured on deep-dives-2026/17b (the same 402 pt screen): the title's caps 8 pt tall and centred
     /// 26 pt under the card's top, the 13 pt body's lines 17.5 pt apart from 57 pt down, the chips 15 pt
-    /// under it.
+    /// under it. The title and the sentence open Behavior Insights, each chip its own Behavior Details.
     private var expanded: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 9) {
-                bulb
-                    .frame(width: 19, height: 20)
-                PulseWordWrapText(String(localized: "Behavior Insights"), style: .cardTitle)
-                    .foregroundStyle(PulseTheme.textPrimary)
-                    .accessibilityAddTraits(.isHeader)
-                Spacer(minLength: 8)
-                PulseChevron()
+        let names = BehaviorNames(catalog: catalog, customTitles: local.customTitles, sources: sources)
+        return VStack(alignment: .leading, spacing: 0) {
+            PulseLink(PulseRoute.behaviorInsights.forExistingEntryPoint) {
+                VStack(alignment: .leading, spacing: 0) {
+                    HStack(spacing: 9) {
+                        bulb
+                            .frame(width: 19, height: 20)
+                        PulseWordWrapText(String(localized: "Behavior Insights"), style: .cardTitle)
+                            .foregroundStyle(PulseTheme.textPrimary)
+                            .accessibilityAddTraits(.isHeader)
+                        Spacer(minLength: 8)
+                        PulseChevron()
+                    }
+                    Text(String(localized: "Some of your behaviors from yesterday may have affected your Recovery score today."))
+                        .pulseText(.rowSubline)
+                        .lineSpacing(2)
+                        .foregroundStyle(PulseTheme.subtitleRowText)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.top, 13)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
             }
-            Text(String(localized: "Some of your behaviors from yesterday may have affected your Recovery score today."))
-                .pulseText(.rowSubline)
-                .lineSpacing(2)
-                .foregroundStyle(PulseTheme.subtitleRowText)
-                .fixedSize(horizontal: false, vertical: true)
-                .padding(.top, 13)
+            .buttonStyle(PulsePressStyle())
             PulseChipFlow(spacing: 8, lineSpacing: 8) {
                 ForEach(behaviors) { behavior in
-                    PulseBehaviorChip(title: behavior.title, effect: behavior.effect)
-                        .accessibilityElement(children: .ignore)
-                        .accessibilityLabel(behavior.spoken)
+                    let title = names.title(behavior.id)
+                    PulseLink(PulseBehaviorDetailsRoute(identity: behavior.id).route) {
+                        PulseBehaviorChip(title: title, effect: behavior.effect)
+                            .accessibilityElement(children: .ignore)
+                            .accessibilityLabel(Self.spoken(title, behavior.effect))
+                    }
+                    .buttonStyle(PulsePressStyle())
+                    .accessibilityHint(String(localized: "Opens Behavior Details"))
                 }
             }
             .padding(.top, 15)
@@ -238,7 +262,15 @@ private struct PulseRecoveryBehaviorCard: View {
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
         .pulseCardBackground()
-        .contentShape(Rectangle())
+    }
+
+    /// A chip in words: its name and the effect Behavior Insights reads for it.
+    private static func spoken(_ title: String, _ effect: PulseBehaviorChip.Effect) -> String {
+        switch effect {
+        case .helps: return String(localized: "\(title), has gone with a higher Recovery")
+        case .hurts: return String(localized: "\(title), has gone with a lower Recovery")
+        case .neutral: return String(localized: "\(title), no clear effect on Recovery")
+        }
     }
 }
 

@@ -1,5 +1,6 @@
 #if os(iOS)
 import SwiftUI
+import StrandAnalytics
 
 // MARK: - Journal and Plan components (WHOOP_UI_SPEC §2.6 items 21, 27, 28, 33; §3.17–3.19)
 //
@@ -461,9 +462,15 @@ enum BehaviorImpactFormat {
 
     static func text(_ impact: Double) -> String { number(impact) + "%" }
 
+    /// A row's colour: helps or hurts only when significant and printed as a whole percent other than 0.
+    /// The rule is `RecoveryBehaviorChips.verdict`, which the Recovery dive's chips read too, so a chip and
+    /// this page can never colour one behaviour differently.
     static func effect(impact: Double?, significant: Bool) -> PulseImpactBar.Effect {
-        guard let impact, significant, Int(impact.rounded()) != 0 else { return .notSignificant }
-        return impact > 0 ? .helps : .hurts
+        switch RecoveryBehaviorChips.verdict(impactPercent: impact, significant: significant) {
+        case .helps: return .helps
+        case .hurts: return .hurts
+        case .notSignificant: return .notSignificant
+        }
     }
 
     static func color(_ effect: PulseImpactBar.Effect) -> Color {

@@ -8,14 +8,17 @@ import StrandAnalytics
 ///   1. "‹ WEEKLY DIGEST", the range pager ("‹ SEP 22 - SEP 28 ›") and W | M for the monthly digest;
 ///   2. Sleep, Recovery and Strain averages as Home's three dials, each with its chip against the period
 ///      before (the THIS WEEK card on the Trends tab reads the same week);
-///   3. the deep dives' Weekly Trends cards for RECOVERY, STRAIN and SLEEP PERFORMANCE;
-///   4. Highlights: best Recovery, max Strain, longest sleep, most time in HR zones, each with its day;
-///   5. Behaviors this week: the journal behaviours logged, each with its effect on Recovery over 90 days;
-///   6. a plain summary (local text, not the Coach's), ASK COACH when the Coach is on, and EXPORT REPORT as
+///   3. the plan block (§3.40 item 3), on a week the active plan covered: "44% COMPLETE" over its bar and
+///      the goals with their rings (the My Week Recap layout), measured by Plan Overview's own resolver for
+///      the same Monday, so the two never disagree; it opens Plan Overview;
+///   4. the deep dives' Weekly Trends cards for RECOVERY, STRAIN and SLEEP PERFORMANCE;
+///   5. Highlights: best Recovery, max Strain, longest sleep, most time in HR zones, each with its day;
+///   6. Behaviors this week: the journal behaviours logged, each with its effect on Recovery over 90 days
+///      as Behavior Insights shows it (the page's analysis, colours and names);
+///   7. a plain summary (local text, not the Coach's), ASK COACH when the Coach is on, and EXPORT REPORT as
 ///      a nested button inside that card (§3.40 item 7), once the period has readings to export.
 ///
-/// The plan block (§3.40 item 3) appears once Weekly Plan data exists; ZENO has none yet. Owned by group
-/// "trends".
+/// Owned by group "trends".
 ///
 /// TODO(cycle-coach): §3.40 item 7 puts the Coach's own summary in the insight card when a provider is
 /// configured. It is the local template sentence today, like the dives' summary pills; the cycle-coach
@@ -26,6 +29,7 @@ struct PulseWeeklyDigestView: View {
     static let isRebuilt = true
 
     @Environment(PulseModel.self) private var model
+    @State private var plans = PulsePlanStore.shared
     @State private var mode: WeeklyDigestSnapshot.Mode = .week
     @State private var page = 0
     @State private var snapshot: WeeklyDigestSnapshot?
@@ -79,15 +83,19 @@ struct PulseWeeklyDigestView: View {
                 .accessibilityLabel(String(localized: "Loading"))
             }
         }
-        .task(id: "\(model.healthKey)|\(mode.rawValue)|\(page)|\(units.id)") {
-            let mode = self.mode, page = self.page, units = self.units
+        .task(id: "\(model.healthKey)|\(mode.rawValue)|\(page)|\(units.id)|\(plans.revision)") {
+            let mode = self.mode, page = self.page, units = self.units, plan = plans.plan
             if let s = await model.build(dayOffset: 0, { builder, request in
-                await builder.weeklyDigest(request, mode: mode, page: page, units: units)
+                await builder.weeklyDigest(request, mode: mode, page: page, units: units, plan: plan)
             }) {
                 snapshot = s
                 if s.page != self.page { self.page = s.page }
             }
         }
+        #if DEBUG
+        // `--jp-plan <template>`: start a plan, as Plan Overview does, so the plan block can be captured.
+        .onAppear { JournalPlanDebug.startPlanIfRequested() }
+        #endif
     }
 }
 
@@ -101,6 +109,8 @@ private struct PulseDigestContent: View {
 
     @Environment(\.pulseNavigator) private var navigator
     @Environment(\.pulseCoach) private var coach
+    @StateObject private var catalog = JournalCatalogStore()
+    @State private var local = PulseJournalLocalStore.shared
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -140,6 +150,12 @@ private struct PulseDigestContent: View {
                     .frame(maxWidth: .infinity)
                     .multilineTextAlignment(.center)
                     .padding(.top, 12)
+            }
+
+            if let plan = snapshot.plan {
+                PulseDigestPlanBlock(plan: plan)
+                    .padding(.top, 24)
+                    .id("pulse.plan")
             }
 
             if !snapshot.hasData {
@@ -219,7 +235,8 @@ private struct PulseDigestContent: View {
     }
 
     private var behaviors: some View {
-        PulseCard {
+        let names = BehaviorNames(catalog: catalog, customTitles: local.customTitles, sources: snapshot.behaviorNames)
+        return PulseCard {
             VStack(alignment: .leading, spacing: 0) {
                 PulseCardTitle(snapshot.mode == .week ? String(localized: "Behaviors this week")
                                                       : String(localized: "Behaviors this month"))
@@ -232,7 +249,7 @@ private struct PulseDigestContent: View {
                     if index > 0 { PulseDivider() }
                     VStack(alignment: .leading, spacing: 8) {
                         HStack(alignment: .firstTextBaseline) {
-                            Text(item.title)
+                            Text(names.title(item.id))
                                 .pulseText(.rowText)
                                 .foregroundStyle(PulseTheme.textPrimary)
                                 .fixedSize(horizontal: false, vertical: true)
@@ -277,6 +294,40 @@ private struct PulseDigestContent: View {
                 .padding(.top, 12)
             }
         }
+    }
+}
+
+// MARK: - Plan block
+
+/// The plan's week (§3.40 item 3, the My Week Recap layout): the plan's name, "44% COMPLETE" over its bar,
+/// then the goals, finished first above a hairline, each with its ring. Everything is Plan Overview's own
+/// measurement of the week (`PlanWeekSnapshot`); the card opens Plan Overview.
+private struct PulseDigestPlanBlock: View {
+    let plan: WeeklyDigestSnapshot.Plan
+
+    var body: some View {
+        PulseLink(.weeklyPlan(editing: false)) {
+            PulseCard {
+                VStack(alignment: .leading, spacing: 0) {
+                    PulseCardTitle(plan.title, accessory: .chevron)
+                    PlanAccomplishedBar(percent: plan.week.percent, word: String(localized: "Complete"))
+                        .padding(.top, 14)
+                    if !plan.week.goals.isEmpty {
+                        VStack(alignment: .leading, spacing: 0) {
+                            ForEach(plan.week.finished) { goal in PlanGoalRow(progress: goal, ringDiameter: 36) }
+                            if !plan.week.finished.isEmpty && !plan.week.unfinished.isEmpty {
+                                PulseDivider().padding(.vertical, 6)
+                            }
+                            ForEach(plan.week.unfinished) { goal in PlanGoalRow(progress: goal, ringDiameter: 36) }
+                        }
+                        .padding(.top, 10)
+                    }
+                }
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(PulsePressStyle())
+        .accessibilityHint(String(localized: "Opens your plan"))
     }
 }
 #endif

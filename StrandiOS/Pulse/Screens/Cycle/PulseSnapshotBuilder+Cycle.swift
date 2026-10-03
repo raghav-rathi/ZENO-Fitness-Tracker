@@ -33,20 +33,10 @@ extension PulseSnapshotBuilder {
         let today = inputs.today
         let logs = inputs.logs
         let menopause = inputs.mode == .menopause
-        let phasesApply = PulseCycleLog.phasesApply(mode: inputs.mode, contraception: inputs.contraception)
-        let predicts = PulseCycleLog.predicts(mode: inputs.mode, contraception: inputs.contraception)
-        let summary = MenstrualCycleModel.summarize(
-            periodStarts: logs.starts, flow: logs.flow, today: today,
-            temperatureCycleLength: inputs.engine?.cycleLengthDays, phasesApply: phasesApply,
-            extraSpread: inputs.mode == .perimenopause ? 2 : 0)
-        let active = summary.status == .active && !menopause
+        let (summary, active, phasesApply, predicts) = cycleSummary(inputs)
 
-        // The calendar's span: the first thing logged (at most a year back, at least two months back)
-        // through the end of the month two months ahead.
-        let firstLogged = ([logs.starts.min(), logs.flow.keys.min(), logs.symptoms.keys.min()].compactMap { $0 }).min()
-        let yearBack = MenstrualCycleModel.shift(today, by: -365) ?? today
-        let twoMonthsBack = MenstrualCycleModel.shift(today, by: -62) ?? today
-        let rangeStart = PulseCycleDates.monthStart(max(yearBack, min(firstLogged ?? twoMonthsBack, twoMonthsBack)))
+        // The calendar's span: from `firstLogDay` through the end of the month two months ahead.
+        let rangeStart = PulseCycleDates.firstLogDay(logs, today: today)
         let rangeEnd = PulseCycleDates.monthEnd(PulseCycleDates.monthStart(MenstrualCycleModel.shift(today, by: 62) ?? today))
         var infos = MenstrualCycleModel.calendar(from: rangeStart, to: rangeEnd, summary: summary, flow: logs.flow,
                                                  today: today, phasesApply: phasesApply)
@@ -147,6 +137,51 @@ extension PulseSnapshotBuilder {
             patterns: patterns, symptomSummary: summaryRows)
     }
 
+    /// The page's one pass over the logs: the summary everything on it reads, whether a cycle is running
+    /// (`active`), and whether phases and predictions apply in the wearer's mode and contraception.
+    private func cycleSummary(_ inputs: PulseCycleInputs)
+        -> (summary: MenstrualCycleModel.Summary, active: Bool, phasesApply: Bool, predicts: Bool) {
+        let phasesApply = PulseCycleLog.phasesApply(mode: inputs.mode, contraception: inputs.contraception)
+        let predicts = PulseCycleLog.predicts(mode: inputs.mode, contraception: inputs.contraception)
+        let summary = MenstrualCycleModel.summarize(
+            periodStarts: inputs.logs.starts, flow: inputs.logs.flow, today: inputs.today,
+            temperatureCycleLength: inputs.engine?.cycleLengthDays, phasesApply: phasesApply,
+            extraSpread: inputs.mode == .perimenopause ? 2 : 0)
+        return (summary, summary.status == .active && inputs.mode != .menopause, phasesApply, predicts)
+    }
+
+    // MARK: Today, for a card
+
+    /// Where the cycle is today for a card outside the page (the Health tab's): the page's own summary and
+    /// header (`cycleSummary`, `header`), so the card states the cycle day and phase the page it opens
+    /// states, and, where the page draws phases, today's place in the cycle (its day and the cycle's length)
+    /// for the card's phase bar. The logs are read here, off the main actor.
+    func cycleToday(_ r: PulseRequest, today: String, engine: CyclePhaseEngine.Result?, mode: PulseCycleLog.Mode,
+                    contraception: PulseCycleLog.Contraception) async -> CycleTodaySnapshot {
+        var logs = PulseCycleLog.Logs()
+        if let store = await repo.storeHandle() { logs = await PulseCycleLog.read(store) }
+        let inputs = PulseCycleInputs(today: today, logs: logs, engine: engine, mode: mode, contraception: contraception)
+        let (summary, active, phasesApply, predicts) = cycleSummary(inputs)
+        let todayInfo = MenstrualCycleModel.calendar(from: today, to: today, summary: summary, flow: logs.flow,
+                                                     today: today, phasesApply: phasesApply).first
+        let header = header(summary: summary, inputs: inputs, active: active, phasesApply: phasesApply,
+                            predicts: predicts, todayInfo: todayInfo)
+        var place: CycleTodaySnapshot.Place?
+        if active, let cd = summary.cycleDay {
+            // The logs' cycle day. A card draws phases around it, so not where the page withholds them
+            // (hormonal contraception).
+            if phasesApply, summary.modelCycleLength > 0 { place = .init(day: cd, length: summary.modelCycleLength) }
+        } else if header.cycleDay != nil, let lo = engine?.cycleDayLow, let hi = engine?.cycleDayHigh,
+                  let length = engine?.cycleLengthDays, length > 0 {
+            // No usable logs: the header's cycle day is the temperature engine's estimate, which it states
+            // only where phases apply.
+            place = .init(day: max(1, (lo + hi) / 2), length: length)
+        }
+        let headline = header.cardDay
+            ?? (mode == .menopause ? String(localized: "Symptom tracking") : String(localized: "Log a period to start"))
+        return CycleTodaySnapshot(seq: r.seq, header: header, headline: headline, place: place)
+    }
+
     // MARK: Header
 
     private func header(summary: MenstrualCycleModel.Summary, inputs: PulseCycleInputs, active: Bool,
@@ -161,12 +196,14 @@ extension PulseSnapshotBuilder {
                 subtitle += " • " + (days == 1 ? String(localized: "1 day since your last logged bleed")
                                                : String(localized: "\(days) days since your last logged bleed"))
             }
-            return .init(cycleDay: nil, phase: nil, title: String(localized: "Menopause"), subtitle: subtitle,
-                         basis: nil, caveat: nil, accessibility: String(localized: "Menopause. \(subtitle)"))
+            return .init(cycleDay: nil, cardDay: nil, phase: nil, title: String(localized: "Menopause"),
+                         subtitle: subtitle, basis: nil, caveat: nil,
+                         accessibility: String(localized: "Menopause. \(subtitle)"))
         }
 
         if active, let cd = summary.cycleDay {
             let dayText = String(localized: "Cycle Day \(cd)")
+            let cardDay = String(localized: "Day \(cd)")
             let phase = summary.phase
             let title: String? = phasesApply ? phase.map(PulseCycleText.phaseTitle) : nil
             var parts: [String] = []
@@ -199,21 +236,22 @@ extension PulseSnapshotBuilder {
             }
             let subtitle = parts.joined(separator: " • ")
             let spoken = [dayText, title, subtitle, basis].compactMap { $0 }.joined(separator: ". ")
-            return .init(cycleDay: dayText, phase: phasesApply ? phase : nil, title: title, subtitle: subtitle,
-                         basis: basis, caveat: caveat, accessibility: spoken)
+            return .init(cycleDay: dayText, cardDay: cardDay, phase: phasesApply ? phase : nil, title: title,
+                         subtitle: subtitle, basis: basis, caveat: caveat, accessibility: spoken)
         }
 
         // No usable logs: the temperature engine, when it reads a phase, is the only voice.
         if phasesApply, let engine = inputs.engine, let phase = PulseCycleText.phase(engine.phase),
            let lo = engine.cycleDayLow, let hi = engine.cycleDayHigh {
             let dayText = lo == hi ? String(localized: "Cycle Day \(lo)") : String(localized: "Cycle Day \(lo)–\(hi)")
+            let cardDay = lo == hi ? String(localized: "Day \(lo)") : String(localized: "Day \(lo)–\(hi)")
             var subtitle = String(localized: "Estimated from your skin temperature")
             if let w = engine.nextPeriodWindow {
                 subtitle += " • " + PulseCycleText.nextPeriod(
                     window: MenstrualCycleModel.Window(earliest: w.earliestDay, latest: w.latestDay), today: today)
             }
             let title = PulseCycleText.phaseTitle(phase)
-            return .init(cycleDay: dayText, phase: phase, title: title, subtitle: subtitle,
+            return .init(cycleDay: dayText, cardDay: cardDay, phase: phase, title: title, subtitle: subtitle,
                          basis: String(localized: "Log your period to anchor your cycle day"), caveat: nil,
                          accessibility: "\(dayText). \(title). \(subtitle)")
         }
@@ -225,8 +263,8 @@ extension PulseSnapshotBuilder {
             subtitle = String(localized: "Log your period to see your cycle day, phase and predictions.")
         }
         let title = String(localized: "No Phase Predicted")
-        return .init(cycleDay: nil, phase: nil, title: title, subtitle: subtitle, basis: nil, caveat: nil,
-                     accessibility: "\(title). \(subtitle)")
+        return .init(cycleDay: nil, cardDay: nil, phase: nil, title: title, subtitle: subtitle, basis: nil,
+                     caveat: nil, accessibility: "\(title). \(subtitle)")
     }
 
     /// The engine's next-period window as dashed days, only where the logs predict nothing.
@@ -460,6 +498,15 @@ enum PulseCycleDates {
 
     /// "2026-10-01" for any day in October 2026.
     static func monthStart(_ day: String) -> String { String(day.prefix(8)) + "01" }
+
+    /// The first day the calendar shows and the log sheet's pager steps back to: the start of the month of
+    /// the first thing logged, at most a year back and at least two months back.
+    static func firstLogDay(_ logs: PulseCycleLog.Logs, today: String) -> String {
+        let firstLogged = ([logs.starts.min(), logs.flow.keys.min(), logs.symptoms.keys.min()].compactMap { $0 }).min()
+        let yearBack = MenstrualCycleModel.shift(today, by: -365) ?? today
+        let twoMonthsBack = MenstrualCycleModel.shift(today, by: -62) ?? today
+        return monthStart(max(yearBack, min(firstLogged ?? twoMonthsBack, twoMonthsBack)))
+    }
 
     /// The month's last day key.
     static func monthEnd(_ monthStart: String) -> String {

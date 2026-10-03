@@ -254,7 +254,7 @@ struct PulseEditProfileView: View {
 
     private func save() {
         nameFocused = false
-        storedName = draft.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        PulseProfileIdentity.setName(draft.name)
         if draft.dateOfBirth != original.dateOfBirth { profile.dateOfBirth = draft.dateOfBirth }
         if draft.sex != original.sex { profile.sex = draft.sex }
         if draft.heightCm != original.heightCm { profile.heightCm = draft.heightCm }

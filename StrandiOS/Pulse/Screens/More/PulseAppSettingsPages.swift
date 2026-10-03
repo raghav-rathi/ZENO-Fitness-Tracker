@@ -176,36 +176,7 @@ struct PulseJournalSettingsView: View {
     }
 }
 
-// MARK: Hormonal insights
-
-/// HORMONAL INSIGHTS: cycle awareness, offered to the profiles it applies to (it reads the menstrual
-/// skin-temperature shift), and its "not for me" switch, exactly as Automations writes them.
-struct PulseHormonalInsightsView: View {
-    @EnvironmentObject private var profile: ProfileStore
-    @AppStorage(AppModel.cycleAwarenessKey) private var cycleAwareness = false
-    @AppStorage(AppModel.cycleAwarenessHiddenKey) private var cycleHidden = false
-    @EnvironmentObject private var model: AppModel
-
-    var body: some View {
-        PulseScreenScaffold(title: String(localized: "Hormonal insights"), spacing: MoreLayout.sectionGap) {
-            if profile.cycleAwarenessApplies {
-                MoreSection(nil) {
-                    MoreCycleVisibilityToggle()
-                    if !cycleHidden {
-                        MoreToggleRow(title: String(localized: "Cycle awareness"), isOn: $cycleAwareness,
-                                      help: String(localized: "Reads a coarse cycle phase from your nightly skin temperature, on this iPhone. Awareness only: not contraception, not a fertility predictor, not a medical service."))
-                            .onChange(of: cycleAwareness) { _, on in
-                                model.cycleAwarenessEnabled = on
-                                Task { await model.refreshV5Signals() }
-                            }
-                    }
-                }
-            } else {
-                MorePageIntro(text: String(localized: "Cycle insights read the menstrual temperature shift, so they are offered for female and non-binary profiles. Change your sex in Edit Profile."))
-            }
-        }
-    }
-}
+// MARK: Cycle visibility
 
 /// "Show cycle insights": the user's own "not for me" switch. Hiding also stops tracking, as the classic
 /// Automations switch does; showing only re-offers it.
