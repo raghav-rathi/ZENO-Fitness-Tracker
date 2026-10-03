@@ -36,6 +36,12 @@ struct PulsePrefs: Equatable {
     /// them (`PulseSleepPlanSettings.stored`), whether the strap will arm included: what tonight's plan is
     /// resolved from.
     var sleepPlan = PulseSleepPlanSettings()
+    /// The Sleep Planner's TOMORROW I WANT TO goal (`PulseSleepGoal.storageKey`), which tonight's plan is
+    /// resolved for.
+    var sleepGoal = PulseSleepGoal.default
+    /// The running Weekly Plan's sleep goals (`PulseWeeklyPlanSleepGoals.current`), which the plan is resolved
+    /// for under REACH MY WEEKLY PLAN GOAL; nil when no plan with a sleep goal runs.
+    var weeklyPlanSleep: PulseWeeklyPlanSleepGoals?
     /// The journal prompt's switch (Settings, shared with the classic Today).
     var journalReminder = true
 }
@@ -524,18 +530,17 @@ actor PulseSnapshotBuilder {
         })
     }
 
-    // TODO(sleep): `tonightSleepPlan` plans REACH MY SLEEP NEED at 100% whatever goal the planner has
-    // (`pulse.sleepPlanner.goal`): give it the goal, brought to the builder in `PulsePrefs` as the alarm
-    // settings are, so the card and the planner move together.
     /// Tonight's plan through the Sleep Planner's own resolver (`tonightSleepPlan`, Screens/Sleep, which runs
-    /// `PulseSleepPlan.resolve` over the unified sleep need) on the settings the request captured: the wake
-    /// the strap is really armed for (per-day times included), the bedtime with time to fall asleep, and once
-    /// the night ending today is over, the coming night. Home's TONIGHT'S SLEEP card and the planner it opens
-    /// therefore print the same night while the planner's goal is its default, REACH MY SLEEP NEED at 100%.
+    /// `PulseSleepPlan.resolve` over the unified sleep need) on what the request captured from the planner:
+    /// its alarm and wake settings (the wake the strap is really armed for, per-day times included), its goal
+    /// and the running Weekly Plan's sleep goals. The bedtime allows time to fall asleep, and once the night
+    /// ending today is over, the plan is for the coming night. Home's TONIGHT'S SLEEP card and the planner it
+    /// opens therefore print the same night, whatever the goal.
     func tonightPlan(_ r: PulseRequest) async -> PulseTonight? {
-        guard let plan = await tonightSleepPlan(r, settings: r.prefs.sleepPlan) else { return nil }
+        guard let plan = await tonightSleepPlan(r, settings: r.prefs.sleepPlan, goal: r.prefs.sleepGoal,
+                                                weeklyPlan: r.prefs.weeklyPlanSleep) else { return nil }
         return PulseTonight(needMin: plan.needMin, inBed: plan.bedtime, asleepBy: plan.asleepBy, wake: plan.wake,
-                            wakeSource: plan.wakeSource)
+                            wakeSource: plan.wakeSource, coveragePercent: plan.coveragePercent)
     }
 
     // MARK: Key stats

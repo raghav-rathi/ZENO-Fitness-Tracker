@@ -185,10 +185,8 @@ struct PulseNap: Identifiable, Equatable {
     let asleepMin: Double
 }
 
-/// Tonight's plan as the Sleep Planner resolves it (`PulseSleepPlan`) for REACH MY SLEEP NEED at 100%, the
-/// planner's default goal: while that goal is chosen there, Home's TONIGHT'S SLEEP card and the planner it
-/// opens state the same night. With 85%, 70% or IMPROVE MY SLEEP chosen, the planner's bedtime differs from
-/// the card's, as the goal does not reach Home's request yet (see `PulseSnapshotBuilder.tonightPlan`).
+/// Tonight's plan as the Sleep Planner resolves it (`PulseSleepPlan`) for the goal chosen there, so Home's
+/// TONIGHT'S SLEEP card and the planner it opens state the same night (`PulseSnapshotBuilder.tonightPlan`).
 struct PulseTonight: Equatable {
     /// Tonight's need: baseline + strain + debt − nap credit (`SleepNeedBreakdown.totalMin`), minutes.
     let needMin: Double
@@ -200,6 +198,9 @@ struct PulseTonight: Equatable {
     let wake: Date
     /// What named the wake: the strap alarm only when it will actually buzz that morning.
     let wakeSource: TonightSleepPlan.WakeSource
+    /// The sleep the plan allows for, as a share of `needMin`, 0-100 (`PulseSleepPlan.coveragePercent`): under
+    /// 100 for a goal short of the whole need, or a bedtime held at the earliest the planner suggests.
+    let coveragePercent: Int
 
     /// The strap alarm buzzes at `wake`: "● ALARM ON · EXACT TIME".
     var alarmOn: Bool { wakeSource == .strapAlarm }

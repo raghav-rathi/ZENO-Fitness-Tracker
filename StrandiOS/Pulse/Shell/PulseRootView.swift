@@ -487,6 +487,8 @@ struct PulseAttacher: View {
     // The strap's silent wake alarm (BehaviorStore's keys): Tonight's Sleep says ALARM ON / OFF from them.
     @AppStorage("behavior.smartAlarmEnabled") private var strapAlarmOn = false
     @AppStorage("behavior.smartAlarmMinutes") private var strapAlarmMinutes = 7 * 60
+    // The Sleep Planner's goal: Tonight's Sleep is planned for it, so choosing another one re-plans tonight.
+    @AppStorage(PulseSleepGoal.storageKey) private var sleepGoalRaw = PulseSleepGoal.default.storageValue
 
     private var prefs: PulsePrefs {
         let system = UnitSystem(rawValue: unitSystemRaw) ?? .metric
@@ -500,6 +502,11 @@ struct PulseAttacher: View {
         // Tonight's plan reads the Sleep Planner's own settings. A WHOOP 5/MG strap arms its alarm only with
         // the Protocol probes on (`AppModel.whoop5Detected` is `ble.isWhoop5`), as the planner checks.
         p.sleepPlan = PulseSleepPlanSettings.stored(strapWillArm: !(ble.isWhoop5 && !PuffinExperiment.isEnabled))
+        // It is planned for the planner's goal, with the running Weekly Plan's sleep goals for REACH MY WEEKLY
+        // PLAN GOAL (read through the plan store's observation, so starting, editing or ending a plan re-plans
+        // tonight too), exactly as the planner resolves it.
+        p.sleepGoal = PulseSleepGoal(storageValue: sleepGoalRaw)
+        p.weeklyPlanSleep = PulseWeeklyPlanSleepGoals.current()
         return p
     }
 

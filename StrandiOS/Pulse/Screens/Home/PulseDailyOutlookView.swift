@@ -115,15 +115,19 @@ enum PulseDailyOutlook {
             }
         }
 
-        // Tonight's plan, the Sleep Planner's: the time to be asleep by; once the time to get into bed has
-        // passed, "now" (as the card and the planner say).
+        // Tonight's plan, the Sleep Planner's for its goal: the time to be asleep by, with the share of the
+        // need it allows for when that is short of all of it (85%, a bedtime held at the earliest); once the
+        // time to get into bed has passed, "now" (as the card and the planner say).
         if let tonight = home.tonight {
             let need = duration(tonight.needMin)
             let wake = PulseFormat.clock(tonight.wake)
+            let asleepBy = PulseFormat.clock(tonight.asleepBy)
             if now >= tonight.inBed {
                 recommendations.append(String(localized: "To get as close as you can to the **\(need)** of sleep you need tonight, go to sleep now to wake at **\(wake)**."))
+            } else if tonight.coveragePercent >= 100 {
+                recommendations.append(String(localized: "To get the **\(need)** of sleep you need tonight, be asleep by **\(asleepBy)** to wake at **\(wake)**."))
             } else {
-                recommendations.append(String(localized: "To get the **\(need)** of sleep you need tonight, be asleep by **\(PulseFormat.clock(tonight.asleepBy))** to wake at **\(wake)**."))
+                recommendations.append(String(localized: "To get **\(tonight.coveragePercent)%** of the **\(need)** of sleep you need tonight, be asleep by **\(asleepBy)** to wake at **\(wake)**."))
             }
         }
         return Content(evening: evening, greeting: greeting, insights: insights, recommendations: recommendations)

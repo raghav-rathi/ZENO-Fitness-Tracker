@@ -10,12 +10,12 @@ import StrandAnalytics
 /// goal capsule. Below: the suggested time to bed and the wake time over the TIME IN BED bar, the OPTIMAL
 /// window bracketed under it, and the alarm panel pinned at the bottom.
 ///
-/// Every figure comes from ONE resolver (`PulseSleepPlan`), the one Home's TONIGHT'S SLEEP card is asked to
-/// read too: the wake is the strap alarm only when it will buzz that morning, else the wind-down wake, else
-/// the wearer's usual wake, else a typical 07:00 that says so. The panel drives the EXISTING alarm: its
-/// toggle and times write `BehaviorStore`'s smart-alarm settings and then call `AppModel.applySmartAlarm()`,
-/// exactly as the classic Alarms screen does, so the strap is armed or cleared by the code that always did
-/// it (no new commands).
+/// Every figure comes from ONE resolver (`PulseSleepPlan`), the one Home's TONIGHT'S SLEEP card reads too,
+/// for the goal chosen here: the wake is the strap alarm only when it will buzz that morning, else the
+/// wind-down wake, else the wearer's usual wake, else a typical 07:00 that says so. The panel drives the
+/// EXISTING alarm: its toggle and times write `BehaviorStore`'s smart-alarm settings and then call
+/// `AppModel.applySmartAlarm()`, exactly as the classic Alarms screen does, so the strap is armed or cleared
+/// by the code that always did it (no new commands).
 struct PulseSleepPlannerView: View {
     /// Existing entry points (NavRouter `.alarms`, Home's Tonight's Sleep) open this instead of the classic
     /// Alarms screen.
@@ -26,7 +26,7 @@ struct PulseSleepPlannerView: View {
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var behavior: BehaviorStore
 
-    @AppStorage("pulse.sleepPlanner.goal") private var goalRaw = PulseSleepGoal.default.storageValue
+    @AppStorage(PulseSleepGoal.storageKey) private var goalRaw = PulseSleepGoal.default.storageValue
     // WindDownNudge's keys: declared so that an edit on My Schedule or the classic reminder re-renders the
     // plan. They are read through `PulseSleepPlanSettings.current`, once per render.
     @AppStorage("windDown.perDayWakeMinutes") private var perDayRaw = Data()

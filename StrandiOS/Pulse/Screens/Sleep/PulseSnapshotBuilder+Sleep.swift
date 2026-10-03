@@ -788,12 +788,12 @@ extension PulseSnapshotBuilder {
         }
     }
 
-    /// Tonight's plan for Home's TONIGHT'S SLEEP card, through the planner's own resolver
-    /// (`PulseSleepPlan.resolve`): given the planner's stored goal (`pulse.sleepPlanner.goal`) and the running
-    /// Weekly Plan's sleep goals, the card would show the wake and bedtime the planner it opens shows.
-    /// `settings`, `goal` and `weeklyPlan` are read on the main actor (`PulseSleepPlanSettings.current` or
-    /// `.stored`, `PulseSleepGoal(storageValue:)`, `PulseWeeklyPlanSleepGoals.current`) and passed in with the
-    /// request. Nothing calls it yet: Home's card still works tonight out through `tonightPlan`.
+    /// Tonight's plan for Home's TONIGHT'S SLEEP card (`PulseSnapshotBuilder.tonightPlan`), through the
+    /// planner's own resolver (`PulseSleepPlan.resolve`): given the planner's stored goal
+    /// (`PulseSleepGoal.storageKey`) and the running Weekly Plan's sleep goals, the card shows the wake and
+    /// bedtime the planner it opens shows. `settings`, `goal` and `weeklyPlan` are read on the main actor
+    /// (`PulseSleepPlanSettings.stored`, `PulseSleepGoal(storageValue:)`, `PulseWeeklyPlanSleepGoals.current`)
+    /// and come with the request (`PulsePrefs`).
     func tonightSleepPlan(_ r: PulseRequest, settings: PulseSleepPlanSettings, goal: PulseSleepGoal = .default,
                           weeklyPlan: PulseWeeklyPlanSleepGoals? = nil) async -> PulseSleepPlan? {
         guard let s = await sleepPlanner(r) else { return nil }

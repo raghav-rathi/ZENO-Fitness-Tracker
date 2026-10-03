@@ -6,7 +6,7 @@ import StrandAnalytics
 //
 // One resolver for everything a screen states about tonight, so the Sleep Planner's times, bar, headline
 // and alarm panel and My Schedule can never describe different nights. Home's TONIGHT'S SLEEP card reads it
-// too (`PulseSnapshotBuilder.tonightSleepPlan`), at the planner's default goal:
+// too (`PulseSnapshotBuilder.tonightSleepPlan`), for the goal chosen in the planner:
 //
 //   wake      `TonightSleepPlan.wake`: the strap alarm only when it will buzz that morning (on, armed,
 //             that weekday), else the wind-down reminder's wake while it is on, else the median wake of
@@ -37,6 +37,8 @@ enum PulseSleepGoal: Hashable, Identifiable {
 
     static let needPercents = [100, 85, 70]
     static let `default` = PulseSleepGoal.need(percent: 100)
+    /// Where the planner keeps the chosen goal (`storageValue`), which Home's card plans for too.
+    static let storageKey = "pulse.sleepPlanner.goal"
 
     var id: String { storageValue }
 
