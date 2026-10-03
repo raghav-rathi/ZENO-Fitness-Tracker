@@ -167,8 +167,9 @@ enum PulseRoute: Hashable {
     }
 
     /// How WHOOP presents it (§1.6). The Sleep Planner follows the 2026 iOS app, where it is full screen.
-    /// App Settings, full height in WHOOP, is pushed from More rather than presented: a modal's own stack
-    /// only pushes, and pushed this way its AI Settings and Data Export still open as the sheets they are.
+    /// App Settings departs from it: WHOOP presents the page with "✕" over the visible tab bar (§3.33), but
+    /// here it is pushed from More, with "‹" and no capsule like every pushed page. A modal's own stack only
+    /// pushes, and pushed this way its AI Settings and Data Export still open as the "✕" sheets they are.
     var presentation: PulsePresentation {
         switch self {
         case .customizeDashboard, .startActivity, .deviceSettings, .journal, .onboarding, .strengthTrainer,
