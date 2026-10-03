@@ -80,7 +80,7 @@ struct PulseTrendsTabView: View {
                                  subtitle: String(localized: "A PDF of any range to keep or share"))
                 }
                 .buttonStyle(PulsePressStyle())
-                link(String(localized: "Training load"), String(localized: "Fitness, fatigue and form from your Strain"),
+                link(String(localized: "Training load"), String(localized: "Fitness, fatigue and form from your training load"),
                      "chart.line.uptrend.xyaxis", PulseRoute.trainingLoad.forExistingEntryPoint)
                 link(String(localized: "Tomorrow's Recovery"), String(localized: "A forecast from today's inputs"),
                      "brain.head.profile", .classic(.intelligence))
