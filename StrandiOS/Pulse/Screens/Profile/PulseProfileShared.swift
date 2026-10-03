@@ -369,7 +369,7 @@ struct PulseUnlockModal: View {
                 Spacer(minLength: 0)
                 hero
                 Text(title)
-                    .font(.system(size: 26, weight: .semibold))
+                    .profileFont(26, weight: .semibold, relativeTo: .title)
                     .foregroundStyle(PulseTheme.textPrimary)
                     .fixedSize(horizontal: false, vertical: true)
                     .accessibilityAddTraits(.isHeader)

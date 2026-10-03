@@ -38,7 +38,7 @@ struct PulseEditProfileView: View {
                     .textContentType(.givenName)
                     .submitLabel(.done)
                     .focused($nameFocused)
-                    .font(.system(size: 17, weight: .regular))
+                    .profileFont(17, weight: .regular, relativeTo: .body)
                     .foregroundStyle(PulseTheme.textPrimary)
             }
             pickerField(String(localized: "Birthday"), value: birthdayText) { picker = .birthday }
@@ -147,7 +147,7 @@ struct PulseEditProfileView: View {
             field(title, help: help) {
                 HStack {
                     Text(value)
-                        .font(.system(size: 17, weight: .regular))
+                        .profileFont(17, weight: .regular, relativeTo: .body)
                         .foregroundStyle(PulseTheme.textPrimary)
                     Spacer(minLength: 8)
                     Image(systemName: "chevron.down")

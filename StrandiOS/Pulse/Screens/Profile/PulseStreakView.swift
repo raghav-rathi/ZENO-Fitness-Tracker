@@ -46,7 +46,7 @@ struct PulseStreakView: View {
             }
             .padding(.top, 14)
             Text(String(localized: "Day Streak"))
-                .font(.system(size: 22, weight: .semibold))
+                .profileFont(22, weight: .semibold, relativeTo: .title2)
                 .foregroundStyle(PulseTheme.textPrimary)
                 .padding(.top, 18)
                 .accessibilityAddTraits(.isHeader)
@@ -82,8 +82,10 @@ struct PulseStreakView: View {
     private func stat(value: String, caption: String) -> some View {
         VStack(spacing: 5) {
             Text(value)
-                .font(PulseType.numeral(18, hero: true))
+                .profileFont(18, weight: .bold, relativeTo: .headline)
                 .foregroundStyle(PulseTheme.textPrimary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
             Text(caption)
                 .pulseText(.rowSubline)
                 .foregroundStyle(PulseTheme.textSecondary)
@@ -103,9 +105,12 @@ struct PulseStreakView: View {
             HStack(spacing: 0) {
                 ForEach(s.week, id: \.day) { day in
                     VStack(spacing: 14) {
+                        // "MON" whole on one line: shrinks rather than breaking into "MO / N" (DR §2).
                         Text(weekdayLabel(day.weekday))
                             .pulseText(.label)
                             .foregroundStyle(day.isToday ? PulseTheme.textPrimary : PulseTheme.textTertiary)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.5)
                         StreakDayMark(state: day.state, days: s.current)
                     }
                     .frame(maxWidth: .infinity)
@@ -114,6 +119,8 @@ struct PulseStreakView: View {
                     .accessibilityValue(spoken(day.state))
                 }
             }
+            // Seven columns of 44 pt cannot hold accessibility-size caps; the row stops at xxxLarge.
+            .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
         }
         .padding(.horizontal, 18)
         .padding(.vertical, 20)

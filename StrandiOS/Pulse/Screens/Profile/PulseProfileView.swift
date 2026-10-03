@@ -530,11 +530,8 @@ private struct ProfileHighlightRing: View {
                                unitColor: PulseTheme.textPrimary)
             }
             .frame(width: 82, height: 82)
-            Text(content.label)
-                .font(.system(size: 14, weight: .semibold))
+            ProfileWordWrapText(content.label, size: 14, weight: .semibold, relativeTo: .subheadline)
                 .foregroundStyle(PulseTheme.textPrimary)
-                .lineLimit(1)
-                .minimumScaleFactor(0.8)
         }
         .frame(maxWidth: .infinity)
         .accessibilityElement(children: .ignore)
@@ -585,7 +582,7 @@ private struct ProfileStreakColumn: View {
             .frame(width: 40, height: 40)
             .accessibilityHidden(true)
             Text(ProfileFormat.days(days))
-                .font(.system(size: 17, weight: .semibold))
+                .profileFont(17, weight: .semibold, relativeTo: .headline)
                 .foregroundStyle(PulseTheme.textPrimary)
             // Two centred lines at large text sizes rather than "Green Recov…".
             Text(caption)

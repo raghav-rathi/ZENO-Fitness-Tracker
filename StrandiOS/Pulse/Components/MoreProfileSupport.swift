@@ -97,6 +97,46 @@ struct MoreWordWrapLabel: View {
     }
 }
 
+/// Text at one of the group's own sizes (`profileFont`) with the same rule: one line when it fits, else
+/// wrapped between words only, a single over-long word shrinking with the rest ("Peak Recovery" under a
+/// highlight ring at the accessibility sizes, never "Peak Recov…" or "Recov / ery").
+struct ProfileWordWrapText: View {
+    let text: String
+    let size: CGFloat
+    let weight: Font.Weight
+    let relativeTo: Font.TextStyle
+    var alignment: HorizontalAlignment
+    @ScaledMetric private var wordSpace: CGFloat
+
+    init(_ text: String, size: CGFloat, weight: Font.Weight, relativeTo: Font.TextStyle,
+         alignment: HorizontalAlignment = .center) {
+        self.text = text
+        self.size = size
+        self.weight = weight
+        self.relativeTo = relativeTo
+        self.alignment = alignment
+        _wordSpace = ScaledMetric(wrappedValue: size * 0.28, relativeTo: relativeTo)
+    }
+
+    var body: some View {
+        ViewThatFits(in: .horizontal) {
+            Text(text)
+                .profileFont(size, weight: weight, relativeTo: relativeTo)
+                .lineLimit(1)
+            PulseWordFlow(alignment: alignment, spacing: wordSpace, lineSpacing: 1) {
+                ForEach(Array(text.split(separator: " ").enumerated()), id: \.offset) { _, word in
+                    Text(String(word))
+                        .profileFont(size, weight: weight, relativeTo: relativeTo)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.5)
+                }
+            }
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(text)
+    }
+}
+
 // MARK: - Which straps are paired
 
 /// The device registry as the wearer knows it. A fresh install carries one row it never paired: migration

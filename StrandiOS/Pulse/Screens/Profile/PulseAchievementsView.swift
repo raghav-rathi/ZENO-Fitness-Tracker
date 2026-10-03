@@ -176,7 +176,7 @@ struct PulseAchievementDetailsView: View {
                     .accessibilityHidden(true)
             }
             Text(info.name)
-                .font(.system(size: 22, weight: .semibold))
+                .profileFont(22, weight: .semibold, relativeTo: .title2)
                 .foregroundStyle(PulseTheme.textPrimary)
                 .multilineTextAlignment(.center)
                 .padding(.top, 30)
@@ -213,8 +213,10 @@ struct PulseAchievementDetailsView: View {
     private func stat(value: String, caption: String) -> some View {
         VStack(spacing: 5) {
             Text(value)
-                .font(PulseType.numeral(18, hero: true))
+                .profileFont(18, weight: .bold, relativeTo: .headline)
                 .foregroundStyle(PulseTheme.textPrimary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
             Text(caption)
                 .pulseText(.rowSubline)
                 .foregroundStyle(PulseTheme.textSecondary)

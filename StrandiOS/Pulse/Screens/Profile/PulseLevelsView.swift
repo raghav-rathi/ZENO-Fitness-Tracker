@@ -97,7 +97,8 @@ struct PulseLevelsView: View {
     // MARK: Grid
 
     private func grid(_ level: PulseLevels.Progress) -> some View {
-        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 0), count: 3), spacing: 46) {
+        // 8 pt between columns, so neighbouring cells' lines never run together at large sizes.
+        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 3), spacing: 46) {
             ForEach(1...PulseLevels.maxLevel, id: \.self) { n in
                 LevelCell(level: n, reached: n <= level.level, current: n == level.level)
                     .id("pulse.level-\(n)")
@@ -149,19 +150,24 @@ private struct LevelCell: View {
                 ProfileLevelPlaque(level: level, material: material, width: 40)
             }
             .frame(height: 96)
+            // Each line stays whole in its column, shrinking rather than wrapping into the next cell.
             Text(materialName(material))
                 .pulseText(.label)
                 .foregroundStyle(ProfileArtPalette.tierLabel)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
                 .padding(.top, 22)
             Text(String(localized: "Level \(level)"))
-                .font(.system(size: 15, weight: .bold))
-                .tracking(1.6)
-                .textCase(.uppercase)
+                .profileFont(15, weight: .bold, relativeTo: .subheadline, tracking: 1.6, uppercase: true)
                 .foregroundStyle(PulseTheme.textPrimary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
                 .padding(.top, 4)
             Text(threshold)
                 .pulseText(.rowSubline)
                 .foregroundStyle(PulseTheme.textSecondary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
                 .padding(.top, 4)
         }
         .opacity(reached ? 1 : 0.45)
