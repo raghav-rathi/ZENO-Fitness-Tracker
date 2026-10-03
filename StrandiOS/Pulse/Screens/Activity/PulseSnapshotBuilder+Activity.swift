@@ -393,31 +393,16 @@ extension PulseSnapshotBuilder {
     // MARK: Stress and impact (the recovery variant)
 
     /// The Stress Monitor's readings around a recovery activity (§3.6, e01–e03, e08, e10): the activity's
-    /// local day scored exactly as the Stress Monitor scores a day (`DaytimeStress.analyze` over the day's
-    /// heart rate, R-R and wrist motion, in the lens Settings picks, with the half-hourly display
-    /// timeline), then the reading nearest the activity's start and the next one nearest its end. Nil when
-    /// no reading covers it: outside the 6 AM–10 PM scoring window, too little heart rate, or an hour the
-    /// motion gate masked as exercise.
+    /// local day through the Stress Monitor's own resolver (`stressResult`, `DaytimeStress.analyze` over the
+    /// day's heart rate, R-R and wrist motion, in the lens Settings picks, with the half-hourly display
+    /// timeline), so the two screens share one cache and one curve, then the reading nearest the activity's
+    /// start and the next one nearest its end. Nil when no reading covers it: outside the 6 AM–10 PM scoring
+    /// window, too little heart rate, or an hour the motion gate masked as exercise.
     func activityStress(_ r: PulseRequest, row: WorkoutRow) async -> ActivityStressSummary? {
         let cal = Calendar.current
         let dayStart = cal.startOfDay(for: Date(timeIntervalSince1970: TimeInterval(row.startTs)))
-        guard let nextStart = cal.date(byAdding: .day, value: 1, to: dayStart) else { return nil }
         let isToday = cal.isDate(dayStart, inSameDayAs: r.now)
-        let from = Int(dayStart.timeIntervalSince1970)
-        let to = isToday ? Int(r.now.timeIntervalSince1970) : Int(nextStart.timeIntervalSince1970) - 1
-        let personal = r.prefs.stressPersonalBaseline
-        let key = "activity.stress.\(from).\(isToday ? to / 300 : 0).\(personal)"
-        let result: DaytimeStress.Result = await cached(key) { () async -> DaytimeStress.Result in
-            let hr = await repo.hrSamples(from: from, to: to, limit: 200_000)
-            guard hr.count >= DaytimeStress.minHourHRSamples else { return .empty }
-            let rr = await repo.rrIntervals(from: from, to: to, limit: 200_000)
-            let gravity = await repo.gravitySamplesUnion(from: from, to: to, limit: 200_000)
-            let mode = await DaytimeStressMode.selected(repo: repo, startOfToday: dayStart, calendar: cal,
-                                                        personalBaseline: personal)
-            let tz = TimeZone.current.secondsFromGMT(for: dayStart)
-            return DaytimeStress.analyze(hr: hr, rr: rr, gravity: gravity, tzOffsetSeconds: tz, mode: mode,
-                                         includeTimeline: true)
-        }
+        let result = await stressResult(dayStart: dayStart, isToday: isToday, r: r)
         return Self.stressSummary(result.timeline, startTs: row.startTs, endTs: row.endTs)
     }
 
