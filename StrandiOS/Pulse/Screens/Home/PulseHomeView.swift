@@ -100,7 +100,7 @@ struct PulseHomeView: View {
                 Color.clear.pulseDayTimelineOnTilt()
             }
         }
-        .sheet(isPresented: $loggingPeriod) { PulseLogPeriodSheet() }
+        .sheet(isPresented: $loggingPeriod) { PulseCycleCardLogSheet() }
         .simultaneousGesture(daySwipe)
         .sensoryFeedback(.selection, trigger: model.dayOffset)
         .onChange(of: model.home) { _, _ in homeVersion &+= 1 }
