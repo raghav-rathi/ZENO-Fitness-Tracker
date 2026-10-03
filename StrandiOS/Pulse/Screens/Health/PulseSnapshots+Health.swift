@@ -92,8 +92,11 @@ struct HealthVital: Equatable, Identifiable {
     let value: String?
     let unit: String
     let status: Status
-    /// "within 13.8 - 14.8", "low < 95", "very high > 62", or "No reading yet".
+    /// "within 13.8 - 14.8", "low < 95", "very high > 62", or, with no value, why there is none ("No HRV
+    /// value", "Over-reports R-R, so no value is shown").
     let chipText: String
+    /// A caveat on a value that is shown but known to be unreliable ("unverified · over-reports R-R", #1118).
+    let caveat: String?
     /// -1 below the range, +1 above, 0 inside (the footer's "low" / "high").
     let direction: Int
     /// The day the value is from, and whether that is an earlier day carried forward.
@@ -118,7 +121,8 @@ struct PulseStressDay: Equatable {
     let points: [PulseTimeValue]
     /// The day's own scored hours (non-overlapping), for the totals and the high-stress run.
     let hours: [DaytimeStress.HourPoint]
-    /// The chart's window: the last 24 h today, the calendar day for a past day.
+    /// The chart's window, 24 h ending at its "now": today the last 24 h, a past day the 24 h ending on its
+    /// last reading (completeness-critic/14), a past day without readings its calendar day.
     let window: ClosedRange<Date>
     /// The gauge's reading: the latest point of the curve, when it was.
     let latest: Reading?
@@ -139,6 +143,12 @@ struct PulseStressDay: Equatable {
         if let daily { return (daily, false) }
         return nil
     }
+
+    /// Where the chart's window ends with a dashed line and a dot: now today, the last reading's end on a
+    /// past day; nil for a past day with no reading (its chart says so instead).
+    var chartEnd: Date? {
+        isToday || latest != nil ? window.upperBound : nil
+    }
 }
 
 /// The Health tab's STRESS MONITOR card.
@@ -146,13 +156,23 @@ struct HealthStressCard: Equatable {
     /// Minutes in the HIGH band so far today; nil while today has no scored hour.
     let highMinutes: Int?
     /// Today's curve so far, for the sparkline. (The typical weekday it is set against comes in a second,
-    /// slower pass: `PulseSnapshotBuilder.healthTypicalHighMinutes`.)
+    /// slower pass: `PulseSnapshotBuilder.healthTypicalHigh`.)
     let points: [PulseTimeValue]
+    /// The sparkline's span: today's start to now.
+    let span: ClosedRange<Date>
     /// The weekday's key, for "vs. typical Tue".
     let dayKey: String
 }
 
-/// The Stress Monitor for one day.
+/// The typical same weekday's HIGH minutes for the Health tab's chip, for the day `dayKey`. Always
+/// returned by its pass (nil `minutes`: no typical day), so a newer day never keeps an older day's figure.
+struct HealthTypicalHigh: Equatable {
+    let dayKey: String
+    let minutes: Int?
+}
+
+/// The Stress Monitor for one day. The typical same weekday arrives in a second pass
+/// (`StressMonitorTypical`), so the day draws before six earlier days are scored.
 struct StressMonitorSnapshot: Equatable {
     let seq: Int
     let day: PulseStressDay
@@ -160,11 +180,8 @@ struct StressMonitorSnapshot: Equatable {
     let title: String
     /// Sleep and activity periods inside the window.
     let periods: [PulseChartPeriod]
-    /// The day's minutes per band, and the typical same weekday's (nil without two worn ones).
+    /// The day's minutes per band.
     let totals: StressDayTotals.Totals
-    let typical: StressDayTotals.Totals?
-    /// Same-weekday days that went into the typical day.
-    let typicalDays: Int
     /// The longest run of HIGH hours.
     let longestHigh: LongestRun?
     /// The daily score's own explanation, used when the day has no curve.
@@ -174,6 +191,14 @@ struct StressMonitorSnapshot: Equatable {
         let start: Date
         let minutes: Int
     }
+}
+
+/// The typical same weekday for the Stress Monitor's day `dayKey`: each band's mean minutes (nil without two
+/// worn same weekdays), and how many earlier same weekdays it averages.
+struct StressMonitorTypical: Equatable {
+    let dayKey: String
+    let totals: StressDayTotals.Totals?
+    let days: Int
 }
 
 // MARK: Health Monitor

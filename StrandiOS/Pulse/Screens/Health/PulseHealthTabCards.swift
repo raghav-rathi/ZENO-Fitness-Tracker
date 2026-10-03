@@ -19,6 +19,10 @@ func healthYearsLine(_ yearsYounger: Double) -> String {
 struct HealthAgeHero: View {
     let summary: HealthAgeSummary
 
+    /// How far the next card tucks under the hero (the stack's 24 pt gap plus the card's 16 pt padding
+    /// would otherwise leave ≈59 pt between the disc and the PACE OF AGING caps).
+    static let pullUp: CGFloat = -17
+
     var body: some View {
         PulseLink(.healthspan) {
             HealthAgeOrb(hue: summary.week.hue, diameter: 210) {
@@ -29,10 +33,12 @@ struct HealthAgeHero: View {
             .overlay { Color.clear.frame(width: 1, height: 1).id("pulse.orbmid") }
             .frame(maxWidth: .infinity)
             .padding(.top, 8)
-            .padding(.bottom, 12)
             .contentShape(Rectangle())
         }
         .buttonStyle(PulsePressStyle())
+        // The Pace card rides up under the disc: its title caps sit ≈28 pt below it (health-more-2026/02
+        // frame 94), the card's open top fading into the glow.
+        .padding(.bottom, HealthAgeHero.pullUp)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(String(localized: "ZENO Age \(PulseFormat.oneDecimal(summary.week.zenoAge)), \(healthYearsLine(summary.week.yearsYounger))"))
         .accessibilityHint(String(localized: "Opens Healthspan"))
@@ -110,7 +116,7 @@ struct HealthCalibratingNote: View {
     var body: some View {
         HStack(alignment: .top, spacing: 14) {
             Image(systemName: "hourglass")
-                .font(.system(size: 15, weight: .semibold))
+                .healthGlyph(.noteIcon)
                 .foregroundStyle(HealthPalette.calibratingText)
                 .padding(.top, 2)
                 .accessibilityHidden(true)
@@ -121,7 +127,7 @@ struct HealthCalibratingNote: View {
             Spacer(minLength: 0)
             Button(action: onDismiss) {
                 Image(systemName: "xmark")
-                    .font(.system(size: 14, weight: .semibold))
+                    .healthGlyph(.control)
                     .foregroundStyle(PulseTheme.textPrimary)
                     .frame(width: PulseTheme.Layout.minTapTarget, height: PulseTheme.Layout.minTapTarget,
                            alignment: .topTrailing)
@@ -147,14 +153,21 @@ struct HealthPaceCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
-            HStack(alignment: .center, spacing: 8) {
-                PulseCardTitle(String(localized: "Pace of Aging"))
-                if let change = summary.paceChange {
-                    HealthPaceChangeChip(change: change)
+            // Side by side when both fit; at the largest text sizes the chip drops under the title rather
+            // than squeezing it to a word per line.
+            ViewThatFits(in: .horizontal) {
+                HStack(alignment: .center, spacing: 8) {
+                    PulseCardTitle(String(localized: "Pace of Aging"))
                         .fixedSize()
+                    Spacer(minLength: 8)
+                    chip
+                }
+                VStack(alignment: .leading, spacing: 8) {
+                    PulseCardTitle(String(localized: "Pace of Aging"))
+                    chip
                 }
             }
-            HealthPaceRuler(pace: summary.pace)
+            HealthPaceRuler(pace: summary.pace, combInset: 6)
             PulseLink(.healthspan) {
                 Text(String(localized: "Go to Healthspan"))
             }
@@ -163,6 +176,14 @@ struct HealthPaceCard: View {
         }
         .padding(16)
         .background(card)
+    }
+
+    @ViewBuilder
+    private var chip: some View {
+        if let change = summary.paceChange {
+            HealthPaceChangeChip(change: change)
+                .fixedSize()
+        }
     }
 
     private var card: some View {
@@ -253,29 +274,33 @@ struct HealthLabBookCard: View {
     }
 
     private var empty: some View {
-        HStack(alignment: .center, spacing: 12) {
-            VStack(alignment: .leading, spacing: 12) {
-                PulseCardTitle(String(localized: "Lab Book"), accessory: .trailingChevron)
-                Text(String(localized: "Add your lab results from doctor visits to see them next to your 24/7 data."))
-                    .pulseText(.subtitle)
-                    .foregroundStyle(PulseTheme.textSecondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                HStack(spacing: 6) {
-                    Text(String(localized: "Add results")).pulseText(.label)
-                    Image(systemName: "arrow.right").font(.system(size: 12, weight: .semibold))
+        // The title row spans the card, so its › sits at the top-right corner above the art
+        // (health-more-2026/16), not at the end of the text column.
+        VStack(alignment: .leading, spacing: 12) {
+            PulseCardTitle(String(localized: "Lab Book"), accessory: .trailingChevron)
+            HStack(alignment: .center, spacing: 12) {
+                VStack(alignment: .leading, spacing: 12) {
+                    Text(String(localized: "Add your lab results from doctor visits to see them next to your 24/7 data."))
+                        .pulseText(.subtitle)
+                        .foregroundStyle(PulseTheme.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    HStack(spacing: 6) {
+                        Text(String(localized: "Add results")).pulseText(.label)
+                        Image(systemName: "arrow.right").healthGlyph(.inlineArrow)
+                    }
+                    .foregroundStyle(PulseTheme.recoveryBlue)
                 }
-                .foregroundStyle(PulseTheme.recoveryBlue)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                ZStack {
+                    Circle()
+                        .strokeBorder(PulseTheme.positive.opacity(0.7), style: StrokeStyle(lineWidth: 6, dash: [3, 2.2]))
+                    Image(systemName: "testtube.2")
+                        .healthGlyph(.promoArt)
+                        .foregroundStyle(PulseTheme.textSecondary)
+                }
+                .frame(width: 92, height: 92)
+                .accessibilityHidden(true)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            ZStack {
-                Circle()
-                    .strokeBorder(PulseTheme.positive.opacity(0.7), style: StrokeStyle(lineWidth: 6, dash: [3, 2.2]))
-                Image(systemName: "testtube.2")
-                    .font(.system(size: 30, weight: .light))
-                    .foregroundStyle(PulseTheme.textSecondary)
-            }
-            .frame(width: 92, height: 92)
-            .accessibilityHidden(true)
         }
         .padding(16)
         .background(RoundedRectangle(cornerRadius: PulseTheme.Radius.card, style: .circular)
@@ -367,7 +392,15 @@ struct HealthMonitorCard: View {
                         }
                     }
                     .dynamicTypeSize(...DynamicTypeSize.xxLarge)
-                    footer
+                    VStack(alignment: .leading, spacing: 8) {
+                        footer
+                        ForEach(caveats, id: \.self) { line in
+                            Text(line)
+                                .pulseText(.secondary)
+                                .foregroundStyle(PulseTheme.textSecondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
                 }
             }
             .contentShape(Rectangle())
@@ -375,14 +408,19 @@ struct HealthMonitorCard: View {
         .buttonStyle(PulsePressStyle())
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(String(localized: "Health Monitor"))
-        .accessibilityValue(footerText)
+        .accessibilityValue(([footerText] + caveats).joined(separator: ". "))
         .accessibilityHint(String(localized: "Opens Health Monitor"))
+    }
+
+    /// "HRV: unverified · over-reports R-R" (#1118), for each shown value the strap's capture makes doubtful.
+    private var caveats: [String] {
+        vitals.compactMap { v in v.caveat.map { "\(v.shortTitle): \($0)" } }
     }
 
     private func column(_ vital: HealthVital) -> some View {
         VStack(spacing: 10) {
             Image(systemName: vital.symbol)
-                .font(.system(size: 22, weight: .light))
+                .healthGlyph(.columnIcon)
                 .foregroundStyle(PulseTheme.textSecondary)
                 .frame(height: 26)
             Text(vital.shortTitle)
@@ -413,31 +451,65 @@ struct HealthMonitorCard: View {
         return String(localized: "\(outside.count)/\(judged.count) metrics out of range")
     }
 
+    /// reviews/r44, r100: a 16 pt SOLID square (teal with a dark ✓, or orange / red with a dark "!") and
+    /// 11 pt text (r100: "4/4 metrics within range" 117 pt wide, digits 7 pt tall) in a ≈32 pt black-20% well.
     private var footer: some View {
-        HStack(spacing: 12) {
-            if judged.isEmpty {
-                PulseStatusBadge(.pending, tint: .grey)
-            } else if outside.isEmpty {
-                PulseStatusBadge(.check, tint: .teal)
-            } else {
-                PulseStatusBadge(.alert, tint: outside.contains { $0.status == .outside(severe: true) } ? .red : .orange)
-            }
+        HStack(spacing: 10) {
+            HealthFooterMark(state: footerMark)
             Text(footerText)
-                .pulseText(.rowText)
+                .pulseText(.chip)
                 .foregroundStyle(PulseTheme.textPrimary)
                 .lineLimit(2)
             Spacer(minLength: 0)
         }
         .padding(.horizontal, 10)
-        .padding(.vertical, 9)
-        .background(RoundedRectangle(cornerRadius: PulseTheme.Radius.well, style: .circular).fill(PulseTheme.well))
+        .padding(.vertical, 8)
+        .background(RoundedRectangle(cornerRadius: PulseTheme.Radius.well, style: .circular)
+            .fill(HealthPalette.monitorFooterWell))
+    }
+
+    private var footerMark: HealthFooterMark.State {
+        if judged.isEmpty { return .pending }
+        if outside.isEmpty { return .within }
+        return .outside(severe: outside.contains { $0.status == .outside(severe: true) })
+    }
+}
+
+/// The HEALTH MONITOR footer's 16 pt square: solid teal with a black ✓, solid orange or red with a black
+/// "!", or a grey dash while calibrating (radius 3).
+struct HealthFooterMark: View {
+    enum State: Equatable {
+        case within
+        case outside(severe: Bool)
+        case pending
+    }
+
+    let state: State
+
+    var body: some View {
+        let fill: Color
+        let mark: String
+        switch state {
+        case .within: fill = PulseTheme.positive; mark = "checkmark"
+        case .outside(let severe): fill = severe ? PulseTheme.recoveryLow : PulseTheme.negative; mark = "exclamationmark"
+        case .pending: fill = PulseTheme.Tint.grey.fill; mark = "minus"
+        }
+        return RoundedRectangle(cornerRadius: 3, style: .circular)
+            .fill(fill)
+            .frame(width: 16, height: 16)
+            .overlay(
+                Image(systemName: mark)
+                    .healthGlyph(.footerMark)
+                    .foregroundStyle(state == .pending ? PulseTheme.textPrimary : Color.black)
+            )
+            .accessibilityHidden(true)
     }
 }
 
 // MARK: Rhythm (opt-in)
 
-/// RHYTHM › in the Heart Screener slot (§3.20 item 8 [Z]), only when switched on in Automations: last
-/// night's beat-to-beat timing, plainly non-diagnostic. Opens the Rhythm screen.
+/// RHYTHM › in the Heart Screener slot (§3.20 item 8 [Z]), only when switched on in Automations: a way into
+/// last night's beat-to-beat pattern (the Rhythm screen draws it), plainly non-diagnostic.
 struct HealthRhythmCard: View {
     var body: some View {
         PulseLink(.classic(.rhythm)) {
@@ -446,10 +518,10 @@ struct HealthRhythmCard: View {
                     PulseCardTitle(String(localized: "Rhythm"), accessory: .trailingChevron)
                     HStack(alignment: .top, spacing: 12) {
                         Image(systemName: "waveform.path")
-                            .font(.system(size: 22, weight: .light))
+                            .healthGlyph(.columnIcon)
                             .foregroundStyle(PulseTheme.textSecondary)
                             .accessibilityHidden(true)
-                        Text(String(localized: "The shape of your beat-to-beat timing from last night. Experimental, and not an ECG: it cannot detect or rule out any heart condition."))
+                        Text(String(localized: "See last night's beat-to-beat pattern. Experimental, and not an ECG: it cannot detect or rule out any heart condition."))
                             .pulseText(.body)
                             .foregroundStyle(PulseTheme.textSecondary)
                             .fixedSize(horizontal: false, vertical: true)
@@ -465,14 +537,33 @@ struct HealthRhythmCard: View {
 
 // MARK: Menstrual cycle (opt-in)
 
+/// The cycle card's slot: the one view on the tab that reads the cycle phase from `AppModel`, so the live
+/// heart rate it also publishes re-renders this and not the page. Like the classic card
+/// (`SkinTempCardsView`), it asks for a fresh read when there is no phase yet, so logged periods show
+/// without waiting for AppModel's next 30-minute pass.
+struct HealthCycleSlot: View {
+    @EnvironmentObject private var appModel: AppModel
+
+    var body: some View {
+        HealthCycleCard(result: appModel.cyclePhase)
+            .equatable()
+            .task {
+                if appModel.cyclePhase == nil { await appModel.refreshV5Signals() }
+            }
+    }
+}
+
 /// MENSTRUAL CYCLE INSIGHTS (§3.20 item 6), when cycle awareness is on: the phase over "Day 21", a
 /// coral-to-lavender bar with today's white marker, and "+ LOG CYCLE". The card opens Menstrual Cycle
 /// Insights; LOG CYCLE opens the cycle tracker that logs today.
-struct HealthCycleCard: View {
+struct HealthCycleCard: View, Equatable {
     let result: CyclePhaseEngine.Result?
 
-    @EnvironmentObject private var appModel: AppModel
     @State private var showsTracker = false
+
+    static func == (lhs: HealthCycleCard, rhs: HealthCycleCard) -> Bool {
+        lhs.result == rhs.result
+    }
 
     var body: some View {
         PulseCard {
@@ -506,15 +597,7 @@ struct HealthCycleCard: View {
             }
         }
         .sheet(isPresented: $showsTracker) {
-            Group {
-                if let result = appModel.cyclePhase {
-                    CycleTrackerView(result: result, curve: appModel.cycleCurve)
-                } else {
-                    PulseSkeleton.cards([120, 200])
-                        .padding(PulseTheme.Layout.pageMargin)
-                        .task { await appModel.refreshV5Signals() }
-                }
-            }
+            HealthCycleTrackerSheet()
         }
     }
 
@@ -558,29 +641,52 @@ struct HealthCycleCard: View {
     }
 }
 
-// MARK: Stress Monitor
-
-/// STRESS MONITOR ›: "TODAY'S HIGH STRESS" over "0:44 hrs", "▼ vs. typical Tue" (teal when less than the
-/// typical same weekday so far, orange when more), and the day's value-coloured sparkline with a white dot
-/// on the latest reading (health-more-2026/03 frame 121).
-struct HealthStressCardView: View {
-    let card: HealthStressCard?
-    let typicalHigh: Int?
+/// LOG CYCLE's sheet: the classic cycle tracker, reading the phase and curve from `AppModel` while open.
+private struct HealthCycleTrackerSheet: View {
+    @EnvironmentObject private var appModel: AppModel
 
     var body: some View {
-        PulseLink(.stressMonitor) {
+        if let result = appModel.cyclePhase {
+            CycleTrackerView(result: result, curve: appModel.cycleCurve)
+        } else {
+            PulseSkeleton.cards([120, 200])
+                .padding(PulseTheme.Layout.pageMargin)
+                .task { await appModel.refreshV5Signals() }
+        }
+    }
+}
+
+// MARK: Stress Monitor
+
+/// STRESS MONITOR ›: "TODAY'S HIGH STRESS" over "4 hrs", "▼ vs. typical Tue" (teal when less than the
+/// typical same weekday so far, orange when more), and the day so far as a value-coloured sparkline over
+/// faint gridlines, ending at a dashed now-line with a white dot (reviews/r100, health-more-2026/03 frame 121).
+/// ZENO scores stress by the hour, so the time prints in whole hours, not WHOOP's minute-precise h:mm.
+/// Opens the Stress Monitor at today, whatever day Home shows (the Health tab is always now, §1.7).
+struct HealthStressCardView: View {
+    let card: HealthStressCard?
+    let typicalHigh: HealthTypicalHigh?
+
+    /// The typical weekday's HIGH minutes, only when they were built for the card's own day.
+    private var typicalMinutes: Int? {
+        guard let card, let typicalHigh, typicalHigh.dayKey == card.dayKey else { return nil }
+        return typicalHigh.minutes
+    }
+
+    var body: some View {
+        PulseLink(HealthStressMonitorRoute(startOffset: 0).route) {
             PulseCard {
                 VStack(alignment: .leading, spacing: 14) {
                     PulseCardTitle(String(localized: "Stress Monitor"), accessory: .trailingChevron)
                     HStack(alignment: .bottom, spacing: 12) {
                         VStack(alignment: .leading, spacing: 6) {
                             PulseLabel(String(localized: "Today's high stress"))
-                            PulseValueText(value: card?.highMinutes.map { PulseFormat.hoursMinutes(Double($0)) } ?? "--",
-                                           unit: card?.highMinutes == nil ? nil : String(localized: "hrs"),
+                            let hours = card?.highMinutes.map { HealthFormat.stressHours(minutes: $0, long: true) }
+                            PulseValueText(value: hours?.value ?? "--", unit: hours?.unit,
                                            style: .largeValue, unitStyle: .subtitle)
-                            if let high = card?.highMinutes, let typicalHigh, let key = card?.dayKey {
+                            if let high = card?.highMinutes, let typical = typicalMinutes, let key = card?.dayKey {
                                 PulseDeltaChip(text: String(localized: "vs. typical \(PulseFormat.dayLabel(key, template: "EEE"))"),
-                                               trend: PulseTrend(delta: Double(high - typicalHigh), polarity: .lowerIsBetter))
+                                               trend: PulseTrend(delta: Double(high - typical), polarity: .lowerIsBetter))
                             } else if card?.highMinutes == nil {
                                 Text(String(localized: "Fills in as your strap records heart rate today."))
                                     .pulseText(.secondary)
@@ -589,8 +695,8 @@ struct HealthStressCardView: View {
                             }
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        if let points = card?.points, points.contains(where: { $0.value != nil }) {
-                            HealthStressSparkline(points: points, height: 74)
+                        if let card, card.points.contains(where: { $0.value != nil }) {
+                            HealthStressSparkline(points: card.points, span: card.span, height: 74)
                                 .frame(width: 150)
                         }
                     }
@@ -607,9 +713,9 @@ struct HealthStressCardView: View {
 
     private var accessibility: String {
         guard let high = card?.highMinutes else { return String(localized: "No stress readings yet today") }
-        var text = String(localized: "\(PulseFormat.duration(minutes: Double(high))) in high stress today")
-        if let typicalHigh {
-            text += ", " + String(localized: "typical \(PulseFormat.duration(minutes: Double(typicalHigh)))")
+        var text = String(localized: "\(HealthFormat.spokenHours(minutes: high)) in high stress today")
+        if let typical = typicalMinutes {
+            text += ", " + String(localized: "typical \(HealthFormat.spokenHours(minutes: typical))")
         }
         return text
     }
@@ -621,20 +727,12 @@ struct HealthStressCardView: View {
 struct HealthExtras: View {
     let stepsToday: Double?
     let stepsRoute: TabRoute
-    let illness: IllnessSignalEngine.Result?
-
-    private var showsIllness: Bool {
-        guard let illness else { return false }
-        return illness.level == .raised || illness.level == .alreadyUnwell
-    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: PulseTheme.Layout.gridGap) {
             HealthSectionHeader(title: String(localized: "More from ZENO"))
                 .padding(.bottom, 4)
-            if showsIllness, let illness {
-                HealthIllnessCard(result: illness)
-            }
+            HealthIllnessSlot()
             PulseLink(.tab(stepsRoute)) {
                 PulseListRow(symbol: "figure.walk", title: String(localized: "Steps"),
                              subtitle: String(localized: "Today and your trend"),
@@ -649,9 +747,22 @@ struct HealthExtras: View {
     }
 }
 
+/// The illness card's slot: the one view on the tab that reads the illness watch from `AppModel` (which
+/// also publishes the live heart rate about once a second), shown only when the watch fires.
+struct HealthIllnessSlot: View {
+    @EnvironmentObject private var appModel: AppModel
+
+    var body: some View {
+        if let illness = appModel.illnessSignal, illness.level == .raised || illness.level == .alreadyUnwell {
+            HealthIllnessCard(result: illness)
+                .equatable()
+        }
+    }
+}
+
 /// ILLNESS HEADS-UP: the illness watch's own words, the signals that are up, an orange-tinted rim. Opens
 /// the classic Health screen, where the watch lives.
-struct HealthIllnessCard: View {
+struct HealthIllnessCard: View, Equatable {
     let result: IllnessSignalEngine.Result
 
     private var message: String {
@@ -671,7 +782,7 @@ struct HealthIllnessCard: View {
             VStack(alignment: .leading, spacing: 10) {
                 HStack(spacing: 8) {
                     Image(systemName: result.level == .alreadyUnwell ? "bed.double" : "exclamationmark.triangle")
-                        .font(.system(size: 14, weight: .semibold))
+                        .healthGlyph(.control)
                         .foregroundStyle(PulseTheme.negative)
                         .accessibilityHidden(true)
                     PulseCardTitle(String(localized: "Illness heads-up"), accessory: .trailingChevron)

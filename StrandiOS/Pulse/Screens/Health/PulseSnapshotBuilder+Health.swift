@@ -41,6 +41,7 @@ extension PulseSnapshotBuilder {
         let labs = await healthLabs()
         let stress = await stressDay(r)
         let steps = await stepsResolution(r)
+        let vitals = await healthVitals(r)
         guard isCurrent(r) else { return nil }
         let card = stress.map { day -> HealthStressCard in
             let todayHours = day.hours
@@ -49,19 +50,22 @@ extension PulseSnapshotBuilder {
             return HealthStressCard(
                 highMinutes: scored ? StressDayTotals.totals(todayHours).highMinutes : nil,
                 points: day.points.filter { $0.date >= start },
+                span: start...max(r.now, start.addingTimeInterval(60)),
                 dayKey: day.dayKey)
         }
-        return HealthTabSnapshot(seq: r.seq, age: age, labs: labs, vitals: healthVitals(r), stress: card,
+        return HealthTabSnapshot(seq: r.seq, age: age, labs: labs, vitals: vitals, stress: card,
                                  stepsToday: steps.value, stepsRoute: steps.route)
     }
 
-    /// The typical same weekday's HIGH minutes up to this hour, for the tab's "vs. typical Tue" chip. Built
-    /// in a second pass because it reads six earlier days of heart rate.
-    func healthTypicalHighMinutes(_ r: PulseRequest) async -> Int? {
+    /// The typical same weekday's HIGH minutes up to this hour, for the tab's "vs. typical Tue" chip, keyed
+    /// by the day it was built for. Built in a second pass because it reads six earlier days of heart rate.
+    /// nil only when a newer refresh superseded it; "no typical day" is a value (`minutes == nil`).
+    func healthTypicalHigh(_ r: PulseRequest) async -> HealthTypicalHigh? {
         begin(r.seq)
-        let typical = await stressTypical(r, dayStart: Calendar.current.startOfDay(for: r.now), isToday: true)
+        let dayStart = Calendar.current.startOfDay(for: r.now)
+        let typical = await stressTypical(r, dayStart: dayStart, isToday: true)
         guard isCurrent(r) else { return nil }
-        return typical.totals?.highMinutes
+        return HealthTypicalHigh(dayKey: Repository.localDayKey(dayStart), minutes: typical.totals?.highMinutes)
     }
 
     // MARK: - ZENO Age
@@ -166,15 +170,28 @@ extension PulseSnapshotBuilder {
 
     /// Today's vitals as the Health Monitor and the Health tab show them: the readings and bands of
     /// `BodyVitalSigns` (the ones Home's tile counts), worded against a ±1σ personal range when the
-    /// baseline is trusted, else the typical adult range.
-    func healthVitals(_ r: PulseRequest) -> [HealthVital] {
+    /// baseline is trusted, else the typical adult range. The HRV over-count flags go in exactly as the
+    /// classic Health screen passes them, so an over-counted WHOOP 4.0 night carries the same caveat
+    /// (#1118) and a night blanked for it says why (#2335).
+    func healthVitals(_ r: PulseRequest) async -> [HealthVital] {
+        let overCount = await healthHRVOverCount()
         let unit: TemperatureUnit = r.prefs.fahrenheit ? .fahrenheit : .celsius
         let readings = BodyVitalSigns.readings(sourceRows: r.vitalRows, temperatureUnit: unit, now: r.now,
+                                               hrvOverCountByDay: overCount,
                                                skinTempPreferred: r.prefs.skinTempPreferred)
         let order = ["resp", "spo2", "rhr", "hrv", "skin"]
         let todayKey = BodyVitalSigns.logicalDayKey(r.now)
         return readings.compactMap { healthVital($0, r: r, todayKey: todayKey) }
             .sorted { (order.firstIndex(of: $0.id) ?? 9) < (order.firstIndex(of: $1.id) ?? 9) }
+    }
+
+    /// The per-night HRV over-count flags (1/0) the engine writes for the strap's own nights, the last 14
+    /// days: the read `VitalsSection` makes on the classic Health screen.
+    func healthHRVOverCount() async -> [String: Double] {
+        await cached("health.hrvOvercount") { () async -> [String: Double] in
+            let points = await repo.exploreSeries(key: "hrv_rr_overcount", source: "my-whoop", days: 14)
+            return Dictionary(points.map { ($0.day, $0.value) }, uniquingKeysWith: { a, _ in a })
+        }
     }
 
     private func healthVital(_ reading: BodyVitalReading, r: PulseRequest, todayKey: String) -> HealthVital? {
@@ -218,10 +235,13 @@ extension PulseSnapshotBuilder {
         }
 
         let format = reading.format
+        // The title already says FROM BASELINE, so the deviation's unit drops its Δ ("°C", help-center/87).
+        let unitText = isAbsoluteSkin || reading.key != "skin" ? reading.unit
+            : String(reading.unit.drop(while: { $0 == "Δ" || $0 == "±" }))
         guard let v = reading.value else {
             return HealthVital(id: reading.key, name: name, tileTitle: tileTitle, shortTitle: shortTitle,
-                               symbol: symbol, value: nil, unit: reading.unit, status: .noData,
-                               chipText: String(localized: "No reading yet"), direction: 0, dayKey: nil,
+                               symbol: symbol, value: nil, unit: unitText, status: .noData,
+                               chipText: reading.missingCaption, caveat: nil, direction: 0, dayKey: nil,
                                isCarried: false, isPersonal: false, route: route)
         }
 
@@ -294,8 +314,8 @@ extension PulseSnapshotBuilder {
 
         let day = reading.day
         return HealthVital(id: reading.key, name: name, tileTitle: tileTitle, shortTitle: shortTitle, symbol: symbol,
-                           value: format(v), unit: reading.unit, status: status, chipText: chip, direction: direction,
-                           dayKey: day, isCarried: day.map { $0 != todayKey } ?? false,
+                           value: format(v), unit: unitText, status: status, chipText: chip, caveat: reading.caveat,
+                           direction: direction, dayKey: day, isCarried: day.map { $0 != todayKey } ?? false,
                            isPersonal: state != nil, route: route)
     }
 
@@ -315,7 +335,7 @@ extension PulseSnapshotBuilder {
 
     func healthMonitor(_ r: PulseRequest) async -> HealthMonitorSnapshot? {
         begin(r.seq)
-        let vitals = healthVitals(r)
+        let vitals = await healthVitals(r)
         // The personal ranges need `Baselines.minNightsTrust` nights of HRV; until then the monitor says how
         // many nights are left (the "Wear your strap to sleep N more nights" banner).
         let todayKey = Repository.localDayKey(r.now)
@@ -332,8 +352,9 @@ extension PulseSnapshotBuilder {
     // MARK: - Stress
 
     /// One day's stress for the day `r.day.offset` calendar days before today: the intraday curve for both
-    /// the gauge (its latest reading) and the chart, the daily score only as a labelled fallback. Today's
-    /// chart covers the last 24 h, so yesterday's evening is included.
+    /// the gauge (its latest reading) and the chart, the daily score only as a labelled fallback. The chart
+    /// covers 24 hours ending at the day's "now": now today, the end of the last reading on a past day
+    /// (completeness-critic/14: "11:02 PM … 10:49 PM"), so the evening before is included either way.
     func stressDay(_ r: PulseRequest) async -> PulseStressDay? {
         let cal = Calendar.current
         let todayStart = cal.startOfDay(for: r.now)
@@ -343,18 +364,26 @@ extension PulseSnapshotBuilder {
         let dayKey = Repository.localDayKey(dayStart)
         let result = await stressResult(dayStart: dayStart, isToday: isToday, r: r)
 
-        var timeline = result.timeline
+        // The day's own last reading (today's may still be yesterday's evening, found below).
+        func reading(_ p: DaytimeStress.HourPoint) -> PulseStressDay.Reading {
+            PulseStressDay.Reading(level: p.level ?? 0,
+                                   at: min(Date(timeIntervalSince1970: TimeInterval(p.startTs + 3600)), r.now))
+        }
+        let ownLatest = result.timeline.filter { $0.level != nil }.max { $0.startTs < $1.startTs }.map(reading)
+
         let window: ClosedRange<Date>
         if isToday {
-            let start = r.now.addingTimeInterval(-24 * 3600)
-            window = start...r.now
-            if let yesterdayStart = cal.date(byAdding: .day, value: -1, to: dayStart) {
-                let yesterday = await stressResult(dayStart: yesterdayStart, isToday: false, r: r)
-                let startTs = Int(start.timeIntervalSince1970)
-                timeline = yesterday.timeline.filter { $0.startTs + 1800 >= startTs } + timeline
-            }
+            window = r.now.addingTimeInterval(-24 * 3600)...r.now
+        } else if let end = ownLatest?.at {
+            window = end.addingTimeInterval(-24 * 3600)...end
         } else {
             window = dayStart...nextStart
+        }
+        var timeline = result.timeline
+        if window.lowerBound < dayStart, let previousStart = cal.date(byAdding: .day, value: -1, to: dayStart) {
+            let previous = await stressResult(dayStart: previousStart, isToday: false, r: r)
+            let startTs = Int(window.lowerBound.timeIntervalSince1970)
+            timeline = previous.timeline.filter { $0.startTs + 1800 >= startTs } + timeline
         }
 
         // Points at each window's centre, with a gap wherever the curve skips more than an hour (the night).
@@ -370,10 +399,9 @@ extension PulseSnapshotBuilder {
             lastTs = p.startTs
         }
 
-        let latest = timeline.filter { $0.level != nil }.max { $0.startTs < $1.startTs }.map { p in
-            PulseStressDay.Reading(level: p.level ?? 0,
-                                   at: min(Date(timeIntervalSince1970: TimeInterval(p.startTs + 3600)), r.now))
-        }
+        let latest = isToday
+            ? timeline.filter { $0.level != nil }.max { $0.startTs < $1.startTs }.map(reading)
+            : ownLatest
         let daily = await dailyStress(r, dayKey: dayKey, isToday: isToday)
         return PulseStressDay(dayKey: dayKey, isToday: isToday, points: points, hours: result.hours, window: window,
                               latest: latest, daily: daily, maskedHours: result.activityMaskedHours)
@@ -441,14 +469,12 @@ extension PulseSnapshotBuilder {
 
     static let typicalWeeks = 6
 
-    /// The Stress Monitor for the day `r.day.offset` back.
+    /// The Stress Monitor for the day `r.day.offset` back, without its typical weekday: that reads six
+    /// earlier days of heart rate, R-R and motion, so it comes in `stressMonitorTypical`, after the day draws.
     func stressMonitor(_ r: PulseRequest) async -> StressMonitorSnapshot? {
         begin(r.seq)
         guard let day = await stressDay(r) else { return nil }
         guard isCurrent(r) else { return nil }
-        let cal = Calendar.current
-        let dayStart = cal.date(byAdding: .day, value: -r.day.offset, to: cal.startOfDay(for: r.now)) ?? r.now
-        let typical = await stressTypical(r, dayStart: dayStart, isToday: day.isToday)
         let groups = await nightGroups(r)
         let workouts = await workoutRows()
         guard isCurrent(r) else { return nil }
@@ -482,9 +508,22 @@ extension PulseSnapshotBuilder {
         }
         let title = day.isToday ? String(localized: "Today") : PulseFormat.navDayTitle(dayKey: day.dayKey)
         return StressMonitorSnapshot(seq: r.seq, day: day, title: title, periods: periods,
-                                     totals: StressDayTotals.totals(day.hours), typical: typical.totals,
-                                     typicalDays: typical.days, longestHigh: longest,
+                                     totals: StressDayTotals.totals(day.hours), longestHigh: longest,
                                      dailyExplanation: explanation)
+    }
+
+    /// The Stress Monitor's typical same weekday for the day `r.day.offset` back (TOTAL DAY's typical bar
+    /// and chips, the "typical Friday" sentence), through the same per-day stress reads `stressMonitor`
+    /// cached. nil only when a newer refresh superseded it.
+    func stressMonitorTypical(_ r: PulseRequest) async -> StressMonitorTypical? {
+        begin(r.seq)
+        let cal = Calendar.current
+        let todayStart = cal.startOfDay(for: r.now)
+        guard let dayStart = cal.date(byAdding: .day, value: -r.day.offset, to: todayStart) else { return nil }
+        let typical = await stressTypical(r, dayStart: dayStart, isToday: r.day.offset == 0)
+        guard isCurrent(r) else { return nil }
+        return StressMonitorTypical(dayKey: Repository.localDayKey(dayStart), totals: typical.totals,
+                                    days: typical.days)
     }
 
     /// The daily score's own sentence (resting HR and HRV against their baselines), for a day with no curve:

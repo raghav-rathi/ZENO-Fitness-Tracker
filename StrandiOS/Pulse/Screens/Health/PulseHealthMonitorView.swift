@@ -60,7 +60,7 @@ struct PulseHealthMonitorView: View {
             } label: {
                 HStack(spacing: 18) {
                     Image(systemName: "square.and.arrow.up")
-                        .font(.system(size: 20, weight: .light))
+                        .healthGlyph(.rowIcon)
                         .foregroundStyle(PulseTheme.textSecondary)
                         .accessibilityHidden(true)
                     Text(String(localized: "Share your health report"))
@@ -90,7 +90,8 @@ struct PulseHealthMonitorView: View {
         guard let s = snapshot else { return nil }
         let parts = s.vitals.compactMap { v -> String? in
             guard let value = v.value else { return nil }
-            return "\(v.name) \(PulseFormat.withUnit(value, v.unit)) (\(v.chipText))"
+            let notes = [v.chipText] + (v.caveat.map { [$0] } ?? [])
+            return "\(v.name) \(PulseFormat.withUnit(value, v.unit)) (\(notes.joined(separator: "; ")))"
         }
         return parts.isEmpty ? nil : String(localized: "Health Monitor today: \(parts.joined(separator: "; ")).")
     }
@@ -130,20 +131,22 @@ struct HealthMonitorCalibrationBanner: View {
     }
 }
 
-/// One vital: icon + caps label (11 pt, 70%, up to two lines), the value (34 pt) with its unit (14 pt,
-/// 50%), and the status chip under it (help-center/87, 88; reviews/33). ≈118 pt tall, padding 12.
+/// One vital: icon + caps label (11 pt, 70%, tracked 0.3 so "BLOOD OXYGEN (SPO₂)" keeps to one line; others
+/// wrap between words), the value (34 pt) with its unit (14 pt, white like WHOOP's "rpm", help-center/87, reviews/33),
+/// the status chip under it, and a caveat line (12 pt, 70%) when the strap's own capture makes a shown value
+/// doubtful (#1118). ≈118 pt tall, padding 12.
 struct HealthVitalTile: View {
     let vital: HealthVital
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack(alignment: .top, spacing: 8) {
+            HStack(alignment: .top, spacing: 6) {
                 Image(systemName: vital.symbol)
-                    .font(.system(size: 15, weight: .light))
+                    .healthGlyph(.tileIcon)
                     .foregroundStyle(PulseTheme.textSecondary)
-                    .frame(width: 18)
+                    .frame(width: 16)
                     .accessibilityHidden(true)
-                PulseWordWrapText(vital.tileTitle, style: .label)
+                HealthTrackedLabel(vital.tileTitle)
                     .foregroundStyle(PulseTheme.textSecondary)
             }
             Spacer(minLength: 12)
@@ -156,7 +159,7 @@ struct HealthVitalTile: View {
                 if vital.value != nil {
                     Text(vital.unit)
                         .pulseText(.tileUnit)
-                        .foregroundStyle(PulseTheme.textTertiary)
+                        .foregroundStyle(PulseTheme.textPrimary)
                 }
                 Spacer(minLength: 0)
                 if vital.isCarried, let key = vital.dayKey {
@@ -167,6 +170,13 @@ struct HealthVitalTile: View {
             }
             HealthVitalChip(vital: vital)
                 .padding(.top, 10)
+            if let caveat = vital.caveat {
+                Text(caveat)
+                    .pulseText(.secondary)
+                    .foregroundStyle(PulseTheme.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.top, 6)
+            }
         }
         .padding(12)
         .frame(maxWidth: .infinity, minHeight: 124, alignment: .topLeading)
@@ -181,13 +191,15 @@ struct HealthVitalTile: View {
     private var accessibility: String {
         guard let value = vital.value else { return vital.chipText }
         var parts = [PulseFormat.withUnit(value, vital.unit), vital.chipText]
+        if let caveat = vital.caveat { parts.append(caveat) }
         if vital.isCarried, let key = vital.dayKey { parts.append(String(localized: "from \(PulseFormat.dayLabel(key, template: "MMMd"))")) }
         parts.append(vital.isPersonal ? String(localized: "your own range") : String(localized: "typical adult range"))
         return parts.joined(separator: ", ")
     }
 }
 
-/// "✓ within 13.8 - 14.8" (teal), "! low < 95" (orange), "! very high > 62" (red), "● No reading yet" (grey).
+/// "✓ within 13.8 - 14.8" (teal), "! low < 95" (orange), "! very high > 62" (red), or, with no value, the
+/// reason in grey ("● No HRV value", "● Over-reports R-R, so no value is shown").
 struct HealthVitalChip: View {
     let vital: HealthVital
 
@@ -204,7 +216,7 @@ struct HealthVitalChip: View {
     var body: some View {
         let s = style
         HStack(alignment: .firstTextBaseline, spacing: 5) {
-            Text(verbatim: s.glyph).font(.system(size: vital.status == .noData ? 8 : 11, weight: .heavy))
+            Text(verbatim: s.glyph).healthGlyph(vital.status == .noData ? .chipDot : .chipMark)
             // One line at the default sizes; at the largest it wraps between words, never cut.
             PulseWordWrapText(vital.chipText, style: .chipStrong, minimumScale: 0.8)
         }

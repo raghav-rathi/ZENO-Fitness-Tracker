@@ -6,10 +6,10 @@ import Charts
 
 /// The day's stress on the page (no card), over an explicit window: the line coloured by its own value
 /// along the stress scale, sleep and activity periods as faint bands with a 3 pt cap on the 3.0 gridline
-/// and a glyph above, faint verticals at the two inner times, a dashed now-line ending in a dot in the
-/// current level's colour, y labels 0.0–3.0 on the left and four times under it, the last one white
-/// (completeness-critic/14, 15). The black zoom button inside the plot's bottom-right corner narrows the
-/// window to its last six hours and back.
+/// and a 17 pt glyph above, faint verticals at the two inner times, a dashed line at the window's end with
+/// a white dot at its foot, y labels 0.0–3.0 on the left and four times under it, the last one white
+/// (completeness-critic/14, 15; reviews/33 draws the dot white today too). The black zoom button inside the
+/// plot's bottom-right corner narrows the window to its last six hours and back.
 ///
 /// The window is explicit, unlike `PulseStressChart`'s, so a rolling 24 h view keeps its span even when
 /// the readings start late in it. Missing readings are gaps, never zero.
@@ -17,10 +17,9 @@ struct HealthStressDayChart: View {
     let points: [PulseTimeValue]
     var periods: [PulseChartPeriod] = []
     let window: ClosedRange<Date>
-    /// Today's "now"; nil on a past day (the window's end is then the day's end, with no now-line).
+    /// Where the window ends with the dashed line and dot: now today, the last reading's end on a past day;
+    /// nil for a past day with no reading (the window is then the calendar day, with no end line).
     var now: Date?
-    /// The level the gauge shows, which colours the now-line's dot.
-    var currentLevel: Double?
     /// The plot's height (completeness-critic/14: ≈157 pt of plot, ≈210 pt with the glyphs and the times).
     var height: CGFloat = 160
     /// Shown over the empty plot when there is no reading in the window.
@@ -83,13 +82,14 @@ struct HealthStressDayChart: View {
                 RectangleMark(xStart: .value("Start", period.start), xEnd: .value("End", period.end),
                               yStart: .value("Low", 0), yEnd: .value("High", 3))
                     .foregroundStyle(period.kind.color.opacity(0.10))
+                // A 3 pt cap: 3 pt of the 0–3 axis is 9 / height of a unit.
                 RectangleMark(xStart: .value("Start", period.start), xEnd: .value("End", period.end),
-                              yStart: .value("Cap", 2.96), yEnd: .value("Top", 3.0))
+                              yStart: .value("Cap", 3.0 - 9.0 / Double(height)), yEnd: .value("Top", 3.0))
                     .foregroundStyle(period.kind.color)
                     .annotation(position: .top, spacing: 4) {
                         if let symbol = period.symbol {
                             Image(systemName: symbol)
-                                .font(.system(size: 13, weight: .semibold))
+                                .font(HealthGlyph.periodGlyph.font)
                                 .foregroundStyle(PulseTheme.textPrimary)
                         }
                     }
@@ -119,7 +119,7 @@ struct HealthStressDayChart: View {
                     .lineStyle(StrokeStyle(lineWidth: 1, dash: [3, 3]))
                 PointMark(x: .value("Now", now), y: .value("Foot", 0))
                     .symbolSize(30)
-                    .foregroundStyle(currentLevel.map { PulseTheme.Stress.Level(value: $0).color } ?? PulseTheme.textPrimary)
+                    .foregroundStyle(Color.white)
             }
         }
         .chartXScale(domain: shown)
@@ -176,7 +176,7 @@ struct HealthStressDayChart: View {
             zoomed.toggle()
         } label: {
             Image(systemName: zoomed ? "minus.magnifyingglass" : "plus.magnifyingglass")
-                .font(.system(size: 17, weight: .regular))
+                .healthGlyph(.zoom)
                 .foregroundStyle(PulseTheme.textPrimary)
                 .frame(width: 34, height: 34)
                 .background(RoundedRectangle(cornerRadius: PulseTheme.Radius.well, style: .circular)
@@ -216,19 +216,31 @@ struct HealthStressDayChart: View {
     }
 }
 
-/// The Health tab's STRESS MONITOR sparkline: the day so far, coloured by value, with a white dot on the
-/// latest reading (health-more-2026/03 frame 121). No axes.
+/// The Health tab's STRESS MONITOR sparkline: the day so far across today's whole span (midnight to now),
+/// coloured by value, over faint gridlines at 0, 1, 2 and 3, with a dashed line at now and a white dot on
+/// the latest reading (reviews/r100: four lines 25 pt apart in its 74 pt; health-more-2026/03 frame 121).
+/// No axes.
 struct HealthStressSparkline: View {
     let points: [PulseTimeValue]
+    /// Today's start to now.
+    let span: ClosedRange<Date>
     var height: CGFloat = 64
 
     var body: some View {
-        let pts = points
+        let pts = points.filter { span.contains($0.date) }
         let pairs: [(PulseTimeValue, PulseTimeValue)] = pts.count > 1 ? (1..<pts.count).compactMap { i in
             pts[i - 1].value != nil && pts[i].value != nil ? (pts[i - 1], pts[i]) : nil
         } : []
         let last = pts.last { $0.value != nil }
         Chart {
+            ForEach([0.0, 1.0, 2.0, 3.0], id: \.self) { y in
+                RuleMark(y: .value("Grid", y))
+                    .foregroundStyle(PulseTheme.gridOnCard)
+                    .lineStyle(StrokeStyle(lineWidth: 1))
+            }
+            RuleMark(x: .value("Now", span.upperBound))
+                .foregroundStyle(PulseTheme.textSecondary)
+                .lineStyle(StrokeStyle(lineWidth: 1, dash: [3, 3]))
             ForEach(Array(pairs.enumerated()), id: \.offset) { index, pair in
                 ForEach([pair.0, pair.1], id: \.date) { p in
                     LineMark(x: .value("Time", p.date), y: .value("Stress", p.value ?? 0),
@@ -243,6 +255,7 @@ struct HealthStressSparkline: View {
                     .foregroundStyle(Color.white)
             }
         }
+        .chartXScale(domain: span)
         .chartYScale(domain: 0...3)
         .chartXAxis(.hidden)
         .chartYAxis(.hidden)

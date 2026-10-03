@@ -18,7 +18,8 @@ struct PulseHealthTabView: View {
     @EnvironmentObject private var profile: ProfileStore
 
     @State private var snapshot: HealthTabSnapshot?
-    @State private var typicalHigh: Int?
+    /// The typical weekday's HIGH minutes, for the day it was built for (the chip checks the day).
+    @State private var typicalHigh: HealthTypicalHigh?
     @State private var restTop: CGFloat?
     @State private var scrolledUnder = false
 
@@ -97,17 +98,20 @@ struct PulseHealthTabView: View {
         if let s = await model.build(dayOffset: 0, { builder, request in
             await builder.healthTab(request, dateOfBirth: dob)
         }) {
+            // A new day drops the previous day's typical figure before its own arrives.
+            if let held = typicalHigh, held.dayKey != s.stress?.dayKey { typicalHigh = nil }
             if snapshot != s { snapshot = s }
         }
     }
 
-    /// The typical weekday reads six earlier days of heart rate, so it lands after the page has drawn.
+    /// The typical weekday reads six earlier days of heart rate, so it lands after the page has drawn. Every
+    /// result is kept, "no typical day" included; only a superseded build (nil) leaves the value alone.
     private func loadTypical() async {
         guard let snapshot, snapshot.stress != nil else { return }
         if let value = await model.build(dayOffset: 0, { builder, request in
-            await builder.healthTypicalHighMinutes(request)
+            await builder.healthTypicalHigh(request)
         }) {
-            typicalHigh = value
+            if typicalHigh != value { typicalHigh = value }
         }
     }
 }
@@ -120,11 +124,14 @@ private struct HealthScrollTopKey: PreferenceKey {
 }
 
 /// The tab's cards, top to bottom, 24 pt apart (§2.3: the 2026 Health tab's rhythm).
+///
+/// It reads nothing from `AppModel`, which publishes the live heart rate about once a second: the two
+/// facts it needs from there (the cycle phase, the illness watch) are read by the small slots that show
+/// them, so a streaming strap re-renders those slots and not the orb, the ruler and the Lab ring.
 private struct PulseHealthTabContent: View {
     let snapshot: HealthTabSnapshot
-    let typicalHigh: Int?
+    let typicalHigh: HealthTypicalHigh?
 
-    @EnvironmentObject private var appModel: AppModel
     @AppStorage(AppModel.cycleAwarenessKey) private var cycleEnabled = false
     @AppStorage(AppModel.cycleAwarenessHiddenKey) private var cycleHidden = false
     @AppStorage(RhythmConsent.enabledKey) private var rhythmEnabled = false
@@ -160,13 +167,12 @@ private struct PulseHealthTabContent: View {
                 HealthRhythmCard()
             }
             if cycleEnabled && !cycleHidden {
-                HealthCycleCard(result: appModel.cyclePhase)
+                HealthCycleSlot()
                     .id("pulse.cycle")
             }
             HealthStressCardView(card: snapshot.stress, typicalHigh: typicalHigh)
                 .id("pulse.stress")
-            HealthExtras(stepsToday: snapshot.stepsToday, stepsRoute: snapshot.stepsRoute,
-                         illness: appModel.illnessSignal)
+            HealthExtras(stepsToday: snapshot.stepsToday, stepsRoute: snapshot.stepsRoute)
                 .padding(.top, PulseTheme.Space.s)
                 .id("pulse.extras")
             HealthDisclaimer(text: String(localized: "ZENO is not a medical device. Health Monitor, Stress Monitor and Healthspan are wellness estimates from your own data; they cannot diagnose or manage any medical condition. Talk to a doctor about anything that worries you."))

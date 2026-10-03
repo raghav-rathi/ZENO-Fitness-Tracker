@@ -5,15 +5,18 @@ import SwiftUI
 
 /// The Stress Monitor's gauge: a 225° arc symmetric about 12 o'clock (0.0 at −112.5°, 3.0 at +112.5°), a
 /// bright 3 pt stroke in the stress scale over a dimmer 13 pt band of the same hues, a white needle pointing
-/// in from the arc with a fading tail, "0.0" / "3.0" under the ends, and the value (52 pt Bold, standard
-/// width), the level word in its colour and a time line in the centre. The 2026 captures draw it 0.58 of the
-/// screen wide (completeness-critic/14, 15): 230 pt on a 402 pt iPhone.
+/// in from the arc with a fading tail, "0.0" / "3.0" centred under the band's ends, and the value (52 pt
+/// Bold, standard width), the level word (13 pt caps) in its colour and the time at 70% in the centre, with
+/// ⓘ at the gauge's top-right (completeness-critic/14). The 2026 captures draw it 0.58 of the screen wide
+/// (completeness-critic/14, 15): 230 pt on a 402 pt iPhone.
 struct HealthStressGauge: View {
     /// 0…3, or nil with nothing to show (no needle, and the value reads "--").
     let level: Double?
     /// The line under the word: the reading's time ("10:49 PM"), or what the value is when it is not one.
     let caption: String?
     var diameter: CGFloat = 230
+    /// The ⓘ at the gauge's top-right, when the screen has an explainer.
+    var onInfo: (() -> Void)?
 
     private static let sweep: Double = 225
     /// 12 o'clock is −90° in SwiftUI's angles; the arc starts 112.5° before it.
@@ -36,7 +39,8 @@ struct HealthStressGauge: View {
     var body: some View {
         let r = diameter / 2
         let endDrop = r * CGFloat(cos(67.5 * Double.pi / 180))
-        let endX = r * CGFloat(sin(67.5 * Double.pi / 180))
+        // Centred under the band's ends (completeness-critic/14: 0.81 of the radius from the centre).
+        let labelX = r * 0.81
         VStack(spacing: 0) {
             ZStack(alignment: .top) {
                 arc
@@ -50,19 +54,25 @@ struct HealthStressGauge: View {
                     .offset(y: endDrop * 0.3)
             }
             .frame(width: diameter, height: r + endDrop + 4, alignment: .top)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(String(localized: "Stress"))
+            .accessibilityValue(accessibility)
             ZStack {
-                Text(verbatim: "0.0").offset(x: -endX)
-                Text(verbatim: "3.0").offset(x: endX)
+                Text(verbatim: "0.0").offset(x: -labelX)
+                Text(verbatim: "3.0").offset(x: labelX)
             }
             .font(PulseType.font(.axis))
             .foregroundStyle(PulseTheme.textTertiary)
             .frame(width: diameter)
-            .padding(.top, 12)
+            .padding(.top, 6)
             .accessibilityHidden(true)
         }
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(String(localized: "Stress"))
-        .accessibilityValue(accessibility)
+        .overlay(alignment: .topTrailing) {
+            if let onInfo {
+                PulseInfoButton(accessibilityLabel: String(localized: "How stress is scored"), action: onInfo)
+                    .offset(x: 16, y: 8)
+            }
+        }
     }
 
     private var accessibility: String {
@@ -89,13 +99,13 @@ struct HealthStressGauge: View {
                 .pulseNumericTransition()
             if let band {
                 Text(word(band))
-                    .pulseText(.navTitle)
+                    .pulseText(.menuLabel)
                     .foregroundStyle(band.color)
             }
             if let caption {
                 Text(caption)
                     .pulseText(.secondary)
-                    .foregroundStyle(PulseTheme.textTertiary)
+                    .foregroundStyle(PulseTheme.textSecondary)
                     .lineLimit(2)
                     .multilineTextAlignment(.center)
                     .frame(maxWidth: diameter * 0.6)
