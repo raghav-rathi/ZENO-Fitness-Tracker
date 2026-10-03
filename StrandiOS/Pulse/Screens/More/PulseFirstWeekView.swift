@@ -6,17 +6,18 @@ import StrandAnalytics
 /// days) or its SUPPORT row: six first steps, each a row with its check state (WHOOP's "Getting Started"
 /// checklist, with "Import your history" in place of joining a team).
 ///
-/// A step is checked only by what the store shows (an activity logged, an alarm armed, a journal entry,
-/// imported history) or, for the two "look at" steps, by the wearer opening them from here. Nothing is
-/// checked to make the list look finished.
+/// A step is checked only by what the store shows (an activity logged, the strap alarm armed, a journal
+/// entry, imported history) or, for the two "look at" steps, by the wearer opening them from here. Nothing
+/// is checked to make the list look finished: the evening wind-down reminder is a phone notification, not
+/// the strap's wake alarm, so it does not tick "Set up your strap alarm".
 struct PulseFirstWeekView: View {
     static let isRebuilt = true
 
     @Environment(PulseModel.self) private var model
     @Environment(\.pulseNavigator) private var navigator
     @EnvironmentObject private var repo: Repository
+    /// The strap alarm Tonight's Sleep reads for ALARM ON / OFF (`BehaviorStore`'s smart alarm).
     @AppStorage("behavior.smartAlarmEnabled") private var strapAlarmOn = false
-    @AppStorage("windDown.enabled") private var windDownOn = false
     @AppStorage("pulse.firstWeek.sleepOpened") private var sleepOpened = false
     @AppStorage("pulse.firstWeek.activityOpened") private var activityOpened = false
     @State private var snapshot: FirstWeekSnapshot?
@@ -29,7 +30,7 @@ struct PulseFirstWeekView: View {
          Step(id: "details", symbol: "chart.xyaxis.line", title: String(localized: "View your activity details"),
               subtitle: String(localized: "Heart rate and Strain for one session"), done: activityOpened),
          Step(id: "alarm", symbol: "alarm", title: String(localized: "Set up your strap alarm"),
-              subtitle: String(localized: "A silent buzz to wake you"), done: strapAlarmOn || windDownOn),
+              subtitle: String(localized: "A silent buzz to wake you"), done: strapAlarmOn),
          Step(id: "journal", symbol: "book.closed", title: String(localized: "Set up your daily journal"),
               subtitle: String(localized: "Answer today's questions once"), done: snapshot?.hasJournal ?? false),
          Step(id: "import", symbol: "square.and.arrow.down", title: String(localized: "Import your history"),

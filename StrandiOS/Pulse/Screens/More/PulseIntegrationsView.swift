@@ -147,10 +147,11 @@ struct PulseAppleHealthIntegrationView: View {
         .accessibilityHidden(true)
     }
 
-    /// The kinds of data that move: workouts, heart rate, sleep, steps, mindful minutes.
+    /// The kinds of data that move, each one `HealthKitBridge` reads or writes: workouts, heart rate,
+    /// sleep, steps and respiratory rate. (ZENO moves no mindful minutes.)
     private var typeTiles: some View {
         HStack(spacing: 12) {
-            ForEach(["figure.run", "heart", "bed.double", "shoeprints.fill", "brain.head.profile"], id: \.self) { symbol in
+            ForEach(["figure.run", "heart", "bed.double", "shoeprints.fill", "lungs"], id: \.self) { symbol in
                 Image(systemName: symbol)
                     .font(.system(size: 15, weight: .regular))
                     .foregroundStyle(PulseTheme.textSecondary)
@@ -160,7 +161,7 @@ struct PulseAppleHealthIntegrationView: View {
         }
         .frame(maxWidth: .infinity)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(String(localized: "Workouts, heart rate, sleep, steps and mindful minutes"))
+        .accessibilityLabel(String(localized: "Workouts, heart rate, sleep, steps and respiratory rate"))
     }
 
     private var paragraphs: [String] {

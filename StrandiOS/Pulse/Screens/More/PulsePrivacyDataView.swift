@@ -22,7 +22,7 @@ struct PulsePrivacyDataView: View {
                     .foregroundStyle(PulseTheme.textSecondary)
                     .accessibilityHidden(true)
                 MorePageIntro(title: String(localized: "Everything stays on this iPhone"),
-                              text: String(localized: "ZENO has no account and no server. Your strap talks to this iPhone over Bluetooth, and your history lives in a database on it. Nothing leaves unless you export or share it."))
+                              text: String(localized: "ZENO has no account and no server. Your strap talks to this iPhone over Bluetooth, and your history lives in a database on it. Nothing leaves unless you export it, share it, connect Apple Health or ask the Coach."))
             }
             .padding(.horizontal, 4)
             MoreSection(String(localized: "Back up and restore")) {
