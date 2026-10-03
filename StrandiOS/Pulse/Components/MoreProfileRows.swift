@@ -48,6 +48,20 @@ enum MoreLayout {
     static let labelInset: CGFloat = 63
     /// Grey helper text under a settings row card, inset from its edge.
     static let helpInset: CGFloat = 18
+
+    // Radii the group's pages measure that the foundation's scale does not name.
+    /// The Profile, Day Streak and Achievement Details cards (spec §3.30 "radius 16", `#1E2326`).
+    static let profileCardRadius: CGFloat = 16
+    /// The unlock modal's and the birthday sheet's CLOSE / VIEW / CONFIRM buttons (spec §3.30 "radius 14").
+    static let modalButtonRadius: CGFloat = 14
+    /// The phone drawn on the disconnected STATUS picture (onboarding/43a).
+    static let phoneArtRadius: CGFloat = 26
+    /// ZENO's tile on the Apple Health connection graphic.
+    static let healthTileRadius: CGFloat = 15
+    /// Device Settings' row cards: nearly square (help-center/97 measures a 9 px corner at 3x, onboarding/43a
+    /// about 2.7 pt), and 20 pt from the screen edges.
+    static let deviceRowRadius: CGFloat = PulseTheme.Radius.badge
+    static let deviceMargin: CGFloat = 20
 }
 
 /// The UPPERCASE Bold tracked type of a More row's label and a More section header: caps 8.7 pt tall
@@ -88,6 +102,9 @@ struct MoreSectionHeader: View {
 /// A More / settings row: its own rounded card (56 pt, 64 with a sub-line), a 24 pt outline icon in grey,
 /// the UPPERCASE label, an optional sub-line, and at the right nothing (WHOOP's list rows carry no "›"),
 /// a value, a toggle or a tag. Wrap it in a link or button; the whole card is the hit area.
+///
+/// The label wraps between words only and a word too wide for the card shrinks instead of breaking
+/// ("INTEGRATION / S" at the accessibility sizes); the row stops growing at `.accessibility2` (DR §2).
 struct MoreListRow: View {
     enum Trailing {
         case none
@@ -103,14 +120,16 @@ struct MoreListRow: View {
     var subtitle: String?
     var trailing: Trailing = .none
     var titleColor: Color = PulseTheme.textPrimary
+    var cornerRadius: CGFloat = PulseTheme.Radius.card
 
     init(symbol: String? = nil, title: String, subtitle: String? = nil, trailing: Trailing = .none,
-         titleColor: Color = PulseTheme.textPrimary) {
+         titleColor: Color = PulseTheme.textPrimary, cornerRadius: CGFloat = PulseTheme.Radius.card) {
         self.symbol = symbol
         self.title = title
         self.subtitle = subtitle
         self.trailing = trailing
         self.titleColor = titleColor
+        self.cornerRadius = cornerRadius
     }
 
     var body: some View {
@@ -125,11 +144,8 @@ struct MoreListRow: View {
                     .accessibilityHidden(true)
             }
             VStack(alignment: .leading, spacing: 3) {
-                Text(title)
-                    .modifier(MoreLabelText())
+                MoreWordWrapLabel(title)
                     .foregroundStyle(titleColor)
-                    .lineLimit(2)
-                    .fixedSize(horizontal: false, vertical: true)
                 if let subtitle {
                     Text(subtitle)
                         .pulseText(.rowSubline)
@@ -146,9 +162,10 @@ struct MoreListRow: View {
         .padding(.trailing, 16)
         .frame(maxWidth: .infinity, minHeight: subtitle == nil ? PulseTheme.Row.list : PulseTheme.Row.listWithSubline,
                alignment: .leading)
-        .pulseCardBackground(.rowCard)
+        .pulseCardBackground(.rowCard, radius: cornerRadius)
         .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
+        .dynamicTypeSize(...DynamicTypeSize.accessibility2)
     }
 
     @ViewBuilder
@@ -164,9 +181,8 @@ struct MoreListRow: View {
                 .foregroundStyle(PulseTheme.textSecondary)
                 .multilineTextAlignment(.trailing)
         case .toggle(let isOn):
-            Toggle("", isOn: isOn)
-                .labelsHidden()
-                .tint(PulseTheme.positive)
+            Toggle(title, isOn: isOn)
+                .toggleStyle(MoreSwitchStyle())
         case .tag(let text):
             PulseTag(text)
         case .check(let done):
@@ -190,21 +206,25 @@ struct MoreButtonRow: View {
     var subtitle: String?
     var trailing: MoreListRow.Trailing = .none
     var titleColor: Color = PulseTheme.textPrimary
+    var cornerRadius: CGFloat = PulseTheme.Radius.card
     let action: () -> Void
 
     init(symbol: String?, title: String, subtitle: String? = nil, trailing: MoreListRow.Trailing = .none,
-         titleColor: Color = PulseTheme.textPrimary, action: @escaping () -> Void) {
+         titleColor: Color = PulseTheme.textPrimary, cornerRadius: CGFloat = PulseTheme.Radius.card,
+         action: @escaping () -> Void) {
         self.symbol = symbol
         self.title = title
         self.subtitle = subtitle
         self.trailing = trailing
         self.titleColor = titleColor
+        self.cornerRadius = cornerRadius
         self.action = action
     }
 
     var body: some View {
         Button(action: action) {
-            MoreListRow(symbol: symbol, title: title, subtitle: subtitle, trailing: trailing, titleColor: titleColor)
+            MoreListRow(symbol: symbol, title: title, subtitle: subtitle, trailing: trailing, titleColor: titleColor,
+                        cornerRadius: cornerRadius)
         }
         .buttonStyle(PulsePressStyle())
     }
@@ -217,19 +237,22 @@ struct MoreLinkRow: View {
     let title: String
     var subtitle: String?
     var trailing: MoreListRow.Trailing = .none
+    var cornerRadius: CGFloat = PulseTheme.Radius.card
 
     init(_ route: PulseRoute, symbol: String?, title: String, subtitle: String? = nil,
-         trailing: MoreListRow.Trailing = .none) {
+         trailing: MoreListRow.Trailing = .none, cornerRadius: CGFloat = PulseTheme.Radius.card) {
         self.route = route
         self.symbol = symbol
         self.title = title
         self.subtitle = subtitle
         self.trailing = trailing
+        self.cornerRadius = cornerRadius
     }
 
     var body: some View {
         PulseLink(route) {
-            MoreListRow(symbol: symbol, title: title, subtitle: subtitle, trailing: trailing)
+            MoreListRow(symbol: symbol, title: title, subtitle: subtitle, trailing: trailing,
+                        cornerRadius: cornerRadius)
         }
         .buttonStyle(PulsePressStyle())
     }
@@ -257,10 +280,8 @@ struct MoreToggleRow: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 12) {
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(title)
-                        .modifier(MoreLabelText())
+                    MoreWordWrapLabel(title)
                         .foregroundStyle(PulseTheme.textPrimary)
-                        .fixedSize(horizontal: false, vertical: true)
                     if let subtitle {
                         Text(subtitle)
                             .pulseText(.rowSubline)
@@ -270,8 +291,7 @@ struct MoreToggleRow: View {
                 }
                 Spacer(minLength: 8)
                 Toggle(title, isOn: $isOn)
-                    .labelsHidden()
-                    .tint(PulseTheme.positive)
+                    .toggleStyle(MoreSwitchStyle())
             }
             .frame(minHeight: PulseTheme.Layout.minTapTarget)
             if let help {

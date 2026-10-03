@@ -98,6 +98,28 @@ enum ProfileArtPalette {
     static let shareButton = Color(hex: "#292E30")
     /// The Achievement Details page under its family glow.
     static let detailsPage = Color(hex: "#0C1014")
+    /// The wash over the top of Achievement Details for the families the foundation has no token for
+    /// (recovery's green, strain's blue, healthspan's teal): the frame's deep colour, dimmed.
+    static func detailsWash(_ family: PulseAchievements.Family) -> Color {
+        Self.family(family)[1].opacity(0.42)
+    }
+
+    /// Profile's "Tracking since" pill (spec §3.30 "Member since", `#292E32`).
+    static let trackingPill = Color(hex: "#292E32")
+    /// NOTABLE STATS' gold scalloped icon: its rim and its glyph (profile-community-2026/22).
+    static let notableRim = Color(hex: "#C9A15A")
+    static let notableGlyph = Color(hex: "#E8C27A")
+
+    /// WHOOP's settings switch when off: a grey knob on a grey track (profile-community-2026/55, sampled
+    /// (143, 142, 147) and (101, 106, 110)).
+    static let switchOffKnob = Color(hex: "#8F8E93")
+    static let switchOffTrack = Color(hex: "#656A6E")
+
+    /// The phone drawn beside the strap while it is disconnected (onboarding/43a).
+    static let phoneBody = Color(hex: "#1E2328")
+    /// INTEGRATIONS: the red heart on the health tile, and ZENO's own tile beside it.
+    static let healthHeart = Color(hex: "#FF3B5C")
+    static let zenoTile = Color(hex: "#20262C")
 }
 
 // MARK: - Badge frames

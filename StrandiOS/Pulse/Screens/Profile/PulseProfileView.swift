@@ -114,8 +114,10 @@ struct PulseProfileView: View {
         return parts.joined(separator: " • ")
     }
 
+    /// The paired strap's model; nothing for the row a fresh install seeds before any strap connects
+    /// (`MoreStrapRegistry`), so a new member's subline is just their age.
     private var strapName: String? {
-        guard let device = appModel.deviceRegistry?.devices.first(where: { $0.status == .active && !$0.isImportSource })
+        guard let device = appModel.deviceRegistry.flatMap({ MoreStrapRegistry.active(in: $0.devices) })
         else { return nil }
         if SourceCoordinator.isWhoop(device), device.model.trimmingCharacters(in: .whitespaces).uppercased() == "WHOOP" {
             return appModel.ble.isWhoop4 ? WhoopModel.whoop4.displayName : WhoopModel.whoop5mg.displayName

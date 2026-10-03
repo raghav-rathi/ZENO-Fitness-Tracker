@@ -13,7 +13,9 @@ import WhoopStore
 ///
 /// Everything reads what the classic Devices screen reads (the registry's active device, `LiveState`,
 /// `FirmwareAttribution`) and acts through the same calls (`AddDeviceWizard`, `forgetDevice` + `archive`,
-/// `rebootStrap`, `setActive`, `rename`), so the two screens can never disagree about the strap.
+/// `rebootStrap`, `setActive`, `rename`), so the two screens can never disagree about the strap. The one
+/// difference: the registry row a fresh install seeds before any strap connects is not shown as a strap
+/// (`MoreStrapRegistry`), so a new member reads "No strap paired" rather than a WHOOP that is not there.
 struct PulseDeviceSettingsView: View {
     /// Rebuilt: NavRouter's Devices request and the Home strap chip open this screen.
     static let isRebuilt = true
@@ -43,12 +45,19 @@ private enum DeviceTab: String, CaseIterable {
     }
 }
 
+/// The name a strap may carry: WHOOP's rename takes up to 15 characters (spec §3.32).
+private let strapNameLimit = 15
+
 /// The screen once the registry exists. It observes the registry; the live strap readings sit in leaf
 /// views, so a heart-rate tick re-renders only them.
 private struct PulseDeviceSettingsContent: View {
     @ObservedObject var registry: DeviceRegistry
     @EnvironmentObject private var model: AppModel
     @Environment(\.pulseNavigator) private var navigator
+    @AppStorage(HrBroadcaster.defaultsKey) private var broadcastEnabled = false
+    /// The phone-side heart-rate broadcast lives as long as this screen, not the STATUS tab, so switching
+    /// to ADVANCED keeps it on, as the card's "On while this screen is open" says.
+    @StateObject private var broadcast = DeviceBroadcastLink()
 
     @State private var tab: DeviceTab = .status
     @State private var showPairing = false
@@ -59,24 +68,23 @@ private struct PulseDeviceSettingsContent: View {
     @State private var switchTarget: PairedDevice?
     @State private var pickNewActive = false
 
-    private var active: PairedDevice? {
-        registry.devices.first { $0.status == .active && !$0.isImportSource }
-    }
+    /// The active strap the wearer paired; the seeded placeholder row of a fresh install is not one.
+    private var active: PairedDevice? { MoreStrapRegistry.active(in: registry.devices) }
 
-    private var pairedDevices: [PairedDevice] {
-        registry.devices.filter { $0.status != .archived && !$0.isImportSource }
-    }
+    private var pairedDevices: [PairedDevice] { MoreStrapRegistry.paired(in: registry.devices) }
 
     var body: some View {
+        // reviews/r01, help-center/96: "CONNECTED TO" sits 61-70 pt under the bar's centre.
         PulseScreenScaffold(title: String(localized: "Device settings"),
                             trailing: .info { showInfo = true },
-                            spacing: 0, topPadding: 18) {
+                            spacing: 0, horizontalPadding: MoreLayout.deviceMargin, topPadding: 38) {
             DeviceHeader(device: active, onRename: active == nil ? nil : {
-                renameDraft = active?.nickname ?? active?.displayName ?? ""
+                renameDraft = String((active?.nickname ?? active?.displayName ?? "").prefix(strapNameLimit))
                 renaming = true
             })
+            // r01, 96: the tabs' caps sit ≈71 pt under "CONNECTED TO".
             DeviceTabs(selection: $tab)
-                .padding(.top, 26)
+                .padding(.top, 12)
             switch tab {
             case .status:
                 DeviceStatusTab(device: active, modelName: active.map(modelName) ?? "",
@@ -88,7 +96,7 @@ private struct PulseDeviceSettingsContent: View {
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {
             if tab == .status, active != nil {
-                DeviceBroadcastSlot()
+                DeviceBroadcastSlot(broadcaster: broadcast.broadcaster)
             }
         }
         .sheet(isPresented: $showPairing) {
@@ -103,10 +111,14 @@ private struct PulseDeviceSettingsContent: View {
             TextField(String(localized: "Name"), text: $renameDraft)
             Button(String(localized: "Cancel"), role: .cancel) { }
             Button(String(localized: "Save")) {
-                if let id = active?.id { registry.rename(id, to: String(renameDraft.prefix(24))) }
+                if let id = active?.id { registry.rename(id, to: String(renameDraft.prefix(strapNameLimit))) }
             }
         } message: {
-            Text(String(localized: "The name ZENO shows for this strap. Leave it empty to use the model name."))
+            Text(String(localized: "Up to \(strapNameLimit) characters. Leave it empty to use the model name."))
+        }
+        // The alert's field takes no length limit of its own: hold the draft to the limit as it is typed.
+        .onChange(of: renameDraft) { _, draft in
+            if draft.count > strapNameLimit { renameDraft = String(draft.prefix(strapNameLimit)) }
         }
         .fullScreenCover(item: $dialog) { dialog in
             dialogView(dialog)
@@ -129,7 +141,15 @@ private struct PulseDeviceSettingsContent: View {
         } message: {
             Text(String(localized: "Choose which paired band provides your live data, or pair one later."))
         }
-        .onAppear(perform: openDebugTab)
+        .onAppear {
+            broadcast.attach(to: model.live)
+            if broadcastEnabled { broadcast.broadcaster.start() }
+            openDebugTab()
+        }
+        .onDisappear { broadcast.broadcaster.stop() }
+        .onChange(of: broadcastEnabled) { _, on in
+            if on { broadcast.broadcaster.start() } else { broadcast.broadcaster.stop() }
+        }
     }
 
     // MARK: ADVANCED
@@ -151,19 +171,28 @@ private struct PulseDeviceSettingsContent: View {
                 }
                 DeviceRebootItem(device: active, isWhoop4: model.ble.isWhoop4) { dialog = .reboot(active) }
             }
-            MoreSection(String(localized: "My devices")) {
-                ForEach(pairedDevices) { device in
-                    MoreButtonRow(symbol: symbol(for: device), title: device.displayName,
-                                  subtitle: device.brand == device.model ? nil : device.model,
-                                  trailing: .tag(device.status == .active ? String(localized: "Active")
-                                                                         : String(localized: "Paired"))) {
-                        if device.status != .active { switchTarget = device }
+            if !pairedDevices.isEmpty {
+                MoreSection(String(localized: "My devices")) {
+                    ForEach(pairedDevices) { device in
+                        MoreButtonRow(symbol: symbol(for: device), title: device.displayName,
+                                      subtitle: device.brand == device.model ? nil : device.model,
+                                      trailing: .tag(device.status == .active ? String(localized: "Active")
+                                                                             : String(localized: "Paired")),
+                                      cornerRadius: MoreLayout.deviceRowRadius) {
+                            if device.status != .active { switchTarget = device }
+                        }
                     }
+                    MoreLinkRow(.classic(.devices), symbol: "slider.horizontal.3", title: String(localized: "Manage all devices"),
+                                subtitle: String(localized: "Rename, remove, Oura and gym kit"),
+                                cornerRadius: MoreLayout.deviceRowRadius)
                 }
+                .padding(.top, 8)
+            } else {
                 MoreLinkRow(.classic(.devices), symbol: "slider.horizontal.3", title: String(localized: "Manage all devices"),
-                            subtitle: String(localized: "Rename, remove, Oura and gym kit"))
+                            subtitle: String(localized: "Oura, gym kit and imported sources"),
+                            cornerRadius: MoreLayout.deviceRowRadius)
+                    .padding(.top, 8)
             }
-            .padding(.top, 8)
         }
     }
 
@@ -189,7 +218,9 @@ private struct PulseDeviceSettingsContent: View {
                             secondary: { self.dialog = nil },
                             onClose: { self.dialog = nil })
         case .firmware(let version):
-            PulseDialogCard(title: String(localized: "No new updates"),
+            // ZENO never asks WHOOP whether an update exists, so the dialog names the firmware it reads and
+            // says nothing about updates it cannot know of (WHOOP's "No new updates").
+            PulseDialogCard(title: String(localized: "Your firmware"),
                             message: version.map { String(localized: "Your strap runs firmware \($0). ZENO never installs firmware: updates come only from WHOOP's own app.") }
                                 ?? String(localized: "Connect your strap to read its firmware. ZENO never installs firmware: updates come only from WHOOP's own app."),
                             primaryTitle: String(localized: "Okay"),
@@ -252,7 +283,8 @@ private struct PulseDeviceSettingsContent: View {
     }
 }
 
-/// An ADVANCED row: its card, then its grey helper text, 37 pt above the next card (help-center/97).
+/// An ADVANCED row: its nearly square card 20 pt from the screen edges, then its grey helper text, 37 pt
+/// above the next card (help-center/97).
 private struct DeviceAdvancedItem: View {
     let symbol: String
     let title: String
@@ -263,14 +295,15 @@ private struct DeviceAdvancedItem: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 17) {
             MoreButtonRow(symbol: symbol, title: title,
-                          titleColor: disabled ? PulseTheme.textDisabled : PulseTheme.textPrimary, action: action)
+                          titleColor: disabled ? PulseTheme.textDisabled : PulseTheme.textPrimary,
+                          cornerRadius: MoreLayout.deviceRowRadius, action: action)
                 .disabled(disabled)
             Text(help)
                 .pulseText(.rowSubline)
                 .lineSpacing(3)
                 .foregroundStyle(PulseTheme.textTertiary)
                 .fixedSize(horizontal: false, vertical: true)
-                .padding(.horizontal, 18)
+                .padding(.horizontal, 14)
         }
         .padding(.bottom, 34)
     }
@@ -352,14 +385,14 @@ private struct DeviceHeaderContent: View {
                 Text(name == nil ? String(localized: "No strap paired")
                                  : (connected ? String(localized: "Connected to") : String(localized: "Not connected to")))
                     .pulseText(.label)
-                    .foregroundStyle(connected ? PulseTheme.positive : PulseTheme.textTertiary)
+                    .foregroundStyle(name != nil && connected ? PulseTheme.positive : PulseTheme.textTertiary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
                 if let name {
                     Button { onRename?() } label: {
                         HStack(spacing: 8) {
                             Text(name)
-                                .font(.system(size: 17, weight: .bold))
-                                .tracking(1.6)
-                                .textCase(.uppercase)
+                                .profileFont(17, weight: .bold, relativeTo: .headline, tracking: 1.6, uppercase: true)
                                 .foregroundStyle(PulseTheme.textPrimary)
                                 .lineLimit(1)
                                 .minimumScaleFactor(0.7)
@@ -373,6 +406,7 @@ private struct DeviceHeaderContent: View {
                     .accessibilityLabel(String(localized: "\(name), rename"))
                 }
             }
+            .layoutPriority(1)
             Spacer(minLength: 8)
             if name != nil {
                 HStack(spacing: 12) {
@@ -380,9 +414,13 @@ private struct DeviceHeaderContent: View {
                         Text(syncing ? String(localized: "Catching up") : String(localized: "Last sync"))
                             .pulseText(.label)
                             .foregroundStyle(PulseTheme.textSecondary)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.7)
                         Text(lastSyncText)
                             .font(PulseType.numeral(15))
                             .foregroundStyle(PulseTheme.textPrimary)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.7)
                     }
                     Image(systemName: syncing ? "icloud.and.arrow.up" : (lastSync == nil ? "icloud" : "checkmark.icloud"))
                         .font(.system(size: 24, weight: .light))
@@ -408,32 +446,36 @@ private struct DeviceHeaderContent: View {
 // MARK: - Tabs
 
 /// "STATUS   ADVANCED": left-aligned caps tabs, the selected one white over a 2 pt underline, the other
-/// 50% (help-center/97).
+/// 50% (help-center/97: ≈10 pt caps, "STATUS" ≈39 pt wide, 36 pt between the two). Each label keeps to
+/// one line and shrinks a little before it would crowd its neighbour, and the row stops growing at
+/// xxLarge, so the tabs can never push the page wider than the screen.
 private struct DeviceTabs: View {
     @Binding var selection: DeviceTab
 
     var body: some View {
-        HStack(spacing: 34) {
+        HStack(spacing: 36) {
             ForEach(DeviceTab.allCases, id: \.self) { tab in
                 Button { selection = tab } label: {
-                    VStack(spacing: 8) {
-                        Text(tab.title)
-                            .pulseText(.cardTitle)
-                            .foregroundStyle(selection == tab ? PulseTheme.textPrimary : PulseTheme.textTertiary)
-                        Rectangle()
-                            .fill(selection == tab ? PulseTheme.textPrimary : Color.clear)
-                            .frame(height: 2)
-                    }
-                    .fixedSize()
-                    .frame(minHeight: PulseTheme.Layout.minTapTarget)
-                    .contentShape(Rectangle())
+                    Text(tab.title)
+                        .profileFont(11, weight: .bold, relativeTo: .caption2, tracking: 0.5, uppercase: true)
+                        .foregroundStyle(selection == tab ? PulseTheme.textPrimary : PulseTheme.textTertiary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
+                        .padding(.bottom, 9)
+                        .overlay(alignment: .bottom) {
+                            Rectangle()
+                                .fill(selection == tab ? PulseTheme.textPrimary : Color.clear)
+                                .frame(height: 2)
+                        }
+                        .frame(minHeight: PulseTheme.Layout.minTapTarget, alignment: .bottom)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .accessibilityAddTraits(selection == tab ? .isSelected : [])
             }
             Spacer(minLength: 0)
         }
-        .padding(.leading, 4)
+        .dynamicTypeSize(...DynamicTypeSize.xxLarge)
     }
 }
 
@@ -458,17 +500,19 @@ private struct DeviceStatusTab: View {
         }
     }
 
+    /// reviews/r01, help-center/96: the band (≈316 pt tall) starts ≈150 pt under the tabs, and the
+    /// battery sits lower at the right, its 120 pt bar centred ≈40 pt from the screen edge.
     private func connected(device: PairedDevice, display: LiquidTodayView.StrapBatteryDisplay) -> some View {
-        ZStack(alignment: .bottomTrailing) {
-            DeviceStrapArt(height: 330)
-                .offset(x: -40, y: -8)
-                .frame(maxWidth: .infinity, alignment: .leading)
+        ZStack(alignment: .topLeading) {
+            // The art's frame is 210 pt tall; the tilted band overhangs it by ≈55 pt above and below.
+            DeviceStrapArt(height: 210)
+                .offset(x: 6, y: 205)
             DeviceBatteryReadout(display: display, model: modelName)
-                .padding(.trailing, 4)
-                .padding(.bottom, 26)
+                .frame(maxWidth: .infinity, alignment: .trailing)
+                .padding(.trailing, 17)
+                .padding(.top, 330)
         }
-        .frame(height: 430)
-        .padding(.top, 34)
+        .frame(maxWidth: .infinity, minHeight: 500, alignment: .topLeading)
     }
 
     /// onboarding/43a: the band at the left and a phone at the right, both cropped by the screen edges,
@@ -481,9 +525,10 @@ private struct DeviceStatusTab: View {
                     DeviceStrapArt(height: 230)
                         .frame(width: 130, alignment: .trailing)
                     Spacer(minLength: 0)
-                    RoundedRectangle(cornerRadius: 26, style: .continuous)
+                    RoundedRectangle(cornerRadius: MoreLayout.phoneArtRadius, style: .continuous)
                         .strokeBorder(Color.black, lineWidth: 5)
-                        .background(RoundedRectangle(cornerRadius: 26, style: .continuous).fill(Color(hex: "#1E2328")))
+                        .background(RoundedRectangle(cornerRadius: MoreLayout.phoneArtRadius, style: .continuous)
+                            .fill(ProfileArtPalette.phoneBody))
                         .overlay {
                             PulseZenoMonogramShape()
                                 .stroke(PulseTheme.textTertiary, style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
@@ -494,7 +539,7 @@ private struct DeviceStatusTab: View {
                         .frame(width: 112, height: 240)
                         .offset(x: 52)
                 }
-                .padding(.horizontal, -PulseTheme.Layout.pageMargin)
+                .padding(.horizontal, -MoreLayout.deviceMargin)
                 HStack(spacing: 6) {
                     dots
                     ZStack {
@@ -505,8 +550,9 @@ private struct DeviceStatusTab: View {
                     dots
                 }
                 VStack(spacing: 6) {
-                    Text(device == nil ? String(localized: "No strap paired") : String(localized: "Strap disconnected"))
-                        .modifier(MoreLabelText(tracking: 1.4))
+                    MoreWordWrapLabel(device == nil ? String(localized: "No strap paired")
+                                                    : String(localized: "Strap disconnected"),
+                                      tracking: 1.4, alignment: .center)
                         .foregroundStyle(PulseTheme.textPrimary)
                     Text(String(localized: "Tap 'Pair a device' below to continue."))
                         .pulseText(.subtitle)
@@ -517,7 +563,8 @@ private struct DeviceStatusTab: View {
                 .accessibilityElement(children: .combine)
             }
             .frame(height: 300)
-            MoreButtonRow(symbol: "plus.circle", title: String(localized: "Pair a device"), action: onPair)
+            MoreButtonRow(symbol: "plus.circle", title: String(localized: "Pair a device"),
+                          cornerRadius: MoreLayout.deviceRowRadius, action: onPair)
                 .padding(.top, 130)
         }
         .padding(.top, 50)
@@ -553,34 +600,41 @@ private struct DeviceStatusTab: View {
     }
 }
 
-/// "58 %" (40 pt, the % 17 pt) over the model in grey caps, beside a 6 × 150 pt level bar.
+/// "58 %" (40 pt condensed, the % 17 pt; WHOOP's digits measure 28 pt tall) over the model in grey caps,
+/// beside a 6 × 120 pt level bar (reviews/r01: 117–126 pt). The number is a fixed numeral (DR §2); the
+/// caption scales with Dynamic Type but never past the numeral beside it.
 private struct DeviceBatteryReadout: View {
     let display: LiquidTodayView.StrapBatteryDisplay
     let model: String
+
+    private static let barHeight: CGFloat = 120
 
     var body: some View {
         HStack(alignment: .bottom, spacing: 18) {
             VStack(alignment: .trailing, spacing: 4) {
                 HStack(alignment: .firstTextBaseline, spacing: 3) {
                     if charging {
-                        Image(systemName: "bolt.fill").font(.system(size: 20, weight: .bold))
+                        Image(systemName: "bolt.fill").font(.system(size: 18, weight: .bold))
                             .foregroundStyle(PulseTheme.positive)
                     }
-                    Text(percentText).font(PulseType.numeral(44, hero: true))
-                    Text(verbatim: "%").font(.system(size: 18, weight: .bold))
+                    Text(percentText).font(PulseType.numeral(40))
+                    Text(verbatim: "%").font(.system(size: 17, weight: .bold))
                 }
                 .foregroundStyle(PulseTheme.textPrimary)
                 Text(model)
                     .pulseText(.secondary)
                     .textCase(.uppercase)
                     .foregroundStyle(PulseTheme.textTertiary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+                    .dynamicTypeSize(...DynamicTypeSize.xxLarge)
             }
             ZStack(alignment: .bottom) {
                 Capsule().fill(PulseTheme.track)
                 Capsule().fill(low ? PulseTheme.recoveryLow : PulseTheme.positive)
-                    .frame(height: 150 * fraction)
+                    .frame(height: Self.barHeight * fraction)
             }
-            .frame(width: 6, height: 150)
+            .frame(width: 6, height: Self.barHeight)
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(String(localized: "\(model) battery"))
@@ -609,14 +663,32 @@ private struct DeviceBatteryReadout: View {
 
 // MARK: - Broadcast
 
+/// The phone-side heart-rate broadcaster for the screen's lifetime, with its lifecycle lines forwarded into
+/// the strap log as Data Sources forwards them. A class held as a `@StateObject`, so the broadcaster and its
+/// log sink are made once per screen, whatever re-renders the view.
+@MainActor
+private final class DeviceBroadcastLink: ObservableObject {
+    private weak var live: LiveState?
+
+    lazy var broadcaster = HrBroadcaster(log: { [weak self] line in
+        MainActor.assumeIsolated { self?.live?.append(log: line) }
+    })
+
+    func attach(to live: LiveState) {
+        self.live = live
+        broadcaster.bind(to: live)
+    }
+}
+
 /// The pinned card's slot: shown while the strap is connected (onboarding/43a shows PAIR A DEVICE, not the
 /// card, while it is not). A leaf, so the link's ticks re-render only this.
 private struct DeviceBroadcastSlot: View {
+    @ObservedObject var broadcaster: HrBroadcaster
     @EnvironmentObject private var live: LiveState
 
     var body: some View {
         if live.connected || Self.isDemo {
-            DeviceBroadcastCard()
+            DeviceBroadcastCard(broadcaster: broadcaster)
                 .padding(.horizontal, 8)
                 .padding(.bottom, 4)
         }
@@ -632,26 +704,15 @@ private struct DeviceBroadcastSlot: View {
 }
 
 /// BROADCAST HEART RATE pinned at the foot of STATUS (spec §3.32 [Z]): the phone advertises the standard
-/// Heart Rate Service with the strap's live heart rate (`HrBroadcaster`, the Data Sources switch's key),
-/// while this screen is open, and below it the experimental strap-side switch.
+/// Heart Rate Service with the strap's live heart rate (`HrBroadcaster`, the Data Sources switch's key)
+/// while Device Settings is open, and below it the experimental strap-side switch. The title wraps between
+/// words only, and the card stops growing at `.accessibility1` so it never covers the page.
 private struct DeviceBroadcastCard: View {
+    @ObservedObject var broadcaster: HrBroadcaster
     @EnvironmentObject private var live: LiveState
     @EnvironmentObject private var model: AppModel
     @AppStorage(HrBroadcaster.defaultsKey) private var broadcastEnabled = false
     @AppStorage(PuffinExperiment.broadcastHrKey) private var strapBroadcastEnabled = false
-    @StateObject private var broadcaster: HrBroadcaster
-    private let sink: LogSink
-
-    /// Forwards the broadcaster's "HR-out:" lifecycle lines into the strap log, as Data Sources does.
-    private final class LogSink { weak var live: LiveState? }
-
-    init() {
-        let sink = LogSink()
-        self.sink = sink
-        _broadcaster = StateObject(wrappedValue: HrBroadcaster(log: { [weak sink] line in
-            MainActor.assumeIsolated { sink?.live?.append(log: line) }
-        }))
-    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -664,48 +725,36 @@ private struct DeviceBroadcastCard: View {
                 .frame(width: 40, height: 40)
                 .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(String(localized: "Broadcast heart rate"))
-                        .modifier(MoreLabelText(tracking: 1.4))
+                    MoreWordWrapLabel(String(localized: "Broadcast heart rate"), tracking: 1.4)
                         .foregroundStyle(PulseTheme.textPrimary)
                     Text(statusLine)
-                        .font(.system(size: 11, weight: .bold))
-                        .tracking(0.7)
-                        .textCase(.uppercase)
+                        .profileFont(11, weight: .bold, relativeTo: .caption2, tracking: 0.7, uppercase: true)
                         .foregroundStyle(PulseTheme.textTertiary)
                         .lineLimit(2)
                         .minimumScaleFactor(0.9)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
                 Spacer(minLength: 8)
                 Toggle(String(localized: "Broadcast heart rate"), isOn: $broadcastEnabled)
-                    .labelsHidden()
-                    .tint(PulseTheme.positive)
+                    .toggleStyle(MoreSwitchStyle())
             }
             .padding(.vertical, 14)
             if live.connected {
                 PulseDivider()
                 Toggle(isOn: $strapBroadcastEnabled) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(String(localized: "Broadcast from the strap (experimental)"))
-                            .pulseText(.rowSubline)
-                            .foregroundStyle(PulseTheme.textSecondary)
-                    }
+                    Text(String(localized: "Broadcast from the strap (experimental)"))
+                        .pulseText(.rowSubline)
+                        .foregroundStyle(PulseTheme.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
-                .tint(PulseTheme.positive)
+                .toggleStyle(MoreSwitchStyle(showsLabel: true))
                 .padding(.vertical, 8)
             }
         }
         .padding(.horizontal, 16)
         .background(RoundedRectangle(cornerRadius: PulseTheme.Radius.card, style: .circular)
             .fill(PulseTheme.cardSolidTop))
-        .onAppear {
-            sink.live = live
-            broadcaster.bind(to: live)
-            if broadcastEnabled { broadcaster.start() }
-        }
-        .onDisappear { broadcaster.stop() }
-        .onChange(of: broadcastEnabled) { _, on in
-            if on { broadcaster.start() } else { broadcaster.stop() }
-        }
+        .dynamicTypeSize(...DynamicTypeSize.accessibility1)
         .onChange(of: strapBroadcastEnabled) { _, on in model.ble.setBroadcastHr(on) }
     }
 
@@ -746,7 +795,7 @@ private struct DeviceInfoSheet: View {
         (String(localized: "Connection"), String(localized: "ZENO talks to your strap directly over Bluetooth. There is no WHOOP account and no cloud: if the strap is near and awake, ZENO connects on its own.")),
         (String(localized: "Sync"), String(localized: "The strap stores its data while you are away and sends it when it reconnects. CATCHING UP means that history is arriving now.")),
         (String(localized: "Battery"), String(localized: "The level is the strap's own reading. ZENO can remind you to charge before bed in App Settings › Notifications.")),
-        (String(localized: "Broadcast heart rate"), String(localized: "Shares your live heart rate as a standard Bluetooth heart-rate sensor, so a treadmill, a bike computer or a fitness app can read it. Local Bluetooth only.")),
+        (String(localized: "Broadcast heart rate"), String(localized: "Shares your live heart rate as a standard Bluetooth heart-rate sensor, so a treadmill, a bike computer or a fitness app can read it. Local Bluetooth only, while Device Settings is open.")),
     ]
 }
 #endif
