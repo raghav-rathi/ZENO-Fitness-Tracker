@@ -2,8 +2,8 @@
 import SwiftUI
 import StrandAnalytics
 
-/// Home's My Plan card (WHOOP_UI_SPEC §3.1 item 9, journal-plan-2026/31–34, reviews/r113–r114), for the home
-/// group to place under the "My Plan" header in place of `PulsePlanCard`:
+/// Home's My Plan card (WHOOP_UI_SPEC §3.1 item 9, journal-plan-2026/31–34, reviews/r113–r114), which
+/// `PulseHomeView` places under its "My Plan" header:
 ///
 ///     PulseSectionHeader(String(localized: "My Plan"))
 ///     PulsePlanHomeCard()

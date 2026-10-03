@@ -257,7 +257,7 @@ struct PulsePlanOverviewView: View {
 }
 
 #if DEBUG
-/// DEBUG only (`--jp-plan-screen homecard`): Home's My Plan card on the page, as Home will place it.
+/// DEBUG only (`--jp-plan-screen homecard`): Home's My Plan card on a page of its own, as Home places it.
 struct PlanHomeCardPreview: View {
     var body: some View {
         PulseScreenScaffold(title: "My Plan card", spacing: 0) {

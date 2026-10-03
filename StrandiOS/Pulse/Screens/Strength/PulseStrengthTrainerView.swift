@@ -17,8 +17,9 @@ import WhoopStore
 ///     the Lift Log, the week's sets per muscle and the recent sessions (→ the session detail);
 ///   - a running session opens the live screen (`PulseStrengthLiveSessionView`), which drives the app's
 ///     one `LiftSessionController`, so the strap gesture, the rest buzzes and the Lock Screen banner work
-///     exactly as before. Starting or resuming one sets the controller's `isPresented`, and the shell
-///     presents the live screen (`PulseLiftSessionPresenter`), as it does from the session bar.
+///     exactly as before. Starting or resuming one sets the controller's `isPresented`, and this modal's
+///     host presents the live screen over it (`PulseLiftSessionPresenter`), as the shell does from the
+///     session bar. One presenter is active at a time, so one live screen opens.
 /// No figure here feeds Strain: Strain stays what the strap measured from heart rate.
 struct PulseStrengthTrainerView: View {
     /// Rebuilt: the ＋ menu's STRENGTH TRAINER and the Home Screen quick action open this screen.
@@ -436,7 +437,7 @@ struct PulseStrengthTrainerView: View {
 
     /// Start `program` the way the Lift Log does (its lines snapshot into the plan, classified from the
     /// exercise vocabulary), refusing a second session over a running one, which is resumed instead.
-    /// `start` raises `isPresented`, so the shell opens the live screen either way.
+    /// `start` raises `isPresented`, so the live screen opens over this page either way.
     private func start(_ program: LiftProgramRow) async {
         guard !session.isActive else {
             session.isPresented = true

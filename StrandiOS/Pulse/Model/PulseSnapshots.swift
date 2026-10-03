@@ -204,10 +204,6 @@ struct PulseTonight: Equatable {
 
     /// The strap alarm buzzes at `wake`: "● ALARM ON · EXACT TIME".
     var alarmOn: Bool { wakeSource == .strapAlarm }
-
-    /// The time to be asleep by, under the name this type used before it carried the in-bed time too.
-    @available(*, deprecated, renamed: "asleepBy")
-    var bedtime: Date { asleepBy }
 }
 
 /// A workout on the selected day.
