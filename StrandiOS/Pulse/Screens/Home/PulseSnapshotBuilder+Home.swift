@@ -39,7 +39,7 @@ extension PulseSnapshotBuilder {
 
         let coaching = r.day.isToday ? await coachingInputs(r, home: home, rest: rest, debt: debt) : nil
         let outlook = r.day.isToday ? await outlookFacts(r, home: home, zones: zones) : nil
-        let monitor = r.day.isToday ? monitorGrades(r) : nil
+        let monitor = r.day.isToday ? await monitorGrades(r) : nil
         let start = r.day.isToday ? await getStartedFacts(r, home: home, rows: rows) : .pastDay
         // Today's STRESS MONITOR tile, and the dashboard's card on any day it is on.
         let stress = r.day.isToday || items.contains(.stressMonitor) ? await stressSummary(r) : nil
@@ -389,77 +389,20 @@ extension PulseSnapshotBuilder {
 
     // MARK: Health Monitor
 
-    /// Today's Health Monitor tile (§3.1 item 6). The vitals, and whether each is in range, come from the
-    /// same call, filtered the same way, as the core's `monitorSummary` (`BodyVitalSigns.readings`); this
-    /// adds how far out each out-of-range vital is (`VitalSeverity`), so the tile can say ELEVATED or
-    /// VERY ELEVATED.
-    private func monitorGrades(_ r: PulseRequest) -> PulseMonitorGrades {
-        let unit: TemperatureUnit = r.prefs.fahrenheit ? .fahrenheit : .celsius
-        let readings = BodyVitalSigns.readings(sourceRows: r.vitalRows, temperatureUnit: unit, now: r.now,
-                                               skinTempPreferred: r.prefs.skinTempPreferred)
-            .filter { $0.key != "spo2raw" && !($0.key == "spo2" && $0.value == nil) }
-        let judged = readings.filter { $0.banding.band != .noData }
-        let out = judged.filter { $0.banding.band == .outOfRange }.map { monitorFlag($0, r) }
+    /// Today's Health Monitor tile (§3.1 item 6), read from the vitals the Health Monitor itself draws
+    /// (`healthVitals`: the same readings with the HRV over-count flags, the same bands, and "very" beyond 3σ
+    /// of a trusted personal baseline), so the tile names exactly the vitals the screen it opens shows out of
+    /// range, in the same direction, and calls one far out only where the screen says "very high" or "very
+    /// low".
+    private func monitorGrades(_ r: PulseRequest) async -> PulseMonitorGrades {
+        let vitals = await healthVitals(r)
+        let judged = vitals.filter { $0.status != .noData }
+        let out = judged.compactMap { vital -> PulseMonitorGrades.Flag? in
+            guard case .outside(let severe) = vital.status else { return nil }
+            return .init(name: vital.name, strong: severe,
+                         high: vital.direction == 0 ? nil : vital.direction > 0)
+        }
         return PulseMonitorGrades(judged: judged.count, out: out)
-    }
-
-    /// How far out one out-of-range vital is. Its inputs mirror the ones `BodyVitalSigns.readings` bands it
-    /// with (the per-source series before the reading's day, the metric's config and population range).
-    /// Should a grade ever disagree with the band, the band's verdict stands and the tile says OUT OF RANGE.
-    // TODO(health): carry the grade on `BodyVitalReading` itself, so this mirror can go.
-    private func monitorFlag(_ reading: BodyVitalReading, _ r: PulseRequest) -> PulseMonitorGrades.Flag {
-        let name = Self.vitalName(reading.key)
-        func points(_ key: String, _ value: (DailyMetric) -> Double?) -> [(day: String, value: Double)] {
-            // `BodyVitalSigns`' source precedence (private there): import, computed, Apple Health (never
-            // for skin temperature), local cache.
-            let precedence: [DailyMetricSource] = key == "skin"
-                ? [.whoopImport, .noopComputed, .localCache]
-                : [.whoopImport, .noopComputed, .appleHealth, .localCache]
-            var byDay: [String: Double] = [:]
-            for source in precedence {
-                for row in r.vitalRows where row.source == source {
-                    guard let v = value(row.metric), byDay[row.metric.day] == nil else { continue }
-                    byDay[row.metric.day] = v
-                }
-            }
-            return byDay.sorted { $0.key < $1.key }.map { (day: $0.key, value: $0.value) }
-        }
-        func history(_ pts: [(day: String, value: Double)]) -> [Double?] {
-            VitalBands.calendarSeries(pts.filter { p in reading.day.map { p.day < $0 } ?? true }
-                .map { ($0.day, Optional($0.value)) })
-        }
-        let grade: VitalSeverity.Grade
-        switch (reading.key, reading.value) {
-        case ("resp", let v?):
-            grade = VitalSeverity.grade(value: v, history: history(points("resp", \.respRateBpm)),
-                                        populationRange: 12...20, cfg: Baselines.respCfg)
-        case ("spo2", let v?):
-            grade = VitalSeverity.grade(value: v, history: [], populationRange: 95...100, cfg: nil)
-        case ("rhr", let v?):
-            grade = VitalSeverity.grade(value: v, history: history(points("rhr") { $0.restingHr.map(Double.init) }),
-                                        populationRange: 40...60, cfg: Baselines.restingHRCfg)
-        case ("hrv", let v?):
-            grade = VitalSeverity.grade(value: v, history: history(points("hrv", \.avgHrv)),
-                                        populationRange: 40...120, cfg: Baselines.hrvCfg)
-        case ("skin", let v?):
-            // The series the reading came from: the night's absolute column when it leads, else the
-            // deviation column, kept to the reading's own kind.
-            let absolute = points("skin", \.skinTempC)
-            let fromAbsolute = absolute.contains { $0.day == reading.day && $0.value == v }
-            let series = fromAbsolute ? absolute : points("skin", \.skinTempDevC)
-            let isAbsolute = VitalBands.isAbsoluteSkinTemp(v)
-            grade = VitalSeverity.grade(value: v,
-                                        history: VitalBands.skinTempHistory(matching: v, in: history(series)),
-                                        populationRange: isAbsolute ? 33...36 : (-0.6)...0.6,
-                                        cfg: isAbsolute ? Baselines.metricCfg["skin_temp"] : VitalBands.skinTempDeviationCfg)
-        default:
-            grade = .noData
-        }
-        switch grade {
-        case .out(let direction): return .init(name: name, strong: false, high: direction == .high)
-        case .farOut(let direction): return .init(name: name, strong: true, high: direction == .high)
-        case .within, .noData: return .init(name: name, strong: false, high: nil)
-        }
     }
 
     // MARK: Coaching

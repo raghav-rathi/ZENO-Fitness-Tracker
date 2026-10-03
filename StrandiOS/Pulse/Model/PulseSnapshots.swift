@@ -272,17 +272,6 @@ struct PulseKeyStat: Identifiable, Equatable {
     var baselineDelta: Double? = nil
 }
 
-/// The Health Monitor tile: how many of today's judged vitals sit inside their typical range.
-struct PulseMonitorSummary: Equatable {
-    let inRange: Int
-    let judged: Int
-    /// The vitals outside their range, by name ("Skin temperature").
-    let outOfRange: [String]
-
-    /// Nothing judged yet (calibrating, no readings): the tile shows "Pending".
-    var isPending: Bool { judged == 0 }
-}
-
 /// One day of the STRAIN & RECOVERY chart: Strain on 0–21 and Recovery in percent, either missing.
 struct PulseWeekDay: Identifiable, Equatable {
     /// The day key.
@@ -360,8 +349,6 @@ struct HomeSnapshot: Equatable {
     let journal: PulseJournalStrip?
     /// Today's day streak (consecutive days with a Recovery score); nil on a past day.
     let streak: Int?
-    /// The Health Monitor tile, today only.
-    let monitor: PulseMonitorSummary?
     /// The seven days ending on the selected one, oldest first, for STRAIN & RECOVERY.
     let week: [PulseWeekDay]
     /// Days with a Recovery score in the history: under 3 and no Coach provider, no outlook can be made,

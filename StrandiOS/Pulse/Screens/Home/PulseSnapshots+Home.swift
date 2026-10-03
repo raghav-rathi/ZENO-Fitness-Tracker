@@ -97,12 +97,13 @@ struct PulseOutlookFacts: Equatable {
 }
 
 /// The Health Monitor tile for today (§3.1 item 6): the vitals judged, and for each one out of its range,
-/// how far out (`VitalSeverity`).
+/// which way and how far, as the Health Monitor grades it (`HealthVital`).
 struct PulseMonitorGrades: Equatable {
     struct Flag: Equatable {
         /// The vital's name ("Skin temperature").
         let name: String
-        /// Well past its range (VERY ELEVATED / VERY LOW), else just past it (ELEVATED / LOW).
+        /// Where the Health Monitor says "very high" / "very low" (VERY ELEVATED / VERY LOW), else just past
+        /// its range (ELEVATED / LOW).
         let strong: Bool
         /// Above or below its range; nil when the grade could not say, and the tile reads OUT OF RANGE.
         let high: Bool?
@@ -128,7 +129,7 @@ struct HomeExtrasSnapshot: Equatable {
     let coaching: HomeCoachingRules.Inputs?
     /// The local Daily Outlook's facts, today only.
     let outlook: PulseOutlookFacts?
-    /// The Health Monitor tile's grades, today only.
+    /// The Health Monitor tile's grades, today only (the Health Monitor's own vitals, `healthVitals`).
     let monitor: PulseMonitorGrades?
     let start: PulseGetStartedFacts
     /// The day's stress, for the STRESS MONITOR tile (today) and the dashboard's STRESS MONITOR card, when

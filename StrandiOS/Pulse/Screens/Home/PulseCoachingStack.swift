@@ -252,7 +252,7 @@ private struct PulseCoachingStackContent: View, Equatable {
                     .padding(.top, PulseHomeSpacing.stackTop)
                     .id("pulse.coaching")
             }
-            PulseMonitorTiles(home: home, grades: grades, stress: stress, stressUpdated: stressUpdated)
+            PulseMonitorTiles(grades: grades, stress: stress, stressUpdated: stressUpdated)
                 .padding(.top, cards.isEmpty ? PulseHomeSpacing.tilesTop : PulseHomeSpacing.tilesAfterStack)
                 .id("pulse.monitors")
         }

@@ -451,7 +451,6 @@ actor PulseSnapshotBuilder {
         let stats = await keyStats(r, row: row)
         // The journal strip ends on the selected day; it stays on a past day (§2.9).
         let journal = r.prefs.journalReminder ? await journalStrip(endingOn: r.day.date, offset: r.day.offset) : nil
-        let monitor = r.day.isToday ? monitorSummary(r) : nil
         guard isCurrent(r) else { return nil }
 
         let todayKey = Repository.localDayKey(r.now)
@@ -474,7 +473,6 @@ actor PulseSnapshotBuilder {
             stats: stats,
             journal: journal,
             streak: streak,
-            monitor: monitor,
             week: week(r, liveStrain: strain),
             scoredDays: r.days.reduce(0) { $0 + ($1.recovery != nil ? 1 : 0) })
     }
@@ -488,31 +486,6 @@ actor PulseSnapshotBuilder {
             let stored = row?.strain.map { UnitFormatter.effortValue($0, scale: .whoop) }
             return PulseWeekDay(id: key, strain: key == r.day.key ? (liveStrain ?? stored) : stored,
                                 recovery: row?.recovery)
-        }
-    }
-
-    /// Today's vitals judged against their typical ranges, as the Health Monitor tile counts them: the same
-    /// readings and bands the Health tab draws (`BodyVitalSigns`, `VitalBands`).
-    func monitorSummary(_ r: PulseRequest) -> PulseMonitorSummary {
-        let unit: TemperatureUnit = r.prefs.fahrenheit ? .fahrenheit : .celsius
-        let readings = BodyVitalSigns.readings(sourceRows: r.vitalRows, temperatureUnit: unit, now: r.now,
-                                               skinTempPreferred: r.prefs.skinTempPreferred)
-            .filter { $0.key != "spo2raw" && !($0.key == "spo2" && $0.value == nil) }
-        let judged = readings.filter { $0.banding.band != .noData }
-        let out = judged.filter { $0.banding.band == .outOfRange }
-        return PulseMonitorSummary(inRange: judged.count - out.count, judged: judged.count,
-                                   outOfRange: out.map { Self.vitalName($0.key) })
-    }
-
-    /// Pulse's names for the vitals, the ones Recovery and the Health tab use.
-    static func vitalName(_ key: String) -> String {
-        switch key {
-        case "resp": return String(localized: "Respiratory rate")
-        case "spo2": return String(localized: "Blood oxygen")
-        case "rhr": return String(localized: "Resting heart rate")
-        case "hrv": return String(localized: "Heart rate variability")
-        case "skin": return String(localized: "Skin temperature")
-        default: return key
         }
     }
 
