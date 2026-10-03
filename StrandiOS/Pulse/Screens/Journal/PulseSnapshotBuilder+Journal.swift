@@ -14,8 +14,10 @@ extension PulseSnapshotBuilder {
     // MARK: Journal day (§3.17)
 
     /// The Journal for the day `offset` days back from today: the 14-day strip, the day's answers, the day
-    /// before's, its mood, and this week's progress on the plan's behaviour goals.
-    func journalDay(_ r: PulseRequest, offset: Int, stripDays: Int, planGoals: [PulsePlanGoal]) async -> JournalDaySnapshot? {
+    /// before's, its mood, and the plan's behaviour goals for the day's week, judged exactly as Plan
+    /// Overview judges them (`PlanBehaviorWeek`).
+    func journalDay(_ r: PulseRequest, offset: Int, stripDays: Int, plan: PulsePlan?) async -> JournalDaySnapshot? {
+        begin(r.seq)
         let cal = Calendar.current
         let keyFor: (Int) -> String = { n in
             Repository.localDayKey(cal.date(byAdding: .day, value: -n, to: r.day.date) ?? r.day.date)
@@ -33,17 +35,25 @@ extension PulseSnapshotBuilder {
         let previousAmounts = await repo.nativeJournalNumeric(day: previousKey)
         let mood = await repo.mood(day: dayKey)
 
-        var planDone: [String: Int] = [:]
-        let goals = planGoals.filter { $0.kind == .behavior && $0.subject != nil }
-        if !goals.isEmpty, let monday = WeeklyPlanProgress.weekStart(of: dayKey) {
-            let week = Set(WeeklyPlanProgress.days(ofWeekStarting: monday)).subtracting([dayKey])
-            let entries = await repo.journalEntries(days: 21)
-            for goal in goals {
+        // The plan's behaviour goals over the selected day's week: the same covered days, target and met
+        // days Plan Overview counts, less the selected day itself, whose (possibly unsaved) answer the
+        // screen adds.
+        var planWeeks: [String: JournalDaySnapshot.PlanRowWeek] = [:]
+        var importedDay: [String: Bool] = [:]
+        if let plan, !plan.behaviorGoals.isEmpty, let monday = WeeklyPlanProgress.weekStart(of: dayKey) {
+            let covered = WeeklyPlanProgress.days(ofWeekStarting: monday).filter { $0 >= plan.startedOn }
+            // Back to the week's Monday at least (the strip reaches 30 days).
+            let entries = await repo.journalEntries(days: max(21, offset + 9))
+            for goal in plan.behaviorGoals {
                 guard let subject = goal.subject else { continue }
-                let identity = PulseBehaviorLibrary.identity(for: subject)
-                let days = Self.behaviorDays(entries, identity: identity)
-                let met = goal.avoid == true ? days.no.subtracting(days.yes) : days.yes
-                planDone[identity] = met.intersection(week).count
+                let week = PlanBehaviorWeek(goal, journal: entries, covered: covered, today: r.day.key)
+                planWeeks[PulseBehaviorLibrary.identity(for: subject)] = JournalDaySnapshot.PlanRowWeek(
+                    doneElsewhere: week.metDays.subtracting([dayKey]).count, target: week.target,
+                    countsDay: covered.contains(dayKey) && dayKey <= r.day.key)
+            }
+            // The day's imported answers: Plan Overview counts them wherever no native answer replaces them.
+            for e in await repo.importedJournalEntries(days: offset + 2) where e.day == dayKey {
+                importedDay[e.question] = (importedDay[e.question] ?? false) || e.answeredYes
             }
         }
         guard !Task.isCancelled else { return nil }
@@ -52,7 +62,7 @@ extension PulseSnapshotBuilder {
             strip: strip.map { JournalDaySnapshot.Day(key: $0.key, offset: $0.offset, logged: logged.contains($0.key)) },
             importedQuestions: imported, answers: answers, amounts: amounts,
             previousAnswers: previousAnswers, previousAmounts: previousAmounts, mood: mood,
-            planDoneElsewhere: planDone)
+            planWeeks: planWeeks, importedDayAnswers: importedDay)
     }
 
     /// The imported WHOOP questions in first-seen order (the classic card's input to the catalog merge).
@@ -126,7 +136,7 @@ extension PulseSnapshotBuilder {
         }
         var nights: [AutoBehaviors.Night] = []
         for g in groups {
-            let main = SleepView.mainNightGroup(g, habitualMidsleepSec: habitual)
+            let main = BehaviorNights.mainNightGroup(g, habitualMidsleepSec: habitual)
             guard let first = main.first, let last = main.last else { continue }
             let wake = Date(timeIntervalSince1970: TimeInterval(last.endTs))
             let day = Repository.localDayKey(wake)
@@ -137,13 +147,16 @@ extension PulseSnapshotBuilder {
                 bedMinute: SleepConsistency.minuteOfDay(ts: first.effectiveStartTs,
                                                         offsetSec: TimeZone.current.secondsFromGMT(for: onset)),
                 wakeMinute: SleepConsistency.minuteOfDay(ts: last.endTs,
-                                                         offsetSec: TimeZone.current.secondsFromGMT(for: wake))))
+                                                         offsetSec: TimeZone.current.secondsFromGMT(for: wake)),
+                wakeTs: last.endTs))
         }
         let ends = workouts.map(\.endTs)
+        let starts = workouts.map(\.startTs)
         let auto: [PulseBehaviorLibrary.Auto: BehaviorImpact.Answers] = [
             .sleepPerformance: AutoBehaviors.atLeast(AutoBehaviors.sleepPerformanceThreshold, valueByDay: performance),
             .dayStrain: AutoBehaviors.previousDayAtLeast(AutoBehaviors.strainThreshold, valueByDay: strain),
             .lateWorkout: AutoBehaviors.lateWorkout(nights: nights, workoutEnds: ends),
+            .earlyWorkout: AutoBehaviors.earlyWorkout(nights: nights, workoutStarts: starts),
             .consistentBedTime: AutoBehaviors.consistent(
                 minuteByDay: Dictionary(nights.map { ($0.day, $0.bedMinute) }, uniquingKeysWith: { a, _ in a })),
             .consistentWakeTime: AutoBehaviors.consistent(
@@ -209,6 +222,18 @@ extension PulseSnapshotBuilder {
             yesDays: isAuto ? [] : answers.yes, noDays: isAuto ? [] : answers.no,
             scale: BehaviorImpact.barScale(unlockedImpacts), today: r.day.key,
             question: data.questions[identity])
+    }
+}
+
+/// The night a behaviour reads: the day's MAIN-night group as `SleepView.mainNightGroup` picks it (the
+/// winning block plus the fragments bridged into it), computed from the same pure `SleepStageTotals`
+/// selector here, because the View's static is main-actor isolated and these builds run on the builder.
+enum BehaviorNights {
+    static func mainNightGroup(_ sessions: [CachedSleepSession], habitualMidsleepSec: Int?) -> [CachedSleepSession] {
+        guard let indices = SleepStageTotals.mainNightGroupIndices(
+            sessions.map { SleepStageTotals.NightBlock(start: $0.effectiveStartTs, end: $0.endTs) },
+            offsetSec: TimeZone.current.secondsFromGMT(), habitualMidsleepSec: habitualMidsleepSec) else { return [] }
+        return indices.map { sessions[$0] }.sorted { $0.effectiveStartTs < $1.effectiveStartTs }
     }
 }
 

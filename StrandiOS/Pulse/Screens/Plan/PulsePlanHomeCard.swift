@@ -12,6 +12,9 @@ import StrandAnalytics
 /// With a plan, collapsed: "BOOST FITNESS PLAN" with ⌄, "2 days left", "93% ACCOMPLISHED" over its green
 /// bar. Expanded (⌃): the goals, unfinished first in white, a hairline, then finished in green, each with
 /// its ring, and VIEW MY PLAN. A week recap waiting, or the Friday check-in, adds one row at the top.
+/// Both states are the standard white-10% card and VIEW MY PLAN a nested button on it (reviews/r114:
+/// #313439 on #191C21, the button #404145 on #292D30); the plan's name is white there, where no sticky
+/// header fades it (journal-plan-2026/32 and 34 sample it under that fade).
 /// It loads its own week through the model (`PulseSnapshotBuilder.planWeek`), so it needs nothing from Home.
 struct PulsePlanHomeCard: View {
     @Environment(PulseModel.self) private var model
@@ -93,7 +96,7 @@ struct PulsePlanHomeCard: View {
                             .foregroundStyle(PulseTheme.textPrimary)
                             .frame(maxWidth: .infinity, minHeight: 52)
                             .background(RoundedRectangle(cornerRadius: PulseTheme.Radius.control, style: .circular)
-                                .fill(PulseTheme.Plan.viewButton))
+                                .fill(PulseTheme.nested))
                             .contentShape(Rectangle())
                     }
                     .buttonStyle(PulsePressStyle())
@@ -104,7 +107,7 @@ struct PulsePlanHomeCard: View {
         .padding(20)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(RoundedRectangle(cornerRadius: PulseTheme.Radius.dialog, style: .continuous)
-            .fill(expanded ? PulseTheme.Plan.expandedCard : PulseTheme.Plan.collapsedCard))
+            .fill(PulseTheme.card))
     }
 
     /// A one-line notice that opens Plan Overview (where the recap or the check-in lives).

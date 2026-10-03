@@ -53,8 +53,9 @@ struct JournalAnswerToggles: View {
 
 // MARK: Journal section label
 
-/// "DAYTIME", "YOUR CUSTOM PLAN": 11 pt Bold caps at white 50%, with a hairline to the right edge; or
-/// "NOTES" with no rule.
+/// "CURRENTLY SELECTED": 11 pt Bold caps at white 50%, with a hairline to the right edge (SELECT BEHAVIORS,
+/// journal-plan-2026/13); or, as the 2026 Journal draws "DAYTIME", "NIGHTTIME" and "NOTES"
+/// (journal-plan-2026/01), with no rule.
 struct JournalSectionLabel: View {
     let title: String
     var rule = true
@@ -81,19 +82,22 @@ struct JournalSectionLabel: View {
 // MARK: Follow-up value capsule (§3.17 item 10)
 
 /// A follow-up's value at the right of its row: "-- Minutes" on translucent grey while empty, "15 Minutes"
-/// in black bold on blue once set (radius 8). Tapping it opens the wheel.
+/// in black bold on blue once set (radius 8). Tapping it opens the wheel. Both scale with Dynamic Type.
 struct JournalValueCapsule: View {
     let text: String
     let isSet: Bool
     let accessibilityLabel: String
     let action: () -> Void
 
+    /// The filled value's 15 pt Bold condensed, scaled like the row's question beside it.
+    @ScaledMetric(relativeTo: .subheadline) private var valueSize: CGFloat = 15
+
     var body: some View {
         Button(action: action) {
-            Text(text)
-                .font(isSet ? PulseTheme.JournalPlan.followUpValue : PulseType.font(.pillTitle))
+            label
                 .foregroundStyle(isSet ? Color.black : PulseTheme.textSecondary)
                 .lineLimit(1)
+                .minimumScaleFactor(0.8)
                 .padding(.horizontal, 12)
                 .frame(minHeight: 34)
                 .background(RoundedRectangle(cornerRadius: PulseTheme.Radius.well, style: .circular)
@@ -104,6 +108,15 @@ struct JournalValueCapsule: View {
         .accessibilityLabel(accessibilityLabel)
         .accessibilityValue(text)
         .accessibilityHint(String(localized: "Opens a picker"))
+    }
+
+    @ViewBuilder
+    private var label: some View {
+        if isSet {
+            Text(text).font(PulseType.numeral(valueSize))
+        } else {
+            Text(text).pulseText(.pillTitle)
+        }
     }
 }
 
@@ -252,6 +265,8 @@ struct JournalAIEntryCard: View {
             .accessibilityHidden(true)
     }
 
+    /// "⌨ TEXT" / "mic TALK": each with a 1 pt edge, lighter grey on TEXT and violet on TALK
+    /// (journal-plan-2026/16: #5A5C73 over #3F4156, #535097 over #3D3A71).
     private func entryButton(_ title: String, symbol: String, talk: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             HStack(spacing: 10) {
@@ -268,8 +283,10 @@ struct JournalAIEntryCard: View {
                 if talk {
                     shape.fill(LinearGradient(gradient: PulseTheme.Gradients.aiEntryTalkButton,
                                               startPoint: .leading, endPoint: .trailing))
+                        .overlay(shape.strokeBorder(PulseTheme.Gradients.aiEntryBorder, lineWidth: 1))
                 } else {
                     shape.fill(PulseTheme.Gradients.aiEntryTextButton)
+                        .overlay(shape.strokeBorder(PulseTheme.JournalPlan.aiTextButtonEdge, lineWidth: 1))
                 }
             }
             .contentShape(Rectangle())
@@ -281,7 +298,8 @@ struct JournalAIEntryCard: View {
 // MARK: Day capsule (§3.17 item 4)
 
 /// One day of the Journal's strip: a tall white-12% capsule holding the weekday ("Mon", 13 pt at 70%), the
-/// date (20 pt Bold condensed) and, under a logged day, a green ✓ disc. The selected day is ringed 2 pt white.
+/// date (20 pt Bold condensed) and, under a logged day, a green ✓ disc. The selected day is lighter (white
+/// 20%) and ringed 2 pt white.
 struct JournalDayCapsule: View {
     let weekday: String
     let date: String
@@ -310,7 +328,8 @@ struct JournalDayCapsule: View {
         }
         .frame(maxWidth: .infinity)
         .frame(height: PulseTheme.JournalPlan.dayCapsuleHeight)
-        .background(Capsule(style: .continuous).fill(PulseTheme.JournalPlan.dayCapsule))
+        .background(Capsule(style: .continuous)
+            .fill(selected ? PulseTheme.JournalPlan.dayCapsuleSelected : PulseTheme.JournalPlan.dayCapsule))
         .overlay {
             if selected {
                 Capsule(style: .continuous).strokeBorder(Color.white, lineWidth: 2)
@@ -380,7 +399,8 @@ struct JournalCheckbox: View {
 
 // MARK: Verdict chip (§3.18 Behavior Details)
 
-/// "Negative" / "Positive" / "Not significant" at the right of RECOVERY IMPACT (radius 6).
+/// "Negative" / "Positive" / "Not significant" at the right of RECOVERY IMPACT (radius 6). One line; at
+/// the largest text sizes it shrinks rather than pushing the card wider than the screen.
 struct BehaviorVerdictChip: View {
     enum Verdict { case positive, negative, neutral }
 
@@ -390,10 +410,11 @@ struct BehaviorVerdictChip: View {
         Text(title)
             .pulseText(.pillTitle)
             .foregroundStyle(colors.text)
+            .lineLimit(1)
+            .minimumScaleFactor(0.6)
             .padding(.horizontal, 10)
             .padding(.vertical, 5)
             .background(RoundedRectangle(cornerRadius: PulseTheme.Radius.toggle, style: .circular).fill(colors.fill))
-            .fixedSize()
     }
 
     private var title: String {
@@ -415,19 +436,17 @@ struct BehaviorVerdictChip: View {
 
 // MARK: Impact value (§3.18)
 
-/// "-6%" with the "%" smaller, in the bar's colour.
+/// "-6%" with the "%" smaller, in the bar's colour; proportional digits, so "+1%" has no gap.
 struct BehaviorImpactValue: View {
     let impact: Double
     let color: Color
 
     var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 1) {
-            Text(BehaviorImpactFormat.number(impact))
-                .font(PulseType.font(.impactValue))
-            Text(verbatim: "%")
-                .font(PulseTheme.JournalPlan.impactUnit)
-        }
+        // One run of text, so the "%" sits at the number's own spacing (no stack gap).
+        (Text(BehaviorImpactFormat.number(impact)).font(PulseTheme.JournalPlan.impactNumber)
+            + Text(verbatim: "%").font(PulseTheme.JournalPlan.impactUnit))
         .foregroundStyle(color)
+        .fixedSize()
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(BehaviorImpactFormat.text(impact))
     }
@@ -459,6 +478,47 @@ enum BehaviorImpactFormat {
     static func fraction(_ impact: Double?, scale: Double) -> Double {
         guard let impact, scale > 0 else { return 0 }
         return max(-1, min(1, impact / scale))
+    }
+}
+
+// MARK: Pinned save bar (§3.17 item 12, §3.17b item 8, §3.19 BEHAVIOR GOAL)
+
+/// The white capsule a pinned bar holds ("SAVE JOURNAL", "SAVE BEHAVIORS"): 48 pt, black Bold caps. The
+/// label stays on one line inside the rounded ends: it shrinks before it touches them, and stops growing at
+/// the second accessibility size.
+struct JournalSaveCapsuleLabel: View {
+    let title: String
+
+    var body: some View {
+        Text(title)
+            .pulseText(.capsuleLabel)
+            .foregroundStyle(Color.black)
+            .lineLimit(1)
+            .minimumScaleFactor(0.7)
+            .padding(.horizontal, PulseTheme.JournalPlan.saveHeight / 2)
+            .frame(maxWidth: .infinity, minHeight: PulseTheme.JournalPlan.saveHeight)
+            .background(Capsule(style: .continuous).fill(PulseTheme.JournalPlan.saveCapsule))
+            .contentShape(Capsule())
+            .dynamicTypeSize(...DynamicTypeSize.accessibility2)
+    }
+}
+
+/// A bottom bar pinned over a scrolling page: the content fades out over `fade` into `color`, then the bar's
+/// buttons sit on `color`.
+struct JournalPinnedBar<Content: View>: View {
+    let color: Color
+    var fade: CGFloat = PulseTheme.JournalPlan.saveFade
+    @ViewBuilder let content: () -> Content
+
+    var body: some View {
+        VStack(spacing: 0) {
+            LinearGradient(colors: [color.opacity(0), color], startPoint: .top, endPoint: .bottom)
+                .frame(height: fade)
+                .allowsHitTesting(false)
+            content()
+                .frame(maxWidth: .infinity)
+                .background(color)
+        }
     }
 }
 
@@ -526,7 +586,27 @@ struct JournalPlanScrollTopKey: PreferenceKey {
     }
 }
 
+/// A view's top edge in the window (`journalPlanReadTop`).
+struct JournalPlanViewTopKey: PreferenceKey {
+    static var defaultValue: CGFloat? = nil
+    static func reduce(value: inout CGFloat?, nextValue: () -> CGFloat?) {
+        value = nextValue() ?? value
+    }
+}
+
 extension View {
+    /// Reads this view's top edge in the window into `top` (a scroll view's, to lift content drawn from the
+    /// screen's top edge, such as a hero, by the bar above it).
+    func journalPlanReadTop(_ top: Binding<CGFloat?>) -> some View {
+        background(GeometryReader { geo in
+            Color.clear.preference(key: JournalPlanViewTopKey.self, value: geo.frame(in: .global).minY)
+        })
+        .onPreferenceChange(JournalPlanViewTopKey.self) { value in
+            guard let value, top.wrappedValue != value else { return }
+            top.wrappedValue = value
+        }
+    }
+
     /// Sets `scrolled` once the content's top has moved above where it first rested.
     func journalPlanTrackScroll(_ scrolled: Binding<Bool>, rest: Binding<CGFloat?>) -> some View {
         coordinateSpace(name: JournalPlanScrollMarker.space)

@@ -7,24 +7,27 @@ import Charts
 // The goal cards Plan Overview stacks, the plan header, and the pieces the Home card and the recap share.
 // All take a `PlanGoalProgress` / `PlanWeekSnapshot`: every figure is already measured.
 
-/// "27% ACCOMPLISHED" over its 4 pt green bar.
+/// "27% ACCOMPLISHED" over its 4 pt green bar. The figure scales with the caps word beside it, and the word
+/// drops under the figure when the two no longer fit on one line.
 struct PlanAccomplishedBar: View {
     let percent: Int?
     var word: String = String(localized: "Accomplished")
 
+    @ScaledMetric(relativeTo: .title3) private var figureSize: CGFloat = 20
+    @ScaledMetric(relativeTo: .footnote) private var unitSize: CGFloat = 13
+
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .firstTextBaseline, spacing: 1) {
-                Text(percent.map { "\($0)" } ?? "--")
-                    .font(PulseTheme.JournalPlan.goalFigure)
-                    .foregroundStyle(PulseTheme.textPrimary)
-                Text(verbatim: "%")
-                    .font(PulseType.font(.baseline))
-                    .foregroundStyle(PulseTheme.textPrimary)
-                Text(word)
-                    .pulseText(.menuLabel)
-                    .foregroundStyle(PulseTheme.textSecondary)
-                    .padding(.leading, 6)
+            ViewThatFits(in: .horizontal) {
+                HStack(alignment: .firstTextBaseline, spacing: 1) {
+                    figure
+                    wordText.padding(.leading, 6)
+                }
+                VStack(alignment: .leading, spacing: 2) {
+                    figure
+                    PulseWordWrapText(word, style: .menuLabel)
+                        .foregroundStyle(PulseTheme.textSecondary)
+                }
             }
             GeometryReader { geo in
                 ZStack(alignment: .leading) {
@@ -35,8 +38,27 @@ struct PlanAccomplishedBar: View {
             }
             .frame(height: 4)
         }
+        .dynamicTypeSize(...DynamicTypeSize.accessibility3)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(String(localized: "\(percent ?? 0) percent accomplished"))
+    }
+
+    private var figure: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 1) {
+            Text(percent.map { "\($0)" } ?? "--")
+                .font(PulseType.numeral(figureSize))
+            Text(verbatim: "%")
+                .font(PulseType.numeral(unitSize))
+        }
+        .foregroundStyle(PulseTheme.textPrimary)
+        .fixedSize()
+    }
+
+    private var wordText: some View {
+        Text(word)
+            .pulseText(.menuLabel)
+            .foregroundStyle(PulseTheme.textSecondary)
+            .lineLimit(1)
     }
 }
 
@@ -87,7 +109,7 @@ struct PlanGoalCard: View {
 
     private var titleRow: some View {
         HStack(alignment: .center, spacing: 12) {
-            Text(progress.title)
+            Text(progress.cardTitle)
                 .pulseText(.subsectionTitle)
                 .foregroundStyle(PulseTheme.textPrimary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -102,7 +124,8 @@ struct PlanGoalCard: View {
         }
     }
 
-    // A time goal: total vs target on a thick bar, then the activities behind it.
+    // A time goal: total vs target on a thick bar, then the activities behind it, and what could not be
+    // measured. With nothing measurable the total reads "--", never "0:00:00".
     @ViewBuilder
     private var timeBody: some View {
         titleRow
@@ -110,12 +133,15 @@ struct PlanGoalCard: View {
         HStack {
             Text(progress.progressText ?? "--")
                 .font(PulseTheme.JournalPlan.goalFigure)
-                .foregroundStyle(progress.met ? PulseTheme.Plan.goalMet : color)
+                .foregroundStyle(progress.progressText == nil ? PulseTheme.textTertiary
+                                 : (progress.met ? PulseTheme.Plan.goalMet : color))
             Spacer()
             Text(progress.targetText ?? "--")
                 .font(PulseTheme.JournalPlan.goalFigure)
                 .foregroundStyle(PulseTheme.textPrimary)
         }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(String(localized: "\(progress.progressText ?? String(localized: "Not measured")) of \(progress.targetText ?? "--")"))
         GeometryReader { geo in
             ZStack(alignment: .leading) {
                 Capsule().fill(PulseTheme.well)
@@ -130,7 +156,7 @@ struct PlanGoalCard: View {
                 ForEach(progress.activities) { line in
                     HStack(spacing: 10) {
                         Text(PlanTimeFormat.long(line.minutes))
-                            .font(PulseType.font(.rowValue))
+                            .pulseText(.rowValue)
                             .foregroundStyle(color)
                             .frame(minWidth: 64, alignment: .leading)
                         Image(systemName: line.symbol)
@@ -144,6 +170,17 @@ struct PlanGoalCard: View {
                     .accessibilityElement(children: .combine)
                 }
             }
+        }
+        if let note = progress.note {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Image(systemName: "waveform.path.ecg")
+                    .font(PulseTheme.JournalPlan.smallGlyph)
+                    .accessibilityHidden(true)
+                Text(note)
+                    .pulseText(.rowSubline)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .foregroundStyle(PulseTheme.textTertiary)
         }
         footer
     }
@@ -184,12 +221,11 @@ struct PlanGoalCard: View {
         }
     }
 
-    // A count goal: the MON–SUN circles.
+    // A count goal: the MON–SUN circles, no sentence (completeness-critic/23).
     @ViewBuilder
     private var countBody: some View {
         titleRow
         PulseDayCircleRow(days: dayCircles, diameter: 30)
-        footer
     }
 
     private var footer: some View {

@@ -8,12 +8,26 @@ import SwiftUI
 /// SELECTED and NOT SELECTED, each alphabetical: a name over its journal question, an outlined "Custom"
 /// chip on custom rows and a 24 pt checkbox at the right. Ticks are staged; SAVE BEHAVIORS applies them to
 /// the journal catalog (`JournalCatalogStore`): a starter or imported question is hidden or restored, a
-/// library behaviour is added or removed, and a custom one is created on the CUSTOM BEHAVIORS tab with no
-/// AI needed (§3.17 ZENO data). Rows stay in their section until saved, so nothing jumps under a finger.
+/// library behaviour is added or removed, and a custom one created on the CUSTOM BEHAVIORS tab (no AI
+/// needed, §3.17 ZENO data) is written then too, like every other tick, so ✕ leaves the journal as it was.
+/// Rows stay in their section until saved, so nothing jumps under a finger.
+///
+/// With a `goalPicker` (BEHAVIOR GOAL's + ADD BEHAVIORS) the ticks are the plan's behaviour goals instead:
+/// they start from the goals, and SAVE BEHAVIORS hands the ticked behaviours back without touching the
+/// journal's own selection (the goal editor adds them to the journal when it saves).
 struct PulseSelectBehaviorsView: View {
     @ObservedObject var catalog: JournalCatalogStore
     let importedQuestions: [String]
     var onSaved: () -> Void = {}
+    var goalPicker: GoalPicker?
+
+    /// Picking behaviour goals rather than editing the journal.
+    struct GoalPicker {
+        /// The identities of the behaviours that are goals now.
+        let selected: Set<String>
+        /// The ticked behaviours, on SAVE BEHAVIORS.
+        let onSave: ([PulseBehavior]) -> Void
+    }
 
     @Environment(\.dismiss) private var dismiss
     @Environment(\.pulseCoach) private var coach
@@ -33,6 +47,8 @@ struct PulseSelectBehaviorsView: View {
     @State private var initial: Set<String> = []
     @State private var didLoad = false
     @State private var creating = false
+    /// Custom behaviours made on this sheet, written to the catalog only on SAVE BEHAVIORS.
+    @State private var created: [PulseCreateBehaviorSheet.Created] = []
 
     private var tabs: [Tab] { [.all, .custom] + PulseBehaviorCategory.allCases.map { .category($0) } }
 
@@ -81,7 +97,14 @@ struct PulseSelectBehaviorsView: View {
                     .padding(.bottom, PulseTheme.JournalPlan.saveHeight + 56)
                 }
                 .scrollDismissesKeyboard(.interactively)
-                saveButton
+                JournalPinnedBar(color: PulseTheme.JournalPlan.selectSheetBottom, fade: 28) {
+                    Button(action: save) {
+                        JournalSaveCapsuleLabel(title: String(localized: "Save Behaviors"))
+                    }
+                    .buttonStyle(PulsePressStyle())
+                    .padding(.horizontal, PulseTheme.Layout.pageMargin)
+                    .padding(.bottom, 8)
+                }
             }
         }
         .background(LinearGradient(colors: [PulseTheme.JournalPlan.selectSheetTop, PulseTheme.JournalPlan.selectSheetBottom],
@@ -92,16 +115,17 @@ struct PulseSelectBehaviorsView: View {
         .environment(\.colorScheme, .dark)
         .onAppear(perform: loadSelection)
         .sheet(isPresented: $creating) {
-            PulseCreateBehaviorSheet { created in
+            PulseCreateBehaviorSheet { new in
                 creating = false
-                guard let created else { return }
-                catalog.addCustom(created.question, kind: created.unit.map { .numeric(unitLabel: $0) } ?? .bool,
-                                  group: created.category.group)
-                local.setTitle(created.name, for: created.question)
-                let id = PulseBehaviorLibrary.identity(for: created.question)
+                guard let new else { return }
+                let id = PulseBehaviorLibrary.identity(for: new.question)
+                // A question the journal or the library already knows is that behaviour, not a second one.
+                if !everything.contains(where: { identity($0) == id }) {
+                    created.append(new)
+                    tab = .custom
+                }
                 selection.insert(id)
                 initial.insert(id)
-                tab = .custom
             }
         }
     }
@@ -158,18 +182,19 @@ struct PulseSelectBehaviorsView: View {
                     ForEach(tabs, id: \.self) { t in
                         let selected = t == tab
                         Button { tab = t } label: {
-                            VStack(spacing: 7) {
-                                Text(title(t))
-                                    .pulseText(.label)
-                                    .foregroundStyle(selected ? PulseTheme.textPrimary : PulseTheme.textTertiary)
-                                    .lineLimit(1)
-                                Rectangle()
-                                    .fill(selected ? Color.white : Color.clear)
-                                    .frame(height: 2)
-                                    .frame(maxWidth: 28)
-                            }
-                            .frame(minHeight: PulseTheme.Layout.minTapTarget)
-                            .contentShape(Rectangle())
+                            // The underline runs the label's full width (journal-plan-2026/13).
+                            Text(title(t))
+                                .pulseText(.label)
+                                .foregroundStyle(selected ? PulseTheme.textPrimary : PulseTheme.textTertiary)
+                                .lineLimit(1)
+                                .overlay(alignment: .bottom) {
+                                    Rectangle()
+                                        .fill(selected ? Color.white : Color.clear)
+                                        .frame(height: 2)
+                                        .offset(y: 9)
+                                }
+                                .frame(minHeight: PulseTheme.Layout.minTapTarget)
+                                .contentShape(Rectangle())
                         }
                         .buttonStyle(PulsePressStyle())
                         .accessibilityAddTraits(selected ? .isSelected : [])
@@ -197,7 +222,8 @@ struct PulseSelectBehaviorsView: View {
 
     // MARK: Rows
 
-    /// Every behaviour the editor offers, one per identity (a shown spelling first), plus the mood check-in.
+    /// Every behaviour the editor offers, one per identity (a shown spelling first), the custom ones made
+    /// on this sheet, and the mood check-in (not a goal: it is not a yes / no behaviour).
     private var everything: [PulseBehavior] {
         let items = catalog.resolvedItems(imported: importedQuestions, includeHidden: true)
         var seen = Set<String>()
@@ -207,10 +233,15 @@ struct PulseSelectBehaviorsView: View {
         for b in resolved.filter(\.isSelected) + resolved.filter({ !$0.isSelected }) {
             if seen.insert(identity(b)).inserted { out.append(b) }
         }
-        out.append(PulseBehavior(canonical: PulseBehaviorLibrary.moodID, title: String(localized: "Mood"),
-                                 question: String(localized: "How was your mood?"), category: .mentalWellbeing,
-                                 section: .daytime, symbol: "face.smiling", followUp: nil, libraryID: nil,
-                                 isCustom: false, isSelected: local.moodIsSelected))
+        for c in created where seen.insert(PulseBehaviorLibrary.identity(for: c.question)).inserted {
+            out.append(c.behavior)
+        }
+        if goalPicker == nil {
+            out.append(PulseBehavior(canonical: PulseBehaviorLibrary.moodID, title: String(localized: "Mood"),
+                                     question: String(localized: "How was your mood?"), category: .mentalWellbeing,
+                                     section: .daytime, symbol: "face.smiling", followUp: nil, libraryID: nil,
+                                     isCustom: false, isSelected: local.moodIsSelected))
+        }
         return out
     }
 
@@ -260,37 +291,24 @@ struct PulseSelectBehaviorsView: View {
         .buttonStyle(PulsePressStyle())
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(checked ? .isSelected : [])
-        .accessibilityHint(checked ? String(localized: "Removes it from your journal when you save")
-                                   : String(localized: "Adds it to your journal when you save"))
+        .accessibilityHint(hint(checked: checked))
+    }
+
+    private func hint(checked: Bool) -> String {
+        if goalPicker != nil {
+            return checked ? String(localized: "Removes it from your behavior goals when you save")
+                           : String(localized: "Makes it a behavior goal when you save")
+        }
+        return checked ? String(localized: "Removes it from your journal when you save")
+                       : String(localized: "Adds it to your journal when you save")
     }
 
     // MARK: Save
 
-    private var saveButton: some View {
-        VStack(spacing: 0) {
-            LinearGradient(colors: [PulseTheme.JournalPlan.selectSheetBottom.opacity(0), PulseTheme.JournalPlan.selectSheetBottom],
-                           startPoint: .top, endPoint: .bottom)
-                .frame(height: 28)
-                .allowsHitTesting(false)
-            Button(action: save) {
-                Text(String(localized: "Save Behaviors"))
-                    .pulseText(.capsuleLabel)
-                    .foregroundStyle(Color.black)
-                    .frame(maxWidth: .infinity, minHeight: PulseTheme.JournalPlan.saveHeight)
-                    .background(Capsule(style: .continuous).fill(PulseTheme.JournalPlan.saveCapsule))
-                    .contentShape(Capsule())
-            }
-            .buttonStyle(PulsePressStyle())
-            .padding(.horizontal, PulseTheme.Layout.pageMargin)
-            .padding(.bottom, 8)
-            .background(PulseTheme.JournalPlan.selectSheetBottom)
-        }
-    }
-
     private func loadSelection() {
         guard !didLoad else { return }
         didLoad = true
-        let selected = Set(everything.filter(\.isSelected).map(identity))
+        let selected = goalPicker?.selected ?? Set(everything.filter(\.isSelected).map(identity))
         selection = selected
         initial = selected
         #if DEBUG
@@ -301,10 +319,22 @@ struct PulseSelectBehaviorsView: View {
         #endif
     }
 
-    /// Apply the staged ticks to the catalog.
+    /// Apply the staged ticks: write the custom behaviours still ticked, then either hand the ticked
+    /// behaviours to the goal editor or apply the ticks to the journal catalog.
     private func save() {
+        let offered = everything
+        let createdIDs = Set(created.map { PulseBehaviorLibrary.identity(for: $0.question) })
+        for c in created where selection.contains(PulseBehaviorLibrary.identity(for: c.question)) {
+            catalog.addCustom(c.question, kind: c.unit.map { .numeric(unitLabel: $0) } ?? .bool, group: c.category.group)
+            local.setTitle(c.name, for: c.question)
+        }
+        if let goalPicker {
+            goalPicker.onSave(offered.filter { selection.contains(identity($0)) })
+            dismiss()
+            return
+        }
         let all = catalog.resolvedItems(imported: importedQuestions, includeHidden: true)
-        for b in everything {
+        for b in offered where !createdIDs.contains(identity(b)) {
             let id = identity(b)
             let want = selection.contains(id)
             guard want != b.isSelected else { continue }
@@ -338,6 +368,15 @@ struct PulseCreateBehaviorSheet: View {
         let question: String
         let category: PulseBehaviorCategory
         let unit: String?
+
+        /// The behaviour as the editor lists it before it is saved.
+        var behavior: PulseBehavior {
+            PulseBehavior(canonical: question, title: name, question: question, category: category,
+                          section: PulseBehaviorLibrary.inferredSection(question),
+                          symbol: PulseBehaviorLibrary.symbol(for: category),
+                          followUp: unit.map { PulseBehaviorFollowUp.custom(unit: $0) }, libraryID: nil,
+                          isCustom: true, isSelected: false)
+        }
     }
 
     let onDone: (Created?) -> Void
@@ -398,8 +437,10 @@ struct PulseCreateBehaviorSheet: View {
                         var q = question.trimmingCharacters(in: .whitespacesAndNewlines)
                         if !q.hasSuffix("?") { q += "?" }
                         let u = unit.trimmingCharacters(in: .whitespaces)
+                        // "Ask how much" with no unit still asks how much, counted in "Units".
                         onDone(Created(name: name.trimmingCharacters(in: .whitespacesAndNewlines), question: q,
-                                       category: category, unit: tracksAmount ? (u.isEmpty ? nil : u) : nil))
+                                       category: category,
+                                       unit: tracksAmount ? (u.isEmpty ? String(localized: "Units") : u) : nil))
                     }
                     .disabled(!canSave)
                 }

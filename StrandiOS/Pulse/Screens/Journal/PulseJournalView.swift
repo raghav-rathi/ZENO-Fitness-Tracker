@@ -14,7 +14,15 @@ import StrandAnalytics
 /// Answers are staged here and written on SAVE JOURNAL, under the native journal source ("noop-journal")
 /// exactly as the classic journal writes them, so the effects engine, Home's strip and an Android restore all
 /// read the same rows. ✕ with unsaved answers asks first (DISCARD CHANGES?). The save is verified by reading
-/// the day back; a mismatch shows YOUR ENTRY WAS NOT SAVED with RETRY.
+/// the day back; a mismatch shows YOUR ENTRY WAS NOT SAVED, whose RETRY finishes what the save was for
+/// (closing, or moving to the day that was picked).
+///
+/// Left out on purpose [Z] (ARCHITECTURE.md §9, journal-plan): the time follow-up with its slider ("When did
+/// you stop? 18:00", journal-plan-2026/08), because a journal row stores one number and the amount already
+/// uses it; Apple Health pre-filling ("Pre-filling compatible via Apple Health ⓘ"), because ZENO imports no
+/// mindful minutes and has no behaviour a workout would answer; and the classic caffeine log as a question,
+/// because "Consumed caffeine?" with its servings is already the behaviour Behavior Insights tests, and a
+/// second caffeine figure would contradict it.
 struct PulseJournalView: View {
     /// The rebuilt Journal: existing entry points (NavRouter, quick action, ＋ menu) open it.
     static let isRebuilt = true
@@ -49,8 +57,11 @@ struct PulseJournalView: View {
     @State private var sheet: JournalSheet?
     @State private var dialog: JournalDialog?
     @State private var saveFailed = false
+    /// What the failed save was for, so RETRY finishes it (close, or move to the picked day).
+    @State private var failedNext: JournalDialog.Next = .close
     @State private var saving = false
     @State private var dontAskAgain = false
+    @State private var showsUsePreviousInfo = false
 
     private var isToday: Bool { offset == 0 }
     private var hasChanges: Bool { current != original }
@@ -111,7 +122,7 @@ struct PulseJournalView: View {
         .fullScreenCover(isPresented: $saveFailed) {
             PulseErrorPage(title: String(localized: "Your entry was not saved"),
                            message: String(localized: "Your answers couldn't be written to the journal on this iPhone. Try again."),
-                           onRetry: { saveFailed = false; Task { await save(then: .close) } },
+                           onRetry: { saveFailed = false; Task { await save(then: failedNext) } },
                            onClose: { saveFailed = false })
         }
         .task(id: loadKey) { await load() }
@@ -122,10 +133,11 @@ struct PulseJournalView: View {
 
     // MARK: Header
 
-    /// "‹ TODAY ›" (or "‹ MON, MAR 16 ›") centred, with an outlined TODAY pill on a past day.
+    /// "‹ TODAY ›" (or "‹ MON, MAR 16 ›") centred, with an outlined TODAY pill on a past day. The chevrons
+    /// are ≈11 × 16 pt and sit ≈24 pt from the date, hugging it (help-center/105).
     private var dateRow: some View {
         ZStack {
-            HStack(spacing: 4) {
+            HStack(spacing: 0) {
                 stepButton("chevron.left", enabled: offset < stripDays - 1, label: String(localized: "Previous day")) {
                     requestDay(offset + 1)
                 }
@@ -135,7 +147,8 @@ struct PulseJournalView: View {
                         .foregroundStyle(PulseTheme.textPrimary)
                         .lineLimit(1)
                         .minimumScaleFactor(0.8)
-                        .frame(minWidth: 110, minHeight: PulseTheme.Layout.minTapTarget)
+                        .padding(.horizontal, PulseTheme.JournalPlan.dateChevronGap)
+                        .frame(minHeight: PulseTheme.Layout.minTapTarget)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(PulsePressStyle())
@@ -169,7 +182,7 @@ struct PulseJournalView: View {
     private func stepButton(_ symbol: String, enabled: Bool, label: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: symbol)
-                .font(PulseTheme.JournalPlan.checkGlyph)
+                .font(PulseTheme.JournalPlan.dateChevron)
                 .foregroundStyle(enabled ? PulseTheme.textPrimary : PulseTheme.textDisabled)
                 .frame(width: PulseTheme.Layout.minTapTarget, height: PulseTheme.Layout.minTapTarget)
                 .contentShape(Rectangle())
@@ -221,7 +234,7 @@ struct PulseJournalView: View {
 
     private var questionTitle: some View {
         Text(questionText)
-            .pulseText(.journalQuestion)
+            .pulseText(PulseTheme.JournalPlan.questionStyle)
             .foregroundStyle(PulseTheme.textPrimary)
             .fixedSize(horizontal: false, vertical: true)
             .accessibilityAddTraits(.isHeader)
@@ -242,7 +255,7 @@ struct PulseJournalView: View {
                     .padding(.top, 24)
             }
             if let plan = plans.plan, !layout.planRows.isEmpty {
-                JournalSectionLabel(title: plan.journalLabel)
+                JournalSectionLabel(title: plan.journalLabel, rule: false)
                     .padding(.top, 28)
                 VStack(spacing: PulseTheme.JournalPlan.rowGap) {
                     ForEach(layout.planRows, id: \.goal.id) { row in planRow(row, snapshot: s) }
@@ -250,7 +263,7 @@ struct PulseJournalView: View {
                 .padding(.top, 12)
             }
             ForEach(layout.sections, id: \.section) { group in
-                JournalSectionLabel(title: group.section.title)
+                JournalSectionLabel(title: group.section.title, rule: false)
                     .padding(.top, 28)
                     .id("jp.\(group.section.debugName)")
                 VStack(spacing: PulseTheme.JournalPlan.rowGap) {
@@ -299,11 +312,12 @@ struct PulseJournalView: View {
 
     /// "Smart log with Coach": opens the Coach over the Journal with the day as its context. ZENO's Coach
     /// cannot write journal answers, so the caption says where answers are saved rather than WHOOP's
-    /// "saved automatically". It folds to one row once used ([Z]).
+    /// "saved automatically". It folds to one row once used ([Z]). TALK is left out until the Coach sheet can
+    /// start in voice: opening the same text composer under a TALK label would promise what it does not do.
     private var smartLog: some View {
         VStack(spacing: 12) {
             JournalAIEntryCard(title: String(localized: "Smart log with Coach"), collapsed: local.smartLogUsed,
-                               showsTalk: true,
+                               showsTalk: false,
                                onText: openSmartLog, onTalk: openSmartLog)
             if !local.smartLogUsed {
                 Text(String(localized: "Your answers save when you tap Save Journal"))
@@ -349,17 +363,27 @@ struct PulseJournalView: View {
 
     /// A plan behaviour goal: its week's ring, then the question, then ✕ / ✓. An AVOID goal asks
     /// "Avoided Late Meal?", so its ✓ stores "no" for the behaviour and its follow-up hangs off ✕ (§3.17
-    /// item 7).
+    /// item 7). The ring is Plan Overview's count for the day's week (`PlanBehaviorWeek`, the same covered
+    /// days and pro-rated target) with this day's staged answer in place of its stored one.
     private func planRow(_ row: JournalPlanRow, snapshot s: JournalDaySnapshot) -> some View {
         let id = PulseBehaviorLibrary.identity(for: row.behavior.canonical)
         let avoid = row.goal.avoid == true
         let stored = current.answers[id]
         let shown = avoid ? stored.map { !$0 } : stored
-        let todayMet = avoid ? stored == false : stored == true
-        let done = (s.planDoneElsewhere[id] ?? 0) + (todayMet ? 1 : 0)
+        // The native rows the day will hold for this behaviour once saved: none when cleared, its stored
+        // spellings when untouched (save() leaves them), else the one save() writes under the row's key.
+        let unchanged = stored == original.answers[id] && current.amounts[id] == original.amounts[id]
+        let nativeKeys: Set<String> = stored == nil ? []
+            : (unchanged ? Set(s.answers.keys.filter { PulseBehaviorLibrary.identity(for: $0) == id })
+                         : [row.behavior.canonical])
+        let dayAnswer = Self.dayAnswer(staged: stored, nativeKeys: nativeKeys, id: id, imported: s.importedDayAnswers)
+        let todayMet = avoid ? dayAnswer == false : dayAnswer == true
+        let week = s.planWeeks[id]
+        let done = (week?.doneElsewhere ?? 0) + ((week?.countsDay ?? false) && todayMet ? 1 : 0)
+        let target = week?.target ?? PlanTargets.days(row.goal, coveredDays: 7)
         let question = avoid ? String(localized: "Avoided \(row.behavior.title)?") : row.behavior.question
         return JournalRowCard(question: question,
-                              leading: AnyView(PulseGoalRing(kind: .count(done: done, target: max(1, row.goal.days ?? 1)),
+                              leading: AnyView(PulseGoalRing(kind: .count(done: done, target: target),
                                                              diameter: 36))) {
             JournalAnswerToggles(answer: shown, question: question) { new in
                 setAnswer(avoid ? new.map { !$0 } : new, id: id)
@@ -369,6 +393,20 @@ struct PulseJournalView: View {
                 followUpRow(followUp, id: id)
             }
         }
+    }
+
+    /// The day's answer for a behaviour as the journal will hold it after SAVE JOURNAL, read the way Plan
+    /// Overview and Behavior Insights read it (`Repository.mergeJournal`, then folded per behaviour): the
+    /// staged native answer, plus the day's imported answers under any key no native row will take (a
+    /// native row wins its own key), yes winning.
+    static func dayAnswer(staged: Bool?, nativeKeys: Set<String>, id: String, imported: [String: Bool]) -> Bool? {
+        var answers: [Bool] = staged.map { [$0] } ?? []
+        for (question, yes) in imported where PulseBehaviorLibrary.identity(for: question) == id
+            && !nativeKeys.contains(question) {
+            answers.append(yes)
+        }
+        if answers.contains(true) { return true }
+        return answers.isEmpty ? nil : false
     }
 
     private func followUpRow(_ followUp: PulseBehaviorFollowUp, id: String) -> some View {
@@ -392,20 +430,41 @@ struct PulseJournalView: View {
         s.answers.isEmpty && !s.previousAnswers.isEmpty
     }
 
+    /// The switch, its caps label and a "?" that explains it (journal-plan-2026/90).
     private func usePreviousRow(_ s: JournalDaySnapshot) -> some View {
-        HStack(spacing: 12) {
-            Toggle(isOn: Binding(get: { usePrevious }, set: { on in applyPrevious(on, s) })) {
-                EmptyView()
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 12) {
+                Toggle(isOn: Binding(get: { usePrevious }, set: { on in applyPrevious(on, s) })) {
+                    Text(String(localized: "Use previous answers"))
+                }
+                .labelsHidden()
+                .tint(PulseTheme.JournalPlan.switchOn)
+                .accessibilityHint(String(localized: "Fills this day with the answers you saved the day before"))
+                Text(String(localized: "Use previous answers"))
+                    .pulseText(.label)
+                    .foregroundStyle(PulseTheme.textSecondary)
+                    .accessibilityHidden(true)
+                Button {
+                    showsUsePreviousInfo.toggle()
+                } label: {
+                    Image(systemName: "questionmark.circle")
+                        .font(PulseTheme.JournalPlan.rowGlyph)
+                        .foregroundStyle(PulseTheme.textSecondary)
+                        .frame(width: PulseTheme.Layout.minTapTarget, height: PulseTheme.Layout.minTapTarget)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(PulsePressStyle())
+                .padding(.vertical, -8)
+                .accessibilityLabel(String(localized: "About using previous answers"))
+                Spacer(minLength: 0)
             }
-            .labelsHidden()
-            .tint(PulseTheme.JournalPlan.switchOn)
-            Text(String(localized: "Use previous answers"))
-                .pulseText(.label)
-                .foregroundStyle(PulseTheme.textSecondary)
-            Spacer(minLength: 0)
+            if showsUsePreviousInfo {
+                Text(String(localized: "Fills this day with the answers you saved the day before, amounts included. Change any of them before you save; nothing is written until you tap Save Journal."))
+                    .pulseText(.rowSubline)
+                    .foregroundStyle(PulseTheme.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
-        .accessibilityElement(children: .combine)
-        .accessibilityHint(String(localized: "Fills today with the answers you saved the day before"))
     }
 
     private func applyPrevious(_ on: Bool, _ s: JournalDaySnapshot) {
@@ -443,27 +502,16 @@ struct PulseJournalView: View {
     // MARK: Save (§3.17 item 12)
 
     private var saveBar: some View {
-        VStack(spacing: 0) {
-            LinearGradient(colors: [PulseTheme.JournalPlan.pageBottom.opacity(0), PulseTheme.JournalPlan.pageBottom],
-                           startPoint: .top, endPoint: .bottom)
-                .frame(height: PulseTheme.JournalPlan.saveFade)
-                .allowsHitTesting(false)
+        JournalPinnedBar(color: PulseTheme.JournalPlan.pageBottom) {
             Button {
                 Task { await save(then: .close) }
             } label: {
-                Text(String(localized: "Save Journal"))
-                    .pulseText(.capsuleLabel)
-                    .foregroundStyle(Color.black)
-                    .frame(maxWidth: .infinity, minHeight: PulseTheme.JournalPlan.saveHeight)
-                    .background(Capsule(style: .continuous).fill(PulseTheme.JournalPlan.saveCapsule))
-                    .contentShape(Capsule())
+                JournalSaveCapsuleLabel(title: String(localized: "Save Journal"))
             }
             .buttonStyle(PulsePressStyle())
             .disabled(saving || !isLoaded)
-            .padding(.horizontal, PulseTheme.JournalPlan.saveSideMargin - PulseTheme.Layout.pageMargin)
-            .padding(.horizontal, PulseTheme.Layout.pageMargin)
+            .padding(.horizontal, PulseTheme.JournalPlan.saveSideMargin)
             .padding(.bottom, 5)
-            .background(PulseTheme.JournalPlan.pageBottom)
         }
     }
 
@@ -517,6 +565,7 @@ struct PulseJournalView: View {
             storedAnswers[w.key] == w.answer && (w.amount == nil || storedAmounts[w.key] == w.amount)
         }
         guard ok else {
+            failedNext = next
             saveFailed = true
             return
         }
@@ -634,10 +683,10 @@ struct PulseJournalView: View {
         await JournalPlanDebug.seedJournalIfRequested(repo: repo)
         #endif
         let off = offset
-        let goals = plans.plan?.goals ?? []
+        let plan = plans.plan
         let days = stripDays
         guard let s = await model.build(dayOffset: 0, { builder, r in
-            await builder.journalDay(r, offset: off, stripDays: days, planGoals: goals)
+            await builder.journalDay(r, offset: off, stripDays: days, plan: plan)
         }), s.offset == offset else { return }
         let fresh = Self.state(answers: s.answers, amounts: s.amounts)
         let stored = JournalAnswersState(answers: fresh.answers, amounts: fresh.amounts, mood: s.mood,
@@ -875,12 +924,7 @@ struct JournalDiscardDialog: View {
                 .buttonStyle(PulsePressStyle())
                 .accessibilityAddTraits(dontAskAgain ? .isSelected : [])
                 Button(action: onSave) {
-                    Text(String(localized: "Save Journal"))
-                        .pulseText(.capsuleLabel)
-                        .foregroundStyle(Color.black)
-                        .frame(maxWidth: .infinity, minHeight: PulseTheme.JournalPlan.saveHeight)
-                        .background(Capsule(style: .continuous).fill(PulseTheme.JournalPlan.saveCapsule))
-                        .contentShape(Capsule())
+                    JournalSaveCapsuleLabel(title: String(localized: "Save Journal"))
                 }
                 .buttonStyle(PulsePressStyle())
                 Button(action: onDiscard) {

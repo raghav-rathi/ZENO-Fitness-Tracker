@@ -114,7 +114,11 @@ struct PulsePlanOverviewView: View {
             let goals = s.goals.filter { $0.section == section }
             if !goals.isEmpty {
                 PlanSectionHeader(title: section.title) {
-                    editor = section == .behaviors ? .behaviors : .section(section)
+                    if section == .behaviors {
+                        navigator.open(PlanBehaviorGoalRoute().route)
+                    } else {
+                        editor = .section(section)
+                    }
                 }
                 .padding(.top, 12)
                 .id("pulse.plan-\(section.debugName)")
@@ -127,7 +131,7 @@ struct PulsePlanOverviewView: View {
         .buttonStyle(PulsePressStyle())
         .padding(.top, 12)
         if !plan.goals.contains(where: { $0.kind == .behavior }) {
-            Button { editor = .behaviors } label: {
+            Button { navigator.open(PlanBehaviorGoalRoute().route) } label: {
                 PulseListRow(symbol: "plus", title: String(localized: "Add a behavior goal"), trailing: .none)
             }
             .buttonStyle(PulsePressStyle())
@@ -160,7 +164,7 @@ struct PulsePlanOverviewView: View {
         }
         .padding(20)
         .background(RoundedRectangle(cornerRadius: PulseTheme.Radius.dialog, style: .continuous)
-            .fill(PulseTheme.Plan.collapsedCard))
+            .fill(PulseTheme.JournalPlan.planCard))
     }
 
     private func recapRow(_ week: PlanWeekSnapshot) -> some View {
@@ -217,12 +221,11 @@ struct PulsePlanOverviewView: View {
 
     // MARK: Editors
 
+    /// A section's goals, or new ones, in a sheet (WHOOP's editors other than BEHAVIOR GOAL were not seen in
+    /// 2026 [U]); BEHAVIOR GOAL itself is pushed (`PlanBehaviorGoalRoute`, journal-plan-2026/30).
     @ViewBuilder
     private func editorSheet(_ sheet: PlanEditorSheet, plan: PulsePlan) -> some View {
         switch sheet {
-        case .behaviors:
-            PulseBehaviorGoalEditor(goals: plan.behaviorGoals)
-                .environment(model)
         case .section(let section):
             PulsePlanGoalEditor(title: section.title, goals: plan.goals.filter { PulsePlanSection($0.kind) == section })
         case .add:
@@ -234,9 +237,16 @@ struct PulsePlanOverviewView: View {
 
     private func load(_ plan: PulsePlan) async {
         #if DEBUG
-        JournalPlanDebug.applyPlanScreen(editor: &editor, showRecap: &showRecap)
+        var behaviorGoal = false
+        JournalPlanDebug.applyPlanScreen(editor: &editor, showRecap: &showRecap, behaviorGoal: &behaviorGoal)
+        if behaviorGoal { navigator.open(PlanBehaviorGoalRoute().route) }
         #endif
-        if let s = await model.build(dayOffset: 0, { builder, r in await builder.planWeek(r, plan: plan) }) {
+        #if DEBUG
+        let week = JournalPlanDebug.planWeekOffset ?? 0
+        #else
+        let week = 0
+        #endif
+        if let s = await model.build(dayOffset: 0, { builder, r in await builder.planWeek(r, plan: plan, weekOffset: week) }) {
             snapshot = s
         }
         if let last = await model.build(dayOffset: 0, { builder, r in await builder.planWeek(r, plan: plan, weekOffset: -1) }) {
@@ -262,13 +272,11 @@ struct PlanHomeCardPreview: View {
 
 /// What a Plan Overview editor sheet edits.
 enum PlanEditorSheet: Identifiable, Equatable {
-    case behaviors
     case section(PulsePlanSection)
     case add
 
     var id: String {
         switch self {
-        case .behaviors: return "behaviors"
         case .section(let s): return "section-\(s.rawValue)"
         case .add: return "add"
         }

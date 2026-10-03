@@ -61,10 +61,10 @@ struct PlanGoalEditorCard: View {
                     let selected = n == days
                     Button { goal.days = n } label: {
                         Text(verbatim: "\(n)")
-                            .font(PulseType.font(.rowValue))
+                            .pulseText(.rowValue)
                             .foregroundStyle(selected ? PulseTheme.JournalPlan.checkboxGlyph : PulseTheme.textPrimary)
                             .frame(maxWidth: .infinity)
-                            .frame(height: PulseTheme.JournalPlan.dayButtonSize)
+                            .frame(minHeight: PulseTheme.JournalPlan.dayButtonSize)
                             .background(RoundedRectangle(cornerRadius: PulseTheme.Radius.toggle, style: .circular)
                                 .fill(selected ? PulseTheme.JournalPlan.dayButtonSelected : PulseTheme.JournalPlan.dayButton))
                             .contentShape(Rectangle())
@@ -74,6 +74,8 @@ struct PlanGoalEditorCard: View {
                     .accessibilityAddTraits(selected ? .isSelected : [])
                 }
             }
+            // Seven buttons share the width: their numbers stop growing where they still fit.
+            .dynamicTypeSize(...DynamicTypeSize.accessibility1)
         }
     }
 
@@ -86,7 +88,7 @@ struct PlanGoalEditorCard: View {
                     .foregroundStyle(PulseTheme.textPrimary)
                 Spacer()
                 Text(r.format(value))
-                    .font(PulseType.font(.rowValue))
+                    .pulseText(.rowValue)
                     .foregroundStyle(PulseTheme.JournalPlan.dayButtonSelected)
             }
             Slider(value: Binding(get: { value }, set: { goal.value = ($0 / r.step).rounded() * r.step }),
@@ -208,14 +210,17 @@ struct PulsePlanGoalEditor: View {
 
 // MARK: - BEHAVIOR GOAL (journal-plan-2026/30)
 
-/// BEHAVIOR GOAL: the chosen behaviours, each a card with a checkbox, its caps name and "Days per week" over
-/// 1–7 buttons; then suggestions (a caps name with ⓘ, its question, the wearer's OWN impact when Behavior
-/// Insights measured one, and a switch; WHOOP's "Members Like You" chip is population data [POP]), "+ ADD
-/// BEHAVIORS", the note that new behaviours join the Journal, SAVE BEHAVIORS and REMOVE. Custom behaviours
-/// can be goals too [Z].
-struct PulseBehaviorGoalEditor: View {
-    let goals: [PulsePlanGoal]
+/// BEHAVIOR GOAL, pushed from Plan Overview's BEHAVIORS › EDIT ("‹", §1.6).
+struct PlanBehaviorGoalRoute: PulseScreenRoute {
+    var view: some View { PulseBehaviorGoalEditor() }
+}
 
+/// BEHAVIOR GOAL: the chosen behaviours, each a card with a checkbox, its caps name and "Days per week" over
+/// 1–7 buttons; then up to four suggestions (a caps name with ⓘ, its question, the wearer's OWN impact when
+/// Behavior Insights measured one, and a switch; WHOOP's "Members Like You" chip is population data
+/// [POP]), "+ ADD BEHAVIORS" for any other behaviour, and, pinned under a fade, the note that new
+/// behaviours join the Journal, SAVE BEHAVIORS and REMOVE. Custom behaviours can be goals too [Z].
+struct PulseBehaviorGoalEditor: View {
     @Environment(PulseModel.self) private var model
     @Environment(\.dismiss) private var dismiss
     @State private var plans = PulsePlanStore.shared
@@ -228,87 +233,108 @@ struct PulseBehaviorGoalEditor: View {
     @State private var showSelector = false
 
     var body: some View {
-        NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 12) {
-                    ForEach($chosen) { $goal in
-                        PlanGoalEditorCard(goal: $goal, behaviorTitle: title(goal.subject),
-                                           onRemove: { chosen.removeAll { $0.id == goal.id } })
-                    }
-                    ForEach(suggestions, id: \.canonical) { b in suggestionCard(b) }
-                    Button { showSelector = true } label: {
-                        HStack(spacing: 18) {
-                            Image(systemName: "plus")
-                                .font(PulseTheme.JournalPlan.rowGlyph)
-                                .foregroundStyle(PulseTheme.textSecondary)
-                            Text(String(localized: "Add behaviors"))
-                                .pulseText(.cardTitle)
-                                .foregroundStyle(PulseTheme.textPrimary)
-                            Spacer()
-                        }
-                        .padding(.horizontal, 20)
-                        .frame(maxWidth: .infinity, minHeight: 64)
-                        .background(RoundedRectangle(cornerRadius: PulseTheme.Radius.card, style: .circular)
-                            .fill(PulseTheme.JournalPlan.editorSuggestionCard))
-                        .contentShape(Rectangle())
-                    }
-                    .buttonStyle(PulsePressStyle())
+        ScrollView {
+            VStack(alignment: .leading, spacing: 12) {
+                ForEach($chosen) { $goal in
+                    PlanGoalEditorCard(goal: $goal, behaviorTitle: title(goal.subject),
+                                       onRemove: { chosen.removeAll { $0.id == goal.id } })
+                }
+                ForEach(suggestions, id: \.canonical) { b in suggestionCard(b) }
+                addBehaviorsRow
+            }
+            .padding(.horizontal, PulseTheme.Layout.pageMargin)
+            .padding(.top, 12)
+            .padding(.bottom, 16)
+        }
+        // Pinned under the page, which scrolls beneath its fade and stops above its buttons.
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            JournalPinnedBar(color: PulseTheme.JournalPlan.editorPage) {
+                VStack(spacing: 4) {
                     Text(String(localized: "New behaviors will also be added to your Journal for daily tracking."))
                         .pulseText(.subtitle)
                         .foregroundStyle(PulseTheme.textSecondary)
                         .multilineTextAlignment(.center)
-                        .frame(maxWidth: .infinity)
-                        .padding(.top, 24)
-                    Button(String(localized: "Save behaviors"), action: save)
-                        .buttonStyle(.pulseFilledWhite)
-                        .padding(.top, 8)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.bottom, 16)
+                        .dynamicTypeSize(...DynamicTypeSize.accessibility1)
+                    Button(action: save) {
+                        JournalSaveCapsuleLabel(title: String(localized: "Save Behaviors"))
+                    }
+                    .buttonStyle(PulsePressStyle())
                     Button {
                         chosen = []
                         save()
                     } label: {
                         Text(String(localized: "Remove"))
-                            .pulseText(.capsuleLabel)
+                            .pulseText(.buttonLabel)
                             .foregroundStyle(PulseTheme.textPrimary)
+                            .lineLimit(1)
                             .frame(maxWidth: .infinity, minHeight: PulseTheme.Layout.minTapTarget)
                             .contentShape(Rectangle())
                     }
                     .buttonStyle(PulsePressStyle())
                     .accessibilityHint(String(localized: "Removes every behavior goal from the plan"))
+                    .dynamicTypeSize(...DynamicTypeSize.accessibility2)
                 }
                 .padding(.horizontal, PulseTheme.Layout.pageMargin)
-                .padding(.top, 12)
-                .padding(.bottom, 32)
             }
-            .background(PulseTheme.JournalPlan.editorPage.ignoresSafeArea())
-            .pulseNavHeader(String(localized: "Behavior Goal"))
-            .pulseDestinations()
-            .environment(\.pulseModalRoot, true)
-            .environment(\.colorScheme, .dark)
         }
-        .presentationDragIndicator(.visible)
+        .background(PulseTheme.JournalPlan.editorPage.ignoresSafeArea())
+        .pulseNavHeader(String(localized: "Behavior Goal"))
+        .environment(\.colorScheme, .dark)
         .sheet(isPresented: $showSelector) {
-            PulseSelectBehaviorsView(catalog: catalog, importedQuestions: imported)
+            PulseSelectBehaviorsView(catalog: catalog, importedQuestions: imported,
+                                     goalPicker: .init(selected: goalIdentities, onSave: applyPicked))
         }
         .task { await load() }
     }
 
-    /// Journal behaviours without a goal, then the library's goal-worthy behaviours not in the journal.
+    private var addBehaviorsRow: some View {
+        Button { showSelector = true } label: {
+            HStack(spacing: 18) {
+                Image(systemName: "plus")
+                    .font(PulseTheme.JournalPlan.rowGlyph)
+                    .foregroundStyle(PulseTheme.textSecondary)
+                Text(String(localized: "Add behaviors"))
+                    .pulseText(.cardTitle)
+                    .foregroundStyle(PulseTheme.textPrimary)
+                Spacer()
+            }
+            .padding(.horizontal, 20)
+            .frame(maxWidth: .infinity, minHeight: 64)
+            .background(RoundedRectangle(cornerRadius: PulseTheme.Radius.card, style: .circular)
+                .fill(PulseTheme.JournalPlan.editorSuggestionCard))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(PulsePressStyle())
+        .accessibilityHint(String(localized: "Choose any behavior as a goal"))
+    }
+
+    private var goalIdentities: Set<String> {
+        Set(chosen.compactMap { $0.subject.map(PulseBehaviorLibrary.identity(for:)) })
+    }
+
+    /// Up to four behaviours worth a goal: the wearer's own measured links first (the largest first), then
+    /// the journal's behaviours, then the library's; + ADD BEHAVIORS reaches the rest.
     private var suggestions: [PulseBehavior] {
-        let goalIDs = Set(chosen.compactMap { $0.subject.map(PulseBehaviorLibrary.identity(for:)) })
-        var seen = goalIDs
-        var out: [PulseBehavior] = []
-        let items = catalog.resolvedItems(imported: imported)
-        for item in items {
+        var seen = goalIdentities
+        var offered: [PulseBehavior] = []
+        for item in catalog.resolvedItems(imported: imported) {
             let b = PulseBehaviorLibrary.behavior(for: item, customTitles: local.customTitles)
-            if seen.insert(PulseBehaviorLibrary.identity(for: b.canonical)).inserted { out.append(b) }
+            if seen.insert(PulseBehaviorLibrary.identity(for: b.canonical)).inserted { offered.append(b) }
         }
         for def in PulseBehaviorLibrary.definitions where def.goalTitle != nil {
             if seen.insert(PulseBehaviorLibrary.identity(for: def.canonical)).inserted {
-                out.append(PulseBehaviorLibrary.suggestion(def))
+                offered.append(PulseBehaviorLibrary.suggestion(def))
             }
-            if out.count >= 8 { break }
         }
-        return out
+        func measured(_ b: PulseBehavior) -> Double? {
+            guard let m = impacts[PulseBehaviorLibrary.identity(for: b.canonical)], m.significant else { return nil }
+            return abs(m.impact)
+        }
+        let linked = offered.filter { measured($0) != nil }.sorted { (measured($0) ?? 0) > (measured($1) ?? 0) }
+        let rest = offered.filter { measured($0) == nil }
+        return Array((linked + rest).prefix(PulseTheme.JournalPlan.goalSuggestionLimit))
     }
 
     private func suggestionCard(_ b: PulseBehavior) -> some View {
@@ -351,8 +377,7 @@ struct PulseBehaviorGoalEditor: View {
             Spacer(minLength: 8)
             Toggle("", isOn: Binding(get: { false }, set: { on in
                 guard on else { return }
-                let def = b.libraryID.flatMap(PulseBehaviorLibrary.definition(id:))
-                chosen.append(PulsePlanGoal(kind: .behavior, days: 3, subject: b.canonical, avoid: def?.avoid ?? false))
+                chosen.append(goal(for: b))
             }))
             .labelsHidden()
             .tint(PulseTheme.JournalPlan.switchOn)
@@ -362,6 +387,23 @@ struct PulseBehaviorGoalEditor: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(RoundedRectangle(cornerRadius: PulseTheme.Radius.card, style: .circular)
             .fill(PulseTheme.JournalPlan.editorSuggestionCard))
+    }
+
+    /// A new goal for a behaviour: 3 days a week, AVOID when the library says the behaviour is one to avoid.
+    private func goal(for b: PulseBehavior) -> PulsePlanGoal {
+        let def = b.libraryID.flatMap(PulseBehaviorLibrary.definition(id:))
+        return PulsePlanGoal(kind: .behavior, days: 3, subject: b.canonical, avoid: def?.avoid ?? false)
+    }
+
+    /// + ADD BEHAVIORS saved: the ticked behaviours are the goals now (kept goals keep their days).
+    private func applyPicked(_ picked: [PulseBehavior]) {
+        let ids = picked.map { PulseBehaviorLibrary.identity(for: $0.canonical) }
+        var next = chosen.filter { g in g.subject.map { ids.contains(PulseBehaviorLibrary.identity(for: $0)) } ?? false }
+        let kept = Set(next.compactMap { $0.subject.map(PulseBehaviorLibrary.identity(for:)) })
+        for (b, id) in zip(picked, ids) where !kept.contains(id) {
+            next.append(goal(for: b))
+        }
+        chosen = next
     }
 
     private func title(_ subject: String?) -> String? {
@@ -383,9 +425,10 @@ struct PulseBehaviorGoalEditor: View {
     private func load() async {
         if !didLoad {
             didLoad = true
-            chosen = goals
+            chosen = plans.plan?.behaviorGoals ?? []
         }
         if let s = await model.build(dayOffset: 0, { builder, r in
+            builder.begin(r.seq)        // the questions' cache belongs to this refresh
             let questions = await builder.importedJournalQuestions()
             return await builder.behaviorInsights(r).map { ($0, questions) }
         }) {

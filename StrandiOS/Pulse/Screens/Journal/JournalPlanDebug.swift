@@ -18,8 +18,10 @@ import StrandAnalytics
 //                              auto.sleepPerformance, …; "first" = the first tested row)
 //   --jp-expand                Behavior Details opens with its amount breakdown expanded
 //   --jp-plan <template>       start a plan (boostFitness | feelBetter | sleepDeeper | custom) if none is active
-//   --jp-plan-screen <name>    Plan Overview opens recap | checkin | goal:<kind> | behavior
+//   --jp-plan-screen <name>    Plan Overview opens recap | add | goal:<section> | behavior (pushed) |
+//                              homecard | preview:<template>
 //   --jp-plan-expanded         the Home plan card starts expanded
+//   --jp-plan-week N           Plan Overview shows the week N weeks from this one (-1 = last week)
 //   --jp-scroll <anchor>       scroll to a section once loaded (daytime, nighttime, status, notes, …)
 
 enum JournalPlanDebug {
@@ -39,6 +41,7 @@ enum JournalPlanDebug {
     static var planTemplate: String? { value("--jp-plan") }
     static var planScreen: String? { value("--jp-plan-screen") }
     static var planExpanded: Bool { has("--jp-plan-expanded") }
+    static var planWeekOffset: Int? { value("--jp-plan-week").flatMap(Int.init) }
     /// `--jp-expand`: Behavior Details opens with its breakdown expanded.
     static var detailsExpanded: Bool { has("--jp-expand") }
     /// `--jp-scroll <anchor>`: the Journal or a Plan screen scrolls to `.id("jp.<anchor>")` once loaded.
@@ -47,14 +50,14 @@ enum JournalPlanDebug {
     @MainActor private static var appliedJournal = false
     @MainActor private static var appliedPlan = false
 
-    /// Open the --jp-plan-screen sheet on Plan Overview's first load.
+    /// Open the --jp-plan-screen sheet (or push BEHAVIOR GOAL) on Plan Overview's first load.
     @MainActor
-    static func applyPlanScreen(editor: inout PlanEditorSheet?, showRecap: inout Bool) {
+    static func applyPlanScreen(editor: inout PlanEditorSheet?, showRecap: inout Bool, behaviorGoal: inout Bool) {
         guard !appliedPlan, let screen = planScreen else { return }
         appliedPlan = true
         switch screen {
         case "recap": showRecap = true
-        case "behavior": editor = .behaviors
+        case "behavior": behaviorGoal = true
         case "add": editor = .add
         default:
             if screen.hasPrefix("goal:"),

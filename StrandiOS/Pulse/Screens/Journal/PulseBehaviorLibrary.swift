@@ -230,18 +230,25 @@ enum PulseBehaviorLibrary {
     /// The mood check-in's pseudo-behaviour (stored in `MoodStore`, not the journal table).
     static let moodID = "zeno.mood"
 
-    /// Auto-tracked behaviour ids (Behavior Insights).
+    /// Auto-tracked behaviour ids (Behavior Insights, spec §3.18 "ZENO data").
+    ///
+    /// WHOOP's "X%+ of the Day in High Stress Zone" is left out on purpose [Z]: ZENO keeps no per-day stress
+    /// timeline, and scoring 90 past days of heart rate, R-R and motion through `DaytimeStress` on every
+    /// visit costs more than this page can spend, while a cheaper proxy would disagree with the Stress
+    /// Monitor. It joins once each day's high-stress minutes are stored (ARCHITECTURE.md §9, journal-plan).
     enum Auto: String, CaseIterable {
         case sleepPerformance = "auto.sleepPerformance"
         case dayStrain = "auto.dayStrain"
+        case earlyWorkout = "auto.earlyWorkout"
         case lateWorkout = "auto.lateWorkout"
         case consistentBedTime = "auto.consistentBedTime"
         case consistentWakeTime = "auto.consistentWakeTime"
 
         var title: String {
             switch self {
-            case .sleepPerformance: return String(localized: "85%+ Sleep Performance")
-            case .dayStrain: return String(localized: "10+ Day Strain")
+            case .sleepPerformance: return String(localized: "85%\u{2060}+ Sleep Performance")
+            case .dayStrain: return String(localized: "10+ Strain")
+            case .earlyWorkout: return String(localized: "Early Workout")
             case .lateWorkout: return String(localized: "Late Workout")
             case .consistentBedTime: return String(localized: "Consistent Bed Time")
             case .consistentWakeTime: return String(localized: "Consistent Wake Time")
@@ -252,6 +259,7 @@ enum PulseBehaviorLibrary {
             switch self {
             case .sleepPerformance: return "bed.double"
             case .dayStrain: return "figure.run"
+            case .earlyWorkout: return "sunrise"
             case .lateWorkout: return "moon.stars"
             case .consistentBedTime: return "clock"
             case .consistentWakeTime: return "alarm"
@@ -266,6 +274,9 @@ enum PulseBehaviorLibrary {
             case .dayStrain:
                 return [String(localized: "A day with a Strain of 10 or more, measured on the 0–21 scale, compared with the next morning's Recovery."),
                         String(localized: "Harder days ask more of the night that follows them. How much depends on how used to the load you are.")]
+            case .earlyWorkout:
+                return [String(localized: "An early workout is an activity that started within 3 hours of waking up. It is compared with the next morning's Recovery, since that morning's was already set when you trained."),
+                        String(localized: "Training early leaves the rest of the day to recover before bed, and morning light and movement help anchor your body clock. For some people an early alarm costs sleep instead.")]
             case .lateWorkout:
                 return [String(localized: "A late workout is an activity that ended within 3 hours of falling asleep."),
                         String(localized: "Exercise raises heart rate and body temperature for a while afterwards. For some people that delays sleep or makes its first hours lighter; others see no difference.")]
@@ -282,6 +293,7 @@ enum PulseBehaviorLibrary {
             switch self {
             case .sleepPerformance: return String(localized: "Plan your bedtime around tonight's sleep need on Tonight's Sleep, so more nights reach 85%.")
             case .dayStrain: return String(localized: "Match hard days to green Recoveries, and follow a big day with an easier one when your Recovery dips.")
+            case .earlyWorkout: return String(localized: "If early sessions suit your Recovery, keep them; if they cost you sleep, protect your bedtime on the nights before.")
             case .lateWorkout: return String(localized: "If late sessions cost you Recovery, try finishing training a little earlier, or keep evening sessions easy.")
             case .consistentBedTime: return String(localized: "Pick a bedtime you can keep on most nights, weekends included, and let Tonight's Sleep remind you.")
             case .consistentWakeTime: return String(localized: "Keep your alarm within half an hour of the same time every day, even after a late night.")

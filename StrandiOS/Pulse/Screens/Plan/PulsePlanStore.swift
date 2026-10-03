@@ -67,13 +67,14 @@ struct PulsePlanGoal: Codable, Equatable, Hashable, Identifiable {
         }
     }
 
-    /// The goal as WHOOP writes it ("7,000+ Steps", "0:30+ HR Zones 4-5 Time", "Avoid Late Meal").
+    /// The goal as WHOOP writes it ("7,000+ Steps", "0:30+ HR Zones 4-5 Time", "Avoid Late Meal"). A word
+    /// joiner keeps "85%" and its "+" on one line ("85%" / "+ Sleep Performance" read as two things).
     func title(behaviorTitle: String? = nil) -> String {
         switch kind {
         case .sleepPerformance:
-            return String(localized: "\(Int(value ?? 85))%+ Sleep Performance")
+            return String(localized: "\(Int(value ?? 85))%\u{2060}+ Sleep Performance")
         case .sleepConsistency:
-            return String(localized: "\(Int(value ?? 80))%+ Sleep Consistency")
+            return String(localized: "\(Int(value ?? 80))%\u{2060}+ Sleep Consistency")
         case .dayStrain:
             return String(localized: "\(PulseFormat.oneDecimal(value ?? 14))+ Day Strain")
         case .steps:
@@ -97,6 +98,18 @@ struct PulsePlanGoal: Codable, Equatable, Hashable, Identifiable {
             if avoid == def?.avoid, let goalTitle = def?.goalTitle { return goalTitle }
             let name = behaviorTitle ?? def?.title ?? subject.map(PulseBehaviorLibrary.derivedTitle) ?? ""
             return avoid == true ? String(localized: "Avoid \(name)") : name
+        }
+    }
+}
+
+extension PulsePlanGoal {
+    /// A time goal's kind alone, without its target ("HR Zones 4-5 Time"); any other goal's title.
+    var kindTitle: String {
+        switch kind {
+        case .hrZones45: return String(localized: "HR Zones 4-5 Time")
+        case .hrZones13: return String(localized: "HR Zones 1-3 Time")
+        case .strengthTime: return String(localized: "Strength Activity Time")
+        default: return title()
         }
     }
 }

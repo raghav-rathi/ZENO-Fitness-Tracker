@@ -40,10 +40,11 @@ struct PulseEditPlanView: View {
             PulseLink(PlanPreviewRoute(template: .custom).route) { templateCard(.custom) }
                 .buttonStyle(PulsePressStyle())
             if plans.plan != nil {
+                // White, like WHOOP's REMOVE: red belongs to Recovery 0–33%.
                 Button { confirmEnd = true } label: {
                     Text(String(localized: "End plan"))
                         .pulseText(.capsuleLabel)
-                        .foregroundStyle(PulseTheme.recoveryLowText)
+                        .foregroundStyle(PulseTheme.textPrimary)
                         .frame(maxWidth: .infinity, minHeight: PulseTheme.Layout.minTapTarget)
                         .contentShape(Rectangle())
                 }

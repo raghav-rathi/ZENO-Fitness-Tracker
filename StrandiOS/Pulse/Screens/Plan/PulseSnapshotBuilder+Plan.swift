@@ -13,8 +13,9 @@ import WhoopStore
 //   - Day Strain: the stored day (0–21), and today's live score the way Home's dial computes it;
 //   - Steps: `Repository.resolvedStepDays`, the one steps resolver;
 //   - activities and zone minutes: the workout rows (imported zone percentages, else the workout's own
-//     heart rate against the profile's zones);
-//   - behaviours: journal answers, imported ∪ native, folded per behaviour like Behavior Insights.
+//     heart rate against the profile's zones; an activity with neither is counted apart, never as zero);
+//   - behaviours: journal answers, imported ∪ native, folded per behaviour like Behavior Insights, through
+//     `PlanBehaviorWeek`, which the Journal's plan rows read too.
 // A day before the plan began is not counted, and a plan that begins mid-week is not asked for more days
 // than the week has left.
 
@@ -78,9 +79,12 @@ extension PulseSnapshotBuilder {
                 return days.contains(day) && day >= plan.startedOn ? (w, day) : nil
             }
         }
+        // Zone minutes for the activities that have them; an activity without is left out of the map.
         var zoneMinutes: [Int: [Double]] = [:]
         if kinds.contains(.hrZones45) || kinds.contains(.hrZones13) {
-            for w in workouts { zoneMinutes[w.row.startTs] = await planZoneMinutes(w.row, zoneSet: r.profile.zoneSet) }
+            for w in workouts {
+                if let z = await planZoneMinutes(w.row, zoneSet: r.profile.zoneSet) { zoneMinutes[w.row.startTs] = z }
+            }
         }
 
         // Journal answers.
@@ -101,13 +105,38 @@ extension PulseSnapshotBuilder {
     }
 
     /// One workout's minutes in zones 1…5: the imported zone percentages of its duration, else its own heart
-    /// rate against the profile's zones; zeros when neither exists (it then adds nothing to a zone goal).
-    func planZoneMinutes(_ w: WorkoutRow, zoneSet: HRZoneSet) async -> [Double] {
+    /// rate against the profile's zones; nil when neither exists, so the activity is counted as unmeasured
+    /// rather than as zero minutes.
+    func planZoneMinutes(_ w: WorkoutRow, zoneSet: HRZoneSet) async -> [Double]? {
         let duration = (w.durationS ?? Double(max(0, w.endTs - w.startTs))) / 60
         if let p = WorkoutZones.percents(w.zonesJSON) { return p.map { duration * $0 / 100 } }
         let hr = await repo.hrSamples(from: w.startTs, to: w.endTs, limit: 50_000)
-        guard hr.count >= 10 else { return [0, 0, 0, 0, 0] }
+        guard hr.count >= 10 else { return nil }
         return HRZones.timeInZone(hr, zoneSet: zoneSet).seconds.map { $0 / 60 }
+    }
+}
+
+/// A behaviour goal's week, read ONE way for Plan Overview and the Journal's plan rows: the days of the
+/// plan's part of the week (`covered`, on or after the day it began), up to today, whose journal answer met
+/// the goal (yes, or no for an AVOID goal), against the target pro-rated to that part of the week.
+struct PlanBehaviorWeek: Equatable {
+    let target: Int
+    let metDays: Set<String>
+
+    init(_ goal: PulsePlanGoal, journal: [JournalEntry], covered: [String], today: String) {
+        let answers = PulseSnapshotBuilder.behaviorDays(journal,
+                                                        identity: PulseBehaviorLibrary.identity(for: goal.subject ?? ""))
+        let met = goal.avoid == true ? answers.no : answers.yes
+        metDays = Set(covered.filter { $0 <= today }).intersection(met)
+        target = PlanTargets.days(goal, coveredDays: covered.count)
+    }
+}
+
+/// The days per week a count goal asks for: its own number (3 unless set), pro-rated in the week the plan
+/// began so it never asks for more days than are left.
+enum PlanTargets {
+    static func days(_ goal: PulsePlanGoal, coveredDays: Int) -> Int {
+        WeeklyPlanProgress.proratedTarget(goal.days ?? 3, countedDays: coveredDays)
     }
 }
 
@@ -180,7 +209,7 @@ private struct PlanWeekContext {
 
     /// The goal's days per week, pro-rated in the week the plan began.
     func target(_ goal: PulsePlanGoal) -> Int {
-        WeeklyPlanProgress.proratedTarget(goal.days ?? 3, countedDays: covered.count)
+        PlanTargets.days(goal, coveredDays: covered.count)
     }
 
     /// MON–SUN for a day-by-day goal: done, missed ("–"), today still open (dashed), still to come (dashed).
@@ -198,12 +227,12 @@ private struct PlanWeekContext {
         let counted = covered.filter { $0 <= today }.compactMap { values[$0] }
         let (avg, progress) = WeeklyPlanProgress.average(counted, target: target)
         return PlanGoalProgress(
-            goal: goal, title: goal.title(), section: PulsePlanSection(goal.kind), style: .metric,
-            ring: .value(text: avg.map(format) ?? "--", fraction: progress.fraction), met: progress.met,
+            goal: goal, title: goal.title(), cardTitle: goal.title(), section: PulsePlanSection(goal.kind),
+            style: .metric, ring: .value(text: avg.map(format) ?? "--", fraction: progress.fraction), met: progress.met,
             fraction: progress.fraction, dayStates: states { (values[$0] ?? -1) >= target },
             dayValues: days.map { covered.contains($0) ? values[$0] : nil }, goalLine: target,
             averageText: avg.map { String(localized: "Avg. \(format($0))") }, progressText: nil, targetText: nil,
-            activities: [], footer: footer, targetDays: nil)
+            activities: [], footer: footer, note: nil, targetDays: nil)
     }
 
     private func metricCount(_ goal: PulsePlanGoal, values: [String: Double], threshold: Double, target: Int,
@@ -213,25 +242,31 @@ private struct PlanWeekContext {
         let shown = covered.filter { $0 <= today }.compactMap { values[$0] }
         let avg = shown.isEmpty ? nil : shown.reduce(0, +) / Double(shown.count)
         return PlanGoalProgress(
-            goal: goal, title: goal.title(), section: PulsePlanSection(goal.kind), style: .metric,
-            ring: .count(done: done, target: target), met: progress.met, fraction: progress.fraction,
+            goal: goal, title: goal.title(), cardTitle: goal.title(), section: PulsePlanSection(goal.kind),
+            style: .metric, ring: .count(done: done, target: target), met: progress.met, fraction: progress.fraction,
             dayStates: states { (values[$0] ?? -1) >= threshold },
             dayValues: days.map { covered.contains($0) ? values[$0] : nil }, goalLine: threshold,
             averageText: avg.map { String(localized: "Avg. \(format($0))") }, progressText: nil, targetText: nil,
-            activities: [], footer: footer, targetDays: target)
+            activities: [], footer: footer, note: nil, targetDays: target)
     }
 
     private func time(_ goal: PulsePlanGoal, zones: [Int]?, label: String) -> PlanGoalProgress {
         let base = goal.value ?? (zones == nil ? 90 : 30)
         let target = WeeklyPlanProgress.proratedTotal(base, countedDays: covered.count)
         var bySport: [String: Double] = [:]
+        // Activities whose zones are unknown (no zone data and no heart rate of their own) are counted
+        // apart, never as zero minutes.
+        var unmeasured = 0
+        var measured = 0
         for w in workouts {
             let minutes: Double
             if let zones {
-                let z = zoneMinutes[w.row.startTs] ?? []
+                guard let z = zoneMinutes[w.row.startTs] else { unmeasured += 1; continue }
+                measured += 1
                 minutes = zones.reduce(0) { $0 + (z.indices.contains($1) ? z[$1] : 0) }
             } else {
                 guard PlanSports.isStrength(w.row.sport) else { continue }
+                measured += 1
                 minutes = (w.row.durationS ?? Double(max(0, w.row.endTs - w.row.startTs))) / 60
             }
             if minutes > 0 { bySport[WorkoutSource.displaySport(w.row.sport), default: 0] += minutes }
@@ -239,13 +274,22 @@ private struct PlanWeekContext {
         let total = bySport.values.reduce(0, +)
         let progress = WeeklyPlanProgress.total(total, target: target)
         let left = max(0, target - total)
+        // Nothing measurable: there were activities, but none of them carries zone data.
+        let unknown = measured == 0 && unmeasured > 0
+        let note: String? = unmeasured == 0 ? nil
+            : (unmeasured == 1 ? String(localized: "1 activity this week has no heart-rate zone data.")
+                               : String(localized: "\(unmeasured) activities this week have no heart-rate zone data."))
         let footer: String
-        if progress.met {
+        if unknown {
+            footer = String(localized: "ZENO can't measure your \(label) time yet: none of this week's activities has heart-rate data.")
+        } else if progress.met {
             footer = zones == nil
                 ? String(localized: "You hit this week's goal of \(PulseFormat.hoursMinutes(target)) of strength activity.")
                 : String(localized: "You hit this week's goal of \(PulseFormat.hoursMinutes(target)) in \(label).")
         } else if zones == nil {
             footer = String(localized: "Get \(PlanTimeFormat.short(left)) more of strength activity this week to hit your goal.")
+        } else if unmeasured > 0 {
+            footer = String(localized: "Get \(PlanTimeFormat.short(left)) more of \(label) training during activities with heart-rate data this week to hit your goal.")
         } else {
             footer = String(localized: "Get \(PlanTimeFormat.short(left)) more of \(label) training during activities this week to hit your goal.")
         }
@@ -253,11 +297,11 @@ private struct PlanWeekContext {
             PlanGoalProgress.ActivityLine(id: $0.key, minutes: $0.value, sport: $0.key, symbol: PlanSports.symbol($0.key))
         }
         return PlanGoalProgress(
-            goal: goal, title: goal.title(), section: PulsePlanSection(goal.kind), style: .time,
-            ring: .value(text: PulseFormat.hoursMinutes(total), fraction: progress.fraction), met: progress.met,
-            fraction: progress.fraction, dayStates: [], dayValues: [], goalLine: nil, averageText: nil,
-            progressText: PlanTimeFormat.long(total), targetText: PlanTimeFormat.long(target), activities: lines,
-            footer: footer, targetDays: nil)
+            goal: goal, title: goal.title(), cardTitle: goal.kindTitle, section: PulsePlanSection(goal.kind),
+            style: .time, ring: .value(text: unknown ? "--" : PulseFormat.hoursMinutes(total), fraction: progress.fraction),
+            met: progress.met, fraction: progress.fraction, dayStates: [], dayValues: [], goalLine: nil,
+            averageText: nil, progressText: unknown ? nil : PlanTimeFormat.long(total),
+            targetText: PlanTimeFormat.long(target), activities: lines, footer: footer, note: note, targetDays: nil)
     }
 
     private func count(_ goal: PulsePlanGoal, matching: (String) -> Bool, footer: String) -> PlanGoalProgress {
@@ -266,28 +310,27 @@ private struct PlanWeekContext {
         let done = activeDays.filter { $0 <= today }.count
         let progress = WeeklyPlanProgress.count(done: done, target: target)
         return PlanGoalProgress(
-            goal: goal, title: goal.title(), section: PulsePlanSection(goal.kind), style: .count,
-            ring: .count(done: done, target: target), met: progress.met, fraction: progress.fraction,
+            goal: goal, title: goal.title(), cardTitle: goal.title(), section: PulsePlanSection(goal.kind),
+            style: .count, ring: .count(done: done, target: target), met: progress.met, fraction: progress.fraction,
             dayStates: states { activeDays.contains($0) }, dayValues: [], goalLine: nil, averageText: nil,
-            progressText: nil, targetText: nil, activities: [], footer: footer, targetDays: target)
+            progressText: nil, targetText: nil, activities: [], footer: footer, note: nil, targetDays: target)
     }
 
     private func behavior(_ goal: PulsePlanGoal) -> PlanGoalProgress {
         let subject = goal.subject ?? ""
-        let answers = PulseSnapshotBuilder.behaviorDays(journal, identity: PulseBehaviorLibrary.identity(for: subject))
-        let metDays = goal.avoid == true ? answers.no : answers.yes
-        let counted = Set(covered.filter { $0 <= today }).intersection(metDays)
-        let target = target(goal)
+        let week = PlanBehaviorWeek(goal, journal: journal, covered: covered, today: today)
+        let counted = week.metDays
+        let target = week.target
         let progress = WeeklyPlanProgress.count(done: counted.count, target: target)
         let name = PulseBehaviorLibrary.definition(for: subject)?.title ?? PulseBehaviorLibrary.derivedTitle(subject)
         let footer = goal.avoid == true
             ? String(localized: "Go without \(name) on at least \(target) days this week, and log it in your journal.")
             : String(localized: "Log \(name) in your journal on at least \(target) days this week.")
         return PlanGoalProgress(
-            goal: goal, title: goal.title(), section: .behaviors, style: .count,
+            goal: goal, title: goal.title(), cardTitle: goal.title(), section: .behaviors, style: .count,
             ring: .count(done: counted.count, target: target), met: progress.met, fraction: progress.fraction,
-            dayStates: states { metDays.contains($0) }, dayValues: [], goalLine: nil, averageText: nil,
-            progressText: nil, targetText: nil, activities: [], footer: footer, targetDays: target)
+            dayStates: states { counted.contains($0) }, dayValues: [], goalLine: nil, averageText: nil,
+            progressText: nil, targetText: nil, activities: [], footer: footer, note: nil, targetDays: target)
     }
 }
 

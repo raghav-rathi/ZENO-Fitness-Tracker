@@ -46,7 +46,11 @@ struct PlanGoalProgress: Equatable, Identifiable {
 
     let goal: PulsePlanGoal
     var id: String { goal.id }
+    /// The goal as WHOOP writes it in a list ("0:45+ HR Zones 4-5 Time", Home's card and the recap).
     let title: String
+    /// Its title on a Plan Overview card: a time goal by its kind alone ("HR Zones 4-5 Time"), since the
+    /// card prints the target at the end of its bar (completeness-critic/23).
+    let cardTitle: String
     let section: PulsePlanSection
     let style: Style
     let ring: PulseGoalRing.Kind
@@ -67,6 +71,8 @@ struct PlanGoalProgress: Equatable, Identifiable {
     /// The goal's rule or what is left ("Get 1 min more of Zone 4-5 training during activities this week to
     /// hit your goal.").
     let footer: String
+    /// What the measurement had to leave out ("2 activities this week have no heart-rate zone data.").
+    let note: String?
     /// The target the week is held to (pro-rated in the week a plan starts).
     let targetDays: Int?
 }

@@ -54,6 +54,8 @@ struct PulseJournalCalendarSheet: View {
                     dayCell(day: index + 1, mark: mark, month: m)
                 }
             }
+            // The numbers scale, inside circles that seven columns must still hold.
+            .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
             HStack(spacing: 6) {
                 Spacer()
                 Circle().fill(PulseTheme.Journal.logged).frame(width: 5, height: 5)
@@ -83,10 +85,10 @@ struct PulseJournalCalendarSheet: View {
         } label: {
             VStack(spacing: 4) {
                 Text(verbatim: "\(day)")
-                    .font(PulseType.font(.rowValue))
+                    .pulseText(.rowValue)
                     .foregroundStyle(isLogged ? PulseTheme.Journal.logged
                                               : (mark == .future ? PulseTheme.JournalPlan.calendarFuture : PulseTheme.textTertiary))
-                    .frame(width: 34, height: 34)
+                    .frame(minWidth: 34, minHeight: 34)
                     .overlay {
                         if isToday {
                             Circle().strokeBorder(PulseTheme.textSecondary, style: StrokeStyle(lineWidth: 1.5, dash: [3, 3]))
