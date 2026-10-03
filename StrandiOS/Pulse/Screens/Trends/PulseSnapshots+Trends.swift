@@ -17,7 +17,8 @@ struct PulseTrendUnits: Equatable, Hashable, Sendable {
     var id: String { "\(fahrenheit ? "f" : "c")\(imperialMass ? "lb" : "kg")" }
 }
 
-/// A metric's daily values, resolved once per refresh.
+/// A metric's daily values: the history resolved once per refresh, with a live reading for today (Day
+/// Stress's) laid over it per build (`PulseSnapshotBuilder.trendSeries`).
 struct PulseTrendSeries: Equatable, Sendable {
     /// The headline value per day, oldest first, never after today.
     var points: [PulseTrendMath.Point] = []

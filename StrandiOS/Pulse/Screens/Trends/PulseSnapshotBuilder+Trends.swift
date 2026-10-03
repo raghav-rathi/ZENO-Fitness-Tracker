@@ -6,9 +6,10 @@ import WhoopStore
 
 // MARK: - Trends group builds (WHOOP_UI_SPEC §3.12, §3.35, §3.40)
 //
-// Off the main actor, like every Pulse build. A metric's whole daily series is resolved ONCE per refresh
-// (`trendSeries`, cached under "trends.series.<key>.<units>") and every Trend View page, the Trends tab's
-// rows and the picker read that one copy, so stepping the pager or switching W / M / 6M re-reads nothing.
+// Off the main actor, like every Pulse build. A metric's whole daily history is resolved ONCE per refresh
+// (`trendSeries`, cached under "trends.series.<key>.<units>.<day>") and every Trend View page, the Trends
+// tab's rows and the picker read that one copy, so stepping the pager or switching W / M / 6M re-reads
+// nothing. Only a live reading for today (Day Stress's) is laid over it per call, from its own cached funnel.
 //
 // Each metric resolves through the reader the rest of Pulse uses for the same fact, so a Trend View can
 // never print a different number from the row or dial that opened it: Recovery, HRV, resting HR,
@@ -139,12 +140,37 @@ extension PulseSnapshotBuilder {
 
     // MARK: Series
 
-    /// `metric`'s daily series for this refresh, read once and shared. Keyed by the request's day too, as
-    /// the series stops at that day.
+    /// `metric`'s daily series: its history read once per refresh and shared (keyed by the request's day
+    /// too, as the series stops at that day), with today's live reading laid over it on every call
+    /// (`withLiveToday`).
     func trendSeries(_ r: PulseRequest, metric: PulseTrendMetric, units: PulseTrendUnits) async -> PulseTrendSeries {
-        await cached("trends.series.\(metric.key).\(units.id).\(r.day.key)") {
+        let history = await cached("trends.series.\(metric.key).\(units.id).\(r.day.key)") {
             await self.resolveTrendSeries(r, metric: metric, units: units)
         }
+        return await withLiveToday(r, metric: metric, history: history)
+    }
+
+    /// Today's point where it is a live reading rather than a stored row, laid over the refresh's history on
+    /// every call instead of being cached with it. Day Stress's today is the Stress Monitor's own reading
+    /// (`stressDay`, the funnel Home's tile, the Health tab's card and the monitor read): the curve's latest
+    /// scored hour, the evening before until today's first, else today's daily score, with when it was
+    /// read; without either, today has no point. That reading moves within a refresh (today's curve is
+    /// re-read every five minutes) and with the stress lens (a settings change rebuilds without a new
+    /// refresh), and those screens resolve it on every build, so the Trends row, its caption and today's
+    /// bar do too.
+    private func withLiveToday(_ r: PulseRequest, metric: PulseTrendMetric,
+                               history: PulseTrendSeries) async -> PulseTrendSeries {
+        guard metric.source == .stress, r.day.isToday else { return history }
+        let today = r.day.key
+        var rows = history.points.filter { $0.day != today }.map { ($0.day, $0.value) }
+        var series = history
+        if let day = await stressDay(r), let level = day.gaugeLevel?.level {
+            rows.append((today, HealthStressGauge.printed(level)))
+            series.todayCaption = PulseStressDay.readingTime(day.latest?.at, dayKey: day.dayKey)
+                ?? String(localized: "Daily score")
+        }
+        series.points = Self.points(rows, through: today)
+        return series
     }
 
     private func resolveTrendSeries(_ r: PulseRequest, metric m: PulseTrendMetric,
@@ -291,24 +317,11 @@ extension PulseSnapshotBuilder {
         case .stress:
             // Each day's stored daily score, printed as the Stress Monitor's gauge prints a level (cut to one
             // decimal, `HealthStressGauge.printed`), so a bar and its breakdown band never round into a band
-            // the level is not in.
+            // the level is not in. Today's point is the monitor's own reading, laid over these on every call
+            // (`withLiveToday`).
             let stored = await stressStoredSeries()
-            var rows = stored.map { ($0.day, HealthStressGauge.printed($0.value)) }
-            var caption: String?
-            if r.day.offset == 0 {
-                // Today is the Stress Monitor's own reading (`stressDay`, the funnel Home's tile and the Health
-                // tab's card read): the curve's latest scored hour, the evening before until today's first,
-                // else today's daily score, with when it was read. Without either, today has no point.
-                rows.removeAll { $0.0 == today }
-                if let day = await stressDay(r), let level = day.gaugeLevel?.level {
-                    rows.append((today, HealthStressGauge.printed(level)))
-                    caption = PulseStressDay.readingTime(day.latest?.at, dayKey: day.dayKey)
-                        ?? String(localized: "Daily score")
-                }
-            }
-            var series = PulseTrendSeries(points: Self.points(rows, through: today))
-            series.todayCaption = caption
-            return series
+            return PulseTrendSeries(points: Self.points(stored.map { ($0.day, HealthStressGauge.printed($0.value)) },
+                                                        through: today))
 
         case .vo2Estimate:
             let resolved = await repo.resolvedSeries(key: "vo2max_est", source: "my-whoop")
