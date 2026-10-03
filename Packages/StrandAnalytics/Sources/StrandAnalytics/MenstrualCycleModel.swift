@@ -171,6 +171,17 @@ public enum MenstrualCycleModel {
         public let flow: Flow?
         /// The day's cycle day, when it falls in a known or predicted cycle.
         public let cycleDay: Int?
+
+        public init(day: String, phase: Phase?, isPredicted: Bool, isLoggedPeriodDay: Bool,
+                    isPredictedPeriodDay: Bool, flow: Flow?, cycleDay: Int?) {
+            self.day = day
+            self.phase = phase
+            self.isPredicted = isPredicted
+            self.isLoggedPeriodDay = isLoggedPeriodDay
+            self.isPredictedPeriodDay = isPredictedPeriodDay
+            self.flow = flow
+            self.cycleDay = cycleDay
+        }
     }
 
     // MARK: - Summary
@@ -183,8 +194,11 @@ public enum MenstrualCycleModel {
     ///   - today: today's day key.
     ///   - temperatureCycleLength: the skin-temperature engine's cycle length, when it has one.
     ///   - phasesApply: false under hormonal contraception or in menopause, where only bleeding is laid out.
+    ///   - extraSpread: days added to each side of the next-period window (irregular cycles in
+    ///     perimenopause).
     public static func summarize(periodStarts: [String], flow: [String: Flow], today: String,
-                                 temperatureCycleLength: Int? = nil, phasesApply: Bool = true) -> Summary {
+                                 temperatureCycleLength: Int? = nil, phasesApply: Bool = true,
+                                 extraSpread: Int = 0) -> Summary {
         let starts = Array(Set(periodStarts.filter { $0 <= today })).sorted()
         let cycles = buildCycles(starts: starts, flow: flow, today: today)
 
@@ -209,7 +223,7 @@ public enum MenstrualCycleModel {
         let bleed = currentBleed(start: last, flow: flow, today: today)
         let typical = typicalCycle(cycles, currentFinishedBleed: bleed.ended ? bleed.run : nil)
         let (length, basis) = predictionLength(typical: typical, temperatureCycleLength: temperatureCycleLength)
-        let spread = predictionSpread(typical: typical, basis: basis)
+        let spread = predictionSpread(typical: typical, basis: basis) + max(0, extraSpread)
         let periodLength: Int = {
             if bleed.ended, let run = bleed.run { return run }
             return max(bleed.run ?? 0, typical.periodLength ?? defaultPeriodLength)

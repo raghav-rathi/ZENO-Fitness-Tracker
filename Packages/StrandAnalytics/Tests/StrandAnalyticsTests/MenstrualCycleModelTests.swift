@@ -90,6 +90,12 @@ final class MenstrualCycleModelTests: XCTestCase {
         XCTAssertEqual(s.nextPeriod, M.Window(earliest: "2026-09-28", latest: "2026-10-02"))
     }
 
+    func testExtraSpreadWidensTheWindow() {
+        let s = M.summarize(periodStarts: ["2026-08-01", "2026-08-31"], flow: [:], today: "2026-09-05",
+                            extraSpread: 2)
+        XCTAssertEqual(s.nextPeriod, M.Window(earliest: "2026-09-26", latest: "2026-10-04"))
+    }
+
     func testImplausibleCycleIsKeptButNotAveraged() {
         // A 70-day gap (a missed log) between two ordinary cycles.
         let starts = ["2026-01-01", "2026-01-29", "2026-04-09", "2026-05-07"]
