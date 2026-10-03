@@ -331,11 +331,20 @@ enum PulseDigestBuilder {
             return PulseChartDatum(id: k, label: label, sublabel: sub, value: v, color: color, valueLabel: valueLabel)
         }
         let domain: ClosedRange<Double> = m.key == "strain" ? 0...21 : 0...100
-        let grid: [Double] = m.key == "strain" ? [0, 5.25, 10.5, 15.75, 21] : [0, 25, 50, 75, 100]
+        // The gridlines each dive draws on its own card: the Strain dive's 0/7/14/21, the Recovery dive's
+        // 0/33/66/100, the Sleep dive's quarters.
+        let grid: [Double]
+        switch m.key {
+        case "strain": grid = [0, 7, 14, 21]
+        case "recovery": grid = [0, 33, 66, 100]
+        default: grid = [0, 25, 50, 75, 100]
+        }
         // A month's bars are a 10 pt pitch, and the shared chart's ≈29 pt highlight column would cover three
         // days: only a week highlights its day.
         let highlight = mode == .month ? nil : (w.contains(today) ? today : keys.last(where: { byDay[$0] != nil }))
-        return .init(id: m.key, title: m.title, data: data, yDomain: domain, gridValues: grid, highlightID: highlight,
+        // "STRAIN ›" as the Strain dive titles its card; it still opens the Day Strain Trend View.
+        let title = m.key == "strain" ? String(localized: "Strain") : m.title
+        return .init(id: m.key, title: title, data: data, yDomain: domain, gridValues: grid, highlightID: highlight,
                      route: .trendView(metric: m.key))
     }
 

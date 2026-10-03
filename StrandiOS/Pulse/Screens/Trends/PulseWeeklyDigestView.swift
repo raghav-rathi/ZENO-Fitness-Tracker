@@ -183,15 +183,13 @@ private struct PulseDigestContent: View {
                                    style: .weeklyTrendsTitle)
                     .padding(.top, PulseTheme.Layout.sectionGap)
                 VStack(spacing: PulseTheme.Layout.stackGap) {
+                    // The deep dives' own Weekly Trends card (§3.40 item 4), which links itself.
                     ForEach(snapshot.cards) { card in
-                        PulseLink(card.route) {
-                            PulseChartCard(card.title, accessory: .chevron) {
-                                PulseBarChart(data: card.data, yDomain: card.yDomain, gridValues: card.gridValues,
-                                              highlightID: card.highlightID, barWidth: snapshot.mode == .week ? 14 : 5)
-                            }
-                            .contentShape(Rectangle())
+                        PulseWeeklyTrendCard(card.title, route: card.route) {
+                            PulseBarChart(data: card.data, yDomain: card.yDomain, gridValues: card.gridValues,
+                                          highlightID: card.highlightID, barWidth: snapshot.mode == .week ? 14 : 5,
+                                          height: PulseWeeklyChart.height)
                         }
-                        .buttonStyle(PulsePressStyle())
                     }
                 }
                 .padding(.top, PulseTheme.Layout.headerGap)
