@@ -555,7 +555,7 @@ private struct DeviceStatusTab: View {
                                                     : String(localized: "Strap disconnected"),
                                       tracking: 1.4, alignment: .center)
                         .foregroundStyle(PulseTheme.textPrimary)
-                    Text(String(localized: "Tap 'Pair a device' below to continue."))
+                    Text(String(localized: "Tap 'Pair a Device' below to continue."))
                         .pulseText(.subtitle)
                         .foregroundStyle(PulseTheme.textSecondary)
                         .multilineTextAlignment(.center)
