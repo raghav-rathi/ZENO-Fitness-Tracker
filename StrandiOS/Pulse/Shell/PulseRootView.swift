@@ -499,9 +499,9 @@ struct PulseAttacher: View {
         p.effortMethod = banisterEffort ? .banister : .edwards
         p.stressPersonalBaseline = stressPersonalBaseline
         p.journalReminder = journalReminder
-        // Tonight's plan reads the Sleep Planner's own settings. A WHOOP 5/MG strap arms its alarm only with
-        // the Protocol probes on (`AppModel.whoop5Detected` is `ble.isWhoop5`), as the planner checks.
-        p.sleepPlan = PulseSleepPlanSettings.stored(strapWillArm: !(ble.isWhoop5 && !PuffinExperiment.isEnabled))
+        // Tonight's plan reads the Sleep Planner's own settings, with the strap's own arming rule (a WHOOP
+        // 5/MG arms its alarm only with the Protocol probes on), as the planner reads it.
+        p.sleepPlan = PulseSleepPlanSettings.stored(strapWillArm: ble.strapAlarmWillArm)
         // It is planned for the planner's goal, with the running Weekly Plan's sleep goals for REACH MY WEEKLY
         // PLAN GOAL (read through the plan store's observation, so starting, editing or ending a plan re-plans
         // tonight too), exactly as the planner resolves it.

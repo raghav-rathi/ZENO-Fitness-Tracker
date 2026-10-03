@@ -347,7 +347,8 @@ enum PulseSleepPlannerSheet: String, Identifiable {
 /// rate, so a view that observed it would re-render every beat; only the invisible bridge below observes it.
 struct SleepAlarmActions {
     var apply: () -> Void = {}
-    /// A WHOOP 5/MG arms its firmware alarm only with Protocol probes on (`BLEManager.armStrapAlarm`).
+    /// Whether the strap arms its firmware alarm (`BLEManager.strapAlarmWillArm`: a WHOOP 5/MG only with
+    /// Protocol probes on).
     var strapWillArm: () -> Bool = { true }
 }
 
@@ -360,9 +361,7 @@ struct SleepAlarmBridge: View {
             .onAppear {
                 let model = app
                 actions = SleepAlarmActions(apply: { [weak model] in model?.applySmartAlarm() },
-                                            strapWillArm: { [weak model] in
-                                                !((model?.whoop5Detected ?? false) && !PuffinExperiment.isEnabled)
-                                            })
+                                            strapWillArm: { [weak model] in model?.ble.strapAlarmWillArm ?? true })
             }
             .accessibilityHidden(true)
     }

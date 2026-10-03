@@ -1283,6 +1283,12 @@ public final class BLEManager: NSObject, ObservableObject {
     /// isn't. Mirrors the Android `LiveState.whoop5Detected` signal the equivalent screen reads.
     var isWhoop5: Bool { selectedModel.deviceFamily == .whoop5 }
 
+    /// Whether `armStrapAlarm` arms the strap's firmware alarm: a WHOOP 5/MG only with Protocol probes on
+    /// (`PuffinExperiment.isEnabled`), any other strap always. The screens that say whether the alarm will
+    /// ring read this one rule (the Sleep Planner, Home's Tonight's Sleep), so they cannot drift from the
+    /// arming, or from each other, when the 5/MG gate changes.
+    var strapAlarmWillArm: Bool { !(isWhoop5 && !PuffinExperiment.isEnabled) }
+
     /// True when the selected/connected strap is a WHOOP 4.0. Read-only window onto the private
     /// `selectedModel`, used to gate the 4.0-only reboot probe (Test Centre → Connection) in the UI.
     var isWhoop4: Bool { selectedModel.deviceFamily == .whoop4 }
