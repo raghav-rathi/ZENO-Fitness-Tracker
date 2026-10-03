@@ -185,10 +185,8 @@ struct PulseNap: Identifiable, Equatable {
     let asleepMin: Double
 }
 
-/// Tonight's plan as the Sleep Planner resolves it (`PulseSleepPlan`) for REACH MY SLEEP NEED at 100%, the
-/// planner's default goal: while that goal is chosen there, Home's TONIGHT'S SLEEP card and the planner it
-/// opens state the same night. With 85%, 70% or IMPROVE MY SLEEP chosen, the planner's bedtime differs from
-/// the card's, as the goal does not reach Home's request yet (see `PulseSnapshotBuilder.tonightPlan`).
+/// Tonight's plan as the Sleep Planner resolves it (`PulseSleepPlan`) for the goal chosen there, so Home's
+/// TONIGHT'S SLEEP card and the planner it opens state the same night (`PulseSnapshotBuilder.tonightPlan`).
 struct PulseTonight: Equatable {
     /// Tonight's need: baseline + strain + debt − nap credit (`SleepNeedBreakdown.totalMin`), minutes.
     let needMin: Double
@@ -200,6 +198,9 @@ struct PulseTonight: Equatable {
     let wake: Date
     /// What named the wake: the strap alarm only when it will actually buzz that morning.
     let wakeSource: TonightSleepPlan.WakeSource
+    /// The sleep the plan allows for, as a share of `needMin`, 0-100 (`PulseSleepPlan.coveragePercent`): under
+    /// 100 for a goal short of the whole need, or a bedtime held at the earliest the planner suggests.
+    let coveragePercent: Int
 
     /// The strap alarm buzzes at `wake`: "● ALARM ON · EXACT TIME".
     var alarmOn: Bool { wakeSource == .strapAlarm }
@@ -269,17 +270,6 @@ struct PulseKeyStat: Identifiable, Equatable {
     /// Value minus that average, zero when the two PRINT the same (§2.6 item 9: any difference that shows
     /// is coloured good / bad; a grey dot only when the figures match).
     var baselineDelta: Double? = nil
-}
-
-/// The Health Monitor tile: how many of today's judged vitals sit inside their typical range.
-struct PulseMonitorSummary: Equatable {
-    let inRange: Int
-    let judged: Int
-    /// The vitals outside their range, by name ("Skin temperature").
-    let outOfRange: [String]
-
-    /// Nothing judged yet (calibrating, no readings): the tile shows "Pending".
-    var isPending: Bool { judged == 0 }
 }
 
 /// One day of the STRAIN & RECOVERY chart: Strain on 0–21 and Recovery in percent, either missing.
@@ -359,10 +349,12 @@ struct HomeSnapshot: Equatable {
     let journal: PulseJournalStrip?
     /// Today's day streak (consecutive days with a Recovery score); nil on a past day.
     let streak: Int?
-    /// The Health Monitor tile, today only.
-    let monitor: PulseMonitorSummary?
     /// The seven days ending on the selected one, oldest first, for STRAIN & RECOVERY.
     let week: [PulseWeekDay]
+    /// The mean scored Recovery over the 7 days before the selected one (3 scored days at least), whole
+    /// percent: the Daily Outlook's 7-day average, kept here so that every outlook made from this snapshot
+    /// (the Coach sheet's too) can print the one figure.
+    let recoveryAverage7: Int?
     /// Days with a Recovery score in the history: under 3 and no Coach provider, no outlook can be made,
     /// so My Day shows the Ask row instead of the coach pill.
     let scoredDays: Int

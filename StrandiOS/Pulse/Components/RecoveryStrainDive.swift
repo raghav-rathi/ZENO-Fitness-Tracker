@@ -229,18 +229,21 @@ enum PulseDiveRoutes {
 
 // MARK: Achievement chip
 
-/// The pillar's achievement chip in a dive's bar (§1.5 [Z]; deep-dives-2026/17b, 57, profile-community-2026/83):
-/// the running count of the pillar's cumulative badge, Green Light's green Recoveries on Recovery and Big
-/// Days' days of 14+ Strain on Strain, read from the snapshot the Achievements pages read
-/// (`ProfileSnapshot.badges`), so the chip and Achievement Details' "Total so far" are one number. It opens
-/// that badge's Achievement Details. The explainer it displaces moves to HOW IT'S CALCULATED at the foot of
-/// the page (`PulseDiveExplainerRow`); before the badge counts anything the bar keeps ⓘ.
+/// The pillar's achievement chip in a dive's bar (§1.5 [Z]; deep-dives-2026/17b, 18, 57,
+/// profile-community-2026/83): the running count of the pillar's cumulative badge, Restful Nights' nights of
+/// 85%+ Sleep Performance on Sleep (which badge WHOOP's Sleep chip counts is unconfirmed, §1.5), Green
+/// Light's green Recoveries on Recovery and Big Days' days of 14+ Strain on Strain, read from the snapshot
+/// the Achievements pages read (`ProfileSnapshot.badges`), so the chip and Achievement Details' "Total so
+/// far" are one number. It opens that badge's Achievement Details. The explainer it displaces moves to HOW
+/// IT'S CALCULATED at the foot of the page (`PulseDiveExplainerRow`); before the badge counts anything the
+/// bar keeps ⓘ.
 enum PulseDiveAchievement {
-    case recovery, strain
+    case sleep, recovery, strain
 
     /// The badge the chip counts.
     var rule: PulseAchievements.Rule {
         switch self {
+        case .sleep: return .restfulNights
         case .recovery: return .greenLight
         case .strain: return .bigDays
         }
@@ -249,19 +252,23 @@ enum PulseDiveAchievement {
     /// The family's mini badge, as `PulseAchievementChip` draws the families.
     private var symbol: String {
         switch self {
+        case .sleep: return "hexagon.fill"
         case .recovery: return "shield.fill"
         case .strain: return "diamond.fill"
         }
     }
 
     /// The bar's right accessory: nothing while the profile snapshot loads, then the chip, or ⓘ while
-    /// the badge has nothing to count.
+    /// the badge has nothing to count. VoiceOver names the badge and what its count counts, in the words of
+    /// its Achievement Details ("Green Light: 3 Green Recoveries"), not a bare "3 achievements".
     func trailing(_ profile: ProfileSnapshot?, open: @escaping (PulseRoute) -> Void) -> PulseNavTrailing {
         guard let profile else { return .none }
         guard let badge = profile.badges.first(where: { $0.rule == rule }), badge.count > 0 else {
             return .info { open(.classic(.scoringGuide)) }
         }
-        return .achievement(symbol: symbol, tint: ProfileArtPalette.family(badge.family)[0], count: badge.count) {
+        let info = ProfileBadgeInfo(badge)
+        return .achievement(symbol: symbol, tint: ProfileArtPalette.family(badge.family)[0], count: badge.count,
+                            accessibilityLabel: String(localized: "\(info.name): \(badge.count) \(info.criterion)")) {
             open(PulseAchievementDetailsRoute(badgeID: badge.id).route)
         }
     }

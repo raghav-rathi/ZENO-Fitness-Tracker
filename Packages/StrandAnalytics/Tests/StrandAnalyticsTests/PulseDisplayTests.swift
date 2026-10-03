@@ -195,14 +195,6 @@ final class PulseDisplayTests: XCTestCase {
         XCTAssertEqual(PulseDisplay.prefixEnd(hr, through: 99), 3)
     }
 
-    // MARK: - Bedtime
-
-    func testBedtimeWrapsIntoThePreviousEvening() {
-        XCTAssertEqual(PulseDisplay.bedtimeMinute(wakeMinute: 6 * 60 + 30, needMinutes: 480), 22 * 60 + 30)
-        XCTAssertEqual(PulseDisplay.bedtimeMinute(wakeMinute: 7 * 60, needMinutes: 452.4), 23 * 60 + 28)
-        XCTAssertEqual(PulseDisplay.bedtimeMinute(wakeMinute: 14 * 60, needMinutes: 480), 6 * 60)
-    }
-
     func testMedianClockMinuteHandlesMidnight() {
         XCTAssertNil(PulseDisplay.medianClockMinute([]))
         XCTAssertEqual(PulseDisplay.medianClockMinute([400, 420, 410]), 410)

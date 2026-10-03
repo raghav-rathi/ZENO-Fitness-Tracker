@@ -32,10 +32,16 @@ struct PulsePrefs: Equatable {
     var sleepOnsetDayCycle = true
     var effortMethod: StrainScorer.Method = .edwards
     var stressPersonalBaseline = false
-    /// The strap alarm, the wind-down reminder and My Schedule's per-day times, as the Sleep Planner reads
-    /// them (`PulseSleepPlanSettings.stored`), whether the strap will arm included: what tonight's plan is
+    /// The strap alarm, the wind-down reminder and My Schedule's per-day times, read as the Sleep Planner reads
+    /// them (`PulseSleepPlanSettings.current`), whether the strap will arm included: what tonight's plan is
     /// resolved from.
     var sleepPlan = PulseSleepPlanSettings()
+    /// The Sleep Planner's TOMORROW I WANT TO goal (`PulseSleepGoal.storageKey`), which tonight's plan is
+    /// resolved for.
+    var sleepGoal = PulseSleepGoal.default
+    /// The running Weekly Plan's sleep goals (`PulseWeeklyPlanSleepGoals.current`), which the plan is resolved
+    /// for under REACH MY WEEKLY PLAN GOAL; nil when no plan with a sleep goal runs.
+    var weeklyPlanSleep: PulseWeeklyPlanSleepGoals?
     /// The journal prompt's switch (Settings, shared with the classic Today).
     var journalReminder = true
 }
@@ -445,7 +451,6 @@ actor PulseSnapshotBuilder {
         let stats = await keyStats(r, row: row)
         // The journal strip ends on the selected day; it stays on a past day (§2.9).
         let journal = r.prefs.journalReminder ? await journalStrip(endingOn: r.day.date, offset: r.day.offset) : nil
-        let monitor = r.day.isToday ? monitorSummary(r) : nil
         guard isCurrent(r) else { return nil }
 
         let todayKey = Repository.localDayKey(r.now)
@@ -468,9 +473,19 @@ actor PulseSnapshotBuilder {
             stats: stats,
             journal: journal,
             streak: streak,
-            monitor: monitor,
             week: week(r, liveStrain: strain),
+            recoveryAverage7: recoveryAverage7(r),
             scoredDays: r.days.reduce(0) { $0 + ($1.recovery != nil ? 1 : 0) })
+    }
+
+    /// The mean scored Recovery over the 7 days before the selected one, when at least 3 of them scored, whole
+    /// percent (`HomeSnapshot.recoveryAverage7`).
+    func recoveryAverage7(_ r: PulseRequest) -> Int? {
+        let key = r.day.key
+        let weekAgo = PulseDisplay.dayKey(key, offsetBy: -7) ?? key
+        let recent = r.days.filter { $0.day >= weekAgo && $0.day < key }.compactMap(\.recovery)
+        guard recent.count >= 3 else { return nil }
+        return PulseDisplay.displayedPercent(recent.reduce(0, +) / Double(recent.count))
     }
 
     /// The seven days ending on the selected one, oldest first: each day's stored Strain (0–21) and
@@ -482,31 +497,6 @@ actor PulseSnapshotBuilder {
             let stored = row?.strain.map { UnitFormatter.effortValue($0, scale: .whoop) }
             return PulseWeekDay(id: key, strain: key == r.day.key ? (liveStrain ?? stored) : stored,
                                 recovery: row?.recovery)
-        }
-    }
-
-    /// Today's vitals judged against their typical ranges, as the Health Monitor tile counts them: the same
-    /// readings and bands the Health tab draws (`BodyVitalSigns`, `VitalBands`).
-    func monitorSummary(_ r: PulseRequest) -> PulseMonitorSummary {
-        let unit: TemperatureUnit = r.prefs.fahrenheit ? .fahrenheit : .celsius
-        let readings = BodyVitalSigns.readings(sourceRows: r.vitalRows, temperatureUnit: unit, now: r.now,
-                                               skinTempPreferred: r.prefs.skinTempPreferred)
-            .filter { $0.key != "spo2raw" && !($0.key == "spo2" && $0.value == nil) }
-        let judged = readings.filter { $0.banding.band != .noData }
-        let out = judged.filter { $0.banding.band == .outOfRange }
-        return PulseMonitorSummary(inRange: judged.count - out.count, judged: judged.count,
-                                   outOfRange: out.map { Self.vitalName($0.key) })
-    }
-
-    /// Pulse's names for the vitals, the ones Recovery and the Health tab use.
-    static func vitalName(_ key: String) -> String {
-        switch key {
-        case "resp": return String(localized: "Respiratory rate")
-        case "spo2": return String(localized: "Blood oxygen")
-        case "rhr": return String(localized: "Resting heart rate")
-        case "hrv": return String(localized: "Heart rate variability")
-        case "skin": return String(localized: "Skin temperature")
-        default: return key
         }
     }
 
@@ -524,21 +514,17 @@ actor PulseSnapshotBuilder {
         })
     }
 
-    // TODO(sleep): two gaps in the shared resolver, both for the Sleep group so the card and the planner
-    // move together. (1) `tonightSleepPlan` plans REACH MY SLEEP NEED at 100% whatever goal the planner
-    // has (`pulse.sleepPlanner.goal`): give it the goal, brought to the builder in `PulsePrefs` as the
-    // alarm settings are. (2) `PulseSleepPlan.resolve` takes each wake's next occurrence after now, so from
-    // the moment the night ending today is over until this morning's planned wake, both plan this morning
-    // ("Now" to bed); once that night has ended they should plan the coming one.
     /// Tonight's plan through the Sleep Planner's own resolver (`tonightSleepPlan`, Screens/Sleep, which runs
-    /// `PulseSleepPlan.resolve` over the unified sleep need) on the settings the request captured: the wake
-    /// the strap is really armed for (per-day times included), the bedtime with time to fall asleep. Home's
-    /// TONIGHT'S SLEEP card and the planner it opens therefore print the same night while the planner's goal
-    /// is its default, REACH MY SLEEP NEED at 100%.
+    /// `PulseSleepPlan.resolve` over the unified sleep need) on what the request captured from the planner:
+    /// its alarm and wake settings (the wake the strap is really armed for, per-day times included), its goal
+    /// and the running Weekly Plan's sleep goals. The bedtime allows time to fall asleep, and once the night
+    /// ending today is over, the plan is for the coming night. Home's TONIGHT'S SLEEP card and the planner it
+    /// opens therefore print the same night, whatever the goal.
     func tonightPlan(_ r: PulseRequest) async -> PulseTonight? {
-        guard let plan = await tonightSleepPlan(r, settings: r.prefs.sleepPlan) else { return nil }
+        guard let plan = await tonightSleepPlan(r, settings: r.prefs.sleepPlan, goal: r.prefs.sleepGoal,
+                                                weeklyPlan: r.prefs.weeklyPlanSleep) else { return nil }
         return PulseTonight(needMin: plan.needMin, inBed: plan.bedtime, asleepBy: plan.asleepBy, wake: plan.wake,
-                            wakeSource: plan.wakeSource)
+                            wakeSource: plan.wakeSource, coveragePercent: plan.coveragePercent)
     }
 
     // MARK: Key stats

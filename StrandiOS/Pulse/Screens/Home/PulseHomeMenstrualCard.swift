@@ -4,15 +4,18 @@ import StrandAnalytics
 
 // MARK: - MENSTRUAL CYCLE INSIGHTS on Home (WHOOP_UI_SPEC §3.1 item 8e)
 //
-// Opt-in (Settings' cycle awareness), after MY JOURNAL. The card says where the cycle is from ZENO's own
-// temperature-shift engine (`CyclePhaseEngine`, published on AppModel): the estimated cycle day, the phase
-// in its colour, the likely window for the next period, a dot per day of the cycle coloured from what is
-// actually known (a logged period start, the detected temperature shift), today large and white, and
-// "+ LOG CYCLE". Awareness only, never a fertility or medical claim; with too little data it says it is
-// learning, and with no clear pattern it predicts nothing.
+// Opt-in (Settings' cycle awareness), after MY JOURNAL. The card states where the cycle is through Menstrual
+// Cycle Insights' own funnel (`PulseSnapshotBuilder.cycleToday`, which the Health tab's card reads too): the
+// logs first, ZENO's temperature-shift engine (`CyclePhaseEngine`) only where there are no usable logs. Its
+// day ("Day 3"), the phase in its colour and the line under it ("Logged Period Day • Next period in: 26–28
+// Days") are the page's header, so Home, the Health card and the page name the same day. Under them a dot per
+// day of the cycle, today large and white on that same day, coloured from what is actually known (the logged
+// period days, the detected temperature shift), and "+ LOG CYCLE", which opens the page's own log sheet.
+// Awareness only, never a fertility or medical claim.
 
-/// Reads the cycle estimate off AppModel in its own leaf (AppModel publishes every heart-rate tick), and
-/// the logged period starts off the main actor, again whenever one is logged.
+/// Builds the card's snapshot off the main actor, again whenever a refresh, a log, the cycle settings or the
+/// temperature engine's estimate changes, exactly as the Health tab's card does (`HealthCycleSlot`), and
+/// reads the estimate off AppModel in its own leaf (AppModel publishes every heart-rate tick).
 struct PulseMenstrualCardHost: View {
     /// The LOG CYCLE sheet is up: Home's root presents it, so tilt mode can wait for it to close.
     @Binding var logging: Bool
@@ -21,54 +24,66 @@ struct PulseMenstrualCardHost: View {
     @EnvironmentObject private var repo: Repository
     @Environment(PulseModel.self) private var model
     @AppStorage(AppModel.cycleAwarenessKey) private var enabled = false
-    @State private var periodStarts: [String] = []
+    @AppStorage(PulseCycleLog.Mode.storageKey) private var modeRaw = PulseCycleLog.Mode.menstruating.rawValue
+    @AppStorage(PulseCycleLog.Contraception.storageKey) private var contraceptionRaw = PulseCycleLog.Contraception.none.rawValue
+    @State private var today: CycleTodaySnapshot?
+    @State private var periodDays: [String] = []
+
+    /// What the card reloads on: the Health tab card's key (`HealthCycleSlot`).
+    private struct LoadKey: Equatable {
+        let health: String
+        let logSeq: Int
+        let mode: String
+        let contraception: String
+        let engine: CyclePhaseEngine.Result?
+    }
 
     var body: some View {
         Group {
-            if let demo = Self.debugResult {
-                PulseMenstrualCard(result: demo.result, periodStarts: demo.periodStarts) { logging = true }
-                    .equatable()
-            } else if enabled {
-                PulseMenstrualCard(result: app.cyclePhase, periodStarts: periodStarts) { logging = true }
+            if enabled {
+                PulseMenstrualCard(today: today, periodDays: periodDays,
+                                   shiftMarkers: app.cyclePhase?.shiftMarkers ?? []) { logging = true }
                     .equatable()
             }
         }
-        .task(id: enabled ? repo.cycleTrackingSeq : -1) {
+        .task(id: enabled ? LoadKey(health: model.healthKey, logSeq: repo.cycleTrackingSeq, mode: modeRaw,
+                                    contraception: contraceptionRaw, engine: app.cyclePhase) : nil) {
             guard enabled else { return }
-            if let starts = await model.build({ builder, _ in await builder.homePeriodStarts() }) {
-                periodStarts = starts
-            }
+            await load()
         }
     }
 
-    /// DEBUG `--pulse-cycle-demo`: a synthetic luteal estimate (cycle day 21 of 28, a period logged on day 1
-    /// and the temperature shift on day 15), so the card's day, phase, window and dot strip can be captured
-    /// without six weeks of temperature data. nil in Release and without the flag.
-    static var debugResult: (result: CyclePhaseEngine.Result, periodStarts: [String])? {
-        #if DEBUG
-        guard CommandLine.arguments.contains("--pulse-cycle-demo") else { return nil }
-        let today = Repository.localDayKey(Date())
-        func day(_ offset: Int) -> String { PulseDisplay.dayKey(today, offsetBy: offset) ?? today }
-        let window = CyclePhaseEngine.NextPeriodWindow(earliestDay: day(6), latestDay: day(9))
-        let result = CyclePhaseEngine.Result(phase: .luteal, confidence: .building, cycleDayLow: 21, cycleDayHigh: 21,
-                                             cycleLengthDays: 28, nextPeriodWindow: window,
-                                             shiftMarkers: [CyclePhaseEngine.ShiftMarker(day: day(-6))], note: "")
-        return (result, [day(-20)])
-        #else
-        return nil
-        #endif
+    /// The day, the estimate and the settings read here, on the main actor, as `HealthCycleSlot.load` reads
+    /// them; the logs off it.
+    private func load() async {
+        let day = Repository.localDayKey(Date())
+        let engine = app.cyclePhase
+        let mode = PulseCycleLog.Mode(rawValue: modeRaw) ?? .menstruating
+        let contraception = PulseCycleLog.Contraception(rawValue: contraceptionRaw) ?? .none
+        if let s = await model.build(dayOffset: 0, { builder, request in
+            await builder.cycleToday(request, today: day, engine: engine, mode: mode, contraception: contraception)
+        }) {
+            today = s
+        }
+        if let days = await model.build({ builder, _ in await builder.homePeriodDays() }) {
+            periodDays = days
+        }
     }
 }
 
 struct PulseMenstrualCard: View, Equatable {
-    let result: CyclePhaseEngine.Result?
-    /// Logged period starts (`Repository.periodStarts`), oldest first.
-    let periodStarts: [String]
+    /// Where the cycle is today, as Menstrual Cycle Insights states it (`cycleToday`); nil while it builds.
+    let today: CycleTodaySnapshot?
+    /// The logged period days (`PulseSnapshotBuilder.homePeriodDays`: a logged start or a day of period flow,
+    /// as the page's calendar marks them), oldest first.
+    let periodDays: [String]
+    /// The temperature engine's detected shifts, for the dot strip's luteal days.
+    let shiftMarkers: [CyclePhaseEngine.ShiftMarker]
     /// "+ LOG CYCLE": opens the sheet Home presents (`PulseMenstrualCardHost.logging`).
     let onLog: () -> Void
 
     static func == (lhs: PulseMenstrualCard, rhs: PulseMenstrualCard) -> Bool {
-        lhs.result == rhs.result && lhs.periodStarts == rhs.periodStarts
+        lhs.today == rhs.today && lhs.periodDays == rhs.periodDays && lhs.shiftMarkers == rhs.shiftMarkers
     }
 
     var body: some View {
@@ -77,22 +92,28 @@ struct PulseMenstrualCard: View, Equatable {
                 VStack(alignment: .leading, spacing: PulseTheme.Space.s) {
                     PulseCardTitle(String(localized: "Menstrual Cycle Insights"), accessory: .trailingChevron)
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(headline)
+                        // "Day 3", "Day 18–22", "Log a period to start", "Symptom tracking".
+                        Text(today?.headline ?? "--")
                             .pulseText(.pageTitle)
                             .foregroundStyle(PulseTheme.textPrimary)
-                        if let phase {
-                            Text(phase.name)
+                        if let title = today?.header.title {
+                            Text(title)
                                 .pulseText(.cardTitle)
-                                .foregroundStyle(phase.color)
+                                .foregroundStyle(today?.header.phase?.dot ?? PulseTheme.textSecondary)
                         }
                     }
-                    Text(sentence)
-                        .pulseText(.body)
-                        .foregroundStyle(PulseTheme.textSecondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                    if let result, let dots = PulseCycleDotStrip.dots(result: result, periodStarts: periodStarts,
-                                                                       todayKey: Repository.localDayKey(Date())) {
-                        PulseCycleDotStrip(dots: dots)
+                    if let subtitle = today?.header.subtitle, !subtitle.isEmpty {
+                        Text(subtitle)
+                            .pulseText(.body)
+                            .foregroundStyle(PulseTheme.textSecondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    // Only where the page places today in a cycle of phases (not under hormonal contraception,
+                    // nor in menopause), as the Health card's bar.
+                    if let place = today?.place {
+                        PulseCycleDotStrip(dots: PulseCycleDotStrip.dots(place: place, periodDays: periodDays,
+                                                                         shiftMarkers: shiftMarkers,
+                                                                         todayKey: Repository.localDayKey(Date())))
                     }
                 }
                 .contentShape(Rectangle())
@@ -107,46 +128,6 @@ struct PulseMenstrualCard: View, Equatable {
         .frame(maxWidth: .infinity, alignment: .leading)
         .pulseCardBackground(.solid(PulseTheme.Menstrual.homeCard))
         .id("pulse.cycle")
-    }
-
-    private var headline: String {
-        guard let result else { return String(localized: "Learning Your Cycle") }
-        switch result.phase {
-        case .learning: return String(localized: "Learning Your Cycle")
-        case .unknown: return String(localized: "No Phase Predicted")
-        default:
-            guard let lo = result.cycleDayLow, let hi = result.cycleDayHigh else {
-                return String(localized: "No Phase Predicted")
-            }
-            return lo == hi ? String(localized: "Day \(lo)") : String(localized: "Day \(lo)-\(hi)")
-        }
-    }
-
-    private var phase: (name: String, color: Color)? {
-        switch result?.phase {
-        case .follicular: return (String(localized: "Follicular phase"), PulseTheme.Menstrual.Phase.follicular.dot)
-        case .periOvulatory: return (String(localized: "Around your mid-cycle shift"), PulseTheme.Menstrual.Phase.ovulatory.dot)
-        case .luteal: return (String(localized: "Luteal phase"), PulseTheme.Menstrual.Phase.luteal.dot)
-        default: return nil
-        }
-    }
-
-    private var sentence: String {
-        guard let result else {
-            return String(localized: "Learning your pattern from your nightly temperature. Keep wearing your strap overnight.")
-        }
-        if let window = result.nextPeriodWindow {
-            return String(localized: "Your next period is likely between \(PulseFormat.dayLabel(window.earliestDay)) and \(PulseFormat.dayLabel(window.latestDay)). A range, not a date.")
-        }
-        switch result.phase {
-        case .follicular: return String(localized: "Temperature is near your baseline.")
-        case .periOvulatory: return String(localized: "Temperature is changing around your mid-cycle shift.")
-        case .luteal: return String(localized: "Temperature is above your baseline.")
-        case .unknown:
-            return String(localized: "No clear temperature pattern yet. This can happen with irregular cycles, hormonal contraception or shift work.")
-        case .learning:
-            return String(localized: "Learning your pattern from your nightly temperature. Keep wearing your strap overnight.")
-        }
     }
 }
 
@@ -174,26 +155,28 @@ struct PulseCycleDotStrip: View {
     /// Cycle days 1 ... n, in order.
     let dots: [Dot]
 
-    /// The strip for `result`, once the engine has seen the wearer's own cycle length. Today's cycle day is
-    /// the middle of the engine's estimate (the headline's "Day 20-22" is day 21), mapped to `todayKey`.
-    static func dots(result: CyclePhaseEngine.Result, periodStarts: [String], todayKey: String) -> [Dot]? {
-        guard let length = result.cycleLengthDays, length > 0,
-              let low = result.cycleDayLow, let high = result.cycleDayHigh else { return nil }
-        let today = max(1, (low + high) / 2)
-        let count = max(length, today)
-        guard let firstDay = PulseDisplay.dayKey(todayKey, offsetBy: 1 - today) else { return nil }
-        let logged = Set(periodStarts)
-        // The latest logged start and temperature shift inside this cycle, if any.
-        let start = periodStarts.last { $0 >= firstDay && $0 <= todayKey }
-        let shift = result.shiftMarkers.map(\.day).last { $0 >= firstDay && $0 <= todayKey }
+    /// The strip for today's place in the cycle (`CycleTodaySnapshot.place`: the card's own cycle day, the
+    /// logs' or else the middle of the engine's range, in a cycle of the modelled length), mapped to
+    /// `todayKey`, so today's dot is on the day the headline states. `periodDays` are the logged period days,
+    /// oldest first (`PulseSnapshotBuilder.homePeriodDays`), so a day the page shows as a logged period day is
+    /// one here too.
+    static func dots(place: CycleTodaySnapshot.Place, periodDays: [String],
+                     shiftMarkers: [CyclePhaseEngine.ShiftMarker], todayKey: String) -> [Dot] {
+        let today = max(1, place.day)
+        let count = max(place.length, today)
+        let firstDay = PulseDisplay.dayKey(todayKey, offsetBy: 1 - today) ?? todayKey
+        let logged = Set(periodDays)
+        // The last logged period day and the latest temperature shift inside this cycle, if any.
+        let lastPeriodDay = periodDays.last { $0 >= firstDay && $0 <= todayKey }
+        let shift = shiftMarkers.map(\.day).last { $0 >= firstDay && $0 <= todayKey }
         return (1...count).map { day -> Dot in
             if day == today { return .today }
             if day > today { return .ahead }
             guard let key = PulseDisplay.dayKey(todayKey, offsetBy: day - today) else { return .unknown }
             if logged.contains(key) { return .period }
             if let shift, key >= shift { return .luteal }
-            // After a logged start and before the shift (or with no shift yet): the follicular phase.
-            if let start, key > start, shift.map({ key < $0 }) ?? true { return .follicular }
+            // After the logged bleed and before the shift (or with no shift yet): the follicular phase.
+            if let lastPeriodDay, key > lastPeriodDay, shift.map({ key < $0 }) ?? true { return .follicular }
             return .unknown
         }
     }
@@ -232,60 +215,6 @@ struct PulseCycleDotStrip: View {
 
     private var marks: [Int] {
         [1, 7, 14, 21, 28, 35, 42].filter { $0 <= dots.count }
-    }
-}
-
-/// "Log a period start": a dark sheet with a calendar (today and earlier), saving the day as cycle day 1
-/// under ZENO's own isolated `noop-cycle` source, then re-running the cycle estimate.
-struct PulseLogPeriodSheet: View {
-    @EnvironmentObject private var repo: Repository
-    @EnvironmentObject private var app: AppModel
-    @Environment(\.dismiss) private var dismiss
-    @State private var date = Date()
-    @State private var saving = false
-
-    var body: some View {
-        NavigationStack {
-            VStack(spacing: PulseTheme.Space.m) {
-                DatePicker(String(localized: "Period started on"), selection: $date, in: ...Date(),
-                           displayedComponents: .date)
-                    .datePickerStyle(.graphical)
-                    .labelsHidden()
-                    .tint(PulseTheme.Menstrual.Phase.menstrual.dot)
-                Text(String(localized: "This date anchors cycle day 1 and is checked against your nightly temperature pattern. Awareness only, not contraception or a diagnosis."))
-                    .pulseText(.secondary)
-                    .foregroundStyle(PulseTheme.textTertiary)
-                    .multilineTextAlignment(.center)
-                    .fixedSize(horizontal: false, vertical: true)
-                Spacer(minLength: 0)
-                Button(String(localized: "Save")) {
-                    saving = true
-                    let day = Repository.localDayKey(date)
-                    Task {
-                        await repo.logPeriodStart(day: day)
-                        await app.refreshV5Signals()
-                        dismiss()
-                    }
-                }
-                .buttonStyle(.pulseFilledWhite)
-                .disabled(saving)
-            }
-            .padding(.horizontal, PulseTheme.Layout.pageMargin)
-            .padding(.bottom, PulseTheme.Space.m)
-            .frame(maxHeight: .infinity, alignment: .top)
-            .background(PulseTheme.wheelSheet.ignoresSafeArea())
-            .navigationTitle(String(localized: "Log Period Start"))
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    Button(String(localized: "Cancel")) { dismiss() }
-                        .foregroundStyle(PulseTheme.textPrimary)
-                }
-            }
-        }
-        .presentationDetents([.large])
-        .presentationDragIndicator(.visible)
-        .environment(\.colorScheme, .dark)
     }
 }
 #endif

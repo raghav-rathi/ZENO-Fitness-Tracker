@@ -1,5 +1,6 @@
 #if os(iOS)
 import SwiftUI
+import UIKit
 import Combine
 import StrandDesign
 import StrandAnalytics
@@ -67,6 +68,10 @@ struct PulseRootView: View {
     @State private var bottomSafeArea: CGFloat = 34
     /// The "+" the action menu is open from (its frame in window coordinates), or nil while closed.
     @State private var actionMenuAnchor: CGRect?
+    /// `homeScreenQuickActionsEnabled` kept in state, for the navigator's closures: they reach this view
+    /// through @State's storage (see `navigator`), where a plain property could be read from a copy made
+    /// before the launch gates cleared.
+    @State private var launchGatesCleared = false
     /// Names this shell as the owner of the navigator, coach and menu contexts it hands down, so they
     /// compare equal across re-renders and their readers are not invalidated on every push or sheet.
     @State private var token = PulseIdentityToken()
@@ -209,6 +214,7 @@ struct PulseRootView: View {
         // through the change callback. Both open the same screens as the ＋ menu. A notification's route
         // waits the same way.
         .onAppear {
+            launchGatesCleared = homeScreenQuickActionsEnabled
             presentPendingHomeScreenQuickActionIfPossible()
             applyDebugLaunchState()
             openPendingExternalRouteIfPossible()
@@ -219,7 +225,8 @@ struct PulseRootView: View {
         .onChange(of: externalRoutes.pending) { _, _ in
             openPendingExternalRouteIfPossible()
         }
-        .onChange(of: homeScreenQuickActionsEnabled) { _, _ in
+        .onChange(of: homeScreenQuickActionsEnabled) { _, cleared in
+            launchGatesCleared = cleared
             presentPendingHomeScreenQuickActionIfPossible()
             openPendingExternalRouteIfPossible()
         }
@@ -302,13 +309,28 @@ struct PulseRootView: View {
         path(selectedTab).wrappedValue.appendPulse(route)
     }
 
+    /// Something is up over the tabs: the shell's sheet, cover or ＋ menu, or a modal another view presented
+    /// (Home's calendar and LOG CYCLE sheets, Profile's unlock modal over Home, a classic alert), which only
+    /// UIKit knows of: the window's root controller is then presenting it.
+    private var somethingIsUp: Bool {
+        if sheet != nil || cover != nil || actionMenuAnchor != nil { return true }
+        return UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .flatMap(\.windows)
+            .contains { $0.isKeyWindow && $0.rootViewController?.presentedViewController != nil }
+    }
+
     private func closeActionMenu() {
         guard actionMenuAnchor != nil else { return }
         withAnimation(PulseMotion.menu) { actionMenuAnchor = nil }
     }
 
     /// Present `route` in its own stack: full-screen routes in the cover slot, everything else as a sheet.
+    /// Tilt mode's day timeline (§3.7) only opens over the bare tabs: not before the launch gates have cleared
+    /// (`launchGatesCleared`; the first run and the terms gate are drawn over the shell rather than presented,
+    /// so nothing else says they are up), and not with anything up over Home.
     private func present(_ route: PulseRoute) {
+        if route == PulseTiltTimelineRoute().route && (!launchGatesCleared || somethingIsUp) { return }
         switch route {
         case .coach(let seed):
             openCoach(seed: seed)
@@ -471,6 +493,9 @@ struct PulseAttacher: View {
     @EnvironmentObject private var repo: Repository
     @EnvironmentObject private var profile: ProfileStore
     @EnvironmentObject private var ble: BLEManager
+    /// The strap alarm's settings (on / off, time, weekdays), read live as the Sleep Planner reads them, so
+    /// any edit re-renders this view and re-plans tonight at once.
+    @EnvironmentObject private var behavior: BehaviorStore
 
     @AppStorage(UnitPrefs.systemKey) private var unitSystemRaw = UnitSystem.metric.rawValue
     @AppStorage(UnitPrefs.temperatureKey) private var temperatureRaw = ""
@@ -479,14 +504,17 @@ struct PulseAttacher: View {
     @AppStorage(PuffinExperiment.banisterEffortKey) private var banisterEffort = false
     @AppStorage(PuffinExperiment.stressPersonalBaselineKey) private var stressPersonalBaseline = false
     @AppStorage(PuffinExperiment.journalReminderKey) private var journalReminder = true
-    // The wind-down reminder's own keys (WindDownNudge). The two wake keys are never read here: they
-    // are declared so that editing a wake time invalidates this view and Tonight is rebuilt.
+    // The rest of what tonight's plan is resolved from, none of it read here: `prefs` reads it all at once
+    // through `PulseSleepPlanSettings.current`, with the strap alarm's settings from `behavior`. Each key is
+    // declared only so that changing it re-renders this view, `prefs` changes and Tonight's Sleep is
+    // re-planned at once: the wind-down reminder's and My Schedule's (WindDownNudge) and the WHOOP 5/MG
+    // Protocol probes, without which a 5/MG strap never arms its alarm (`BLEManager.strapAlarmWillArm`).
     @AppStorage("windDown.enabled") private var windDownEnabled = false
     @AppStorage("windDown.wakeMinutes") private var windDownWake = 7 * 60
     @AppStorage("windDown.perDayWakeMinutes") private var windDownPerDay = Data()
-    // The strap's silent wake alarm (BehaviorStore's keys): Tonight's Sleep says ALARM ON / OFF from them.
-    @AppStorage("behavior.smartAlarmEnabled") private var strapAlarmOn = false
-    @AppStorage("behavior.smartAlarmMinutes") private var strapAlarmMinutes = 7 * 60
+    @AppStorage(PuffinExperiment.defaultsKey) private var protocolProbes = false
+    // The Sleep Planner's goal: Tonight's Sleep is planned for it, so choosing another one re-plans tonight.
+    @AppStorage(PulseSleepGoal.storageKey) private var sleepGoalRaw = PulseSleepGoal.default.storageValue
 
     private var prefs: PulsePrefs {
         let system = UnitSystem(rawValue: unitSystemRaw) ?? .metric
@@ -497,9 +525,14 @@ struct PulseAttacher: View {
         p.effortMethod = banisterEffort ? .banister : .edwards
         p.stressPersonalBaseline = stressPersonalBaseline
         p.journalReminder = journalReminder
-        // Tonight's plan reads the Sleep Planner's own settings. A WHOOP 5/MG strap arms its alarm only with
-        // the Protocol probes on (`AppModel.whoop5Detected` is `ble.isWhoop5`), as the planner checks.
-        p.sleepPlan = PulseSleepPlanSettings.stored(strapWillArm: !(ble.isWhoop5 && !PuffinExperiment.isEnabled))
+        // Tonight's plan reads the Sleep Planner's own settings through the planner's own reader, with the
+        // strap's own arming rule (a WHOOP 5/MG arms its alarm only with the Protocol probes on).
+        p.sleepPlan = PulseSleepPlanSettings.current(behavior: behavior, strapWillArm: ble.strapAlarmWillArm)
+        // It is planned for the planner's goal, with the running Weekly Plan's sleep goals for REACH MY WEEKLY
+        // PLAN GOAL (read through the plan store's observation, so starting, editing or ending a plan re-plans
+        // tonight too), exactly as the planner resolves it.
+        p.sleepGoal = PulseSleepGoal(storageValue: sleepGoalRaw)
+        p.weeklyPlanSleep = PulseWeeklyPlanSleepGoals.current()
         return p
     }
 

@@ -82,9 +82,9 @@ struct PulseGetStartedFacts: Equatable {
 }
 
 /// The store-side facts the Daily Outlook / Day in Review template reads beside `HomeSnapshot` (§3.15 [Z]).
+/// Its Recovery average is on the snapshot instead (`HomeSnapshot.recoveryAverage7`), where the Coach sheet's
+/// outlook, which is made from the snapshot alone, can read the same figure.
 struct PulseOutlookFacts: Equatable {
-    /// The mean scored Recovery over the 7 days before the day (3 days at least), whole percent.
-    let recoveryAverage7: Int?
     /// Consecutive days with a journal entry, ending today (or yesterday while today is not logged).
     let journalStreak: Int
     let journalLoggedToday: Bool
@@ -97,12 +97,13 @@ struct PulseOutlookFacts: Equatable {
 }
 
 /// The Health Monitor tile for today (§3.1 item 6): the vitals judged, and for each one out of its range,
-/// how far out (`VitalSeverity`).
+/// which way and how far, as the Health Monitor grades it (`HealthVital`).
 struct PulseMonitorGrades: Equatable {
     struct Flag: Equatable {
         /// The vital's name ("Skin temperature").
         let name: String
-        /// Well past its range (VERY ELEVATED / VERY LOW), else just past it (ELEVATED / LOW).
+        /// Where the Health Monitor says "very high" / "very low" (VERY ELEVATED / VERY LOW), else just past
+        /// its range (ELEVATED / LOW).
         let strong: Bool
         /// Above or below its range; nil when the grade could not say, and the tile reads OUT OF RANGE.
         let high: Bool?
@@ -117,6 +118,12 @@ struct PulseMonitorGrades: Equatable {
     var isPending: Bool { judged == 0 }
 }
 
+/// The opt-in auto-detected workout for Home's coaching stack (§3.14 [Z]); `workout` is nil when there is none
+/// to suggest.
+struct HomeDetectedWorkout: Equatable {
+    let workout: DetectedWorkout?
+}
+
 /// Everything Home's own sections draw for one day, beside `HomeSnapshot`.
 struct HomeExtrasSnapshot: Equatable {
     let seq: Int
@@ -128,7 +135,7 @@ struct HomeExtrasSnapshot: Equatable {
     let coaching: HomeCoachingRules.Inputs?
     /// The local Daily Outlook's facts, today only.
     let outlook: PulseOutlookFacts?
-    /// The Health Monitor tile's grades, today only.
+    /// The Health Monitor tile's grades, today only (the Health Monitor's own vitals, `healthVitals`).
     let monitor: PulseMonitorGrades?
     let start: PulseGetStartedFacts
     /// The day's stress, for the STRESS MONITOR tile (today) and the dashboard's STRESS MONITOR card, when

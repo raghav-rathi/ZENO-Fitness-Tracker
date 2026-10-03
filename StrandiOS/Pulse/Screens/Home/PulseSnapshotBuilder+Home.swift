@@ -39,7 +39,7 @@ extension PulseSnapshotBuilder {
 
         let coaching = r.day.isToday ? await coachingInputs(r, home: home, rest: rest, debt: debt) : nil
         let outlook = r.day.isToday ? await outlookFacts(r, home: home, zones: zones) : nil
-        let monitor = r.day.isToday ? monitorGrades(r) : nil
+        let monitor = r.day.isToday ? await monitorGrades(r) : nil
         let start = r.day.isToday ? await getStartedFacts(r, home: home, rows: rows) : .pastDay
         // Today's STRESS MONITOR tile, and the dashboard's card on any day it is on.
         let stress = r.day.isToday || items.contains(.stressMonitor) ? await stressSummary(r) : nil
@@ -48,10 +48,24 @@ extension PulseSnapshotBuilder {
                                   outlook: outlook, monitor: monitor, start: start, stress: stress)
     }
 
-    /// Logged period starts (oldest first) for the Menstrual card's dot strip. Not cached: logging a
+    /// The logged period days (oldest first) for the Menstrual card's dot strip: a logged period start or a
+    /// day of logged period flow (light or heavier), over the logs Menstrual Cycle Insights reads
+    /// (`Repository.cycleLogs`), the days its calendar marks as logged period days. Not cached: logging a
     /// period bumps `Repository.cycleTrackingSeq`, not `refreshSeq`, and the card re-reads on that.
-    func homePeriodStarts() async -> [String] {
-        await repo.periodStarts()
+    func homePeriodDays() async -> [String] {
+        let logs = await repo.cycleLogs()
+        return Set(logs.starts).union(logs.flow.filter { $0.value.isPeriod }.keys).sorted()
+    }
+
+    /// The opt-in auto-detected workout Home offers to save (§3.14 [Z]): the classic Today card's
+    /// candidate (`Repository.autoDetectCandidate`, a sustained-elevated heart-rate window in the last two
+    /// days that is neither saved nor dismissed, detected off the main actor), nil inside when there is
+    /// none or Settings' Auto-detect workouts is off. nil when a newer refresh superseded the build.
+    func homeDetectedWorkout(_ r: PulseRequest) async -> HomeDetectedWorkout? {
+        begin(r.seq)
+        let candidate = await repo.autoDetectCandidate()
+        guard isCurrent(r) else { return nil }
+        return HomeDetectedWorkout(workout: candidate)
     }
 
     // MARK: Series
@@ -389,77 +403,20 @@ extension PulseSnapshotBuilder {
 
     // MARK: Health Monitor
 
-    /// Today's Health Monitor tile (§3.1 item 6). The vitals, and whether each is in range, come from the
-    /// same call, filtered the same way, as the core's `monitorSummary` (`BodyVitalSigns.readings`); this
-    /// adds how far out each out-of-range vital is (`VitalSeverity`), so the tile can say ELEVATED or
-    /// VERY ELEVATED.
-    private func monitorGrades(_ r: PulseRequest) -> PulseMonitorGrades {
-        let unit: TemperatureUnit = r.prefs.fahrenheit ? .fahrenheit : .celsius
-        let readings = BodyVitalSigns.readings(sourceRows: r.vitalRows, temperatureUnit: unit, now: r.now,
-                                               skinTempPreferred: r.prefs.skinTempPreferred)
-            .filter { $0.key != "spo2raw" && !($0.key == "spo2" && $0.value == nil) }
-        let judged = readings.filter { $0.banding.band != .noData }
-        let out = judged.filter { $0.banding.band == .outOfRange }.map { monitorFlag($0, r) }
+    /// Today's Health Monitor tile (§3.1 item 6), read from the vitals the Health Monitor itself draws
+    /// (`healthVitals`: the same readings with the HRV over-count flags, the same bands, and "very" beyond 3σ
+    /// of a trusted personal baseline), so the tile names exactly the vitals the screen it opens shows out of
+    /// range, in the same direction, and calls one far out only where the screen says "very high" or "very
+    /// low".
+    private func monitorGrades(_ r: PulseRequest) async -> PulseMonitorGrades {
+        let vitals = await healthVitals(r)
+        let judged = vitals.filter { $0.status != .noData }
+        let out = judged.compactMap { vital -> PulseMonitorGrades.Flag? in
+            guard case .outside(let severe) = vital.status else { return nil }
+            return .init(name: vital.name, strong: severe,
+                         high: vital.direction == 0 ? nil : vital.direction > 0)
+        }
         return PulseMonitorGrades(judged: judged.count, out: out)
-    }
-
-    /// How far out one out-of-range vital is. Its inputs mirror the ones `BodyVitalSigns.readings` bands it
-    /// with (the per-source series before the reading's day, the metric's config and population range).
-    /// Should a grade ever disagree with the band, the band's verdict stands and the tile says OUT OF RANGE.
-    // TODO(health): carry the grade on `BodyVitalReading` itself, so this mirror can go.
-    private func monitorFlag(_ reading: BodyVitalReading, _ r: PulseRequest) -> PulseMonitorGrades.Flag {
-        let name = Self.vitalName(reading.key)
-        func points(_ key: String, _ value: (DailyMetric) -> Double?) -> [(day: String, value: Double)] {
-            // `BodyVitalSigns`' source precedence (private there): import, computed, Apple Health (never
-            // for skin temperature), local cache.
-            let precedence: [DailyMetricSource] = key == "skin"
-                ? [.whoopImport, .noopComputed, .localCache]
-                : [.whoopImport, .noopComputed, .appleHealth, .localCache]
-            var byDay: [String: Double] = [:]
-            for source in precedence {
-                for row in r.vitalRows where row.source == source {
-                    guard let v = value(row.metric), byDay[row.metric.day] == nil else { continue }
-                    byDay[row.metric.day] = v
-                }
-            }
-            return byDay.sorted { $0.key < $1.key }.map { (day: $0.key, value: $0.value) }
-        }
-        func history(_ pts: [(day: String, value: Double)]) -> [Double?] {
-            VitalBands.calendarSeries(pts.filter { p in reading.day.map { p.day < $0 } ?? true }
-                .map { ($0.day, Optional($0.value)) })
-        }
-        let grade: VitalSeverity.Grade
-        switch (reading.key, reading.value) {
-        case ("resp", let v?):
-            grade = VitalSeverity.grade(value: v, history: history(points("resp", \.respRateBpm)),
-                                        populationRange: 12...20, cfg: Baselines.respCfg)
-        case ("spo2", let v?):
-            grade = VitalSeverity.grade(value: v, history: [], populationRange: 95...100, cfg: nil)
-        case ("rhr", let v?):
-            grade = VitalSeverity.grade(value: v, history: history(points("rhr") { $0.restingHr.map(Double.init) }),
-                                        populationRange: 40...60, cfg: Baselines.restingHRCfg)
-        case ("hrv", let v?):
-            grade = VitalSeverity.grade(value: v, history: history(points("hrv", \.avgHrv)),
-                                        populationRange: 40...120, cfg: Baselines.hrvCfg)
-        case ("skin", let v?):
-            // The series the reading came from: the night's absolute column when it leads, else the
-            // deviation column, kept to the reading's own kind.
-            let absolute = points("skin", \.skinTempC)
-            let fromAbsolute = absolute.contains { $0.day == reading.day && $0.value == v }
-            let series = fromAbsolute ? absolute : points("skin", \.skinTempDevC)
-            let isAbsolute = VitalBands.isAbsoluteSkinTemp(v)
-            grade = VitalSeverity.grade(value: v,
-                                        history: VitalBands.skinTempHistory(matching: v, in: history(series)),
-                                        populationRange: isAbsolute ? 33...36 : (-0.6)...0.6,
-                                        cfg: isAbsolute ? Baselines.metricCfg["skin_temp"] : VitalBands.skinTempDeviationCfg)
-        default:
-            grade = .noData
-        }
-        switch grade {
-        case .out(let direction): return .init(name: name, strong: false, high: direction == .high)
-        case .farOut(let direction): return .init(name: name, strong: true, high: direction == .high)
-        case .within, .noData: return .init(name: name, strong: false, high: nil)
-        }
     }
 
     // MARK: Coaching
@@ -533,11 +490,6 @@ extension PulseSnapshotBuilder {
 
     private func outlookFacts(_ r: PulseRequest, home: HomeSnapshot, zones: [String: ZoneDay]) async -> PulseOutlookFacts {
         let key = r.day.key
-        // Recovery against its 7-day average (the days before today).
-        let weekAgo = PulseDisplay.dayKey(key, offsetBy: -7) ?? key
-        let recent = r.days.filter { $0.day >= weekAgo && $0.day < key }.compactMap(\.recovery)
-        let average = recent.count >= 3 ? PulseDisplay.displayedPercent(recent.reduce(0, +) / Double(recent.count)) : nil
-
         // The journal streak, over the local days the journal keys entries by.
         let localKeys = Self.journalKeys(r)
         let logged = await journalDays(r, home: home)
@@ -554,7 +506,7 @@ extension PulseSnapshotBuilder {
         let counted = week.reduce(0) { $0 + $1.activities }
         let total = week.reduce(0.0) { $0 + $1.minutes.reduce(0, +) }
         let high = week.reduce(0.0) { $0 + $1.minutes[3] + $1.minutes[4] }
-        return PulseOutlookFacts(recoveryAverage7: average, journalStreak: streak, journalLoggedToday: loggedToday,
+        return PulseOutlookFacts(journalStreak: streak, journalLoggedToday: loggedToday,
                                  zoneMinutesWeek: counted > 0 && total > 0 ? total : nil,
                                  highZoneMinutesWeek: counted > 0 && total > 0 ? high : nil,
                                  zoneActivitiesWeek: counted)

@@ -20,8 +20,9 @@ enum PulseNavTrailing {
     case none
     /// The outlined ⓘ (27.5 pt, white 50%) that opens an explainer sheet.
     case info(() -> Void)
-    /// The pillar's achievement chip: badge glyph, tint and count.
-    case achievement(symbol: String, tint: Color, count: Int, action: () -> Void)
+    /// The pillar's achievement chip: badge glyph, tint and count, and what VoiceOver says for it (the badge
+    /// and what its count counts, "Green Light: 3 Green Recoveries"), in place of the chip's bare count.
+    case achievement(symbol: String, tint: Color, count: Int, accessibilityLabel: String, action: () -> Void)
     /// A plain glyph: ⚙ (Stress Monitor, Menstrual), a history clock (Coach), "?" (Sleep Planner), "•••".
     case symbol(String, accessibilityLabel: String, action: () -> Void)
     /// A glyph of the screen's own that no symbol draws (WHOOP's outlined "ooo"): `draw` paints it into the
@@ -210,13 +211,14 @@ struct PulseNavBar: View {
             EmptyView()
         case .info(let action):
             PulseInfoButton(action: action)
-        case .achievement(let symbol, let tint, let count, let action):
+        case .achievement(let symbol, let tint, let count, let label, let action):
             Button(action: action) {
                 PulseAchievementChip(symbol: symbol, tint: tint, count: count)
                     .frame(minHeight: PulseTheme.Layout.minTapTarget)
                     .contentShape(Rectangle())
             }
             .buttonStyle(PulsePressStyle())
+            .accessibilityLabel(label)
         case .symbol(let symbol, let label, let action):
             Button(action: action) {
                 Image(systemName: symbol)

@@ -744,7 +744,8 @@ extension PulseSnapshotBuilder {
 
     // MARK: - Tonight's plan (Sleep Planner, Home's TONIGHT'S SLEEP)
 
-    /// Tonight's need with its parts, the recent nights' wake minutes and their timing (§3.11).
+    /// Tonight's need with its parts, the recent nights' wake minutes and their timing, and the end of the
+    /// night ending today (§3.11).
     func sleepPlanner(_ r: PulseRequest) async -> SleepPlannerSnapshot? {
         begin(r.seq)
         let groups = await nightGroups(r)
@@ -766,9 +767,14 @@ extension PulseSnapshotBuilder {
                 bedOffsetSec: zone.secondsFromGMT(for: Date(timeIntervalSince1970: TimeInterval(shape.bedTs))),
                 wakeOffsetSec: zone.secondsFromGMT(for: Date(timeIntervalSince1970: TimeInterval(shape.wakeTs)))))
         }
+        // The night Home shows as last night: the merged main night of the group ending on the request's day
+        // (today's logical day, as the planner and Home's card build with day offset 0).
+        let nightEnded = group(endingOn: r.day.key, in: groups)
+            .flatMap { SleepModel.mergeDay($0, habitualMidsleepSec: habitual, motionByStart: [:]) }
+            .map { Date(timeIntervalSince1970: TimeInterval($0.session.endTs)) }
         return SleepPlannerSnapshot(seq: r.seq, need: need,
                                     recentWakeMinutes: Self.recentWakeMinutes(groups, habitual: habitual),
-                                    timings: timings.sorted { $0.day < $1.day })
+                                    timings: timings.sorted { $0.day < $1.day }, nightEnded: nightEnded)
     }
 
     /// The main night's wake minute for the most recent `TonightSleepPlan.habitNights` night groups, newest
@@ -782,18 +788,18 @@ extension PulseSnapshotBuilder {
         }
     }
 
-    /// Tonight's plan for Home's TONIGHT'S SLEEP card, through the planner's own resolver
-    /// (`PulseSleepPlan.resolve`): given the planner's stored goal (`pulse.sleepPlanner.goal`) and the running
-    /// Weekly Plan's sleep goals, the card would show the wake and bedtime the planner it opens shows.
-    /// `settings`, `goal` and `weeklyPlan` are read on the main actor (`PulseSleepPlanSettings.current` or
-    /// `.stored`, `PulseSleepGoal(storageValue:)`, `PulseWeeklyPlanSleepGoals.current`) and passed in with the
-    /// request. Nothing calls it yet: Home's card still works tonight out through `tonightPlan`.
+    /// Tonight's plan for Home's TONIGHT'S SLEEP card (`PulseSnapshotBuilder.tonightPlan`), through the
+    /// planner's own resolver (`PulseSleepPlan.resolve`): given the planner's stored goal
+    /// (`PulseSleepGoal.storageKey`) and the running Weekly Plan's sleep goals, the card shows the wake and
+    /// bedtime the planner it opens shows. `settings`, `goal` and `weeklyPlan` are read on the main actor
+    /// (`PulseSleepPlanSettings.current`, `PulseSleepGoal(storageValue:)`, `PulseWeeklyPlanSleepGoals.current`)
+    /// and come with the request (`PulsePrefs`).
     func tonightSleepPlan(_ r: PulseRequest, settings: PulseSleepPlanSettings, goal: PulseSleepGoal = .default,
                           weeklyPlan: PulseWeeklyPlanSleepGoals? = nil) async -> PulseSleepPlan? {
         guard let s = await sleepPlanner(r) else { return nil }
         return PulseSleepPlan.resolve(now: r.now, goal: goal, needMin: s.need.totalMin, settings: settings,
                                       recentWakeMinutes: s.recentWakeMinutes, timings: s.timings,
-                                      weeklyPlan: weeklyPlan)
+                                      weeklyPlan: weeklyPlan, nightEnded: s.nightEnded)
     }
 }
 

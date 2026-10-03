@@ -8,9 +8,8 @@ import StrandAnalytics
 /// HEALTH MONITOR › | STRESS MONITOR ›, side by side 12 pt apart. Always shown on today (ZENO has no
 /// tiers), "Pending" while there is nothing to judge.
 struct PulseMonitorTiles: View {
-    let home: HomeSnapshot
-    /// Today's graded vitals (Home's own facts): WITHIN RANGE, ELEVATED / LOW, VERY ELEVATED / VERY LOW or
-    /// OUT OF RANGE. nil only before they first build; the tile then reads the snapshot's count.
+    /// Today's graded vitals (Home's own facts, the Health Monitor's vitals): WITHIN RANGE, ELEVATED / LOW,
+    /// VERY ELEVATED / VERY LOW or OUT OF RANGE. nil while they build, and the tile reads "Pending".
     let grades: PulseMonitorGrades?
     /// Today's stress (Home's own facts); nil while they build, and the tile reads "Pending".
     let stress: PulseStressSummary?
@@ -32,8 +31,7 @@ struct PulseMonitorTiles: View {
     }
 
     private var healthStatus: PulseMonitorTile.Status {
-        guard let grades else { return countStatus }
-        guard !grades.isPending else { return .pending }
+        guard let grades, !grades.isPending else { return .pending }
         guard let first = grades.out.first else {
             return .init(badge: .check, tint: .teal, word: String(localized: "Within range"),
                          wordColor: PulseTheme.positive,
@@ -61,21 +59,6 @@ struct PulseMonitorTiles: View {
         case nil: word = String(localized: "Out of range")
         }
         return .init(badge: .alert, tint: .orange, word: word, wordColor: PulseTheme.negative, detail: detail)
-    }
-
-    /// Before Home's own facts land: the snapshot's in / out count, without severity.
-    private var countStatus: PulseMonitorTile.Status {
-        guard let monitor = home.monitor, !monitor.isPending else { return .pending }
-        if monitor.outOfRange.isEmpty {
-            return .init(badge: .check, tint: .teal, word: String(localized: "Within range"),
-                         wordColor: PulseTheme.positive,
-                         detail: String(localized: "\(monitor.inRange)/\(monitor.judged) Metrics"))
-        }
-        let detail = monitor.outOfRange.count == 1
-            ? monitor.outOfRange[0]
-            : String(localized: "\(monitor.outOfRange.count)/\(monitor.judged) Metrics")
-        return .init(badge: .alert, tint: .orange, word: String(localized: "Out of range"),
-                     wordColor: PulseTheme.negative, detail: detail)
     }
 
     /// The Stress Monitor's level as its gauge prints it, the reading's time under the word, or "Daily

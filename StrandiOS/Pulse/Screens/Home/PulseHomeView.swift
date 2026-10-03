@@ -100,7 +100,7 @@ struct PulseHomeView: View {
                 Color.clear.pulseDayTimelineOnTilt()
             }
         }
-        .sheet(isPresented: $loggingPeriod) { PulseLogPeriodSheet() }
+        .sheet(isPresented: $loggingPeriod) { PulseCycleCardLogSheet() }
         .simultaneousGesture(daySwipe)
         .sensoryFeedback(.selection, trigger: model.dayOffset)
         .onChange(of: model.home) { _, _ in homeVersion &+= 1 }
@@ -259,7 +259,7 @@ struct PulseHomeSections: View {
                     PulseCoachingStackHost(base: base, home: home, grades: PulseHomeDebug.monitor ?? current?.monitor,
                                            stress: current?.stress, stressUpdated: stressUpdated, profile: profile)
                 } else {
-                    PulseMonitorTiles(home: home, grades: PulseHomeDebug.monitor ?? current?.monitor,
+                    PulseMonitorTiles(grades: PulseHomeDebug.monitor ?? current?.monitor,
                                       stress: current?.stress, stressUpdated: stressUpdated)
                         .padding(.top, PulseHomeSpacing.tilesTop)
                         .id("pulse.monitors")
@@ -374,7 +374,7 @@ enum PulseHomeSpacing {
 /// DEBUG `--pulse-dashboard <id,id,…>`: show these dashboard items, for a capture, without touching the
 /// stored layout. `--pulse-home-open outlook|review|log-cycle`: open the local Daily Outlook, the Day in
 /// Review or the LOG CYCLE sheet once Home has loaded. `--pulse-monitor elevated|low|very-elevated|out`:
-/// the Health Monitor tile with that grade, for a capture (the demo seed's vitals are all in range).
+/// the Health Monitor tile with that grade, for a capture, whatever the seeded vitals grade as.
 /// `--pulse-home-milestones`: one milestone card of each kind in the coaching stack
 /// (`PulseHomeMilestones.debugCards`).
 /// `--pulse-coaching-top <id prefix>`: lift the coaching cards whose id starts so ("challenge",

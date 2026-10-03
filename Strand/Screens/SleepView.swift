@@ -1896,7 +1896,7 @@ struct SleepView: View {
     /// `offsetSec` so the timing test reads the user's clock via the SAME `offsetSec` math the engine
     /// uses (`SleepStageTotals.localSecOfDay`), instead of `Calendar.current.component(.hour:)` which was
     /// the duplicated, DST-fragile gate the audit flagged. (#547)
-    static var tzOffsetSec: Int { TimeZone.current.secondsFromGMT() }
+    nonisolated static var tzOffsetSec: Int { TimeZone.current.secondsFromGMT() }
 
     /// The day's single WINNING main block — the durable-edit anchor (`editTarget`) and the one block whose
     /// learned-timing score won. Scores by learned timing on each block's EFFECTIVE onset (what the user
@@ -1922,8 +1922,8 @@ struct SleepView: View {
     /// un-bridged single-block pick and rendered the bridged siblings as phantom naps (#555). A night with
     /// no bridgeable gap collapses to the single block `mainNightSession` picks, so the common case is byte-
     /// identical. Returns ascending by effective onset. (#561 / #555)
-    static func mainNightGroup(_ sessions: [CachedSleepSession],
-                               habitualMidsleepSec: Int? = nil) -> [CachedSleepSession] {
+    nonisolated static func mainNightGroup(_ sessions: [CachedSleepSession],
+                                           habitualMidsleepSec: Int? = nil) -> [CachedSleepSession] {
         guard let idx = SleepStageTotals.mainNightGroupIndices(
             sessions.map { SleepStageTotals.NightBlock(start: $0.effectiveStartTs, end: $0.endTs) },
             offsetSec: tzOffsetSec, habitualMidsleepSec: habitualMidsleepSec) else { return [] }
@@ -1960,7 +1960,7 @@ struct SleepView: View {
 
     /// Soft nap-duration hint retained for callers/tests; the nap CLASSIFICATION is now purely "not the
     /// chosen main block" (see `isNap`), never an independent duration/onset test. (#518/#547)
-    static let napMaxHours: Double = 3.0
+    nonisolated static let napMaxHours: Double = 3.0
     /// Classify a block as a nap: it's a nap exactly when it is NOT the day's chosen main block. Derived
     /// from the pick (never an independent onset/duration gate), so the label can't contradict the
     /// selection — the contradiction the audit flagged. The main block is never a nap. (#518/#547)
@@ -2232,7 +2232,7 @@ struct SleepView: View {
     /// pre-onset trim. Internal (not private) so the golden test pins the DECODE PATH itself, not a
     /// pre-computed minute count. Android twin: SleepScreen's onset stub-test caller needs the same
     /// both-format decode.
-    static func decodedAsleepMinutes(_ json: String?, effectiveStartTs: Int) -> Double {
+    nonisolated static func decodedAsleepMinutes(_ json: String?, effectiveStartTs: Int) -> Double {
         decodeStages(json)?.asleep
             ?? decodeSegments(json, sessionStart: effectiveStartTs)?.stages.asleep
             ?? 0
@@ -2240,7 +2240,7 @@ struct SleepView: View {
 
     /// Decode the imported stagesJSON dict of MINUTES {"light","deep","rem","awake"}.
     /// Internal (not private) so `SleepModel.mergeDay` (SleepModel.swift) can call it.
-    static func decodeStages(_ json: String?) -> Stages? {
+    nonisolated static func decodeStages(_ json: String?) -> Stages? {
         guard let json, let data = json.data(using: .utf8) else { return nil }
         guard let obj = try? JSONSerialization.jsonObject(with: data),
               let dict = obj as? [String: Any] else { return nil }
@@ -2259,7 +2259,7 @@ struct SleepView: View {
     /// "light"|"deep"|"rem"}] into stage totals plus the real timeline (seconds relative to the
     /// session start, the Hypnogram's domain). The on-device SleepStager calls awake "wake". (#77)
     /// Internal (not private) so `SleepModel.mergeDay` (SleepModel.swift) can call it.
-    static func decodeSegments(
+    nonisolated static func decodeSegments(
         _ json: String?, sessionStart: Int
     ) -> (stages: Stages, intervals: [SleepInterval])? {
         guard let json, let data = json.data(using: .utf8),
