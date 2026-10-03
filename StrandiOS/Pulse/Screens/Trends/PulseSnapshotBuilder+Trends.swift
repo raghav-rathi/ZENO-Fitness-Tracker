@@ -66,10 +66,10 @@ extension PulseSnapshotBuilder {
         let from = PulseTrendMath.addDays(latest.day, -89)
         let before = estimates.filter { $0.day >= from && $0.day < latest.day }.map(\.value)
         if !before.isEmpty {
-            let delta = latest.value - before.reduce(0, +) / Double(before.count)
-            // Whole, as the card prints the value.
+            // Judged on the whole numbers the card prints, so "Up 1" never sits between two equal figures.
+            let delta = latest.value.rounded() - (before.reduce(0, +) / Double(before.count)).rounded()
             let amount = PulseFormat.whole(abs(delta))
-            if amount == PulseFormat.whole(0) {
+            if delta == 0 {
                 note = String(localized: "In line with your 90-day average.")
             } else if delta > 0 {
                 note = String(localized: "Up \(amount) on your 90-day average.")
