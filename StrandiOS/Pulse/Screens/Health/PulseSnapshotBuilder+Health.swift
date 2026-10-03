@@ -412,13 +412,12 @@ extension PulseSnapshotBuilder {
                 StressModel(days: r.days, stored: stored)?.score
             }
         }
-        if let v = stored.last(where: { $0.day == dayKey })?.value { return min(max(v, 0), 3) }
         let derived = await cached("health.stress.derived") { () async -> [String: DailyStressTrend.Score] in
             DailyStressTrend.scores(r.days.map {
                 DailyStressTrend.Day(day: $0.day, restingHR: $0.restingHr.map(Double.init), hrv: $0.avgHrv)
             })
         }
-        return derived[dayKey]?.score
+        return dailyScoreFor(dayKey: dayKey, stored: stored, derived: derived)
     }
 
     /// The typical same weekday over the previous six weeks (worn days only). Today it is cut after the
@@ -480,7 +479,7 @@ extension PulseSnapshotBuilder {
         }
         var explanation: String?
         if day.latest == nil, day.daily != nil {
-            explanation = dailyExplanation(r, dayKey: day.dayKey, isToday: day.isToday)
+            explanation = await dailyExplanation(r, dayKey: day.dayKey, isToday: day.isToday)
         }
         let title = day.isToday ? String(localized: "Today") : PulseFormat.navDayTitle(dayKey: day.dayKey)
         return StressMonitorSnapshot(seq: r.seq, day: day, title: title, periods: periods,
@@ -489,17 +488,30 @@ extension PulseSnapshotBuilder {
                                      dailyExplanation: explanation)
     }
 
-    /// The daily score's own sentence (resting HR and HRV against their baselines), for a day with no curve.
-    private func dailyExplanation(_ r: PulseRequest, dayKey: String, isToday: Bool) -> String? {
-        if isToday, let model = StressModel(days: r.days, stored: []) {
-            return model.explanation
+    /// The daily score's own sentence (resting HR and HRV against their baselines), for a day with no curve:
+    /// the same `StressModel` (stored series included) or derivation `dailyStress` took the score from.
+    private func dailyExplanation(_ r: PulseRequest, dayKey: String, isToday: Bool) async -> String? {
+        let stored = await stressStoredSeries()
+        if isToday {
+            return StressModel(days: r.days, stored: stored)?.explanation
         }
-        let derived = DailyStressTrend.scores(r.days.map {
-            DailyStressTrend.Day(day: $0.day, restingHR: $0.restingHr.map(Double.init), hrv: $0.avgHrv)
-        })
-        guard let s = derived[dayKey] else { return nil }
-        return StressMath.explanation(band: StressBand(score: s.score), rhrDelta: s.rhrDelta, hrvDelta: s.hrvDelta,
-                                      usingStored: false)
+        let derived = await cached("health.stress.derived") { () async -> [String: DailyStressTrend.Score] in
+            DailyStressTrend.scores(r.days.map {
+                DailyStressTrend.Day(day: $0.day, restingHR: $0.restingHr.map(Double.init), hrv: $0.avgHrv)
+            })
+        }
+        let usingStored = stored.contains { $0.day == dayKey }
+        guard let score = dailyScoreFor(dayKey: dayKey, stored: stored, derived: derived) else { return nil }
+        let deltas = derived[dayKey]
+        return StressMath.explanation(band: StressBand(score: score), rhrDelta: deltas?.rhrDelta,
+                                      hrvDelta: deltas?.hrvDelta, usingStored: usingStored)
+    }
+
+    /// A past day's daily score: its stored value, else its own derivation.
+    private func dailyScoreFor(dayKey: String, stored: [(day: String, value: Double)],
+                               derived: [String: DailyStressTrend.Score]) -> Double? {
+        if let v = stored.last(where: { $0.day == dayKey })?.value { return min(max(v, 0), 3) }
+        return derived[dayKey]?.score
     }
 
     // MARK: - Healthspan

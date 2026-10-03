@@ -15,8 +15,13 @@ struct PulseStressMonitorView: View {
 
     @Environment(PulseModel.self) private var model
     @Environment(\.pulseNavigator) private var navigator
-    /// Days back from today; the screen pages on its own, whatever day Home shows (§1.7).
+    /// Days back from today; the screen pages on its own, whatever day Home shows (§1.7). DEBUG
+    /// `--pulse-day N` opens it N days back too, for captures.
+    #if DEBUG
+    @State private var offset = PulseDebugLaunch.dayOffset ?? 0
+    #else
     @State private var offset = 0
+    #endif
     @State private var snapshot: StressMonitorSnapshot?
     @State private var showsInfo = false
 
