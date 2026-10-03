@@ -102,12 +102,17 @@ struct PulseStressMonitorView: View {
     #if DEBUG
     @MainActor private static var openedDebugBreathe = false
 
-    /// `--pulse-stress-breathe`: open the first Sessions card's Breathe once the day has drawn, for captures.
+    /// `--pulse-stress-breathe`: open the first Sessions card's Breathe once the day has drawn, for captures;
+    /// `--pulse-stress-settings`: open the ⚙ page the same way.
     private func openDebugBreatheIfAsked() {
-        guard shown != nil, !Self.openedDebugBreathe,
-              CommandLine.arguments.contains("--pulse-stress-breathe") else { return }
-        Self.openedDebugBreathe = true
-        navigator.open(HealthBreatheSession.destination.route)
+        guard shown != nil, !Self.openedDebugBreathe else { return }
+        if CommandLine.arguments.contains("--pulse-stress-breathe") {
+            Self.openedDebugBreathe = true
+            navigator.open(HealthBreatheSession.destination.route)
+        } else if CommandLine.arguments.contains("--pulse-stress-settings") {
+            Self.openedDebugBreathe = true
+            navigator.push(HealthStressSettingsRoute().route)
+        }
     }
     #endif
 
