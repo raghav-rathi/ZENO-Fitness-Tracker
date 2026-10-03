@@ -39,6 +39,9 @@ struct PulseHomeView: View {
     @AppStorage(PulseHomeMilestones.announcedStreakKey) private var announcedStreak = ""
     /// The header's day picker is up: tilt mode waits for it to close.
     @State private var showCalendar = false
+    /// The Menstrual card's LOG CYCLE sheet is up (presented here, by the root that stays put whatever
+    /// the day shows): tilt mode waits for it too.
+    @State private var loggingPeriod = false
 
     /// The sticky row's 44 pt hit area, centred 19.5 pt under the safe-area top.
     private static let stickyRowTop = PulseTheme.Header.stickyRowCentre - PulseTheme.Layout.minTapTarget / 2
@@ -75,7 +78,7 @@ struct PulseHomeView: View {
                 .padding(.top, PulseTheme.Header.dialsTop)
                 .pulseScrolledPast($dialsScrolledOff, threshold: 8)
             PulseHomeContent(extras: extras, todayExtras: todayExtras, dashboardItems: dashboardItems,
-                             profile: profile)
+                             profile: profile, loggingPeriod: $loggingPeriod)
         }
         .overlay(alignment: .top) {
             if dialsScrolledOff, let home = model.home {
@@ -90,13 +93,14 @@ struct PulseHomeView: View {
         }
         .animation(PulseMotion.chrome, value: dialsScrolledOff)
         // Tilt mode (§3.7): while Home's root is on screen with none of its own sheets up, turning the
-        // phone sideways opens the day timeline. The detector leaves with the calendar sheet and returns
-        // with a fresh reading when it closes.
+        // phone sideways opens the day timeline. The detector leaves with the calendar or LOG CYCLE sheet
+        // and returns with a fresh reading when it closes.
         .background {
-            if !showCalendar {
+            if !showCalendar && !loggingPeriod {
                 Color.clear.pulseDayTimelineOnTilt()
             }
         }
+        .sheet(isPresented: $loggingPeriod) { PulseLogPeriodSheet() }
         .simultaneousGesture(daySwipe)
         .sensoryFeedback(.selection, trigger: model.dayOffset)
         .onChange(of: model.home) { _, _ in homeVersion &+= 1 }
@@ -112,7 +116,10 @@ struct PulseHomeView: View {
             if let announcement { announcedStreak = announcement }
         }
         #if DEBUG
-        .task(id: currentExtras != nil) { PulseHomeDebug.openOnce(home: model.home, extras: currentExtras, navigator: navigator) }
+        .task(id: currentExtras != nil) {
+            PulseHomeDebug.openOnce(home: model.home, extras: currentExtras, navigator: navigator,
+                                    logCycle: { loggingPeriod = true })
+        }
         #endif
     }
 
@@ -183,6 +190,8 @@ struct PulseHomeContent: View {
     let dashboardItems: [PulseDashboardItem]
     /// Today's profile figures (see `PulseHomeView.profile`).
     let profile: ProfileSnapshot?
+    /// The Menstrual card's LOG CYCLE sheet (see `PulseHomeView.loggingPeriod`).
+    @Binding var loggingPeriod: Bool
 
     @Environment(PulseModel.self) private var model
 
@@ -190,7 +199,7 @@ struct PulseHomeContent: View {
         PulseLoadingGate(isLoading: model.home == nil || extras == nil) {
             if let home = model.home {
                 PulseHomeSections(home: home, extras: extras, todayExtras: todayExtras, dashboardItems: dashboardItems,
-                                  profile: profile)
+                                  profile: profile, loggingPeriod: $loggingPeriod)
                     // While a newly selected day builds, the previous day's numbers dim rather than pass for it.
                     .opacity(model.homeIsStale ? 0.45 : 1)
                     .animation(.easeOut(duration: 0.15), value: model.homeIsStale)
@@ -214,6 +223,8 @@ struct PulseHomeSections: View {
     let dashboardItems: [PulseDashboardItem]
     /// Today's profile figures, for the coaching stack's milestone cards.
     let profile: ProfileSnapshot?
+    /// The Menstrual card's LOG CYCLE sheet (see `PulseHomeView.loggingPeriod`).
+    @Binding var loggingPeriod: Bool
 
     /// The extras for the day on screen, never another day's.
     private var current: HomeExtrasSnapshot? { Self.extras(for: home, latest: extras, today: todayExtras) }
@@ -325,7 +336,7 @@ struct PulseHomeSections: View {
                 .id("pulse.journal")
         }
         if isToday {
-            PulseMenstrualCardHost()
+            PulseMenstrualCardHost(logging: $loggingPeriod)
         }
     }
 
@@ -361,10 +372,11 @@ enum PulseHomeSpacing {
 // MARK: - DEBUG
 
 /// DEBUG `--pulse-dashboard <id,id,…>`: show these dashboard items, for a capture, without touching the
-/// stored layout. `--pulse-home-open outlook|review`: open the local Daily Outlook or Day in Review once
-/// Home has loaded. `--pulse-monitor elevated|low|very-elevated|out`: the Health Monitor tile with that
-/// grade, for a capture (the demo seed's vitals are all in range). `--pulse-home-milestones`: one
-/// milestone card of each kind in the coaching stack (`PulseHomeMilestones.debugCards`).
+/// stored layout. `--pulse-home-open outlook|review|log-cycle`: open the local Daily Outlook, the Day in
+/// Review or the LOG CYCLE sheet once Home has loaded. `--pulse-monitor elevated|low|very-elevated|out`:
+/// the Health Monitor tile with that grade, for a capture (the demo seed's vitals are all in range).
+/// `--pulse-home-milestones`: one milestone card of each kind in the coaching stack
+/// (`PulseHomeMilestones.debugCards`).
 /// `--pulse-coaching-top <id prefix>`: lift the coaching cards whose id starts so ("challenge",
 /// "milestone-badge", "week-review") to the top of the stack, which simctl cannot page with ✓.
 /// `--pulse-yir-season`: the Year in Review promo in My Day out of its season. Under `--demo-seed` the
@@ -386,7 +398,8 @@ enum PulseHomeDebug {
     private static var opened = false
 
     @MainActor
-    static func openOnce(home: HomeSnapshot?, extras: HomeExtrasSnapshot?, navigator: PulseNavigator) {
+    static func openOnce(home: HomeSnapshot?, extras: HomeExtrasSnapshot?, navigator: PulseNavigator,
+                         logCycle: () -> Void) {
         let args = CommandLine.arguments
         guard !opened, let home, let extras, let i = args.firstIndex(of: "--pulse-home-open"), i + 1 < args.count else {
             return
@@ -396,6 +409,8 @@ enum PulseHomeDebug {
         case "outlook", "review":
             let content = PulseDailyOutlook.compose(home: home, facts: extras.outlook, evening: args[i + 1] == "review")
             navigator.open(PulseDailyOutlookRoute(content: content).route)
+        case "log-cycle":
+            logCycle()
         default:
             break
         }
