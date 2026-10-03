@@ -1,0 +1,320 @@
+#if os(iOS)
+import SwiftUI
+import StrandAnalytics
+
+// MARK: - The challenge gauge and how each kind reads (WHOOP_UI_SPEC §3.41)
+
+/// WHOOP's challenge gauge (profile-community-2026/13, 42, 76, 84): a comb of radial ticks sweeping 250°
+/// from the lower left to the lower right. Each tick is a bright head at the rim over a tail that fades out
+/// toward the centre. The comb lights from the start in proportion to the progress (all of it once the target
+/// is reached), the lit heads brightening from the challenge's colour toward white at the progress head; the
+/// rest stay white 20%. The join page previews the whole comb in grey. Static: it only changes when the
+/// progress does.
+struct PulseChallengeGauge: View {
+    enum Style {
+        /// In progress or complete: lit to `fraction`.
+        case progress
+        /// The join page: every tick a bright grey preview (84).
+        case preview
+    }
+
+    /// Progress, 0…1 (anything above 1 lights the whole comb).
+    let fraction: Double
+    let color: Color
+    var style: Style = .progress
+    var diameter: CGFloat = PulseExtrasTheme.Challenge.gaugeDiameter
+
+    private typealias C = PulseExtrasTheme.Challenge
+
+    var body: some View {
+        Canvas { context, size in
+            let scale = size.width / C.gaugeDiameter
+            let centre = CGPoint(x: size.width / 2, y: size.height / 2)
+            let outer = size.width / 2
+            let neck = outer - C.tickHead * scale
+            let inner = outer - (C.tickHead + C.tickTail) * scale
+            let lit = style == .preview ? 0 : Int((min(max(fraction, 0), 1) * Double(C.tickCount)).rounded(.up))
+            let stroke = StrokeStyle(lineWidth: C.tickWidth * scale, lineCap: .butt)
+            for i in 0..<C.tickCount {
+                let t = Double(i) / Double(C.tickCount - 1)
+                let angle = Angle.degrees(-C.gaugeSweep / 2 + t * C.gaugeSweep)
+                let dx = CGFloat(sin(angle.radians)), dy = CGFloat(-cos(angle.radians))
+                let rim = CGPoint(x: centre.x + dx * outer, y: centre.y + dy * outer)
+                let joint = CGPoint(x: centre.x + dx * neck, y: centre.y + dy * neck)
+                let foot = CGPoint(x: centre.x + dx * inner, y: centre.y + dy * inner)
+                let head: Color
+                let tail: Color
+                switch style {
+                case .preview:
+                    head = C.previewTick
+                    tail = C.previewTail
+                case .progress where i < lit:
+                    // From the challenge's colour at the start to near white at the progress head.
+                    let along = lit > 1 ? Double(i) / Double(lit - 1) : 1
+                    head = color.extrasBlend(toward: .white, by: C.litWhiteStart + (C.litWhiteEnd - C.litWhiteStart) * along)
+                    tail = head.opacity(C.tailStart)
+                case .progress:
+                    head = C.unlitTick
+                    tail = C.unlitTick.opacity(C.tailStart)
+                }
+                var headPath = Path()
+                headPath.move(to: joint)
+                headPath.addLine(to: rim)
+                context.stroke(headPath, with: .color(head), style: stroke)
+                var tailPath = Path()
+                tailPath.move(to: foot)
+                tailPath.addLine(to: joint)
+                context.stroke(tailPath, with: .linearGradient(Gradient(colors: [tail.opacity(0), tail]),
+                                                               startPoint: foot, endPoint: joint), style: stroke)
+            }
+        }
+        .frame(width: diameter, height: diameter)
+        .background {
+            RadialGradient(colors: [C.gaugeGlow, C.gaugeGlow.opacity(0)], center: .center, startRadius: 0,
+                           endRadius: diameter / 2)
+        }
+        .accessibilityHidden(true)
+    }
+}
+
+/// WHOOP's trailing "ooo" (profile-community-2026/76, 84, 13): three outlined circles in a row.
+struct PulseChallengeMoreGlyph: View {
+    private typealias C = PulseExtrasTheme.Challenge
+
+    var body: some View {
+        HStack(spacing: C.moreDotGap) {
+            ForEach(0..<3, id: \.self) { _ in
+                Circle()
+                    .strokeBorder(PulseTheme.textPrimary, lineWidth: C.moreDotStroke)
+                    .frame(width: C.moreDot, height: C.moreDot)
+            }
+        }
+        .frame(width: PulseTheme.Layout.minTapTarget, height: PulseTheme.Layout.minTapTarget)
+        .contentShape(Rectangle())
+    }
+}
+
+extension View {
+    /// A trailing control in the Pulse bar's own spot (the scaffold's trailing accessory takes only an SF
+    /// Symbol, and none draws WHOOP's three outlined circles).
+    func challengeNavTrailing<Trailing: View>(@ViewBuilder _ trailing: () -> Trailing) -> some View {
+        overlay(alignment: .topTrailing) {
+            trailing()
+                .frame(height: PulseTheme.Header.navBar)
+                .padding(.trailing, PulseTheme.Layout.pageMargin)
+                .padding(.top, PulseTheme.Header.navBarTop)
+        }
+    }
+}
+
+/// How each kind of challenge reads on screen.
+extension ChallengeProgress.Kind {
+    var name: String {
+        switch self {
+        case .activityMinutes: return String(localized: "Activity minutes")
+        case .zoneMinutes: return String(localized: "Zone 2 minutes")
+        case .steps: return String(localized: "Steps")
+        case .bedtime: return String(localized: "Bedtime")
+        }
+    }
+
+    var symbol: String {
+        switch self {
+        case .activityMinutes: return "figure.run"
+        case .zoneMinutes: return "heart.circle"
+        case .steps: return "figure.walk"
+        case .bedtime: return "moon.zzz.fill"
+        }
+    }
+
+    /// The pillar colour it counts toward: activity Strain blue, Zone 2's own zone colour, steps the
+    /// favourable teal, bedtime Sleep's blue-grey.
+    var color: Color {
+        switch self {
+        case .activityMinutes: return PulseTheme.strain
+        case .zoneMinutes: return PulseTheme.Zone.color(2)
+        case .steps: return PulseTheme.positive
+        case .bedtime: return PulseTheme.sleep
+        }
+    }
+
+    /// What the gauge's number counts: "MINUTES LOGGED".
+    var unitCaption: String {
+        switch self {
+        case .activityMinutes: return String(localized: "Minutes logged")
+        case .zoneMinutes: return String(localized: "Zone 2 minutes")
+        case .steps: return String(localized: "Steps taken")
+        case .bedtime: return String(localized: "Nights on time")
+        }
+    }
+
+    /// What the join page's number is: "MINUTE GOAL".
+    var goalCaption: String {
+        switch self {
+        case .activityMinutes: return String(localized: "Minute goal")
+        case .zoneMinutes: return String(localized: "Zone 2 minute goal")
+        case .steps: return String(localized: "Step goal")
+        case .bedtime: return String(localized: "Night goal")
+        }
+    }
+
+    /// A target step for the goal stepper, and its range.
+    var targetStep: Int {
+        switch self {
+        case .activityMinutes: return 25
+        case .zoneMinutes: return 10
+        case .steps: return 5_000
+        case .bedtime: return 1
+        }
+    }
+
+    var targetRange: ClosedRange<Int> {
+        switch self {
+        case .activityMinutes: return 25...2_000
+        case .zoneMinutes: return 10...1_000
+        case .steps: return 5_000...500_000
+        case .bedtime: return 1...30
+        }
+    }
+}
+
+/// The words a challenge is described with.
+enum PulseChallengeText {
+    /// "11:00 PM" for a minute after midnight (past 24:00 reads as the next morning's), honouring the clock
+    /// setting. Set as a time of day, not added to midnight, so a 25-hour DST day still says 11:00 PM.
+    static func clock(minute: Int) -> String {
+        let m = ((minute % 1_440) + 1_440) % 1_440
+        let cal = Calendar.current
+        let date = cal.date(bySettingHour: m / 60, minute: m % 60, second: 0, of: Date())
+            ?? cal.startOfDay(for: Date()).addingTimeInterval(TimeInterval(m * 60))
+        return PulseFormat.clock(date)
+    }
+
+    /// A localized phrase with Foundation's grammar agreement applied ("^[1 minute](inflect: true)" reads
+    /// "1 minute", "^[3 minute](inflect: true)" "3 minutes"), as plain text.
+    static func inflected(_ phrase: String.LocalizationValue) -> String {
+        String(AttributedString(localized: phrase).characters)
+    }
+
+    /// "4 days left" with "4 days" in bold white and "left" in the line's own colour, as WHOOP sets it
+    /// (profile-community-2026/76: #FEFFFF against #C3C6C9).
+    static func daysLeft(_ n: Int) -> AttributedString {
+        var text = AttributedString(localized: "**^[\(n) day](inflect: true)** left")
+        for run in text.runs where run.inlinePresentationIntent?.contains(.stronglyEmphasized) == true {
+            text[run.range].foregroundColor = PulseTheme.textPrimary
+        }
+        return text
+    }
+
+    static func target(_ d: ChallengeProgress.Definition) -> String {
+        d.kind == .steps ? PulseFormat.grouped(Double(d.target)) : "\(d.target)"
+    }
+
+    /// "250 Activity Minutes in 7 Days".
+    static func title(_ d: ChallengeProgress.Definition) -> String {
+        switch d.kind {
+        case .activityMinutes:
+            return String(localized: "\(target(d)) Activity Minutes in \(d.days) Days")
+        case .zoneMinutes:
+            return String(localized: "\(target(d)) Zone 2 Minutes in \(d.days) Days")
+        case .steps:
+            return String(localized: "\(target(d)) Steps in \(d.days) Days")
+        case .bedtime:
+            let time = clock(minute: d.bedtimeMinute ?? 23 * 60)
+            return d.target == d.days
+                ? String(localized: "Asleep by \(time) for \(d.days) Nights")
+                : String(localized: "Asleep by \(time) on \(d.target) of \(d.days) Nights")
+        }
+    }
+
+    /// The bar's title: "250 MINUTE CHALLENGE" (WHOOP: "ALL-IN 250 CHALLENGE").
+    static func navTitle(_ d: ChallengeProgress.Definition) -> String {
+        switch d.kind {
+        case .activityMinutes: return String(localized: "\(target(d)) Minute Challenge")
+        case .zoneMinutes: return String(localized: "Zone 2 Challenge")
+        case .steps: return String(localized: "Steps Challenge")
+        case .bedtime: return String(localized: "Bedtime Challenge")
+        }
+    }
+
+    /// What counts, in a sentence.
+    static func body(_ d: ChallengeProgress.Definition) -> String {
+        switch d.kind {
+        case .activityMinutes:
+            return String(localized: "Log \(target(d)) minutes of activity in \(d.days) days. Every workout counts: ones you start here, add by hand or bring in from Apple Health.")
+        case .zoneMinutes:
+            return String(localized: "Spend \(target(d)) minutes in heart-rate Zone 2 over \(d.days) days, counted from your strap's heart rate, in a workout or not.")
+        case .steps:
+            return String(localized: "Take \(target(d)) steps over \(d.days) days, counted from the same steps every ZENO screen shows.")
+        case .bedtime:
+            return String(localized: "Be asleep by \(clock(minute: d.bedtimeMinute ?? 23 * 60)) on \(d.target) of the next \(d.days) nights. The time your strap saw you fall asleep is the one that counts.")
+        }
+    }
+
+    /// The amount in the kind's words: "1 minute", "168 minutes", "3 nights", "41,200 steps".
+    static func amount(_ value: Double, kind: ChallengeProgress.Kind) -> String {
+        let n = Int(value.rounded(.down))
+        switch kind {
+        case .activityMinutes, .zoneMinutes: return inflected("^[\(n) minute](inflect: true)")
+        case .steps:
+            return n == 1 ? String(localized: "1 step") : String(localized: "\(PulseFormat.grouped(Double(n))) steps")
+        case .bedtime: return inflected("^[\(n) night](inflect: true)")
+        }
+    }
+
+    /// The headline under the gauge.
+    static func headline(_ s: ChallengeSnapshot) -> String {
+        switch s.status.phase {
+        case .complete: return String(localized: "Challenge complete")
+        case .ended: return String(localized: "Challenge ended")
+        case .upcoming: return String(localized: "Starting soon")
+        case .running:
+            // Too many nights missed: say so rather than cheer a target that can no longer be met.
+            guard s.status.isReachable else { return String(localized: "Out of reach") }
+            switch s.status.fraction {
+            case ..<0.01: return String(localized: "Just getting started")
+            case ..<0.5: return String(localized: "Great start!")
+            case ..<0.75: return String(localized: "Halfway there")
+            default: return String(localized: "Almost there")
+            }
+        }
+    }
+
+    /// The sentence under the headline.
+    static func detail(_ s: ChallengeSnapshot) -> String {
+        let kind = s.definition.kind
+        let logged = amount(s.status.logged, kind: kind)
+        let goal = amount(Double(s.definition.target), kind: kind)
+        switch s.status.phase {
+        case .complete:
+            let on = s.status.completedOn.map { YearReviewFormat.shortDate($0) } ?? ""
+            return String(localized: "You reached \(goal) on \(on). Strong work, and it keeps counting until the last day.")
+        case .ended:
+            return String(localized: "You logged \(logged) of \(goal).")
+        case .upcoming:
+            return String(localized: "It starts on \(YearReviewFormat.shortDate(s.definition.startDay)).")
+        case .running:
+            let n = Int(s.status.remaining.rounded(.up))
+            switch kind {
+            case .bedtime:
+                // Only the nights still open can count, so never promise more than they hold.
+                let open = s.status.openCount ?? n
+                let best = s.status.maxReachable ?? s.definition.target
+                if !s.status.isReachable {
+                    let left = inflected("^[\(open) night](inflect: true)")
+                    return String(localized: "You've been asleep on time for \(logged). With \(left) left, you can reach at most \(best) of \(s.definition.target) now.")
+                }
+                let more = inflected("^[\(n) more night](inflect: true)")
+                return n == open
+                    ? String(localized: "You've been asleep on time for \(logged). \(more) to go, and every night left has to count.")
+                    : String(localized: "You've been asleep on time for \(logged). \(more) to go.")
+            case .steps:
+                return String(localized: "You've taken \(logged). \(PulseFormat.grouped(Double(n))) more steps to reach your goal.")
+            case .activityMinutes, .zoneMinutes:
+                let more = inflected("^[\(n) more minute](inflect: true)")
+                return String(localized: "You've logged \(logged). Log \(more) to reach your goal.")
+            }
+        }
+    }
+}
+#endif
