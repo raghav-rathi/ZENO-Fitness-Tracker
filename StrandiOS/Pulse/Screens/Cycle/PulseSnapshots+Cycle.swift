@@ -202,7 +202,8 @@ struct CycleTodaySnapshot: Equatable {
     let header: CycleInsightsSnapshot.Header
     /// The line under the card's label: the cycle day, or what there is instead ("Log a period to start").
     let headline: String
-    /// Today's place in the cycle, 0…1, for the card's bar; nil without a cycle day to place.
+    /// Today's place in the cycle, 0…1, for the card's phase bar; nil without a cycle day to place, and
+    /// where phases do not apply (menopause, hormonal contraception), as the page then draws none.
     let position: Double?
 }
 #endif

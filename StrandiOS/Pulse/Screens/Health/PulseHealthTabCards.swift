@@ -589,7 +589,8 @@ struct HealthCycleSlot: View {
 /// MENSTRUAL CYCLE INSIGHTS (§3.20 item 6), when cycle awareness is on: the phase over the cycle day ("Day
 /// 21" in WHOOP's), a coral-to-lavender bar with today's white marker, and "+ LOG CYCLE". The label, the
 /// day and the marker are the page's own header (`CycleTodaySnapshot`), so the card says what Menstrual
-/// Cycle Insights says. The card opens that page; LOG CYCLE opens its own log sheet on today
+/// Cycle Insights says, and the bar shows only where the page draws phases (not under hormonal
+/// contraception). The card opens that page; LOG CYCLE opens its own log sheet on today
 /// (`PulseCycleCardLogSheet`), so a log made here is the same log, saved the same way.
 struct HealthCycleCard: View, Equatable {
     let today: CycleTodaySnapshot?
