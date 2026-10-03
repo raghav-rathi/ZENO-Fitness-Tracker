@@ -23,11 +23,18 @@ extension PulseSnapshotBuilder {
     /// The whole page, off the main actor: `MenstrualCycleModel` over the logs is the ONE funnel for the
     /// cycle day, phase, prediction and calendar; the temperature engine only speaks where there are no
     /// usable logs, and its cross-check of a logged date is shown beside them, never instead.
-    func cycleInsights(_ r: PulseRequest, inputs: PulseCycleInputs) -> CycleInsightsSnapshot {
+    ///
+    /// Under hormonal contraception nothing is predicted: no next-period window, no expected bleed on the
+    /// calendar, no symptom predictions. Bleeding the wearer logged, the days since it and their own nights
+    /// still show, because they are records, not predictions.
+    func cycleInsights(_ r: PulseRequest, inputs: PulseCycleInputs) async -> CycleInsightsSnapshot {
+        begin(r.seq)
+        let stress = await stressStoredSeries()
         let today = inputs.today
         let logs = inputs.logs
         let menopause = inputs.mode == .menopause
         let phasesApply = PulseCycleLog.phasesApply(mode: inputs.mode, contraception: inputs.contraception)
+        let predicts = PulseCycleLog.predicts(mode: inputs.mode, contraception: inputs.contraception)
         let summary = MenstrualCycleModel.summarize(
             periodStarts: logs.starts, flow: logs.flow, today: today,
             temperatureCycleLength: inputs.engine?.cycleLengthDays, phasesApply: phasesApply,
@@ -50,8 +57,22 @@ extension PulseSnapshotBuilder {
                                             isLoggedPeriodDay: d.isLoggedPeriodDay, isPredictedPeriodDay: false,
                                             flow: d.flow, cycleDay: nil)
             }
+        } else if !predicts {
+            // Hormonal contraception: the bleed is laid out only where it was logged or has happened.
+            infos = infos.map { d in
+                guard d.day > today else { return d }
+                return MenstrualCycleModel.DayInfo(day: d.day, phase: nil, isPredicted: true,
+                                                   isLoggedPeriodDay: d.isLoggedPeriodDay,
+                                                   isPredictedPeriodDay: false, flow: d.flow, cycleDay: nil)
+            }
         }
-        let engineWindowDays = engineWindow(inputs, summary: summary, menopause: menopause)
+        // The days the next period may start on: the logs' window, or the temperature engine's where the
+        // logs predict nothing. These carry the dashed circle ("Possible period start").
+        var possibleStarts = predicts ? engineWindow(inputs, summary: summary, menopause: menopause) : []
+        if predicts, active, summary.daysLate == nil, let w = summary.nextPeriod,
+           let span = MenstrualCycleModel.days(from: w.earliest, to: w.latest), span >= 0 {
+            possibleStarts.formUnion((0...span).compactMap { MenstrualCycleModel.shift(w.earliest, by: $0) })
+        }
         let byDay = Dictionary(uniqueKeysWithValues: infos.map { ($0.day, $0) })
 
         // Phases of the days that have happened, from what was logged (the coaching card and symptom
@@ -62,15 +83,18 @@ extension PulseSnapshotBuilder {
         }
 
         let header = header(summary: summary, inputs: inputs, active: active, phasesApply: phasesApply,
-                            todayInfo: byDay[today])
-        let months = months(infos: infos, today: today, symptoms: logs.symptoms, engineWindow: engineWindowDays)
+                            predicts: predicts, todayInfo: byDay[today])
+        let months = months(infos: infos, today: today, symptoms: logs.symptoms, possibleStarts: possibleStarts)
         let todayMonth = String(today.prefix(7))
 
         let completed: [(start: String, length: Int)] = summary.cycles.compactMap { c in
             c.isPlausible ? c.length.map { (c.start, $0) } : nil
         }
         let symptomsToday: CycleInsightsSnapshot.SymptomsToday = {
-            guard active, let cd = summary.cycleDay else { return .unavailable }
+            // Nothing logged yet: the empty state invites the first logs (health-more-2026/07). A stale log,
+            // menopause and hormonal contraception have no cycle day to predict for.
+            if summary.status == .noLogs, predicts, !menopause { return .notYet }
+            guard active, predicts, let cd = summary.cycleDay else { return .unavailable }
             let r = CycleSymptomPatterns.predictions(symptomDays: logs.symptoms, completedCycles: completed,
                                                      cycleDay: cd)
             switch r.readiness {
@@ -87,12 +111,13 @@ extension PulseSnapshotBuilder {
 
         let coaching: CycleInsightsSnapshot.Coaching? = {
             guard active, phasesApply, let phase = summary.phase else { return nil }
-            return coachingCard(phase: phase, summary: summary, days: r.days, pastPhases: pastPhases)
+            return coachingCard(phase: phase, summary: summary, days: r.days, stress: stress, pastPhases: pastPhases)
         }()
 
         let currentCycle: CycleInsightsSnapshot.CurrentCycle? = {
             guard active, let cd = summary.cycleDay else { return nil }
-            return currentCycleChart(r, summary: summary, cycleDay: cd, today: today, phasesApply: phasesApply)
+            return currentCycleChart(r, summary: summary, cycleDay: cd, today: today, phasesApply: phasesApply,
+                                     predicts: predicts)
         }()
 
         let patterns: CycleInsightsSnapshot.Patterns? = menopause
@@ -115,7 +140,7 @@ extension PulseSnapshotBuilder {
             seq: r.seq, today: today, mode: inputs.mode,
             hasLogs: !logs.starts.isEmpty || !logs.flow.isEmpty || !logs.symptoms.isEmpty,
             earliestLogDay: rangeStart, header: header, months: months,
-            initialMonth: months.firstIndex { $0.id == todayMonth } ?? max(0, months.count - 1),
+            todayMonthID: months.contains { $0.id == todayMonth } ? todayMonth : (months.last?.id ?? todayMonth),
             // The phase legend explains bands, so it shows only when the calendar draws one.
             showsPhaseLegend: phasesApply && infos.contains { $0.phase != nil },
             symptomsToday: symptomsToday, journal: journal, coaching: coaching, currentCycle: currentCycle,
@@ -125,7 +150,8 @@ extension PulseSnapshotBuilder {
     // MARK: Header
 
     private func header(summary: MenstrualCycleModel.Summary, inputs: PulseCycleInputs, active: Bool,
-                        phasesApply: Bool, todayInfo: MenstrualCycleModel.DayInfo?) -> CycleInsightsSnapshot.Header {
+                        phasesApply: Bool, predicts: Bool,
+                        todayInfo: MenstrualCycleModel.DayInfo?) -> CycleInsightsSnapshot.Header {
         let today = inputs.today
         if inputs.mode == .menopause {
             var subtitle = String(localized: "Symptom tracking")
@@ -144,17 +170,20 @@ extension PulseSnapshotBuilder {
             let phase = summary.phase
             let title: String? = phasesApply ? phase.map(PulseCycleText.phaseTitle) : nil
             var parts: [String] = []
-            if summary.isPeriodDay {
-                parts.append(todayInfo?.isLoggedPeriodDay == true ? String(localized: "Logged Period Day")
-                                                                   : String(localized: "Predicted Period Day"))
+            if todayInfo?.isLoggedPeriodDay == true {
+                parts.append(String(localized: "Logged Period Day"))
+            } else if summary.isPeriodDay, predicts {
+                parts.append(String(localized: "Predicted Period Day"))
             }
-            if let late = summary.daysLate {
+            if !predicts {
+                // Hormonal contraception: the day count since the last logged bleed, and no prediction.
+            } else if let late = summary.daysLate {
                 parts.append(late == 1 ? String(localized: "Period is 1 day later than predicted")
                                        : String(localized: "Period is \(late) days later than predicted"))
             } else if let w = summary.nextPeriod {
                 parts.append(PulseCycleText.nextPeriod(window: w, today: today))
             }
-            let basis: String? = summary.basis.map { basis in
+            let basis: String? = !predicts ? nil : summary.basis.map { basis in
                 var text = PulseCycleText.basis(basis)
                 if inputs.mode == .perimenopause {
                     text += " · " + String(localized: "wider windows in perimenopause")
@@ -163,7 +192,7 @@ extension PulseSnapshotBuilder {
             }
             var caveat: String?
             if inputs.contraception == .hormonal {
-                caveat = String(localized: "With hormonal contraception there is no natural cycle to read, so only bleeding is shown.")
+                caveat = String(localized: "With hormonal contraception there is no natural cycle to read, so phases and predictions are hidden and only the bleeding you log is shown.")
             } else if let note = inputs.engine?.note, note.hasPrefix("Your temperature shift came at a different time") {
                 // CyclePhaseEngine's cross-check of the latest logged start against the temperature shift.
                 caveat = String(localized: "Your skin temperature shifted at a different time than your logged period suggests. Check the date you logged.")
@@ -211,7 +240,7 @@ extension PulseSnapshotBuilder {
     // MARK: Calendar
 
     private func months(infos: [MenstrualCycleModel.DayInfo], today: String, symptoms: [String: Set<String>],
-                        engineWindow: Set<String>) -> [CycleInsightsSnapshot.Month] {
+                        possibleStarts: Set<String>) -> [CycleInsightsSnapshot.Month] {
         var out: [CycleInsightsSnapshot.Month] = []
         var current: [CycleInsightsSnapshot.Day] = []
         var currentID: String?
@@ -229,18 +258,18 @@ extension PulseSnapshotBuilder {
             }
             let number = Int(info.day.suffix(2)) ?? 0
             let hasSymptoms = !(symptoms[info.day] ?? []).isEmpty
-            let predicted = info.isPredictedPeriodDay || (engineWindow.contains(info.day) && info.day > today)
+            let possibleStart = possibleStarts.contains(info.day) && info.day > today && !info.isLoggedPeriodDay
             let spotting = info.flow == .spotting
             var spoken = [PulseFormat.dayLabel(info.day, template: "EEEEMMMMd")]
             if info.day == today { spoken.append(String(localized: "today")) }
             if let p = info.phase { spoken.append(PulseCycleText.phaseTitle(p) + (info.isPredicted ? " " + String(localized: "(predicted)") : "")) }
             if info.isLoggedPeriodDay { spoken.append(String(localized: "period logged")) }
-            if predicted { spoken.append(String(localized: "period expected")) }
+            if possibleStart { spoken.append(String(localized: "possible period start")) }
             if spotting { spoken.append(String(localized: "spotting")) }
             if hasSymptoms { spoken.append(String(localized: "symptoms logged")) }
             current.append(.init(id: info.day, number: number, phase: info.phase, isFuture: info.day > today,
                                  isToday: info.day == today, isLoggedPeriod: info.isLoggedPeriodDay,
-                                 isPredictedPeriod: predicted, isSpotting: spotting && !info.isLoggedPeriodDay,
+                                 isPossibleStart: possibleStart, isSpotting: spotting && !info.isLoggedPeriodDay,
                                  hasSymptoms: hasSymptoms, accessibility: spoken.joined(separator: ", ")))
         }
         flush()
@@ -249,48 +278,68 @@ extension PulseSnapshotBuilder {
 
     // MARK: Phase coaching
 
+    /// The phase bar and §3.24's three dimensions, SLEEP EFFICIENCY, STRAIN and STRESS, each as the wearer's
+    /// own mean in this phase against their mean across the cycle (their nights' sleep efficiency, their
+    /// day Strain on 0-21, their daily stress on 0-3). WHOOP's "tolerance" words are a judgement from its
+    /// population; ZENO names the measured thing instead, with Higher / Lower / Typical.
     private func coachingCard(phase: PulseCyclePhase, summary: MenstrualCycleModel.Summary, days: [DailyMetric],
+                              stress: [(day: String, value: Double)],
                               pastPhases: [String: PulseCyclePhase]) -> CycleInsightsSnapshot.Coaching {
         let bar = MenstrualCycleModel.phaseLengths(cycleLength: summary.modelCycleLength,
                                                    periodLength: summary.modelPeriodLength)
             .map { CycleInsightsSnapshot.Coaching.Segment(phase: $0.phase, days: $0.days) }
-        var recovery: [String: Double] = [:], hrv: [String: Double] = [:], rhr: [String: Double] = [:]
+        var efficiency: [String: Double] = [:], strain: [String: Double] = [:], stressByDay: [String: Double] = [:]
         for d in days where pastPhases[d.day] != nil {
-            if let v = d.recovery { recovery[d.day] = v }
-            if let v = d.avgHrv { hrv[d.day] = v }
-            if let v = d.restingHr { rhr[d.day] = Double(v) }
+            // Stored as a fraction on most paths and as a percentage on some imports (SleepModel's rule).
+            if let e = d.efficiency, e > 0 {
+                let percent = e > 1.5 ? e : e * 100
+                if percent <= 100 { efficiency[d.day] = percent }
+            }
+            if let v = d.strain { strain[d.day] = UnitFormatter.effortValue(v, scale: .whoop) }
+        }
+        for point in stress where pastPhases[point.day] != nil {
+            stressByDay[point.day] = min(max(point.value, 0), 3)
         }
         typealias Metric = CycleInsightsSnapshot.Coaching.Metric
-        func metric(id: String, title: String, symbol: String, values: [String: Double], higherIsBetter: Bool,
+        enum Polarity { case higherIsBetter, lowerIsBetter, neutral }
+        func metric(id: String, title: String, symbol: String, values: [String: Double], polarity: Polarity,
                     format: (Double) -> String) -> Metric {
+            guard !values.isEmpty else {
+                // Nothing recorded on any day with a phase: not a matter of waiting for this phase.
+                return Metric(id: id, title: title, symbol: symbol, chip: String(localized: "No data"),
+                              kind: .calibrating, detail: String(localized: "Nothing recorded on your logged cycle days yet"))
+            }
             guard let c = CycleMetricPatterns.compare(values: values, phaseByDay: pastPhases, phase: phase) else {
                 return Metric(id: id, title: title, symbol: symbol, chip: String(localized: "Calibrating"),
                               kind: .calibrating,
-                              detail: String(localized: "Needs more nights logged in this phase"))
+                              detail: String(localized: "Needs more days logged in this phase"))
             }
             let chip: String
             let kind: Metric.Kind
-            switch c.direction {
-            case .higher:
-                chip = String(localized: "Higher")
-                kind = higherIsBetter ? .positive : .negative
-            case .lower:
-                chip = String(localized: "Lower")
-                kind = higherIsBetter ? .negative : .positive
-            case .typical:
+            switch (c.direction, polarity) {
+            case (.typical, _):
                 chip = String(localized: "Typical")
+                kind = .neutral
+            case (.higher, .higherIsBetter), (.lower, .lowerIsBetter):
+                chip = c.direction == .higher ? String(localized: "Higher") : String(localized: "Lower")
+                kind = .positive
+            case (.higher, .lowerIsBetter), (.lower, .higherIsBetter):
+                chip = c.direction == .higher ? String(localized: "Higher") : String(localized: "Lower")
+                kind = .negative
+            case (_, .neutral):
+                chip = c.direction == .higher ? String(localized: "Higher") : String(localized: "Lower")
                 kind = .neutral
             }
             return Metric(id: id, title: title, symbol: symbol, chip: chip, kind: kind,
                           detail: String(localized: "\(format(c.phaseMean)) vs \(format(c.overallMean)) across your cycle"))
         }
         let metrics = [
-            metric(id: "recovery", title: String(localized: "Recovery"), symbol: "bolt.heart", values: recovery,
-                   higherIsBetter: true) { "\(PulseDisplay.displayedPercent($0))%" },
-            metric(id: "hrv", title: String(localized: "HRV"), symbol: "waveform.path.ecg", values: hrv,
-                   higherIsBetter: true) { String(localized: "\(PulseFormat.whole($0)) ms") },
-            metric(id: "rhr", title: String(localized: "Resting HR"), symbol: "heart", values: rhr,
-                   higherIsBetter: false) { String(localized: "\(PulseFormat.whole($0)) bpm") },
+            metric(id: "efficiency", title: String(localized: "Sleep efficiency"), symbol: "bed.double",
+                   values: efficiency, polarity: .higherIsBetter) { "\(PulseFormat.whole($0))%" },
+            metric(id: "strain", title: String(localized: "Strain"), symbol: "flame", values: strain,
+                   polarity: .neutral) { PulseFormat.oneDecimal($0) },
+            metric(id: "stress", title: String(localized: "Stress"), symbol: "waveform.path", values: stressByDay,
+                   polarity: .lowerIsBetter) { PulseFormat.oneDecimal($0) },
         ]
         return .init(phase: phase, bar: bar, paragraph: PulseCycleText.coaching(phase), metrics: metrics)
     }
@@ -298,7 +347,8 @@ extension PulseSnapshotBuilder {
     // MARK: Your Current Cycle
 
     private func currentCycleChart(_ r: PulseRequest, summary: MenstrualCycleModel.Summary, cycleDay: Int,
-                                   today: String, phasesApply: Bool) -> CycleInsightsSnapshot.CurrentCycle {
+                                   today: String, phasesApply: Bool,
+                                   predicts: Bool) -> CycleInsightsSnapshot.CurrentCycle {
         let starts = summary.cycles.map(\.start)
         func phase(_ cd: Int) -> PulseCyclePhase? {
             guard phasesApply else {
@@ -324,7 +374,7 @@ extension PulseSnapshotBuilder {
                                                     relativeToZero: relative)
             return Series(id: id, title: title, symbol: symbol, unit: unit, decimals: decimals,
                           current: (s?.current ?? []).map { Bar(cycleDay: $0.cycleDay, value: $0.value, phase: phase($0.cycleDay)) },
-                          expected: s?.expected ?? [],
+                          expected: s?.expectedTrend ?? [],
                           average: (s?.expected ?? []).map { Bar(cycleDay: $0.cycleDay, value: $0.value, phase: phase($0.cycleDay)) },
                           previousCycles: s?.previousCycles ?? 0)
         }
@@ -340,7 +390,7 @@ extension PulseSnapshotBuilder {
         ]
         let lastExpected = all.flatMap(\.expected).map(\.cycleDay).max() ?? 0
         let axisMax = min(45, max(summary.modelCycleLength + 2, cycleDay + 1, lastExpected))
-        let nextStart = summary.daysLate == nil ? summary.modelCycleLength + 1 : nil
+        let nextStart = predicts && summary.daysLate == nil ? summary.modelCycleLength + 1 : nil
         return .init(series: all, todayCycleDay: cycleDay, nextStartCycleDay: nextStart, axisMax: axisMax,
                      paragraph: PulseCycleText.currentCycle(summary.phase ?? .follicular, phasesApply: phasesApply))
     }
@@ -381,7 +431,7 @@ extension PulseSnapshotBuilder {
         }
         var rows: [Row] = []
         if summary.status == .active, let current = summary.cycles.last, let cd = summary.cycleDay {
-            let title = cd == 1 ? String(localized: "Current Cycle · 1 Day") : String(localized: "Current Cycle · \(cd) Days")
+            let title = cd == 1 ? String(localized: "Current Cycle 1 Day") : String(localized: "Current Cycle \(cd) Days")
             rows.append(Row(id: current.start, title: title,
                             range: "\(PulseFormat.dayLabel(current.start, template: "MMMd")) – " + String(localized: "Today"),
                             dots: dots(from: current.start, count: min(45, max(cd, summary.modelCycleLength))),

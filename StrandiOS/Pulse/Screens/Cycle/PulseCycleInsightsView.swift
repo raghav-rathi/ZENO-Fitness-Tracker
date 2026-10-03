@@ -24,8 +24,9 @@ struct PulseCycleInsightsView: View {
     @AppStorage(PulseCycleLog.Contraception.storageKey) private var contraceptionRaw = PulseCycleLog.Contraception.none.rawValue
 
     @State private var snapshot: CycleInsightsSnapshot?
-    @State private var monthIndex = 0
-    @State private var monthIndexSet = false
+    /// The month on screen ("yyyy-MM"). An id, not an index: the list of months changes at its front as logs
+    /// are deleted or the year-back edge moves, and an index would then point at another month.
+    @State private var monthID: String?
     @State private var logTarget: PulseCycleLogTarget?
     /// Mirrors `Repository.cycleTrackingSeq` and `AppModel.cyclePhase` (`PulseCycleProbe`).
     @State private var logSeq = 0
@@ -91,7 +92,7 @@ struct PulseCycleInsightsView: View {
             header(s.header)
                 .padding(.top, 30)
 
-            PulseCycleCalendar(months: s.months, monthIndex: $monthIndex) { day in
+            PulseCycleCalendar(months: s.months, monthID: monthBinding(s)) { day in
                 logTarget = PulseCycleLogTarget(day: day)
             }
             .padding(.top, 16)
@@ -152,11 +153,14 @@ struct PulseCycleInsightsView: View {
                 .padding(.top, PulseTheme.Layout.healthStackGap)
                 .id("pulse.disclaimer")
         }
-        .onAppear {
-            guard !monthIndexSet else { return }
-            monthIndexSet = true
-            monthIndex = s.initialMonth
-        }
+    }
+
+    /// The month on screen: the one chosen while it is still in the list, else today's.
+    private func monthBinding(_ s: CycleInsightsSnapshot) -> Binding<String> {
+        Binding(get: {
+            if let monthID, s.months.contains(where: { $0.id == monthID }) { return monthID }
+            return s.todayMonthID
+        }, set: { monthID = $0 })
     }
 
     /// "Cycle Day 3 | Menstrual Phase" (the phase in its colour) over the next-period line.
@@ -245,10 +249,12 @@ struct PulseCycleInsightsView: View {
         let inputs = PulseCycleInputs(today: Repository.localDayKey(Date()), logs: PulseCycleLog.Logs(),
                                       engine: engine, mode: mode, contraception: contraception)
         if let s = await model.build(dayOffset: 0, { builder, request in
-            let logs = await builder.repo.cycleLogs()
+            // The store is an actor: the read and the parse run here, never on the main actor.
+            var logs = PulseCycleLog.Logs()
+            if let store = await builder.repo.storeHandle() { logs = await PulseCycleLog.read(store) }
             let full = PulseCycleInputs(today: inputs.today, logs: logs, engine: inputs.engine, mode: inputs.mode,
                                         contraception: inputs.contraception)
-            return builder.cycleInsights(request, inputs: full)
+            return await builder.cycleInsights(request, inputs: full)
         }) {
             snapshot = s
         }

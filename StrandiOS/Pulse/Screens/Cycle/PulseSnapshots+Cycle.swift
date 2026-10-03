@@ -22,11 +22,11 @@ struct CycleInsightsSnapshot: Equatable {
     let earliestLogDay: String
     let header: Header
     let months: [Month]
-    /// The month the pager opens on (today's).
-    let initialMonth: Int
+    /// The month the pager opens on ("yyyy-MM", today's).
+    let todayMonthID: String
     let showsPhaseLegend: Bool
-    /// Any expected period day drawn: the legend explains the dashed circle only when there is one.
-    var showsPredictionLegend: Bool { months.contains { $0.days.contains(where: \.isPredictedPeriod) } }
+    /// Any possible start day drawn: the legend explains the dashed circle only when there is one.
+    var showsPredictionLegend: Bool { months.contains { $0.days.contains(where: \.isPossibleStart) } }
     let symptomsToday: SymptomsToday
     let journal: Journal
     let coaching: Coaching?
@@ -71,8 +71,8 @@ struct CycleInsightsSnapshot: Equatable {
         let isToday: Bool
         /// A logged period day: a filled coral circle.
         let isLoggedPeriod: Bool
-        /// An expected period day: a dashed coral circle.
-        let isPredictedPeriod: Bool
+        /// A day the next period may start on (the prediction window): a dashed coral circle.
+        let isPossibleStart: Bool
         /// Spotting logged: a thin coral ring.
         let isSpotting: Bool
         let hasSymptoms: Bool
@@ -84,9 +84,9 @@ struct CycleInsightsSnapshot: Equatable {
         case predictions([String])
         /// Enough cycles, nothing stands out today.
         case nothingExpected
-        /// Not enough logged cycles yet.
+        /// Nothing logged yet, or not enough logged cycles.
         case notYet
-        /// No current cycle to predict for (no logs, a stale log, menopause).
+        /// No current cycle to predict for (a stale log, menopause, hormonal contraception).
         case unavailable
     }
 
@@ -116,7 +116,7 @@ struct CycleInsightsSnapshot: Equatable {
             /// "Higher", "Lower", "Typical", or "Calibrating".
             let chip: String
             let kind: Kind
-            /// "58% vs 64% across your cycle", or how much more data it needs.
+            /// "91% vs 88% across your cycle", or how much more data it needs.
             let detail: String
 
             enum Kind: Equatable { case positive, negative, neutral, calibrating }
@@ -140,6 +140,7 @@ struct CycleInsightsSnapshot: Equatable {
             let unit: String
             let decimals: Int
             let current: [Bar]
+            /// The previous cycles' average as a smoothed trend (`CycleSeries.expectedTrend`).
             let expected: [CycleMetricPatterns.Point]
             /// The previous cycles' average, for "LAST 3 MONTHS".
             let average: [Bar]
@@ -170,7 +171,7 @@ struct CycleInsightsSnapshot: Equatable {
 
         struct CycleRow: Equatable, Identifiable {
             let id: String
-            /// "Current Cycle · 21 Days", "28 Days".
+            /// "Current Cycle 21 Days", "28 Days".
             let title: String
             /// "Sep 13 – Today".
             let range: String

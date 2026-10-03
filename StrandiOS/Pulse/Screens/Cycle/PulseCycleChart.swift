@@ -6,17 +6,19 @@ import StrandAnalytics
 // MARK: - "Your Current Cycle" (WHOOP_UI_SPEC §3.24 item 9; help-center/85, health-more-2026/07)
 //
 // Metric chips (SKIN TEMP | RHR | HRV | RECOVERY, the selected one white), a "Smoothed Data | Expected
-// Trend" legend, then one bar per cycle day: the night's 3-day smoothed deviation from the wearer's OWN
+// Trend ⓘ" legend, then one bar per cycle day: the night's 3-day smoothed deviation from the wearer's OWN
 // baseline, coloured by that day's phase, over a grey "expected" area that is the wearer's own previous
-// cycles averaged by cycle day (shown once two previous cycles are logged; never a population curve). A
-// dotted white line marks today (its cycle day bold on the axis) and a dashed coral line the predicted
-// next start. CURRENT | LAST 3 MONTHS switches the bars to the previous cycles' average.
+// cycles averaged by cycle day and smoothed over a week (shown once two previous cycles are logged; never a
+// population curve). A dotted white line marks today (its cycle day bold on the axis) and a dashed coral line
+// the predicted next start. CURRENT | LAST 3 MONTHS switches the bars to the previous cycles' average. The
+// plot keeps WHOOP's proportions (help-center/85: ≈218 pt from +0.3 to -0.3) and its "+0.3" labels.
 
 struct PulseCycleCurrentChart: View {
     let cycle: CycleInsightsSnapshot.CurrentCycle
 
     @State private var selectedID = "skin"
     @State private var range: Range = .current
+    @State private var explains = false
 
     enum Range: Hashable { case current, average }
 
@@ -29,11 +31,18 @@ struct PulseCycleCurrentChart: View {
             chips
             legend
                 .padding(.top, 18)
+            if explains {
+                Text(String(localized: "Smoothed Data: each night's change from your own baseline, averaged with the nights either side. Expected Trend: your previous cycles averaged by cycle day, smoothed over a week. Both come from your own nights only."))
+                    .pulseText(.legend)
+                    .foregroundStyle(PulseTheme.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.top, 10)
+            }
             if let series {
                 chart(series)
-                    .frame(height: 300)
+                    .frame(height: 235)
                     .padding(.top, 14)
-                    .accessibilityElement(children: .ignore)
+                    .accessibilityElement(children: .contain)
                     .accessibilityLabel(accessibility(series))
                 Text(String(localized: "Cycle days"))
                     .pulseText(.label)
@@ -87,21 +96,36 @@ struct PulseCycleCurrentChart: View {
 
     private var legend: some View {
         HStack(spacing: 18) {
-            HStack(spacing: 7) {
-                HStack(alignment: .bottom, spacing: 2) {
-                    ForEach([7.0, 11.0, 5.0], id: \.self) { h in
-                        RoundedRectangle(cornerRadius: 1).fill(PulseTheme.textSecondary).frame(width: 3, height: h)
+            HStack(spacing: 18) {
+                HStack(spacing: 7) {
+                    HStack(alignment: .bottom, spacing: 2) {
+                        ForEach([7.0, 11.0, 5.0], id: \.self) { h in
+                            Capsule().fill(PulseTheme.textSecondary).frame(width: 3, height: h)
+                        }
                     }
+                    Text(String(localized: "Smoothed Data")).pulseText(.legend).foregroundStyle(PulseTheme.textSecondary)
                 }
-                Text(String(localized: "Smoothed data")).pulseText(.legend).foregroundStyle(PulseTheme.textSecondary)
+                HStack(spacing: 7) {
+                    Capsule().fill(PulseTheme.dash).frame(width: 16, height: 8)
+                    Text(String(localized: "Expected Trend")).pulseText(.legend).foregroundStyle(PulseTheme.textSecondary)
+                }
             }
-            HStack(spacing: 7) {
-                Capsule().fill(PulseTheme.dash).frame(width: 16, height: 8)
-                Text(String(localized: "Expected trend")).pulseText(.legend).foregroundStyle(PulseTheme.textSecondary)
-            }
+            .accessibilityElement(children: .combine)
             Spacer(minLength: 0)
+            Button { explains.toggle() } label: {
+                Image(systemName: "info.circle")
+                    .font(.system(size: 16, weight: .regular))
+                    .foregroundStyle(PulseTheme.textTertiary)
+                    .frame(width: PulseTheme.Layout.minTapTarget, height: PulseTheme.Layout.minTapTarget,
+                           alignment: .trailing)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(PulsePressStyle())
+            .accessibilityLabel(explains ? String(localized: "Hide what the chart shows")
+                                         : String(localized: "What the chart shows"))
         }
-        .accessibilityElement(children: .combine)
+        .frame(minHeight: 20)
+        .padding(.vertical, -12)
     }
 
     private func bars(_ s: CycleInsightsSnapshot.CurrentCycle.Series) -> [CycleInsightsSnapshot.CurrentCycle.Bar] {
@@ -132,7 +156,9 @@ struct PulseCycleCurrentChart: View {
                 BarMark(x: .value("Cycle day", bar.cycleDay), yStart: .value("Zero", 0.0),
                         yEnd: .value("Deviation", bar.value), width: .fixed(5))
                     .foregroundStyle(bar.phase?.dot ?? PulseTheme.textSecondary)
-                    .clipShape(RoundedRectangle(cornerRadius: 1.5))
+                    .clipShape(Capsule())
+                    .accessibilityLabel(barLabel(bar))
+                    .accessibilityValue(barValue(bar, series: s))
             }
             RuleMark(y: .value("Zero", 0.0))
                 .foregroundStyle(PulseTheme.gridOnPage)
@@ -154,7 +180,7 @@ struct PulseCycleCurrentChart: View {
                 AxisValueLabel {
                     if let day = value.as(Int.self) {
                         Text(verbatim: "\(day)")
-                            .font(PulseType.numeral(11))
+                            .pulseText(.axis)
                             .foregroundStyle(day == cycle.todayCycleDay && range == .current
                                              ? PulseTheme.textPrimary : PulseTheme.textTertiary)
                     }
@@ -167,7 +193,7 @@ struct PulseCycleCurrentChart: View {
                 AxisValueLabel {
                     if let v = value.as(Double.self) {
                         Text(label(v, decimals: s.decimals))
-                            .font(PulseType.numeral(11))
+                            .pulseText(.axis)
                             .foregroundStyle(PulseTheme.textTertiary)
                     }
                 }
@@ -183,9 +209,23 @@ struct PulseCycleCurrentChart: View {
         }
     }
 
+    private func barLabel(_ bar: CycleInsightsSnapshot.CurrentCycle.Bar) -> String {
+        String(localized: "Cycle day \(bar.cycleDay)")
+    }
+
+    /// "+0.12 °C, Luteal".
+    private func barValue(_ bar: CycleInsightsSnapshot.CurrentCycle.Bar,
+                          series: CycleInsightsSnapshot.CurrentCycle.Series) -> String {
+        var text = label(bar.value, decimals: series.decimals) + " " + series.unit
+        if let phase = bar.phase { text += ", " + PulseCycleText.phaseName(phase) }
+        return text
+    }
+
+    /// "+0.3", "+0.15", "−5": signed, at most `decimals` places and no trailing zeros (help-center/85).
     private func label(_ v: Double, decimals: Int) -> String {
         if abs(v) < 1e-9 { return "0" }
-        let text = String(format: "%.\(decimals)f", locale: AppLanguage.activeLocale, abs(v))
+        let text = abs(v).formatted(.number.precision(.fractionLength(0...decimals))
+            .locale(AppLanguage.activeLocale))
         return (v > 0 ? "+" : "−") + text
     }
 

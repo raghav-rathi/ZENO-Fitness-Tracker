@@ -59,7 +59,8 @@ enum PulseCycleText {
                            : String(localized: "Next period: due within \(hi) days")
         }
         if lo == hi { return String(localized: "Next period in: \(lo) Days") }
-        return String(localized: "Next period in: \(lo)–\(hi) Days")
+        // Word joiners keep "26–28" together: a line never breaks at the en dash.
+        return String(localized: "Next period in: \(lo)\u{2060}–\u{2060}\(hi) Days")
     }
 
     /// Where a prediction comes from.
@@ -108,17 +109,51 @@ enum PulseCycleText {
 }
 
 // MARK: - Phase colours (the theme's §2.1 menstrual palette)
+//
+// The calendar's bands have a tone for the days that have happened and one for the days to come. Sampled on
+// WHOOP (ios69-09, help-center/10, 12, whoop-site/56), every past tone is the phase's dot colour at ≈70% over
+// the page and every future tone at ≈49% (coral ≈33%), which is what the theme's band tokens hold where they
+// exist: past menstrual #BB5B4F and luteal #8047AE, future follicular #5A5C84, ovulatory #2C586D and luteal
+// #5E3882. The three without a token (past follicular #7978B1, past ovulatory #377291, future menstrual
+// #62322D) are drawn as the dot at that strength over the page's darkest stop, which lands within 4 levels of
+// each sample, until the theme carries them.
 
 extension PulseCyclePhase {
     /// The legend dot and the bright fills (today's circle, chart bars).
     var dot: Color { palette.dot }
 
-    /// The calendar band.
+    /// The theme's band token (the page-header tint and the coaching bar's current column use it).
     var band: Color { palette.band }
 
-    /// The band on days still to come (luteal has its own sampled tone; the others are the band, dimmed).
-    var futureBand: Color {
-        self == .luteal ? PulseTheme.Menstrual.lutealFuture : palette.band.opacity(0.55)
+    /// A band tone: a theme token, or the phase's dot at a strength over `PulseTheme.pageBottom`, which the
+    /// calendar paints under every band.
+    enum BandTone {
+        case token(Color)
+        case dot(opacity: Double)
+
+        func color(_ phase: PulseCyclePhase) -> Color {
+            switch self {
+            case .token(let color): return color
+            case .dot(let opacity): return phase.dot.opacity(opacity)
+            }
+        }
+    }
+
+    /// The band on days that have happened.
+    var pastTone: BandTone {
+        switch self {
+        case .menstrual, .luteal: return .token(palette.band)
+        case .follicular, .ovulatory: return .dot(opacity: 0.7)
+        }
+    }
+
+    /// The band on days still to come.
+    var futureTone: BandTone {
+        switch self {
+        case .luteal: return .token(PulseTheme.Menstrual.lutealFuture)
+        case .follicular, .ovulatory: return .token(palette.band)
+        case .menstrual: return .dot(opacity: 0.33)
+        }
     }
 
     private var palette: PulseTheme.Menstrual.Phase {
