@@ -2828,15 +2828,20 @@ final class Repository: ObservableObject {
     /// (#499). Here the stored field defers to the trace whenever the trace is present:
     ///
     ///  - STRAP-NATIVE rows (`manual` / detected `<id>-noop`) are charted/zoned/scored straight from this
-    ///    strap trace, so their Avg HR is ALWAYS recomputed as the true mean of those samples (and Max →
-    ///    true peak) , a manual edit can no longer drift them out of agreement with the graph.
+    ///    strap trace, so their Avg HR is recomputed as the true mean of those samples (and Max → true
+    ///    peak) once the trace covers the workout (`traceCoversWorkout`) , a manual edit can no longer
+    ///    drift them out of agreement with the graph. Until then they keep the figures they were SAVED
+    ///    with: a session recorded on this phone lands in the store only when the strap offloads it, and a
+    ///    fragment's average ("57 bpm" beside a Strain scored from the whole session) would otherwise
+    ///    reach every screen that lists the workout.
     ///  - IMPORTED rows (Apple Health / Health Connect / Whoop CSV) carry their OWN avg/max; we only FILL
     ///    them when nil (and the strap happened to be worn), never overriding a real imported value.
     ///
     /// Requires `minSamples` (~1 min) so stray samples can't fabricate an average, and caps the per-row
     /// HR reads so a huge history can't jank first paint. NEVER persisted , a read-time projection of the
     /// trace (the workout PK upsert would wipe it anyway), recomputed on every load so display == graph
-    /// == zones == effort by construction. Kotlin twin: `WhoopRepository.fillWorkoutHrFromStrap`.
+    /// == zones == effort by construction. Kotlin twin: `WhoopRepository.fillWorkoutHrFromStrap` (which
+    /// does not apply the coverage rule yet).
     private func reconcileWorkoutHrWithTrace(_ rows: [WorkoutRow], store: WhoopStore,
                                              minSamples: Int = 60, cap: Int = 300) async -> [WorkoutRow] {
         // #833 (on-open freeze): this used to run a SEQUENTIAL per-row loop, each awaiting one
@@ -2879,10 +2884,10 @@ final class Repository: ObservableObject {
         // #961: capture the injected profile ONCE (a Sendable scalar pair) so each child task can compute a
         // backfill strain off the main actor. nil ⇒ no fill, and the strain slot always comes back nil.
         let strainProfile = self.strainProfile
-        var reduced: [Int: (avg: Int, peak: Int, strain: Double?)] = [:]
+        var reduced: [Int: (avg: Int, peak: Int, strain: Double?, covered: Bool)] = [:]
         for chunkStart in stride(from: 0, to: eligibleIndices.count, by: readChunk) {
             let chunk = eligibleIndices[chunkStart..<min(chunkStart + readChunk, eligibleIndices.count)]
-            await withTaskGroup(of: (index: Int, avg: Int, peak: Int, strain: Double?)?.self) { group in
+            await withTaskGroup(of: (index: Int, avg: Int, peak: Int, strain: Double?, covered: Bool)?.self) { group in
                 for idx in chunk {
                     let startTs = rows[idx].startTs
                     let endTs = rows[idx].endTs
@@ -2927,32 +2932,50 @@ final class Repository: ObservableObject {
                         } else {
                             strain = nil
                         }
-                        return (index: idx, avg: avg, peak: peak, strain: strain)
+                        let covered = Self.traceCoversWorkout(coveredMinutes: stats.minutes,
+                                                              startTs: startTs, endTs: endTs)
+                        return (index: idx, avg: avg, peak: peak, strain: strain, covered: covered)
                     }
                 }
                 for await result in group {
-                    if let r = result { reduced[r.index] = (avg: r.avg, peak: r.peak, strain: r.strain) }
+                    if let r = result {
+                        reduced[r.index] = (avg: r.avg, peak: r.peak, strain: r.strain, covered: r.covered)
+                    }
                 }
             }
         }
 
         // Phase 3 , reassemble in ORIGINAL order. For an eligible row that cleared `minSamples` apply the
-        // off-main reduction (strap-native → trace IS the source: override avg + max; imported → fill avg,
-        // keep imported max). Every other row passes through verbatim. Byte-identical to the old loop's row.
+        // off-main reduction (strap-native → trace IS the source once it covers the workout: override avg +
+        // max, else keep the saved pair; imported → fill avg, keep imported max). Every other row passes
+        // through verbatim.
         return zip(rows.indices, rows).map { i, row in
             guard let r = reduced[i] else { return row }
             let cls = WorkoutSource.classify(row.source)
             let strapNative = cls == .manual || cls == .detected
-            let newMax = strapNative ? r.peak : (row.maxHr ?? r.peak)
+            let newAvg = strapNative && !r.covered ? row.avgHr : r.avg
+            let newMax = strapNative ? (r.covered ? r.peak : row.maxHr) : (row.maxHr ?? r.peak)
             // #961: FILL a nil Effort from the recomputed strain (never override a stored one). Display-only,
             // like the avg/max reconcile , the workout-PK upsert would wipe it, and the backend rescore
             // persists the durable value on the next analyze tick.
             let newStrain = row.strain ?? r.strain
             return WorkoutRow(startTs: row.startTs, endTs: row.endTs, sport: row.sport,
                               source: row.source, durationS: row.durationS, energyKcal: row.energyKcal,
-                              avgHr: r.avg, maxHr: newMax, strain: newStrain, distanceM: row.distanceM,
+                              avgHr: newAvg, maxHr: newMax, strain: newStrain, distanceM: row.distanceM,
                               zonesJSON: row.zonesJSON, notes: row.notes, steps: row.steps)
         }
+    }
+
+    /// The share of a workout's minutes its strap trace must cover before a strap-native row's Avg / Max HR
+    /// are read from the trace instead of the figures it was saved with (#499). Activity Details draws the
+    /// stored trace from the same share, so the chart and the figures beside it change over together.
+    nonisolated static let workoutTraceFullCoverage = 0.9
+
+    /// Whether a trace holding samples in `coveredMinutes` of `[startTs, endTs]` (cut into minutes as
+    /// `HRWindowStats.minutes` counts them) stands for the whole workout.
+    nonisolated static func traceCoversWorkout(coveredMinutes: Int, startTs: Int, endTs: Int) -> Bool {
+        let minutes = max(1, (endTs - startTs + 59) / 60)
+        return Double(coveredMinutes) / Double(minutes) >= workoutTraceFullCoverage
     }
 
     /// #510 (Kotlin twin: `WhoopRepository.workoutHrDeviceIds`). The device ids whose `hrSample` rows back a

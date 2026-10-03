@@ -37,7 +37,7 @@ extension PulseSnapshotBuilder {
         let rows = await workoutRows()
         guard isCurrent(r) else { return nil }
         let stored = rows.first { Self.isSameWorkout($0, handed) }
-        var row = stored ?? handed
+        let row = stored ?? handed
 
         let start = Date(timeIntervalSince1970: TimeInterval(row.startTs))
         let end = Date(timeIntervalSince1970: TimeInterval(max(row.endTs, row.startTs + 1)))
@@ -79,18 +79,6 @@ extension PulseSnapshotBuilder {
             } else {
                 heartRate = .partial(missingSeconds: max(0, duration * (1 - storedCoverage)))
             }
-        }
-
-        // `Repository.workoutRows` shows a strap-native row's Avg / Max HR recomputed from the stored trace
-        // (#499). While that trace covers only part of the activity it is a fragment's average (a 57 bpm
-        // "AVG HR" beside a Strain scored from the whole session), so the row keeps the figures it was
-        // SAVED with until the trace covers it.
-        if heartRate != .stored, let saved = await savedHeartRate(for: row) {
-            guard isCurrent(r) else { return nil }
-            row = WorkoutRow(startTs: row.startTs, endTs: row.endTs, sport: row.sport, source: row.source,
-                             durationS: row.durationS, energyKcal: row.energyKcal, avgHr: saved.avg,
-                             maxHr: saved.max, strain: row.strain, distanceM: row.distanceM,
-                             zonesJSON: row.zonesJSON, notes: row.notes, steps: row.steps)
         }
 
         // The paired Lift Log session, when there is one.
@@ -209,20 +197,6 @@ extension PulseSnapshotBuilder {
             insight: insight)
     }
 
-    /// The Avg / Max HR a strap-native row (logged or recorded on this phone, or a detected bout) was saved
-    /// with, read from its own namespace before any display projection; nil for any other row or when the
-    /// row is not found there.
-    func savedHeartRate(for row: WorkoutRow) async -> (avg: Int?, max: Int?)? {
-        let origin = WorkoutSource.classify(row.source)
-        guard origin == .manual || origin == .detected, let store = await repo.storeHandle() else { return nil }
-        let owner = await repo.deviceId
-        for id in [owner, owner + "-noop"] {
-            let found = (try? await store.workouts(deviceId: id, from: row.startTs, to: row.startTs, limit: 10)) ?? []
-            if let hit = found.first(where: { Self.isSameWorkout($0, row) }) { return (hit.avgHr, hit.maxHr) }
-        }
-        return nil
-    }
-
     /// The share of the window's minutes a reading falls in, 0…1: how much of an activity a heart-rate
     /// stream covers, whatever its sample rate.
     static func coverage(_ samples: [HRSample], from: Int, to: Int) -> Double {
@@ -236,8 +210,10 @@ extension PulseSnapshotBuilder {
         return Double(hit.count) / Double(minutes)
     }
 
-    /// Coverage from which a heart-rate stream counts as the activity's whole.
-    static let fullCoverage = 0.9
+    /// Coverage from which a heart-rate stream counts as the activity's whole: the share at which
+    /// `Repository.workoutRows` starts reading a strap-native row's Avg / Max HR from the stored trace
+    /// (#499), so the chart and the figures beside it switch to the strap's history together.
+    static let fullCoverage = Repository.workoutTraceFullCoverage
 
     /// The heart rate of a row's own strap around it (half its length either side, at least 15 minutes,
     /// never past now), bucketed for a chart: the Edit sheet's scrubber [Z].
