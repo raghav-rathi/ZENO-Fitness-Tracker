@@ -313,7 +313,7 @@ struct PulseAISettingsView: View {
                 Text(String(localized: "Data privacy"))
                     .pulseText(.subsectionTitle)
                     .foregroundStyle(PulseTheme.textPrimary)
-                Text(String(localized: "Coach is the only part of ZENO that uses the internet. Nothing is sent until you ask a question, and then only to the provider you chose, with your own key. Conversations and memories stay on this iPhone."))
+                Text(String(localized: "Coach is the only part of ZENO that uses the internet. Nothing is sent until you ask a question or your morning brief is due, and then only to the provider you chose, with your own key. Conversations and memories stay on this iPhone."))
                     .pulseText(.body)
                     .foregroundStyle(PulseTheme.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
