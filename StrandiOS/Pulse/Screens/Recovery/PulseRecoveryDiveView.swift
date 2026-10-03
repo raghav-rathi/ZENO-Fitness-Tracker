@@ -100,7 +100,7 @@ private struct PulseRecoveryDiveContent: View {
                     .padding(.top, PulseTheme.Layout.stackGap)
             }
 
-            PulseRecoveryBehaviorCard(behaviors: s.behaviors)
+            PulseRecoveryBehaviorCard(behaviors: s.behaviors, naming: s.behaviorNaming)
                 .padding(.top, PulseTheme.Layout.stackGap)
                 .id("pulse.behavior")
 
@@ -157,19 +157,22 @@ private struct PulseRecoveryCalibrationCard: View {
 /// BEHAVIOR INSIGHTS (§3.4 item 5): the expanded card with the day's behaviour chips when at least one
 /// logged behaviour has a measurable effect on Recovery (deep-dives-2026/17b; grey chips may sit beside
 /// it), else the compact row (deep-dives-2026/17c), so the card never says behaviours "may have affected"
-/// the score above chips that all read "no clear effect". Both open Behavior Insights.
+/// the score above chips that all read "no clear effect". The card opens Behavior Insights; a chip, named
+/// as the page names it (`BehaviorNames`), opens its behaviour's Behavior Details.
 private struct PulseRecoveryBehaviorCard: View {
     let behaviors: [RecoveryDiveSnapshot.Behavior]
+    let naming: RecoveryDiveSnapshot.BehaviorNaming
+
+    @StateObject private var catalog = JournalCatalogStore()
+    @State private var local = PulseJournalLocalStore.shared
 
     var body: some View {
-        PulseLink(PulseRoute.behaviorInsights.forExistingEntryPoint) {
-            if behaviors.contains(where: { $0.effect != .neutral }) {
-                expanded
-            } else {
-                compact
-            }
+        if behaviors.contains(where: { $0.effect != .neutral }) {
+            expanded
+        } else {
+            PulseLink(PulseRoute.behaviorInsights.forExistingEntryPoint) { compact }
+                .buttonStyle(PulsePressStyle())
         }
-        .buttonStyle(PulsePressStyle())
     }
 
     /// The outlined bulb, at the subsection title's size (light, as the captures draw it).
@@ -208,29 +211,43 @@ private struct PulseRecoveryBehaviorCard: View {
 
     /// Measured on deep-dives-2026/17b (the same 402 pt screen): the title's caps 8 pt tall and centred
     /// 26 pt under the card's top, the 13 pt body's lines 17.5 pt apart from 57 pt down, the chips 15 pt
-    /// under it.
+    /// under it. The title and the sentence open Behavior Insights, each chip its own Behavior Details.
     private var expanded: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 9) {
-                bulb
-                    .frame(width: 19, height: 20)
-                PulseWordWrapText(String(localized: "Behavior Insights"), style: .cardTitle)
-                    .foregroundStyle(PulseTheme.textPrimary)
-                    .accessibilityAddTraits(.isHeader)
-                Spacer(minLength: 8)
-                PulseChevron()
+        let names = BehaviorNames(catalog: catalog, imported: naming.imported, customTitles: local.customTitles,
+                                  questions: naming.questions)
+        return VStack(alignment: .leading, spacing: 0) {
+            PulseLink(PulseRoute.behaviorInsights.forExistingEntryPoint) {
+                VStack(alignment: .leading, spacing: 0) {
+                    HStack(spacing: 9) {
+                        bulb
+                            .frame(width: 19, height: 20)
+                        PulseWordWrapText(String(localized: "Behavior Insights"), style: .cardTitle)
+                            .foregroundStyle(PulseTheme.textPrimary)
+                            .accessibilityAddTraits(.isHeader)
+                        Spacer(minLength: 8)
+                        PulseChevron()
+                    }
+                    Text(String(localized: "Some of your behaviors from yesterday may have affected your Recovery score today."))
+                        .pulseText(.rowSubline)
+                        .lineSpacing(2)
+                        .foregroundStyle(PulseTheme.subtitleRowText)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.top, 13)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
             }
-            Text(String(localized: "Some of your behaviors from yesterday may have affected your Recovery score today."))
-                .pulseText(.rowSubline)
-                .lineSpacing(2)
-                .foregroundStyle(PulseTheme.subtitleRowText)
-                .fixedSize(horizontal: false, vertical: true)
-                .padding(.top, 13)
+            .buttonStyle(PulsePressStyle())
             PulseChipFlow(spacing: 8, lineSpacing: 8) {
                 ForEach(behaviors) { behavior in
-                    PulseBehaviorChip(title: behavior.title, effect: behavior.effect)
-                        .accessibilityElement(children: .ignore)
-                        .accessibilityLabel(behavior.spoken)
+                    let title = names.title(behavior.id)
+                    PulseLink(PulseBehaviorDetailsRoute(identity: behavior.id).route) {
+                        PulseBehaviorChip(title: title, effect: behavior.effect)
+                            .accessibilityElement(children: .ignore)
+                            .accessibilityLabel(Self.spoken(title, behavior.effect))
+                    }
+                    .buttonStyle(PulsePressStyle())
+                    .accessibilityHint(String(localized: "Opens Behavior Details"))
                 }
             }
             .padding(.top, 15)
@@ -238,7 +255,15 @@ private struct PulseRecoveryBehaviorCard: View {
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
         .pulseCardBackground()
-        .contentShape(Rectangle())
+    }
+
+    /// A chip in words: its name and the effect Behavior Insights reads for it.
+    private static func spoken(_ title: String, _ effect: PulseBehaviorChip.Effect) -> String {
+        switch effect {
+        case .helps: return String(localized: "\(title), has gone with a higher Recovery")
+        case .hurts: return String(localized: "\(title), has gone with a lower Recovery")
+        case .neutral: return String(localized: "\(title), no clear effect on Recovery")
+        }
     }
 }
 

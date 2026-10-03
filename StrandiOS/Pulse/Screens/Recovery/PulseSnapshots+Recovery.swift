@@ -19,10 +19,12 @@ struct RecoveryDiveSnapshot: Equatable {
     /// Heart rate variability, resting heart rate, respiratory rate and sleep performance, each against
     /// its 30-day average.
     let contributors: [PulseDiveContributor]
-    /// The behaviours logged YES for the day that the analysis has unlocked, with their effect on
-    /// Recovery; empty unless today's Recovery is scored. The expanded card shows them only when one has
-    /// a known effect; otherwise the compact row.
+    /// The behaviours logged YES for the day that Behavior Insights has tested, each read as the page reads
+    /// it; empty unless today's Recovery is scored. The expanded card shows them only when one has a known
+    /// effect; otherwise the compact row.
     let behaviors: [Behavior]
+    /// What the card names the behaviours from, exactly as Behavior Insights names them (`BehaviorNames`).
+    let behaviorNaming: BehaviorNaming
     let week: Week
     /// "What shaped it": the engine's per-input points, or nil when the night cannot honestly score.
     let shaped: Shaped?
@@ -39,10 +41,18 @@ struct RecoveryDiveSnapshot: Equatable {
 
     /// A behaviour chip.
     struct Behavior: Identifiable, Equatable {
+        /// The behaviour's identity as Behavior Insights keys it (a journal behaviour's
+        /// `PulseBehaviorLibrary.identity(for:)`, or an auto-tracked behaviour's id): the key its Behavior
+        /// Details opens with.
         let id: String
-        let title: String
         let effect: PulseBehaviorChip.Effect
-        let spoken: String
+    }
+
+    /// The imported WHOOP questions and, per identity, the latest stored question: what `BehaviorNames`
+    /// needs besides the journal catalog.
+    struct BehaviorNaming: Equatable {
+        var imported: [String] = []
+        var questions: [String: String] = [:]
     }
 
     /// The seven days ending on the dive's day.
