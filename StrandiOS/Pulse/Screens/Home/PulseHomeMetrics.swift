@@ -29,9 +29,6 @@ enum PulseHomeMetrics {
     static let journalStripTop: CGFloat = 20
     static let journalButtonTop: CGFloat = 14
 
-    /// My Plan's art slot (reviews/r113), leaving its sentence a ≈240 pt column.
-    static let planArt = CGSize(width: 84, height: 96)
-
     /// The coaching card's least height (profile-community-2026/34) and its art column.
     static let coachingCardMinHeight: CGFloat = 124
     static let coachingArtWidth: CGFloat = 72

@@ -229,8 +229,11 @@ struct PulseHomeSections: View {
                 PulseSectionHeader(String(localized: "My Plan"))
                     .padding(.top, PulseTheme.Layout.sectionGap)
                     .id("pulse.plan")
-                PulsePlanCard()
+                // The journal-plan group's card: "Build Your Best Self" with no plan, else the running plan
+                // (collapsed or expanded, with its recap or check-in), from the week it loads itself.
+                PulsePlanHomeCard()
                     .padding(.top, PulseTheme.Layout.headerGap)
+                    .id("pulse.plan-card")
             }
 
             if let progress = current?.start.calibration {
