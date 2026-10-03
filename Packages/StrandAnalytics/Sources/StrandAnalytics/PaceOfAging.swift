@@ -134,7 +134,7 @@ public enum PaceOfAging {
     /// Days since 1970-01-01 for a "yyyy-MM-dd" key, counted on the proleptic Gregorian calendar
     /// (Hinnant's days-from-civil), or nil for a malformed key. No Calendar or DateFormatter, so it is
     /// thread-safe and identical everywhere.
-    static func dayNumber(_ key: String) -> Int? {
+    public static func dayNumber(_ key: String) -> Int? {
         let parts = key.split(separator: "-", omittingEmptySubsequences: false)
         guard parts.count == 3, parts[0].count == 4, parts[1].count == 2, parts[2].count == 2,
               let y0 = Int(parts[0]), let m = Int(parts[1]), let d = Int(parts[2]),
