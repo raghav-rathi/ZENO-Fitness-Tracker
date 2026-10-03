@@ -1,21 +1,377 @@
 #if os(iOS)
 import SwiftUI
+import StrandDesign
 
-/// Welcome (WHOOP_UI_SPEC §3.38), presented as a full-screen flow.
+/// Onboarding / first run (WHOOP_UI_SPEC §3.38), restyled from the classic `OnboardingWizard` and
+/// `TermsGateView` onto WHOOP's step template. Owned by group "onboarding-strength".
 ///
-/// Owned by group "onboarding-strength". A placeholder until the group rebuilds it.
+/// The flow, in ZENO's order (the terms come first, because ZENO must gate before it reads health data):
+///
+///     Landing → Privacy and Terms of Use (its "Terms of Use" link opens the points the gate presents)
+///       → [Put On → Wake Up → Check for Pairing Mode → SEARCHING / SELECT / CONNECTING / CONNECTED]
+///       → Where Do You Live? → Connect To Apple Health → What's Your Birthday? → Choose a Gender
+///       → Height and Weight → Bring Your History → Turn On Notifications → Welcome to ZENO
+///       → What to Expect Next → Home
+///
+/// Two ways in:
+///   - the FIRST RUN (`init(needsTerms:needsSetup:onAcceptTerms:onFinished:)`): the same gates as the
+///     classic pair, on the same keys. `needsTerms` alone (an existing user whose terms changed) shows only
+///     the Privacy step; accepting clears the gate exactly as `TermsGateView` did. The app root presents
+///     it, and the app root is the foundation's: `iOSRootView` shows this flow in place of the classic
+///     wizard and terms gate when `pulseEnabled && PulseOnboardingView.isRebuilt`, with
+///     `onAcceptTerms` storing `Terms.currentVersion` (after resetting its launch-sheet flag) and
+///     `onFinished` setting `noop.onboarded` and the last-seen changelog, as the classic pair do. Until that
+///     call site lands, a first launch still shows the classic pair.
+///   - the `.onboarding` route (`init()`), a replay from inside the app: the Privacy step only while the
+///     terms are not accepted, and finishing simply closes it.
+///
+/// The classic Appearance step is dropped (Pulse is dark only, §3.38). WHOOP's "Welcome to WHOOP!" name
+/// step waits for a shared place to keep the name: `ProfileStore` has none, and a key private to this
+/// folder would be read by nothing and missed by backups. Once the foundation adds `ProfileStore.firstName`
+/// (a key in Profile.swift's `K`, the backup whitelist and its Android twin), the step comes back bound
+/// to it, ahead of Where Do You Live?.
 struct PulseOnboardingView: View {
-    /// Flip to true once this screen is rebuilt; existing entry points then open it instead of the classic
-    /// screen (see `PulseRoute.forExistingEntryPoint`).
-    static let isRebuilt = false
+    /// Rebuilt: the `.onboarding` route opens this flow, and the app root's first-run switch reads this
+    /// flag (above). The `.onboarding` route has no classic fallback either way.
+    static let isRebuilt = true
+
+    /// What the first run must still do, and how it reports back to the app root.
+    struct FirstRun {
+        let onAcceptTerms: () -> Void
+        let onFinished: () -> Void
+    }
+
+    private let firstRun: FirstRun?
+
+    // Deliberately no `AppModel` / `LiveState` observation here (the classic wizard's rule): they publish
+    // on every heartbeat and log line, and the whole flow would redraw with them. Steps observe what they
+    // need; the pairing object keeps the model it scanned on.
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @AppStorage("noop.acceptedTermsVersion") private var acceptedTerms = ""
+
+    /// Captured once, when the flow first appears: accepting the terms mid-flow must not pull the step
+    /// the wearer is on out of the sequence.
+    @State private var includesTerms: Bool
+    @State private var includesSetup: Bool
+    @State private var step: PulseOnboardingStep
+    @State private var forward = true
+    /// The progress of the step being left, where the next step's ring arc starts (nil on the first step
+    /// shown, which draws its value at once).
+    @State private var ringStart: Double?
+    /// Landing's choice: pair a strap now, or continue without one.
+    @State private var pairsStrap = true
+    @State private var family: WhoopModel = .persisted
+    @StateObject private var pairing = PulseStrapPairing()
+
+    /// The `.onboarding` route: a replay from inside the app.
+    init() {
+        #if DEBUG
+        // `--pulse-onboarding-first-run`: captures of the first-run variants (its callbacks do nothing).
+        firstRun = CommandLine.arguments.contains("--pulse-onboarding-first-run")
+            ? FirstRun(onAcceptTerms: {}, onFinished: {}) : nil
+        #else
+        firstRun = nil
+        #endif
+        let accepted = UserDefaults.standard.string(forKey: "noop.acceptedTermsVersion") == Terms.currentVersion
+        _includesTerms = State(initialValue: !accepted)
+        _includesSetup = State(initialValue: true)
+        _step = State(initialValue: Self.initialStep(includesTerms: !accepted, includesSetup: true))
+    }
+
+    /// The first run, from the app root.
+    /// - Parameters:
+    ///   - needsTerms: the current `Terms.currentVersion` has not been accepted.
+    ///   - needsSetup: onboarding has not been completed (`noop.onboarded`).
+    ///   - onAcceptTerms: store the accepted version (the app root's own write, so its launch-sheet
+    ///     bookkeeping stays where it was).
+    ///   - onFinished: mark onboarding complete.
+    init(needsTerms: Bool, needsSetup: Bool, onAcceptTerms: @escaping () -> Void, onFinished: @escaping () -> Void) {
+        firstRun = FirstRun(onAcceptTerms: onAcceptTerms, onFinished: onFinished)
+        _includesTerms = State(initialValue: needsTerms)
+        _includesSetup = State(initialValue: needsSetup)
+        _step = State(initialValue: Self.initialStep(includesTerms: needsTerms, includesSetup: needsSetup))
+    }
+
+    private static func initialStep(includesTerms: Bool, includesSetup: Bool) -> PulseOnboardingStep {
+        #if DEBUG
+        if let debug = PulseOnboardingStep.debugLaunchStep { return debug }
+        #endif
+        return includesSetup ? .landing : .privacy
+    }
+
+    // MARK: Sequence
+
+    private var sequence: [PulseOnboardingStep] {
+        var steps: [PulseOnboardingStep] = []
+        if includesSetup { steps.append(.landing) }
+        if includesTerms { steps.append(.privacy) }
+        if includesSetup {
+            if pairsStrap { steps += PulseOnboardingStep.deviceSteps }
+            steps += [.location, .appleHealth, .birthday, .gender, .body, .history, .notifications, .welcome,
+                      .expectations]
+        }
+        return steps
+    }
+
+    /// The ring's progress on `step`: its place among the ring steps of its own part of the flow (the
+    /// device tutorial has its own, as WHOOP's does).
+    private func progress(_ step: PulseOnboardingStep) -> Double {
+        let group = PulseOnboardingStep.deviceSteps.contains(step)
+            ? PulseOnboardingStep.deviceRingSteps
+            : sequence.filter(\.isSetupRingStep)
+        guard let index = group.firstIndex(of: step) else { return 0 }
+        return pulseOnboardingProgress(index + 1, of: group.count)
+    }
+
+    // MARK: Body
 
     var body: some View {
-        PulsePlaceholderScreen(
-            name: String(localized: "Welcome"),
-            symbol: "hand.wave",
-            summary: String(localized: "The first-run welcome, your profile and strap pairing."),
-            spec: "§3.38",
-            group: "onboarding-strength")
+        ZStack {
+            PulseOnboardingBackground()
+            stepView
+                .environment(\.pulseOnboardingRingStart, ringStart)
+                .id(step)
+                .transition(transition)
+        }
+        .environment(\.colorScheme, .dark)
+        .preferredColorScheme(.dark)
+        .toolbar(.hidden, for: .navigationBar)
+        .interactiveDismissDisabled(firstRun != nil)
+        .modifier(PulseOnboardingAppProvider())
+        .onDisappear { pairing.stop() }
+    }
+
+    private var transition: AnyTransition {
+        if reduceMotion { return .opacity }
+        return .asymmetric(insertion: .move(edge: forward ? .trailing : .leading).combined(with: .opacity),
+                           removal: .move(edge: forward ? .leading : .trailing).combined(with: .opacity))
+    }
+
+    @ViewBuilder
+    private var stepView: some View {
+        switch step {
+        case .landing:
+            PulseOnboardingLanding(onPair: { pairsStrap = true; advance() },
+                                   onWithoutStrap: { pairsStrap = false; advance() },
+                                   onClose: firstRun == nil ? { dismiss() } : nil)
+        case .privacy:
+            PulseOnboardingPrivacyStep(progress: progress(.privacy), showsBack: canGoBack, onBack: back,
+                                       onAccept: acceptTerms)
+        case .putOn:
+            PulseOnboardingPutOnStep(progress: progress(.putOn), onBack: back, onNext: advance)
+        case .wakeUp:
+            PulseOnboardingWakeUpStep(progress: progress(.wakeUp), onBack: back, onNext: advance)
+        case .pairingMode:
+            // The search step starts the scan itself as it appears (or shows CONNECTED when a strap is
+            // already bonded).
+            PulseOnboardingPairingModeStep(family: $family, onBack: back, onSkip: skipPairing, onStart: {
+                go(to: .searching)
+            })
+        case .searching:
+            PulseOnboardingSearchStep(pairing: pairing, family: family, onBack: {
+                pairing.stop()
+                go(to: .pairingMode, forward: false)
+            }, onSkip: skipPairing, onDone: { _ in go(to: PulseOnboardingStep.firstProfileStep) })
+        case .location:
+            PulseOnboardingLocationStep(progress: progress(.location), onBack: back, onNext: advance)
+        case .appleHealth:
+            PulseOnboardingHealthStep(progress: progress(.appleHealth), onBack: back, onNext: advance)
+        case .birthday:
+            PulseOnboardingBirthdayStep(progress: progress(.birthday), onBack: back, onNext: advance)
+        case .gender:
+            PulseOnboardingGenderStep(progress: progress(.gender), preselect: firstRun == nil, onBack: back,
+                                      onNext: advance)
+        case .body:
+            PulseOnboardingBodyStep(progress: progress(.body), confirmed: firstRun == nil, onBack: back,
+                                    onNext: advance)
+        case .history:
+            PulseOnboardingHistoryStep(progress: progress(.history), onBack: back, onNext: advance)
+        case .notifications:
+            PulseOnboardingNotificationsStep(progress: progress(.notifications), onBack: back, onNext: advance)
+        case .welcome:
+            PulseOnboardingWelcomeStep(progress: progress(.welcome), onBack: back, onNext: advance)
+        case .expectations:
+            PulseOnboardingExpectationsStep(onBack: back, onDone: finish)
+        }
+    }
+
+    // MARK: Navigation
+
+    private var canGoBack: Bool {
+        (sequence.firstIndex(of: step) ?? 0) > 0 || firstRun == nil
+    }
+
+    private func go(to next: PulseOnboardingStep, forward isForward: Bool = true) {
+        forward = isForward
+        // Within one part of the flow the arc moves on from the step being left; into another part (the
+        // device tutorial counts on its own) it simply shows its value.
+        let sameRing = PulseOnboardingStep.deviceSteps.contains(step) == PulseOnboardingStep.deviceSteps.contains(next)
+        ringStart = sameRing ? progress(step) : nil
+        withAnimation(reduceMotion ? PulseMotion.crossFade : .easeInOut(duration: 0.35)) { step = next }
+    }
+
+    private func advance() {
+        guard let index = sequence.firstIndex(of: step) else { return }
+        if index + 1 < sequence.count {
+            go(to: sequence[index + 1])
+        } else {
+            finish()
+        }
+    }
+
+    private func back() {
+        guard let index = sequence.firstIndex(of: step), index > 0 else {
+            // The route's first step: leave the replay.
+            if firstRun == nil { dismiss() }
+            return
+        }
+        go(to: sequence[index - 1], forward: false)
+    }
+
+    /// SKIP on the pairing steps: pair later from Devices, as ZENO always allowed.
+    private func skipPairing() {
+        pairing.stop()
+        go(to: PulseOnboardingStep.firstProfileStep)
+        pairsStrap = false
+    }
+
+    /// Every attestation is ticked: store the accepted version (the app root's write on a first run), then
+    /// carry on, or, when only the terms were due, let the gate close.
+    private func acceptTerms() {
+        if let firstRun {
+            firstRun.onAcceptTerms()
+            // Terms only: the app root removes this flow as soon as the version is stored.
+            if includesSetup { advance() }
+        } else {
+            acceptedTerms = Terms.currentVersion
+            if includesSetup { advance() } else { dismiss() }
+        }
+    }
+
+    private func finish() {
+        pairing.stop()
+        if let firstRun {
+            if includesSetup { firstRun.onFinished() }
+        } else {
+            dismiss()
+        }
     }
 }
+
+// MARK: - The app model, unobserved
+
+/// The app model for steps that call into it without drawing what it publishes. `AppModel` publishes
+/// `bpm` on every heartbeat, so a step holding it as an `@EnvironmentObject` redrew with every beat once a
+/// strap streamed (CONNECTED's blurred glows included). Steps read it from here and observe only what
+/// they draw, through small leaves (`PulseOnboardingStrapList`, `PulseOnboardingImportWatcher`).
+struct PulseOnboardingApp: Equatable {
+    let model: AppModel?
+
+    static func == (lhs: PulseOnboardingApp, rhs: PulseOnboardingApp) -> Bool {
+        lhs.model === rhs.model
+    }
+}
+
+private struct PulseOnboardingAppKey: EnvironmentKey {
+    static let defaultValue = PulseOnboardingApp(model: nil)
+}
+
+extension EnvironmentValues {
+    /// The app model, unobserved (`PulseOnboardingApp`).
+    var pulseOnboardingApp: PulseOnboardingApp {
+        get { self[PulseOnboardingAppKey.self] }
+        set { self[PulseOnboardingAppKey.self] = newValue }
+    }
+}
+
+/// Hands the app model down unobserved. Only this modifier re-evaluates on a heartbeat: the value it
+/// hands down compares equal (the same model), so nothing under it is invalidated.
+struct PulseOnboardingAppProvider: ViewModifier {
+    @EnvironmentObject private var model: AppModel
+
+    func body(content: Content) -> some View {
+        content.environment(\.pulseOnboardingApp, PulseOnboardingApp(model: model))
+    }
+}
+
+/// The steps, in the order they can appear.
+enum PulseOnboardingStep: String, CaseIterable {
+    case landing
+    case privacy
+    case putOn
+    case wakeUp
+    case pairingMode
+    case searching
+    case location
+    case appleHealth
+    case birthday
+    case gender
+    case body
+    case history
+    case notifications
+    case welcome
+    case expectations
+
+    /// The device tutorial and pairing, present when the wearer chose to pair a strap.
+    static let deviceSteps: [PulseOnboardingStep] = [.putOn, .wakeUp, .pairingMode, .searching]
+    /// The device tutorial's steps that carry the ring (START PAIRING is the filled circle that ends it).
+    static let deviceRingSteps: [PulseOnboardingStep] = [.putOn, .wakeUp, .pairingMode]
+    /// Where the profile starts, after the device steps or a skipped pairing.
+    static let firstProfileStep = PulseOnboardingStep.location
+
+    /// Steps whose ring shows progress through the setup (everything except the landing, the device steps
+    /// and the last step's filled circle).
+    var isSetupRingStep: Bool {
+        switch self {
+        case .landing, .putOn, .wakeUp, .pairingMode, .searching, .expectations: return false
+        default: return true
+        }
+    }
+}
+
+#if DEBUG
+extension PulseOnboardingStep {
+    /// `--pulse-onboarding-step <name>`: open the flow on a step, for captures.
+    static var debugLaunchStep: PulseOnboardingStep? {
+        let args = CommandLine.arguments
+        guard let i = args.firstIndex(of: "--pulse-onboarding-step"), i + 1 < args.count else { return nil }
+        return PulseOnboardingStep(rawValue: args[i + 1])
+    }
+
+    /// `--pulse-pairing found`: two straps in the list, so SELECT YOUR DEVICE can be captured without
+    /// straps nearby (picking one connects to nothing).
+    static var debugFoundStraps: [(uuid: String, name: String, rssi: Int)]? {
+        let args = CommandLine.arguments
+        guard let i = args.firstIndex(of: "--pulse-pairing"), i + 1 < args.count, args[i + 1] == "found" else {
+            return nil
+        }
+        return [(uuid: "00000000-0000-4000-8000-0000000000A1", name: "WHOOP 4C0123456", rssi: -52),
+                (uuid: "00000000-0000-4000-8000-0000000000A2", name: "WHOOP 4A0987654", rssi: -74)]
+    }
+
+    /// `--pulse-pairing connecting|connected|failed|failed-hint`: put the pairing screen in that state.
+    @MainActor
+    static func applyDebugPairing(_ pairing: PulseStrapPairing) {
+        let args = CommandLine.arguments
+        guard let i = args.firstIndex(of: "--pulse-pairing"), i + 1 < args.count else { return }
+        pairing.debugForce(args[i + 1])
+    }
+}
+
+extension PulseStrapPairing {
+    /// DEBUG: show a pairing state without a strap (captures only).
+    func debugForce(_ name: String) {
+        let strap = "WHOOP 4C0123456"
+        switch name {
+        case "connecting": debugSetPhase(.connecting(name: strap))
+        case "connected": debugSetPhase(.connected(name: strap))
+        case "failed": debugSetPhase(.notConnected(hint: nil))
+        case "failed-hint":
+            debugSetPhase(.notConnected(hint: String(localized: "Your strap refused the pairing. Unpair it in the official WHOOP app, put it in pairing mode, then tap Retry.")))
+        default: break
+        }
+    }
+}
+#endif
 #endif
