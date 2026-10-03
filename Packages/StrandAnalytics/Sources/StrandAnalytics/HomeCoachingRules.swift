@@ -33,7 +33,7 @@ public enum HomeCoachingRules {
     public static let roughSleepBelow = 70
     /// ...and this many consecutive nights of it, ending last night, make the card.
     public static let roughSleepNights = 3
-    /// Sleep debt above this many minutes, and higher than the night before, is "rising".
+    /// Sleep debt above this many minutes, and higher than the day before's, is "rising".
     public static let sleepDebtRisingMin = 120.0
 
     // MARK: - Inputs
@@ -91,12 +91,16 @@ public enum HomeCoachingRules {
         public var strain: Double?
         /// The optimal Strain range the dial draws, only when Recovery scored for the day itself.
         public var optimalRange: ClosedRange<Double>?
+        /// The Strain Target the dial's tick marks, with `optimalRange` (the caller passes the dial's own
+        /// value, so the card and the tick can never name two targets).
+        public var strainTarget: Double?
         /// The night's HRV (ms) and the recovery engine's baseline folded from the nights before it.
         public var hrv: Double?
         public var hrvBaseline: BaselineState?
         /// Sleep Performance per wake day (0-100), oldest first, ending on `dayKey` at the latest.
         public var sleepPerformance: [DayValue]
-        /// The sleep debt the day carries into tonight and the one the day before carried (minutes).
+        /// The sleep debt the day carries into tonight and the one the day before carried (minutes). With
+        /// no figure for the day before there is nothing to say the debt rose from.
         public var sleepDebtMin: Double?
         public var previousSleepDebtMin: Double?
         /// The illness heads-up is raised (the engine's own gate; the copy is the app's).
@@ -110,7 +114,7 @@ public enum HomeCoachingRules {
 
         public init(dayKey: String, recovery: Double? = nil, recoveryHistory: [DayValue] = [],
                     calibration: Calibration? = nil, strain: Double? = nil,
-                    optimalRange: ClosedRange<Double>? = nil, hrv: Double? = nil,
+                    optimalRange: ClosedRange<Double>? = nil, strainTarget: Double? = nil, hrv: Double? = nil,
                     hrvBaseline: BaselineState? = nil, sleepPerformance: [DayValue] = [],
                     sleepDebtMin: Double? = nil, previousSleepDebtMin: Double? = nil, illness: Bool = false,
                     alarm: AlarmCheck? = nil, weekInReview: Bool = false, whatsNew: Bool = false) {
@@ -120,6 +124,7 @@ public enum HomeCoachingRules {
             self.calibration = calibration
             self.strain = strain
             self.optimalRange = optimalRange
+            self.strainTarget = strainTarget
             self.hrv = hrv
             self.hrvBaseline = hrvBaseline
             self.sleepPerformance = sleepPerformance
@@ -145,7 +150,7 @@ public enum HomeCoachingRules {
         /// `sinceDay` is the last day at or below it (nil when none is on record); otherwise the figure
         /// is at or below `lowestFloor` and `sinceDay` is nil.
         case lowestInAWhile(recovery: Int, sinceDay: String?, lowestInWindow: Bool)
-        /// Recovery dropped into the red after a day that was not.
+        /// Recovery dropped into the red after a yesterday that was not.
         case newlyRed(recovery: Int, previous: Int)
         /// A near-perfect Recovery.
         case nearPerfect(recovery: Int)
@@ -155,7 +160,7 @@ public enum HomeCoachingRules {
         case roughSleepStreak(nights: Int)
         /// Strain is past the top of the optimal range.
         case pushingLimits(strain: Double, rangeHigh: Double)
-        /// Strain reached the target (the range's midpoint, the dial's tick).
+        /// Strain reached the target (the dial's tick).
         case strainTargetReached(target: Double)
         /// Strain is inside the optimal range, short of the target.
         case buildingFitness(target: Double)
@@ -163,7 +168,7 @@ public enum HomeCoachingRules {
         case optimalHealth(target: Double)
         /// A red Recovery with Strain under the range: keep it under the range's top.
         case recoveringFromStrain(rangeHigh: Double)
-        /// Sleep debt over two hours and growing.
+        /// Sleep debt over two hours and higher than the day before's.
         case sleepDebtRising(debtMin: Int)
         /// Monday's look back at the week.
         case weekInReview
@@ -240,10 +245,14 @@ public enum HomeCoachingRules {
         return .lowestInAWhile(recovery: shown, sinceDay: nil, lowestInWindow: false)
     }
 
-    /// Red today after a scored day that was not red.
+    /// Red today after a YESTERDAY that scored and was not red (WHOOP's "Newly Red"). The card prints
+    /// "after Y% the day before", so after a gap (nights off-wrist, an unscored night) there is no
+    /// yesterday to compare with and no card: an older day is not "the day before".
     static func newlyRed(_ inputs: Inputs) -> Card? {
         guard let r = inputs.recovery, PulseDisplay.recoveryBand(percent: r) == .red,
+              let yesterday = PulseDisplay.dayKey(inputs.dayKey, offsetBy: -1),
               let previous = inputs.recoveryHistory.last(where: { $0.day < inputs.dayKey }),
+              previous.day == yesterday,
               PulseDisplay.recoveryBand(percent: previous.value) != .red else { return nil }
         return .newlyRed(recovery: PulseDisplay.displayedPercent(r),
                          previous: PulseDisplay.displayedPercent(previous.value))
@@ -274,13 +283,12 @@ public enum HomeCoachingRules {
         return count >= roughSleepNights ? .roughSleepStreak(nights: count) : nil
     }
 
-    /// Where the day's Strain sits against the optimal range the dial draws. Only when Recovery scored for
-    /// the day itself (the range comes from it); a day with no Strain yet counts as 0.
+    /// Where the day's Strain sits against the optimal range and target the dial draws. Only when Recovery
+    /// scored for the day itself (the range comes from it); a day with no Strain yet counts as 0.
     static func strainProgress(_ inputs: Inputs) -> Card? {
-        guard let recovery = inputs.recovery, let range = inputs.optimalRange,
-              range.upperBound > range.lowerBound else { return nil }
+        guard let recovery = inputs.recovery, let range = inputs.optimalRange, let target = inputs.strainTarget,
+              range.upperBound > range.lowerBound, range.contains(target) else { return nil }
         let strain = max(0, inputs.strain ?? 0)
-        let target = (range.lowerBound + range.upperBound) / 2
         if strain > range.upperBound { return .pushingLimits(strain: strain, rangeHigh: range.upperBound) }
         if strain >= target { return .strainTargetReached(target: target) }
         if strain >= range.lowerBound { return .buildingFitness(target: target) }
@@ -291,10 +299,11 @@ public enum HomeCoachingRules {
         }
     }
 
-    /// Debt over `sleepDebtRisingMin` and above the day before's.
+    /// Debt over `sleepDebtRisingMin` and above the day before's. Without the day before's figure the
+    /// debt cannot be called rising, however large it is.
     static func sleepDebtRising(_ inputs: Inputs) -> Card? {
-        guard let debt = inputs.sleepDebtMin, debt > sleepDebtRisingMin else { return nil }
-        if let previous = inputs.previousSleepDebtMin, debt <= previous { return nil }
+        guard let debt = inputs.sleepDebtMin, debt > sleepDebtRisingMin,
+              let previous = inputs.previousSleepDebtMin, debt > previous else { return nil }
         return .sleepDebtRising(debtMin: Int(debt.rounded()))
     }
 

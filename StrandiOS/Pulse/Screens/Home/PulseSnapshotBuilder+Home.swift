@@ -288,7 +288,7 @@ extension PulseSnapshotBuilder {
         let ownTarget = home.target.flatMap { $0.fromCarriedRecovery ? nil : $0 }
         return HomeCoachingRules.Inputs(
             dayKey: key, recovery: ownRecovery, recoveryHistory: history, calibration: calibration,
-            strain: home.strain.value, optimalRange: ownTarget?.range,
+            strain: home.strain.value, optimalRange: ownTarget?.range, strainTarget: ownTarget?.targetValue,
             hrv: displayRow(r)?.avgHrv, hrvBaseline: hrvBaseline, sleepPerformance: performance,
             sleepDebtMin: debt.last { $0.day == key }?.value,
             previousSleepDebtMin: debt.last { $0.day == yesterday }?.value,

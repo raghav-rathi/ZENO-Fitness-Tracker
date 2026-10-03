@@ -35,6 +35,19 @@ final class HomeCoachingRulesTests: XCTestCase {
         XCTAssertEqual(Rules.cards(inputs), [.newlyRed(recovery: 28, previous: 55)])
     }
 
+    func testNewlyRedNeedsYesterday() {
+        // Three nights off-wrist: the last scored day is four days back. The card says "the day before",
+        // so it must not fire against an older day.
+        let gap = Rules.Inputs(dayKey: today, recovery: 28,
+                               recoveryHistory: [Rules.DayValue(day: day(-4), value: 55)])
+        XCTAssertEqual(Rules.cards(gap), [])
+        // The same history with yesterday scored and yellow is newly red against yesterday's figure.
+        let yesterday = Rules.Inputs(dayKey: today, recovery: 28,
+                                     recoveryHistory: [Rules.DayValue(day: day(-4), value: 20),
+                                                       Rules.DayValue(day: day(-1), value: 61)])
+        XCTAssertEqual(Rules.cards(yesterday), [.newlyRed(recovery: 28, previous: 61)])
+    }
+
     func testRedAfterRedIsNotNewlyRed() {
         let inputs = Rules.Inputs(dayKey: today, recovery: 28,
                                   recoveryHistory: [Rules.DayValue(day: day(-1), value: 30)])
@@ -145,11 +158,16 @@ final class HomeCoachingRulesTests: XCTestCase {
         XCTAssertEqual(Rules.cards(Rules.Inputs(dayKey: today, sleepDebtMin: 110, previousSleepDebtMin: 60)), [])
     }
 
+    func testSleepDebtNeedsTheDayBeforeToBeRising() {
+        // A large debt with no figure for the day before is not "rising": nothing says it rose.
+        XCTAssertEqual(Rules.cards(Rules.Inputs(dayKey: today, sleepDebtMin: 180, previousSleepDebtMin: nil)), [])
+    }
+
     // MARK: Strain progress (the optimal range 14–18, target 16)
 
-    private func strain(_ value: Double?, recovery: Double = 80) -> [Rules.Card] {
+    private func strain(_ value: Double?, recovery: Double = 80, target: Double = 16) -> [Rules.Card] {
         Rules.cards(Rules.Inputs(dayKey: today, recovery: recovery, recoveryHistory: history(5, value: 70),
-                                 strain: value, optimalRange: 14...18))
+                                 strain: value, optimalRange: 14...18, strainTarget: target))
     }
 
     func testStrainFamilyFollowsTheRange() {
@@ -161,19 +179,34 @@ final class HomeCoachingRulesTests: XCTestCase {
         XCTAssertEqual(strain(18.4), [.pushingLimits(strain: 18.4, rangeHigh: 18)])
     }
 
+    func testTheTargetIsTheDialsOwn() {
+        // The card names the target it is given (the dial's tick), not a midpoint it works out itself.
+        XCTAssertEqual(strain(15.6, target: 15.5), [.strainTargetReached(target: 15.5)])
+        XCTAssertEqual(strain(15.0, target: 15.5), [.buildingFitness(target: 15.5)])
+        XCTAssertEqual(strain(9.5, target: 15.5), [.optimalHealth(target: 15.5)])
+    }
+
+    func testNoTargetNoStrainCard() {
+        // A range without the dial's target (or a target outside it) names nothing.
+        let none = Rules.Inputs(dayKey: today, recovery: 80, recoveryHistory: history(5, value: 70),
+                                strain: 15, optimalRange: 14...18)
+        XCTAssertEqual(Rules.cards(none), [])
+        XCTAssertEqual(strain(15, target: 19), [])
+    }
+
     func testBelowTheRangeDependsOnTheBand() {
         let red = Rules.cards(Rules.Inputs(dayKey: today, recovery: 20,
                                            recoveryHistory: [Rules.DayValue(day: day(-1), value: 25)],
-                                           strain: 2, optimalRange: 4...10))
+                                           strain: 2, optimalRange: 4...10, strainTarget: 7))
         XCTAssertEqual(red, [.recoveringFromStrain(rangeHigh: 10)])
         let yellow = Rules.cards(Rules.Inputs(dayKey: today, recovery: 50, recoveryHistory: history(5, value: 50),
-                                              strain: 2, optimalRange: 10...14))
+                                              strain: 2, optimalRange: 10...14, strainTarget: 12))
         XCTAssertEqual(yellow, [])
     }
 
     func testNoRangeNoStrainCard() {
         // Recovery not scored for the day (a carried value never sets a range): no Strain card.
-        let inputs = Rules.Inputs(dayKey: today, recovery: nil, strain: 12, optimalRange: 14...18)
+        let inputs = Rules.Inputs(dayKey: today, recovery: nil, strain: 12, optimalRange: 14...18, strainTarget: 16)
         XCTAssertEqual(Rules.cards(inputs), [])
     }
 
@@ -194,7 +227,7 @@ final class HomeCoachingRulesTests: XCTestCase {
         let nights = [day(-2), day(-1), today].map { Rules.DayValue(day: $0, value: 55) }
         let inputs = Rules.Inputs(
             dayKey: today, recovery: 28, recoveryHistory: [Rules.DayValue(day: day(-1), value: 60)],
-            strain: 1, optimalRange: 4...10, hrv: 40, hrvBaseline: trustedHRV(64, spread: 8),
+            strain: 1, optimalRange: 4...10, strainTarget: 7, hrv: 40, hrvBaseline: trustedHRV(64, spread: 8),
             sleepPerformance: nights, sleepDebtMin: 150, previousSleepDebtMin: 90, illness: true,
             alarm: Rules.AlarmCheck(alarmMinute: 480, wokeMinute: 400, nowMinute: 420),
             weekInReview: true, whatsNew: true)
