@@ -10,12 +10,13 @@ struct PulseCycleLogTarget: Identifiable, Equatable {
 }
 
 /// The flow row's glyph: an empty drop for no flow, scattered dots for spotting, then one, two or three
-/// drops by volume (help-center/09).
+/// drops by volume (help-center/09). Grey, and coral only on the selected row.
 struct PulseCycleFlowIcon: View {
     let flow: MenstrualCycleModel.Flow
+    var selected = false
 
     var body: some View {
-        let coral = PulseCyclePhase.menstrual.dot
+        let coral = selected ? PulseCyclePhase.menstrual.dot : PulseTheme.textTertiary
         switch flow {
         case .noFlow:
             Image(systemName: "drop")
@@ -44,10 +45,11 @@ struct PulseCycleFlowIcon: View {
 // MARK: - Symptoms sheet (WHOOP_UI_SPEC §3.24 "Symptoms sheet"; help-center/09)
 //
 // "SYMPTOMS ✕", the day ("Wed, Oct 08") with ‹ › to step back through earlier days, filter chips that jump
-// to a section, then PERIOD FLOW (one choice; the selected row takes a coral border) and the symptom groups
-// (any number; the selected rows a white border). Every tap is saved at once, on this iPhone; logging flow
-// keeps the period start in step (`Repository.setCycleFlow`). Cervical-mucus logging is left out on
-// purpose: it is a fertility signal, and these insights are not fertility tracking.
+// to a section (the chip of the section in view is white), then PERIOD FLOW in WHOOP's order (No Flow, Light
+// Flow, Medium Flow, Heavy Flow, Spotting; one choice, the selected row takes a coral border and coral drops)
+// and the symptom groups (any number; the selected rows a white border). Every tap is saved at once, on this
+// iPhone; logging flow keeps the period start in step (`Repository.setCycleFlow`). Cervical-mucus logging is
+// left out on purpose: it is a fertility signal, and these insights are not fertility tracking.
 struct PulseCycleLogSheet: View {
     enum Section: String, CaseIterable, Identifiable {
         case flow, pain, body, mood, sleepEnergy
@@ -80,6 +82,12 @@ struct PulseCycleLogSheet: View {
     @State private var flow: MenstrualCycleModel.Flow?
     @State private var symptoms: Set<String> = []
     @State private var loaded = false
+    /// The section at the top of the list, whose chip is selected.
+    @State private var visibleSection: Section = .flow
+    /// A chip tap scrolls to its section; until then the scroll position does not move the selection.
+    @State private var chipPinnedUntil = Date.distantPast
+
+    private static let space = "pulse.cycleLog"
 
     var body: some View {
         ScrollViewReader { proxy in
@@ -91,10 +99,12 @@ struct PulseCycleLogSheet: View {
                         .padding(.top, 18)
                     flowSection
                         .id(Section.flow.id)
+                        .background(sectionTop(.flow))
                         .padding(.top, 26)
                     ForEach(PulseCycleLog.Group.allCases) { group in
                         symptomSection(group)
                             .id(section(for: group).id)
+                            .background(sectionTop(section(for: group)))
                             .padding(.top, 30)
                     }
                     Text(String(localized: "Saved as you tap, on this iPhone only."))
@@ -106,7 +116,14 @@ struct PulseCycleLogSheet: View {
                 }
                 .padding(.horizontal, PulseTheme.Layout.pageMargin)
             }
+            .coordinateSpace(name: Self.space)
             .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
+            .onPreferenceChange(PulseCycleSectionTopKey.self) { tops in
+                guard Date() >= chipPinnedUntil else { return }
+                // The last section whose top has reached the bar.
+                let current = Section.allCases.last { (tops[$0.id] ?? .infinity) <= 140 } ?? .flow
+                if current != visibleSection { visibleSection = current }
+            }
             .task {
                 guard !loaded else { return }
                 loaded = true
@@ -127,6 +144,14 @@ struct PulseCycleLogSheet: View {
 
     private func section(for group: PulseCycleLog.Group) -> Section {
         Section.allCases.first { $0.group == group } ?? .flow
+    }
+
+    /// Reports where a section's top sits in the list, for the chip row.
+    private func sectionTop(_ section: Section) -> some View {
+        GeometryReader { geo in
+            Color.clear.preference(key: PulseCycleSectionTopKey.self,
+                                   value: [section.id: geo.frame(in: .named(Self.space)).minY])
+        }
     }
 
     private var bar: some View {
@@ -188,7 +213,9 @@ struct PulseCycleLogSheet: View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
                 ForEach(Section.allCases) { s in
-                    PulseFilterChip(title: s.title, isSelected: false) {
+                    PulseFilterChip(title: s.title, isSelected: visibleSection == s) {
+                        visibleSection = s
+                        chipPinnedUntil = Date().addingTimeInterval(0.8)
                         withAnimation(.easeOut(duration: 0.3)) { proxy.scrollTo(s.id, anchor: .top) }
                     }
                 }
@@ -202,11 +229,11 @@ struct PulseCycleLogSheet: View {
         VStack(alignment: .leading, spacing: 10) {
             PulseListSectionHeader(String(localized: "Period flow"))
                 .padding(.bottom, 4)
-            ForEach([MenstrualCycleModel.Flow.noFlow, .spotting, .light, .medium, .heavy], id: \.self) { option in
+            ForEach(PulseCycleLog.flowOrder, id: \.self) { option in
                 let selected = flow == option
                 Button { choose(option) } label: {
                     row(title: PulseCycleLog.title(option), selected: selected, tint: PulseCyclePhase.menstrual.dot) {
-                        PulseCycleFlowIcon(flow: option)
+                        PulseCycleFlowIcon(flow: option, selected: selected)
                     }
                 }
                 .buttonStyle(PulsePressStyle())
@@ -256,10 +283,14 @@ struct PulseCycleLogSheet: View {
 
     // MARK: Data
 
+    /// The day on screen only (its flow, symptoms and the starts just before it), read off the main actor.
     private func load() async {
-        let logs = await repo.cycleLogs()
-        flow = logs.flow[day]
-        symptoms = logs.symptoms[day] ?? []
+        let target = day
+        guard let store = await repo.storeHandle() else { return }
+        let logged = await PulseCycleLog.readDay(store, day: target)
+        guard target == day else { return }   // stepped on while it read
+        flow = logged.flow
+        symptoms = logged.symptoms
     }
 
     private func step(_ delta: Int) {
@@ -280,6 +311,13 @@ struct PulseCycleLogSheet: View {
         if on { symptoms.insert(id) } else { symptoms.remove(id) }
         let target = day
         Task { await repo.setCycleSymptom(id, logged: on, day: target) }
+    }
+}
+/// Each log section's top in the list, by section id.
+private struct PulseCycleSectionTopKey: PreferenceKey {
+    static var defaultValue: [String: CGFloat] = [:]
+    static func reduce(value: inout [String: CGFloat], nextValue: () -> [String: CGFloat]) {
+        value.merge(nextValue()) { _, new in new }
     }
 }
 #endif

@@ -16,10 +16,16 @@ import StrandAnalytics
 // The period START stays the anchor the temperature engine cross-validates against. Logging flow keeps it
 // in step: a period day with no start in the 10 days before it becomes a start, one just before the
 // current start moves the start back, and clearing the flow on a start day moves the start to the next
-// flow day or removes it. Nothing here leaves the device.
+// flow day or removes it. So every period-flow day written here has a start at most 9 days before it, and a
+// period-flow day without one can only be left over from the classic tracker's deletes, which remove
+// starts alone ("Delete all period history" and its per-start delete in `SkinTempCardsView`). Reading
+// ignores such a left-over day, so a period the wearer deleted is never drawn again; its symptoms stay,
+// because symptoms are not period history and a symptom-only log is legitimate (menopause, or before the
+// first period is logged). Nothing here leaves the device.
 //
-// The Android app does not read these keys yet (see the integration notes): a backup restored there keeps
-// them untouched and shows period starts only.
+// Android parity: the Android twin of `CycleTrackingStore` reads `period_start` only. A `.noopbak` restored
+// on Android carries these rows untouched (the source is backed up whole) but shows period starts only,
+// until Android reads `period_flow` and `symptom_<id>` the same way.
 enum PulseCycleLog {
     static let flowKey = "period_flow"
     static let symptomPrefix = "symptom_"
@@ -52,7 +58,7 @@ enum PulseCycleLog {
     }
 
     /// Contraception changes what the phases mean: with hormonal contraception there is no natural cycle,
-    /// so only bleeding is laid out.
+    /// so only the bleeding the wearer logs is laid out, and nothing is predicted.
     enum Contraception: String, CaseIterable, Identifiable {
         case none, hormonal, nonHormonal
 
@@ -79,6 +85,13 @@ enum PulseCycleLog {
     /// Whether phases apply in `mode` with `contraception`.
     static func phasesApply(mode: Mode, contraception: Contraception) -> Bool {
         mode != .menopause && contraception != .hormonal
+    }
+
+    /// Whether anything is predicted (a next-period window, an expected bleed, symptoms by cycle day). Not
+    /// where there is no natural cycle: in menopause and under hormonal contraception, whose withdrawal or
+    /// breakthrough bleeding no logged cycle can forecast.
+    static func predicts(mode: Mode, contraception: Contraception) -> Bool {
+        phasesApply(mode: mode, contraception: contraception)
     }
 
     /// A loggable symptom.
@@ -126,13 +139,17 @@ enum PulseCycleLog {
 
     static func symptom(_ id: String) -> Symptom? { symptoms.first { $0.id == id } }
 
+    /// The log sheet's PERIOD FLOW rows, in WHOOP's order (help-center/09).
+    static let flowOrder: [MenstrualCycleModel.Flow] = [.noFlow, .light, .medium, .heavy, .spotting]
+
+    /// "No Flow", "Light Flow", "Spotting": Title Case, as help-center/09 and 10 print them.
     static func title(_ flow: MenstrualCycleModel.Flow) -> String {
         switch flow {
-        case .noFlow: return String(localized: "No flow")
+        case .noFlow: return String(localized: "No Flow")
         case .spotting: return String(localized: "Spotting")
-        case .light: return String(localized: "Light flow")
-        case .medium: return String(localized: "Medium flow")
-        case .heavy: return String(localized: "Heavy flow")
+        case .light: return String(localized: "Light Flow")
+        case .medium: return String(localized: "Medium Flow")
+        case .heavy: return String(localized: "Heavy Flow")
         }
     }
 
@@ -144,25 +161,63 @@ enum PulseCycleLog {
     }
 }
 
-extension Repository {
+// MARK: - Reading (off the main actor)
 
-    /// Period starts, flow and symptoms, oldest first.
-    func cycleLogs() async -> PulseCycleLog.Logs {
-        guard let store = await storeHandle() else { return PulseCycleLog.Logs() }
-        let keys = [PulseCycleLog.flowKey] + PulseCycleLog.symptoms.map { PulseCycleLog.symptomPrefix + $0.id }
-        let rows = (try? await store.metricSeries(deviceId: CycleTrackingStore.sourceId, keys: keys,
+extension PulseCycleLog {
+    /// Every key the cycle source holds for Menstrual Cycle Insights.
+    static var allKeys: [String] {
+        [CycleTrackingStore.periodStartKey, flowKey] + symptoms.map { symptomPrefix + $0.id }
+    }
+
+    /// Period starts, flow and symptoms, oldest first. Not isolated to any actor, so the read and the parse
+    /// run off the main actor whoever calls it (the snapshot builder, the log sheet).
+    static func read(_ store: WhoopStore) async -> Logs {
+        let rows = (try? await store.metricSeries(deviceId: CycleTrackingStore.sourceId, keys: allKeys,
                                                   from: CycleTrackingStore.earliestDay,
                                                   to: CycleTrackingStore.latestDay)) ?? []
-        var logs = PulseCycleLog.Logs()
-        logs.starts = await periodStarts()
+        return parse(rows)
+    }
+
+    /// One day's flow and symptoms (the log sheet's day), with the starts that decide whether its flow is a
+    /// left-over.
+    static func readDay(_ store: WhoopStore, day: String) async -> (flow: MenstrualCycleModel.Flow?, symptoms: Set<String>) {
+        let from = MenstrualCycleModel.shift(day, by: -(MenstrualCycleModel.periodRunMaxDays - 1)) ?? day
+        let rows = (try? await store.metricSeries(deviceId: CycleTrackingStore.sourceId, keys: allKeys,
+                                                  from: from, to: day)) ?? []
+        let logs = parse(rows)
+        return (logs.flow[day], logs.symptoms[day] ?? [])
+    }
+
+    /// The rows as logs. A period-flow day with no start in the `periodRunMaxDays` before it is a left-over
+    /// of a deleted start and is dropped (see the header).
+    static func parse(_ rows: [MetricPoint]) -> Logs {
+        var logs = Logs()
+        var starts = Set<String>()
         for row in rows {
-            if row.key == PulseCycleLog.flowKey {
+            if row.key == CycleTrackingStore.periodStartKey {
+                if row.value >= CycleTrackingStore.loggedValue { starts.insert(row.day) }
+            } else if row.key == flowKey {
                 if let f = MenstrualCycleModel.Flow(rawValue: Int(row.value.rounded())) { logs.flow[row.day] = f }
-            } else if row.key.hasPrefix(PulseCycleLog.symptomPrefix), row.value >= CycleTrackingStore.loggedValue {
-                logs.symptoms[row.day, default: []].insert(String(row.key.dropFirst(PulseCycleLog.symptomPrefix.count)))
+            } else if row.key.hasPrefix(symptomPrefix), row.value >= CycleTrackingStore.loggedValue {
+                logs.symptoms[row.day, default: []].insert(String(row.key.dropFirst(symptomPrefix.count)))
+            }
+        }
+        logs.starts = starts.sorted()
+        logs.flow = logs.flow.filter { day, flow in
+            !flow.isPeriod || logs.starts.contains { start in
+                start <= day && (MenstrualCycleModel.days(from: start, to: day) ?? .max) < MenstrualCycleModel.periodRunMaxDays
             }
         }
         return logs
+    }
+}
+
+extension Repository {
+
+    /// Period starts, flow and symptoms, oldest first (read and parsed off the main actor).
+    func cycleLogs() async -> PulseCycleLog.Logs {
+        guard let store = await storeHandle() else { return PulseCycleLog.Logs() }
+        return await PulseCycleLog.read(store)
     }
 
     /// Log (or clear, with nil) one day's flow, and keep the period starts in step with it.
