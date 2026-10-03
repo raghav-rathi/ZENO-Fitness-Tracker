@@ -121,19 +121,22 @@ private struct AchievementsRuleLabel: View {
 
 // MARK: - Achievement Details
 
-/// Achievement Details (spec §3.30, profile-community-2026/05–08, 82): a glow in the family's colour over
-/// near-black, the badge hero with its big count (the last milestone reached), the name and the rule,
-/// when it unlocked and the total so far (in place of WHOOP's [POP] percentile), the milestone card from
-/// the last milestone to the next, and SHARE ACHIEVEMENT (a card rendered on the phone).
+/// Achievement Details (spec §3.30, profile-community-2026/05–08, 82): "‹ ACHIEVEMENT DETAILS" with a
+/// share icon (Aug 2026+), the family's wash over the top of a near-black page, the badge hero with its
+/// big count (the last milestone reached), the name and the rule, when it unlocked and the total so far
+/// (in place of WHOOP's [POP] percentile), the milestone card from the count to the next milestone, and
+/// SHARE ACHIEVEMENT. The shared card is rendered on the phone, and only when the wearer asks to share.
 struct PulseAchievementDetailsView: View {
     let badgeID: String
 
     @State private var snapshot: ProfileSnapshot?
 
+    private var badge: PulseAchievements.Badge? { snapshot?.badges.first { $0.id == badgeID } }
+
     var body: some View {
-        PulseScreenScaffold(title: String(localized: "Achievement details"), background: .nearBlack,
-                            spacing: 0, topPadding: 0, ready: snapshot != nil) {
-            if let badge = snapshot?.badges.first(where: { $0.id == badgeID }) {
+        PulseScreenScaffold(title: String(localized: "Achievement details"), trailing: shareTrailing,
+                            background: .nearBlack, spacing: 0, topPadding: 0, ready: snapshot != nil) {
+            if let badge {
                 content(badge)
             } else if snapshot != nil {
                 Text(String(localized: "This achievement is no longer in your history."))
@@ -149,9 +152,16 @@ struct PulseAchievementDetailsView: View {
         .profileSnapshot($snapshot)
     }
 
+    /// The share icon at the bar's right, for a badge there is something to share.
+    private var shareTrailing: PulseNavTrailing {
+        guard let badge, badge.isUnlocked else { return .none }
+        return .symbol("square.and.arrow.up", accessibilityLabel: String(localized: "Share achievement")) {
+            share(badge)
+        }
+    }
+
     private func content(_ badge: PulseAchievements.Badge) -> some View {
         let info = ProfileBadgeInfo(badge)
-        let glow = ProfileArtPalette.family(badge.family, alarm: info.alarm)
         return VStack(spacing: 0) {
             ZStack(alignment: .bottom) {
                 ProfileBadgeArt(family: badge.family, symbol: info.symbol, stars: badge.stars,
@@ -167,9 +177,9 @@ struct PulseAchievementDetailsView: View {
             .padding(.top, 26)
             .frame(maxWidth: .infinity)
             .background(alignment: .top) {
-                RadialGradient(colors: [glow[1].opacity(0.42), glow[1].opacity(0.1), Color.clear],
-                               center: .top, startRadius: 0, endRadius: 360)
-                    .frame(height: 560)
+                // From the screen's top edge (under the bar) to ≈45% of its height (profile-community-2026/05).
+                AchievementGlowWash(family: badge.family, alarm: info.alarm)
+                    .frame(height: 440)
                     .padding(.horizontal, -PulseTheme.Layout.pageMargin)
                     .offset(y: -140)
                     .allowsHitTesting(false)
@@ -193,7 +203,7 @@ struct PulseAchievementDetailsView: View {
                     .padding(.top, 30)
             }
             if badge.isUnlocked {
-                shareButton(badge, info: info)
+                shareButton(badge)
                     .padding(.top, 16)
             }
         }
@@ -229,7 +239,10 @@ struct PulseAchievementDetailsView: View {
     /// milestone.", and the next milestone's badge, greyed.
     private func milestoneCard(_ badge: PulseAchievements.Badge, next: Int, info: ProfileBadgeInfo) -> some View {
         HStack(spacing: 12) {
-            miniBadge(badge, info: info, value: ProfileBadgeInfo.countText(badge), locked: !badge.isUnlocked)
+            // The count as it stands (1173 on profile-community-2026/05, under a hero showing 1150).
+            miniBadge(badge, info: info,
+                      value: badge.kind == .value ? ProfileBadgeInfo.countText(badge) : PulseFormat.grouped(Double(badge.count)),
+                      locked: !badge.isUnlocked)
             VStack(spacing: 10) {
                 Text(String(localized: "\(PulseFormat.grouped(Double(badge.remaining ?? 0))) more"))
                     .pulseText(.coachingTitle)
@@ -277,11 +290,10 @@ struct PulseAchievementDetailsView: View {
         .frame(width: 76)
     }
 
-    /// "⇪ SHARE ACHIEVEMENT": a portrait card (the badge on black with its glow, the count, the name and
-    /// the rule, and ZENO's wordmark), rendered on the phone and handed to the share sheet.
-    private func shareButton(_ badge: PulseAchievements.Badge, info: ProfileBadgeInfo) -> some View {
-        let image = Self.shareImage(badge, info: info)
-        return ShareLink(item: image, preview: SharePreview(info.name, image: image)) {
+    /// "⇪ SHARE ACHIEVEMENT": hands a portrait card (the badge on black with its glow, the count, the name
+    /// and the rule, and ZENO's wordmark) to the share sheet.
+    private func shareButton(_ badge: PulseAchievements.Badge) -> some View {
+        Button { share(badge) } label: {
             HStack(spacing: 8) {
                 Image(systemName: "square.and.arrow.up").font(.system(size: 15, weight: .semibold))
                 Text(String(localized: "Share achievement")).modifier(MoreLabelText(tracking: 1.4))
@@ -295,12 +307,46 @@ struct PulseAchievementDetailsView: View {
         .buttonStyle(PulsePressStyle())
     }
 
-    @MainActor
-    private static func shareImage(_ badge: PulseAchievements.Badge, info: ProfileBadgeInfo) -> Image {
-        let renderer = ImageRenderer(content: AchievementShareCard(badge: badge, info: info))
+    /// Render the card (a 1080 × 1620 px raster) at the moment of the tap, never while the page draws, and
+    /// open the share sheet with it.
+    private func share(_ badge: PulseAchievements.Badge) {
+        let renderer = ImageRenderer(content: AchievementShareCard(badge: badge, info: ProfileBadgeInfo(badge)))
         renderer.scale = 3
-        if let ui = renderer.uiImage { return Image(uiImage: ui) }
-        return Image(systemName: info.symbol)
+        guard let image = renderer.uiImage else { return }
+        ProfileSharePresenter.share([image])
+    }
+}
+
+/// The family's wash across the top of Achievement Details, fading into the near-black page by ≈45% of the
+/// screen (profile-community-2026/05: #393368 at 3% of the height, #312D59 at 15%, #262542 at 25% down the
+/// left edge). The foundation's tokens where it has one: activities violet → teal, sleep slate, the red of a
+/// Recovery of 5% or less; the other families take their frame's deep colour.
+private struct AchievementGlowWash: View {
+    let family: PulseAchievements.Family
+    let alarm: Bool
+
+    var body: some View {
+        fill.mask(LinearGradient(stops: [.init(color: Color.white, location: 0),
+                                         .init(color: Color.white.opacity(0.82), location: 0.3),
+                                         .init(color: Color.white.opacity(0.55), location: 0.52),
+                                         .init(color: Color.white.opacity(0.18), location: 0.8),
+                                         .init(color: Color.clear, location: 1)],
+                                  startPoint: .top, endPoint: .bottom))
+    }
+
+    @ViewBuilder
+    private var fill: some View {
+        switch family {
+        case .activities:
+            LinearGradient(gradient: PulseTheme.Gradients.achievementGlowActivity, startPoint: .leading,
+                           endPoint: .trailing)
+        case .sleep:
+            PulseTheme.Gradients.achievementGlowSleep
+        case .recovery where alarm:
+            PulseTheme.Gradients.achievementGlowOnePercent
+        default:
+            ProfileArtPalette.detailsWash(family)
+        }
     }
 }
 
