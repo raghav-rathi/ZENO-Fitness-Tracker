@@ -450,9 +450,16 @@ enum PulseTrendPageBuilder {
                     label: isWeek ? v.map(columnLabel) : nil,
                     secondaryLabel: isWeek && mode == .dualLine ? secondary[key].map(columnLabel) : nil)
             }
-            // An M line marks and labels its newest point only (deep-dives-2026/54: "32").
-            if range == .month && mode == .line,
-               let last = columns.lastIndex(where: { $0.value != nil }), let v = columns[last].value {
+            // An M line marks and labels its newest point only (deep-dives-2026/54: "32"). VO₂ max is a weekly
+            // estimate: its M marks and labels every reading (reviews/83: "55 55 53 43"), so four or five
+            // estimates never read as a daily line.
+            let marksEvery = range == .month && mode == .line && metric.source == .vo2Estimate
+            if marksEvery {
+                for i in columns.indices {
+                    if let v = columns[i].value { columns[i].label = columnLabel(v) }
+                }
+            } else if range == .month && mode == .line,
+                      let last = columns.lastIndex(where: { $0.value != nil }), let v = columns[last].value {
                 columns[last].label = columnLabel(v)
             }
             let typical = metric.showsTypicalRange && !isLong
@@ -484,7 +491,7 @@ enum PulseTrendPageBuilder {
                 secondaryColor: mode == .dualLine ? PulseTheme.positive : nil,
                 average: showsAverage ? average : nil, typical: typical,
                 segments: segs, dimmed: isLong,
-                showsMarkers: isWeek, marksLastPointOnly: range == .month && mode == .line,
+                showsMarkers: isWeek || marksEvery, marksLastPointOnly: range == .month && mode == .line && !marksEvery,
                 phases: phaseSpans(keys, phases: phases),
                 emptyMessage: columns.contains { $0.value != nil } ? nil : emptyMessage,
                 accessibilitySummary: accessibility(columns: columns, average: average))
@@ -869,6 +876,11 @@ enum PulseTrendPageBuilder {
             if chart.mode == .stacked, !chart.dimmed, case .stacked(let parts) = metric.chart {
                 let ordered = metric.key == "restorative_min" ? parts.reversed() : parts
                 items += ordered.map { .init(id: $0.id, title: $0.title, color: $0.color) }
+            }
+            // VO₂ max's hollow markers are ZENO's weekly estimates (reviews/83's "○ WHOOP ESTIMATE").
+            if metric.source == .vo2Estimate && chart.showsMarkers {
+                items.append(.init(id: "estimate", title: String(localized: "ZENO estimate"),
+                                   color: metric.color, swatch: .ring))
             }
             let shown = Set(chart.phases.map(\.phase))
             for phase in PulseTrendCyclePhase.allCases where shown.contains(phase) {
