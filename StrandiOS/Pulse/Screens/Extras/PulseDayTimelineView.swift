@@ -28,7 +28,7 @@ struct PulseDayTimelineView: View {
     @State private var dayOffset: Int?
     @State private var snapshot: DayTimelineSnapshot?
     @State private var zoomed = false
-    @State private var scroll: CGFloat = 0
+    @State private var scrollFraction: CGFloat = 0
     @State private var cursor: Date?
 
     private typealias T = PulseExtrasTheme.Timeline
@@ -75,9 +75,7 @@ struct PulseDayTimelineView: View {
         }
         .onDisappear { monitor.stop() }
         .onChange(of: monitor.orientation) { _, orientation in
-            // The plot changes width, so a zoom or cursor from the other layout would land elsewhere.
-            zoomed = false
-            scroll = 0
+            // The plot changes width; the zoom and pan carry over as fractions, a cursor would not.
             cursor = nil
             if closesWhenUpright && orientation == .portrait { dismiss() }
         }
@@ -95,8 +93,26 @@ struct PulseDayTimelineView: View {
         if let s = await model.build(dayOffset: offset, { builder, request in await builder.dayTimeline(request) }),
            s.day.offset == dayOffset {
             snapshot = s
+            #if DEBUG
+            applyDebugState(s)
+            #endif
         }
     }
+
+    #if DEBUG
+    /// `--pulse-timeline-zoom` opens ⊕; `--pulse-timeline-cursor F` parks the scrub cursor at fraction F of the
+    /// day (0…1), so simctl, which cannot touch, can capture both states.
+    private func applyDebugState(_ s: DayTimelineSnapshot) {
+        let args = CommandLine.arguments
+        if args.contains("--pulse-timeline-zoom"), !zoomed, zoomFactor(s) != nil {
+            toggleZoom()
+        }
+        if let i = args.firstIndex(of: "--pulse-timeline-cursor"), i + 1 < args.count,
+           let f = Double(args[i + 1]), cursor == nil {
+            cursor = s.start.addingTimeInterval(min(max(f, 0), 1) * s.end.timeIntervalSince(s.start))
+        }
+    }
+    #endif
 
     private var canGoBack: Bool { (dayOffset ?? 0) < model.maxDayOffset }
     private var canGoForward: Bool { (dayOffset ?? 0) > 0 }
@@ -108,7 +124,7 @@ struct PulseDayTimelineView: View {
         // The chart on screen is another day's: clear it rather than show it under this day's title.
         snapshot = nil
         zoomed = false
-        scroll = 0
+        scrollFraction = 0
         cursor = nil
     }
 
@@ -140,18 +156,12 @@ struct PulseDayTimelineView: View {
         zoomed ? (zoomFactor(snapshot) ?? 1) : 1
     }
 
-    private func toggleZoom(plot: CGRect) {
-        guard let snapshot, let factor = zoomFactor(snapshot) else { return }
+    private func toggleZoom() {
+        guard let snapshot, zoomFactor(snapshot) != nil else { return }
         cursor = nil
-        if zoomed {
-            zoomed = false
-            scroll = 0
-            return
-        }
-        zoomed = true
-        let g = DayTimelineGeometry(plot: plot, start: snapshot.start, end: snapshot.end, zoom: factor)
+        zoomed.toggle()
         // Today opens on the newest hours, as WHOOP's does; a finished day on its middle.
-        scroll = snapshot.day.isToday ? g.maxScroll : g.maxScroll / 2
+        scrollFraction = zoomed ? (snapshot.day.isToday ? 1 : 0.5) : 0
     }
 
     // MARK: Landscape
@@ -197,7 +207,7 @@ struct PulseDayTimelineView: View {
                            alignment: .trailing)
                     .offset(x: size.width / 2 + 110)
             }
-            zoomButton(plot: plot)
+            zoomButton
                 .position(x: size.width - side - T.zoomCentre, y: zoomY)
         }
         .frame(width: size.width, height: size.height, alignment: .topLeading)
@@ -276,7 +286,7 @@ struct PulseDayTimelineView: View {
                     .foregroundStyle(PulseTheme.textTertiary)
                     .fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 8)
-                zoomButton(plot: plot)
+                zoomButton
             }
             .frame(minHeight: 44)
             if let snapshot, snapshot.hasHeartRate {
@@ -315,7 +325,7 @@ struct PulseDayTimelineView: View {
         PulseLoadingGate(isLoading: snapshot == nil) {
             if let snapshot {
                 DayTimelineChart(snapshot: snapshot, plot: plot, strip: strip, zoom: zoom(for: snapshot),
-                                 scroll: $scroll, cursor: $cursor)
+                                 scrollFraction: $scrollFraction, cursor: $cursor)
                     .frame(width: size.width, height: size.height, alignment: .topLeading)
             }
         } skeleton: {
@@ -371,9 +381,9 @@ struct PulseDayTimelineView: View {
     }
 
     @ViewBuilder
-    private func zoomButton(plot: CGRect) -> some View {
+    private var zoomButton: some View {
         if let snapshot, snapshot.hasHeartRate, zoomFactor(snapshot) != nil {
-            Button { toggleZoom(plot: plot) } label: {
+            Button { toggleZoom() } label: {
                 Image(systemName: zoomed ? "minus.magnifyingglass" : "plus.magnifyingglass")
                     .font(.system(size: 21, weight: .regular))
                     .foregroundStyle(PulseTheme.textPrimary)

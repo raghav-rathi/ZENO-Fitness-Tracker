@@ -16,20 +16,22 @@ import StrandAnalytics
 // scrubs. VoiceOver reads a summary and steps a cursor through the day half an hour at a time.
 
 /// Maps the timeline's instants and heart rates to points. The plot keeps `dataInset` before the day's
-/// first instant so its time label clears the y axis; ⊕ stretches the data `zoom` times and `scroll`
-/// slides it.
+/// first instant so its time label clears the y axis; ⊕ stretches the data `zoom` times and
+/// `scrollFraction` slides it (0 shows the day's start, 1 its end), so a pan survives a change of layout.
 struct DayTimelineGeometry {
     let plot: CGRect
     let start: Date
     let end: Date
     var zoom: CGFloat = 1
-    var scroll: CGFloat = 0
+    var scrollFraction: CGFloat = 0
     var dataInset: CGFloat = PulseExtrasTheme.Timeline.dataInset
 
     var span: TimeInterval { max(60, end.timeIntervalSince(start)) }
     /// The width the day's span is drawn across.
     var dataWidth: CGFloat { max(1, (plot.width - dataInset) * zoom) }
     var maxScroll: CGFloat { max(0, dataWidth + dataInset - plot.width) }
+    /// How far the content has slid left, in points.
+    var scroll: CGFloat { min(max(scrollFraction, 0), 1) * maxScroll }
 
     func x(_ date: Date) -> CGFloat {
         plot.minX + dataInset + CGFloat(date.timeIntervalSince(start) / span) * dataWidth - scroll
@@ -51,10 +53,17 @@ struct DayTimelineGeometry {
     var visibleStart: Date { date(atX: plot.minX) }
     var visibleEnd: Date { date(atX: plot.maxX) }
 
-    /// The scroll that puts `date` at screen `x` at this zoom, clamped to the content.
-    func scroll(keeping date: Date, atX screenX: CGFloat) -> CGFloat {
+    /// The scroll fraction that puts `date` at screen `x` at this zoom, clamped to the content.
+    func scrollFraction(keeping date: Date, atX screenX: CGFloat) -> CGFloat {
+        guard maxScroll > 0 else { return 0 }
         let contentX = dataInset + CGFloat(date.timeIntervalSince(start) / span) * dataWidth
-        return min(max(contentX - (screenX - plot.minX), 0), maxScroll)
+        return min(max((contentX - (screenX - plot.minX)) / maxScroll, 0), 1)
+    }
+
+    /// The scroll fraction after dragging `dx` points from `fraction`.
+    func scrollFraction(from fraction: CGFloat, draggedBy dx: CGFloat) -> CGFloat {
+        guard maxScroll > 0 else { return 0 }
+        return min(max(fraction - dx / maxScroll, 0), 1)
     }
 }
 
@@ -65,7 +74,7 @@ struct DayTimelineChart: View {
     let plot: CGRect
     let strip: CGRect
     let zoom: CGFloat
-    @Binding var scroll: CGFloat
+    @Binding var scrollFraction: CGFloat
     @Binding var cursor: Date?
 
     @State private var drag: DragMode = .idle
@@ -84,7 +93,8 @@ struct DayTimelineChart: View {
     private typealias T = PulseExtrasTheme.Timeline
 
     private var geometry: DayTimelineGeometry {
-        DayTimelineGeometry(plot: plot, start: snapshot.start, end: snapshot.end, zoom: zoom, scroll: scroll)
+        DayTimelineGeometry(plot: plot, start: snapshot.start, end: snapshot.end, zoom: zoom,
+                           scrollFraction: scrollFraction)
     }
 
     /// The series for the current scale.
@@ -367,7 +377,7 @@ struct DayTimelineChart: View {
                 switch drag {
                 case .idle:
                     if zoom > 1.01 {
-                        drag = .deciding(startScroll: scroll)
+                        drag = .deciding(startScroll: scrollFraction)
                         let at = g.date(atX: value.startLocation.x + plot.minX)
                         holdTask?.cancel()
                         holdTask = Task { @MainActor in
@@ -385,10 +395,10 @@ struct DayTimelineChart: View {
                     if abs(value.translation.width) > 8 || abs(value.translation.height) > 8 {
                         holdTask?.cancel()
                         drag = .panning(startScroll: startScroll)
-                        scroll = min(max(startScroll - value.translation.width, 0), g.maxScroll)
+                        scrollFraction = g.scrollFraction(from: startScroll, draggedBy: value.translation.width)
                     }
                 case .panning(let startScroll):
-                    scroll = min(max(startScroll - value.translation.width, 0), g.maxScroll)
+                    scrollFraction = g.scrollFraction(from: startScroll, draggedBy: value.translation.width)
                 case .scrubbing:
                     cursor = g.date(atX: x)
                 }
@@ -452,7 +462,7 @@ struct DayTimelineChart: View {
             let g = geometry
             let x = g.x(cursor)
             if x < plot.minX || x > plot.maxX {
-                scroll = g.scroll(keeping: cursor, atX: plot.midX)
+                scrollFraction = g.scrollFraction(keeping: cursor, atX: plot.midX)
             }
         }
     }
