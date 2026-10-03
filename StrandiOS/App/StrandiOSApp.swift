@@ -153,6 +153,13 @@ struct StrandiOSApp: App {
         // Before any view or publisher exists: the first push to the Lock Screen banner must find the
         // session already running, or it ends the banner iOS kept alive across the restart.
         liftSession.resumeSaved()
+        // A resumed session comes back as the bar, with no session screen open to load what each exercise
+        // lifted last time; without this, the bar and the Lock Screen banner would show a set's program
+        // target where the session screen shows last time's numbers.
+        if liftSession.isActive {
+            let repo = model.repo
+            Task { await liftSession.loadLastSession(from: repo) }
+        }
         // #1538: a strap offload completes while the app is BACKGROUNDED — it stays alive as a
         // bluetooth-central to receive it — and the re-score it triggers took nearly eight minutes on the
         // reporter's install, far longer than that wake survives. The pass is all-or-nothing, so being
