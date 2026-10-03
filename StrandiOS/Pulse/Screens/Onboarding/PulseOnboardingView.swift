@@ -34,7 +34,9 @@ struct PulseOnboardingView: View {
 
     private let firstRun: FirstRun?
 
-    @EnvironmentObject private var model: AppModel
+    // Deliberately no `AppModel` / `LiveState` observation here (the classic wizard's rule): they publish
+    // on every heartbeat and log line, and the whole flow would redraw with them. Steps observe what they
+    // need; the pairing object keeps the model it scanned on.
     @Environment(\.dismiss) private var dismiss
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @AppStorage("noop.acceptedTermsVersion") private var acceptedTerms = ""
@@ -117,10 +119,7 @@ struct PulseOnboardingView: View {
         .preferredColorScheme(.dark)
         .toolbar(.hidden, for: .navigationBar)
         .interactiveDismissDisabled(firstRun != nil)
-        .onDisappear { pairing.stop(model: model) }
-        #if DEBUG
-        .onAppear { PulseOnboardingStep.applyDebugPairing(pairing) }
-        #endif
+        .onDisappear { pairing.stop() }
     }
 
     private var transition: AnyTransition {
@@ -146,13 +145,14 @@ struct PulseOnboardingView: View {
         case .wakeUp:
             PulseOnboardingWakeUpStep(progress: progress(.wakeUp), onBack: back, onNext: advance)
         case .pairingMode:
+            // The search step starts the scan itself as it appears (or shows CONNECTED when a strap is
+            // already bonded).
             PulseOnboardingPairingModeStep(family: $family, onBack: back, onSkip: skipPairing, onStart: {
-                pairing.beginSearch(model: model, family: family)
                 go(to: .searching)
             })
         case .searching:
             PulseOnboardingSearchStep(pairing: pairing, family: family, onBack: {
-                pairing.stop(model: model)
+                pairing.stop()
                 go(to: .pairingMode, forward: false)
             }, onSkip: skipPairing, onDone: { _ in go(to: .name) })
         case .name:
@@ -210,7 +210,7 @@ struct PulseOnboardingView: View {
 
     /// SKIP on the pairing steps: pair later from Devices, as ZENO always allowed.
     private func skipPairing() {
-        pairing.stop(model: model)
+        pairing.stop()
         go(to: .name)
         pairsStrap = false
     }
@@ -229,7 +229,7 @@ struct PulseOnboardingView: View {
     }
 
     private func finish() {
-        pairing.stop(model: model)
+        pairing.stop()
         if let firstRun {
             if includesSetup { firstRun.onFinished() }
         } else {

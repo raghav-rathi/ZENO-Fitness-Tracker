@@ -35,7 +35,12 @@ final class PulseStrapPairing: ObservableObject {
     }
 
     @Published private(set) var phase: Phase = .searching
+    /// Whether the link reached its encrypted bond (`LiveState.encryptedBond`): a 5.0/MG can stream heart
+    /// rate before it does (#69), and CONNECTED says so.
+    @Published private(set) var encrypted = false
     private var timeout: Task<Void, Never>?
+    /// The app model the scan was started on, so the flow can stop it without observing the model.
+    private weak var model: AppModel?
 
     /// How long a connect may take before the screen says it did not happen. A WHOOP 5.0/MG shows the
     /// iOS pairing prompt first, so this leaves time to read and answer it.
@@ -43,15 +48,17 @@ final class PulseStrapPairing: ObservableObject {
 
     /// Start (or restart) the present-only scan for `family`.
     func beginSearch(model: AppModel, family: WhoopModel) {
+        self.model = model
         timeout?.cancel()
         phase = .searching
         model.presentWhoopScan(model: family)
     }
 
-    /// Stop scanning and forget any pending connect timeout (leaving the device steps).
-    func stop(model: AppModel) {
+    /// Stop scanning and forget any pending connect timeout (leaving the device steps). A connect already
+    /// asked for keeps going, as the classic onboarding's did.
+    func stop() {
         timeout?.cancel()
-        model.stopWhoopScan()
+        model?.stopWhoopScan()
     }
 
     /// The wearer picked a strap from the list.
@@ -76,6 +83,10 @@ final class PulseStrapPairing: ObservableObject {
         case .connected: break
         default: phase = .connected(name: fallbackName)
         }
+    }
+
+    func encryptionChanged(_ value: Bool) {
+        if encrypted != value { encrypted = value }
     }
 
     /// The BLE layer reported a pairing problem it can name (`LiveState.pairingHint` / `reconnectGuide`).
@@ -231,8 +242,9 @@ struct PulseOnboardingSearchStep: View {
     /// Leave the device steps: `true` once a strap bonded, `false` when another device was added.
     let onDone: (_ bonded: Bool) -> Void
 
+    /// Not `LiveState`: it publishes every log line and beat. The link's few facts reach this screen through
+    /// the watcher below and `PulseStrapPairing`.
     @EnvironmentObject private var model: AppModel
-    @EnvironmentObject private var live: LiveState
     @State private var showsHelp = false
     @State private var showsOtherDevice = false
     @State private var activeBeforeOtherDevice: String?
@@ -240,6 +252,7 @@ struct PulseOnboardingSearchStep: View {
     var body: some View {
         content
             .background(PulseOnboardingPairingWatcher(onBonded: { pairing.bonded(fallbackName: fallbackName) },
+                                                      onEncrypted: { pairing.encryptionChanged($0) },
                                                       onHint: { pairing.failed(hint: $0) }))
             .sheet(isPresented: $showsHelp) {
                 PulseStrapHelpSheet(family: family, onTryAgain: {
@@ -254,14 +267,20 @@ struct PulseOnboardingSearchStep: View {
                 })
             }
             .sheet(isPresented: $showsOtherDevice, onDismiss: otherDeviceClosed) {
-                AddDeviceWizard(live: live, onClose: { showsOtherDevice = false })
+                AddDeviceWizard(live: model.live, onClose: { showsOtherDevice = false })
             }
             .onAppear {
-                if live.bonded {
+                // Arriving here (from START PAIRING, or back from a later step): a strap already bonded is
+                // CONNECTED; otherwise the search starts afresh, whatever an earlier attempt ended on.
+                pairing.encryptionChanged(model.live.encryptedBond)
+                if model.live.bonded {
                     pairing.bonded(fallbackName: fallbackName)
-                } else if pairing.phase == .searching {
+                } else {
                     pairing.beginSearch(model: model, family: family)
                 }
+                #if DEBUG
+                PulseOnboardingStep.applyDebugPairing(pairing)
+                #endif
             }
     }
 
@@ -383,19 +402,19 @@ struct PulseOnboardingSearchStep: View {
     }
 
     private var fallbackName: String {
-        live.advertisingName ?? String(localized: "Your strap")
+        model.live.advertisingName ?? String(localized: "Your strap")
     }
 
     /// CONNECTED's line: honest about a 5.0/MG that streams heart rate before its encrypted bond (#69).
     private var connectedLine: String {
-        if live.encryptedBond || family == .whoop4 {
+        if pairing.encrypted || family == .whoop4 {
             return String(localized: "Your strap is ready to go.")
         }
         return String(localized: "Live heart rate is coming through. History sync waits for the full pairing, which can take another moment.")
     }
 
     private func openOtherDevice() {
-        pairing.stop(model: model)
+        pairing.stop()
         activeBeforeOtherDevice = model.deviceRegistry?.activeDeviceId
         showsOtherDevice = true
     }
@@ -444,12 +463,14 @@ private struct PulseOnboardingStrapList<Content: View>: View {
 /// onboarding's `BondWatcher`).
 private struct PulseOnboardingPairingWatcher: View {
     let onBonded: () -> Void
+    let onEncrypted: (Bool) -> Void
     let onHint: (String) -> Void
     @EnvironmentObject private var live: LiveState
 
     var body: some View {
         Color.clear
             .onChange(of: live.bonded) { _, bonded in if bonded { onBonded() } }
+            .onChange(of: live.encryptedBond) { _, encrypted in onEncrypted(encrypted) }
             .onChange(of: live.pairingHint) { _, hint in if let hint { onHint(hint) } }
             .onChange(of: live.reconnectGuide) { _, guide in if let guide { onHint(guide) } }
             .accessibilityHidden(true)
