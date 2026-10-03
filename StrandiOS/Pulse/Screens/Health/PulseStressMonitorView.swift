@@ -5,7 +5,7 @@ import StrandAnalytics
 /// Stress Monitor (WHOOP_UI_SPEC §3.22), pushed from Home's tile and dashboard card and the Health tab's
 /// card: ⚙ in the bar (stress check-ins and the scoring lens, `HealthStressSettingsRoute`), its own day
 /// pager ("‹ TODAY ›"), the gauge with ⓘ, the 24 h chart, plain sentences on the day, TOTAL DAY against the
-/// typical same weekday, and Breathe under "Sessions".
+/// typical same weekday, and guided-breathing session cards under "Sessions".
 ///
 /// One source for the level and the curve (`PulseSnapshotBuilder.stressDay`): the gauge shows the curve's
 /// latest scored hour, and only a day without a curve falls back to the daily score, labelled as such.
@@ -102,7 +102,7 @@ struct PulseStressMonitorView: View {
     #if DEBUG
     @MainActor private static var openedDebugBreathe = false
 
-    /// `--pulse-stress-breathe`: open the Sessions card's Breathe once the day has drawn, for captures.
+    /// `--pulse-stress-breathe`: open the first Sessions card's Breathe once the day has drawn, for captures.
     private func openDebugBreatheIfAsked() {
         guard shown != nil, !Self.openedDebugBreathe,
               CommandLine.arguments.contains("--pulse-stress-breathe") else { return }
@@ -163,7 +163,7 @@ struct PulseStressMonitorView: View {
             }
             .padding(.top, 8)
 
-            HealthBreatheSession(onOpen: { navigator.open(HealthBreatheSession.destination.route) })
+            HealthBreatheSession(onOpen: { navigator.push($0.route) })
                 .id("pulse.sessions")
                 .padding(.top, 32)
         }
@@ -388,51 +388,70 @@ struct HealthBreatheRoute: PulseScreenRoute {
     var view: some View { PulseClassicScreen { BreathingView(preselectedProtocolId: protocolId) } }
 }
 
-/// "Sessions" (§3.22 item 8 [Z]): ZENO's Breathe in WHOOP's slot, as one BREATHE › card that opens Breathe
-/// on Relax 4-6, the long-exhale pace that does what WHOOP's Increase Relaxation session does; Breathe's own
-/// picker holds the other paces. A card per pace (COHERENCE · BOX · 4-7-8 · ALERTNESS) would each open its
-/// own `HealthBreatheRoute`.
+/// "Sessions" (§3.22 item 8 [Z]): ZENO's guided breathing in WHOOP's slot, as WHOOP's session cards without
+/// their artwork (whoop-site/20c: "INCREASE RELAXATION / Guided Breathing"). RELAX · COHERENCE · BOX · 4-7-8
+/// · ALERTNESS sit in a row that scrolls sideways past the page margin, each opening Breathe on its own pace
+/// with that pace's recommended length (`HealthBreatheRoute`).
 struct HealthBreatheSession: View {
-    /// What the card opens.
+    /// One card: its caps title, its glyph and the Breathe pace it opens (a `BreathProtocolCatalog` id).
+    struct Session: Identifiable {
+        let id: String
+        let title: String
+        let symbol: String
+    }
+
+    static let sessions: [Session] = [
+        Session(id: "relax_4_6", title: String(localized: "Relax"), symbol: "wind"),
+        Session(id: "coherence_5_5", title: String(localized: "Coherence"), symbol: "waveform.path"),
+        Session(id: "box_4_4_4_4", title: String(localized: "Box"), symbol: "square"),
+        Session(id: "four_seven_eight", title: String(localized: "4-7-8"), symbol: "moon.zzz"),
+        Session(id: "kapalabhati", title: String(localized: "Alertness"), symbol: "bolt")
+    ]
+
+    /// The first card's session, which the DEBUG `--pulse-stress-breathe` capture opens.
     static let destination = HealthBreatheRoute(protocolId: "relax_4_6")
 
-    let onOpen: () -> Void
-
-    /// The pace's name as Breathe titles it: the catalogue's English title through the same string catalog
-    /// entry Breathe's picker localizes it with.
-    private var paceName: String {
-        BreathProtocolCatalog.protocolById(Self.destination.protocolId)
-            .map { String(localized: String.LocalizationValue($0.title)) } ?? String(localized: "Relax 4-6")
-    }
+    /// Opens a card's session.
+    let onOpen: (HealthBreatheRoute) -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: PulseTheme.Layout.headerGap) {
             HealthSectionHeader(title: String(localized: "Sessions"))
-            Button(action: onOpen) {
-                HStack(alignment: .center, spacing: 14) {
-                    Image(systemName: "wind")
-                        .healthGlyph(.sessionIcon)
-                        .foregroundStyle(PulseTheme.recoveryBlue)
-                        .frame(width: 24)
-                        .accessibilityHidden(true)
-                    VStack(alignment: .leading, spacing: 4) {
-                        PulseCardTitle(String(localized: "Breathe"), accessory: .chevron)
-                        Text(String(localized: "Opens on \(paceName), a calming pace with a long exhale. Coherence, box, 4-7-8 and more are a tap away, paced by your strap if you like."))
-                            .pulseText(.secondary)
-                            .foregroundStyle(PulseTheme.textSecondary)
-                            .fixedSize(horizontal: false, vertical: true)
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: PulseTheme.Layout.gridGap) {
+                    ForEach(Self.sessions) { session in
+                        Button { onOpen(HealthBreatheRoute(protocolId: session.id)) } label: { card(session) }
+                            .buttonStyle(PulsePressStyle())
+                            .accessibilityLabel(String(localized: "\(session.title), guided breathing"))
+                            .accessibilityHint(String(localized: "Opens Breathe on this pace"))
                     }
-                    Spacer(minLength: 0)
                 }
-                .padding(16)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .pulseCardBackground()
-                .contentShape(Rectangle())
+                // Every card as tall as the tallest, whatever its title wraps to.
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.horizontal, PulseTheme.Layout.pageMargin)
             }
-            .buttonStyle(PulsePressStyle())
-            .accessibilityLabel(String(localized: "Breathe"))
-            .accessibilityHint(String(localized: "Opens Breathe on \(paceName)"))
+            .padding(.horizontal, -PulseTheme.Layout.pageMargin)
         }
+    }
+
+    private func card(_ session: Session) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Image(systemName: session.symbol)
+                .healthGlyph(.sessionIcon)
+                .foregroundStyle(PulseTheme.recoveryBlue)
+                .accessibilityHidden(true)
+            Spacer(minLength: 28)
+            PulseCardTitle(session.title)
+            Text(String(localized: "Guided Breathing"))
+                .pulseText(.secondary)
+                .foregroundStyle(PulseTheme.textSecondary)
+                .padding(.top, 4)
+        }
+        .padding(16)
+        .frame(width: 168, alignment: .leading)
+        .frame(maxHeight: .infinity, alignment: .topLeading)
+        .pulseCardBackground()
+        .contentShape(Rectangle())
     }
 }
 #endif
