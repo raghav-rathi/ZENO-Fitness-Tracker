@@ -1,6 +1,7 @@
 #if os(iOS)
 import Foundation
 import Observation
+import StrandAnalytics
 
 // MARK: - Conversation history (WHOOP_UI_SPEC §3.16 [Z] "History list")
 //
@@ -100,17 +101,14 @@ final class PulseCoachThreadStore {
         let usable = live.filter { !$0.text.isEmpty }
         guard !usable.isEmpty else { return }
         let incoming = usable.map { PulseCoachThread.Message(id: $0.id, role: $0.role.rawValue, text: $0.text) }
-        if let index = threads.firstIndex(where: { t in t.messages.contains { m in incoming.contains { $0.id == m.id } } }) {
+        if let index = threads.firstIndex(where: { CoachConversationMerge.merge(archived: $0.messages, live: incoming) != nil }) {
+            // Keeps what the engine has already dropped (its 40-turn cap), then takes the live turns.
             var thread = threads[index]
-            // Keep what the engine has already dropped (its 40-turn cap), then take the live turns.
-            if let firstLive = incoming.firstIndex(where: { m in thread.messages.contains { $0.id == m.id } }),
-               let archived = thread.messages.firstIndex(where: { $0.id == incoming[firstLive].id }) {
-                let merged = Array(thread.messages.prefix(archived)) + Array(incoming[firstLive...])
-                guard merged != thread.messages else { return }
-                thread.messages = merged
-                thread.updatedAt = now
-                threads[index] = thread
-            }
+            guard let merged = CoachConversationMerge.merge(archived: thread.messages, live: incoming),
+                  merged != thread.messages else { return }
+            thread.messages = merged
+            thread.updatedAt = now
+            threads[index] = thread
         } else {
             threads.append(PulseCoachThread(id: incoming[0].id, messages: incoming, createdAt: now, updatedAt: now))
         }

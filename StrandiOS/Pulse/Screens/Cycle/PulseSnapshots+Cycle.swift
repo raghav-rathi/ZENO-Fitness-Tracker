@@ -25,6 +25,8 @@ struct CycleInsightsSnapshot: Equatable {
     /// The month the pager opens on (today's).
     let initialMonth: Int
     let showsPhaseLegend: Bool
+    /// Any expected period day drawn: the legend explains the dashed circle only when there is one.
+    var showsPredictionLegend: Bool { months.contains { $0.days.contains(where: \.isPredictedPeriod) } }
     let symptomsToday: SymptomsToday
     let journal: Journal
     let coaching: Coaching?

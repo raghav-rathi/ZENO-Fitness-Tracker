@@ -1,5 +1,6 @@
 #if os(iOS)
 import Foundation
+import StrandAnalytics
 
 // MARK: - The first message's context block (WHOOP_UI_SPEC §3.16, §1.2 "seeded with that page's context", §0.3)
 //
@@ -19,14 +20,11 @@ import Foundation
 // extra system context, `wrap` is the one place to retire (see the integration notes).
 
 enum PulseCoachEnvelope {
-    static let open = "[ZENO context]"
-    static let close = "[/ZENO context]"
-
-    /// How the engine's data names map onto the names the wearer sees.
+    /// How the engine's data names map onto the names the wearer sees (the block's "Words" line).
     static let vocabulary = """
-    Words: in this app the daily scores are called Recovery (your data's "charge", 0-100%), Strain (your data's \
-    "effort" times 0.21, on a 0-21 scale) and Sleep (your data's "rest"). Use the words Recovery, Strain and Sleep, \
-    give Strain on the 0-21 scale, and never write charge, effort or rest.
+    in this app the daily scores are called Recovery (your data's "charge", 0-100%), Strain (your data's \
+    "effort" times 0.21, on a 0-21 scale) and Sleep (your data's "rest"). Call them Recovery, Strain and Sleep, \
+    give Strain on the 0-21 scale, and never call them charge, effort or rest.
     """
 
     /// What a stored first message holds.
@@ -40,36 +38,24 @@ enum PulseCoachEnvelope {
         let hasContext: Bool
     }
 
-    /// The first question of a conversation with its context block.
+    /// The first question of a conversation with its context block (`CoachContextEnvelope`, the format the
+    /// analytics package pins with tests).
     static func wrap(_ question: String, page: String?, memories: [PulseMemoryItem]) -> String {
-        var lines = [open, vocabulary]
-        if let page = page.map(oneLine), !page.isEmpty {
-            lines.append("Page: " + page)
-        }
-        if !memories.isEmpty {
-            lines.append("About me: " + memories.map { "\(oneLine($0.title)) - \(oneLine($0.detail))" }
-                .joined(separator: " | "))
-        }
-        lines.append(close)
-        return lines.joined(separator: "\n") + "\n\n" + question
+        // The detail holds the whole memory (its title is the detail's first sentence).
+        let about = memories.map(\.detail).joined(separator: memorySeparator)
+        return CoachContextEnvelope.wrap(question, fields: [("Words", vocabulary), ("Page", page ?? ""),
+                                                            ("About me", about)])
     }
 
     /// Split a stored message into its question and context. Text without a block is all question.
     static func parse(_ text: String) -> Parsed {
-        guard text.hasPrefix(open + "\n"), let end = text.range(of: "\n" + close + "\n\n") else {
-            return Parsed(question: text, page: nil, memoryCount: 0, hasContext: false)
-        }
-        let block = text[text.index(text.startIndex, offsetBy: open.count + 1)..<end.lowerBound]
-        var page: String?
-        var memories = 0
-        for line in block.split(separator: "\n") {
-            if line.hasPrefix("Page: ") { page = String(line.dropFirst("Page: ".count)) }
-            if line.hasPrefix("About me: ") {
-                memories = line.dropFirst("About me: ".count).components(separatedBy: " | ").count
-            }
-        }
-        return Parsed(question: String(text[end.upperBound...]), page: page, memoryCount: memories, hasContext: true)
+        let parsed = CoachContextEnvelope.parse(text)
+        let memories = parsed.fields["About me"].map { $0.components(separatedBy: memorySeparator).count } ?? 0
+        return Parsed(question: parsed.question, page: parsed.fields["Page"], memoryCount: memories,
+                      hasContext: parsed.hasBlock)
     }
+
+    private static let memorySeparator = " | "
 
     /// "✧ Shared your Sleep summary · Used 2 memories", or nil when nothing but the words went along.
     static func receipt(_ parsed: Parsed) -> String? {
@@ -107,10 +93,6 @@ enum PulseCoachEnvelope {
             else if s.contains("strain") { self = .strain }
             else { self = .other }
         }
-    }
-
-    private static func oneLine(_ text: String) -> String {
-        text.replacingOccurrences(of: "\n", with: " ").trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }
 

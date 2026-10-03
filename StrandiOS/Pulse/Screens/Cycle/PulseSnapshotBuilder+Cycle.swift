@@ -116,7 +116,8 @@ extension PulseSnapshotBuilder {
             hasLogs: !logs.starts.isEmpty || !logs.flow.isEmpty || !logs.symptoms.isEmpty,
             earliestLogDay: rangeStart, header: header, months: months,
             initialMonth: months.firstIndex { $0.id == todayMonth } ?? max(0, months.count - 1),
-            showsPhaseLegend: phasesApply && (active || header.phase != nil),
+            // The phase legend explains bands, so it shows only when the calendar draws one.
+            showsPhaseLegend: phasesApply && infos.contains { $0.phase != nil },
             symptomsToday: symptomsToday, journal: journal, coaching: coaching, currentCycle: currentCycle,
             patterns: patterns, symptomSummary: summaryRows)
     }

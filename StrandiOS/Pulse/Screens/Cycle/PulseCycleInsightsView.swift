@@ -97,7 +97,7 @@ struct PulseCycleInsightsView: View {
             .padding(.top, 16)
             .id("pulse.calendar")
 
-            PulseCycleLegend(showsPhases: s.showsPhaseLegend)
+            PulseCycleLegend(showsPhases: s.showsPhaseLegend, showsPrediction: s.showsPredictionLegend)
                 .padding(.top, 4)
 
             predictionNote(s.header)

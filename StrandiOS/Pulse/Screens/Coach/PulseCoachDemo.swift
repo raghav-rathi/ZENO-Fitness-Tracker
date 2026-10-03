@@ -87,7 +87,7 @@ enum PulseCoachDemo {
         reply += ".\n"
         reply += "- **Last 7 days:** Recovery averaged **\(PulseDisplay.displayedPercent(avg))%**"
         reply += " and Strain averaged **\(PulseFormat.oneDecimal(strainAvg))** on the 0–21 scale.\n\n"
-        reply += "You're recovering steadily. With your half marathon in May, keep one hard session this week and make the next run an easy Zone 2 effort so tomorrow's Recovery has room to climb."
+        reply += "You're recovering steadily. With your half marathon in May, keep one hard session this week and make the next run an easy Zone 2 run so tomorrow's Recovery has room to climb."
         coach.messages = [
             ChatMessage(role: .user, text: PulseCoachEnvelope.wrap("How did I recover this week?", page: nil,
                                                                    memories: memory.promptItems)),

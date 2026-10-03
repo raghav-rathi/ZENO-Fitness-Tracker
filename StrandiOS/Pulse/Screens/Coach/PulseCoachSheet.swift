@@ -36,12 +36,16 @@ struct PulseCoachSheet: View {
     @Environment(PulseModel.self) private var model
     #endif
     @Environment(\.dismiss) private var dismiss
+    /// The shell's debounced answer to "is a provider set up?", for the first frame.
+    @Environment(\.pulseCoach) private var coachContext
     @AppStorage("noop.coachEnabled") private var coachEnabled = true
 
     @State private var path: [PulseCoachDestination] = []
-    @State private var detent: PresentationDetent = .medium
-    /// `AICoachEngine.isConfigured` reads the Keychain, so it is read on open and after setup, not per token.
-    @State private var configured = false
+    /// The detent the wearer dragged to; nil until then (medium for the chat, large for setup).
+    @State private var detentChoice: PresentationDetent?
+    /// `AICoachEngine.isConfigured` reads the Keychain, so it is re-read only after setup or AI Settings, never
+    /// per streamed token; until then the shell's probe answers, so the first frame is already right.
+    @State private var configuredNow: Bool?
     @State private var opened = false
     @State private var draft = UserDefaults.standard.string(forKey: Self.draftKey) ?? ""
     /// Opened from a page and nothing sent yet: the page's summary leads, and the first question starts a
@@ -59,6 +63,12 @@ struct PulseCoachSheet: View {
 
     private var threads: PulseCoachThreadStore { PulseCoachThreadStore.shared }
 
+    private var configured: Bool { configuredNow ?? (coachContext.availability == .ready) }
+
+    private var detent: Binding<PresentationDetent> {
+        Binding(get: { detentChoice ?? (configured ? .medium : .large) }, set: { detentChoice = $0 })
+    }
+
     var body: some View {
         NavigationStack(path: $path) {
             root
@@ -71,16 +81,16 @@ struct PulseCoachSheet: View {
                         PulseMemoryDetailView(id: id, inCoachSheet: true)
                     case .settings:
                         PulseAISettingsView()
-                            .onDisappear { configured = coach.isConfigured }
+                            .onDisappear { configuredNow = coach.isConfigured }
                     }
                 }
         }
-        .presentationDetents(configured ? [.medium, .large] : [.large], selection: $detent)
+        .presentationDetents(configured ? [.medium, .large] : [.large], selection: detent)
         .presentationDragIndicator(.visible)
         .presentationBackground { PulseCoachBackground() }
         .presentationCornerRadius(24)
         .environment(\.colorScheme, .dark)
-        .onChange(of: path) { _, newPath in if !newPath.isEmpty { detent = .large } }
+        .onChange(of: path) { _, newPath in if !newPath.isEmpty { detentChoice = .large } }
         .onChange(of: coachEnabled) { _, on in if !on { dismiss() } }
         .onChange(of: draft) { _, value in UserDefaults.standard.set(value, forKey: Self.draftKey) }
         .task { await open() }
@@ -215,6 +225,14 @@ struct PulseCoachSheet: View {
             }
             .scrollDismissesKeyboard(.interactively)
             .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
+            // Replies scroll away under the top bar through a short fade, never against a hard edge.
+            .mask {
+                VStack(spacing: 0) {
+                    LinearGradient(colors: [Color.black.opacity(0), Color.black], startPoint: .top, endPoint: .bottom)
+                        .frame(height: 18)
+                    Rectangle()
+                }
+            }
             .onChange(of: coach.messages.last?.text) { _, _ in
                 if atBottom || coach.sending { proxy.scrollTo("bottom", anchor: .bottom) }
             }
@@ -323,7 +341,7 @@ struct PulseCoachSheet: View {
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.top, 8)
                 PulseAIProviderForm(isChange: false) {
-                    configured = coach.isConfigured
+                    configuredNow = coach.isConfigured
                 }
                 .padding(.top, 26)
             }
@@ -375,8 +393,6 @@ struct PulseCoachSheet: View {
         opened = true
         threads.loadIfNeeded()
         PulseMemoryStore.shared.loadIfNeeded()
-        configured = coach.isConfigured
-        detent = configured ? .medium : .large
         await coach.loadPersistedMessagesIfNeeded()
         coach.retireStaleConversationIfNeeded()
         if coach.messages.isEmpty, let stored = CoachBriefScheduler.consumeStoredBrief() {
@@ -392,8 +408,8 @@ struct PulseCoachSheet: View {
         #if DEBUG
         if PulseCoachDemo.requested {
             await PulseCoachDemo.prepareIfRequested(coach: coach, repo: repo)
-            configured = coach.isConfigured
-            detent = PulseCoachDemo.opensLarge || !configured ? .large : .medium
+            configuredNow = coach.isConfigured
+            detentChoice = PulseCoachDemo.opensLarge || !configured ? .large : .medium
         }
         switch PulseCoachDemo.openTarget {
         case "memory": path = [.memory]
@@ -434,7 +450,7 @@ struct PulseCoachSheet: View {
         guard let prompt = coach.pendingPrompt, !prompt.isEmpty else { return }
         coach.pendingPrompt = nil
         guard coach.isConfigured else { return }
-        configured = true
+        configuredNow = true
         send(prompt)
     }
 

@@ -82,6 +82,8 @@ struct PulseCycleCalendar: View {
                     .frame(maxWidth: .infinity)
             }
         }
+        // Seven fixed columns: past xxxLarge the initials would run into each other.
+        .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
         .accessibilityHidden(true)
     }
 
@@ -252,6 +254,7 @@ private struct PulseCycleDayCell: View {
 /// "● Menstrual ● Follicular ● Ovulatory ● Luteal ● Symptoms ◌ Predicted period", wrapping as needed.
 struct PulseCycleLegend: View {
     let showsPhases: Bool
+    var showsPrediction = true
 
     var body: some View {
         PulseWordFlow(alignment: .leading, spacing: 14, lineSpacing: 13) {
@@ -265,10 +268,12 @@ struct PulseCycleLegend: View {
             item(String(localized: "Symptoms")) {
                 Circle().fill(PulseTheme.textPrimary).frame(width: 7, height: 7)
             }
-            item(String(localized: "Predicted period")) {
-                Circle()
-                    .strokeBorder(PulseCyclePhase.menstrual.dot, style: StrokeStyle(lineWidth: 1.2, dash: [2, 2]))
-                    .frame(width: 11, height: 11)
+            if showsPrediction {
+                item(String(localized: "Predicted period")) {
+                    Circle()
+                        .strokeBorder(PulseCyclePhase.menstrual.dot, style: StrokeStyle(lineWidth: 1.2, dash: [2, 2]))
+                        .frame(width: 11, height: 11)
+                }
             }
         }
         .accessibilityElement(children: .combine)
