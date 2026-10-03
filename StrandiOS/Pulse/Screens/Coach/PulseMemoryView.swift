@@ -263,19 +263,20 @@ struct PulseMemoryShareCard: View {
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.top, 6)
             }
+            // The buttons' 2 pt touch margins (`entryButton`) come out of the gaps around them.
             HStack(spacing: 12) {
                 entryButton(String(localized: "Text"), symbol: "keyboard", talk: false, action: onText)
                 entryButton(String(localized: "Talk"), symbol: "mic", talk: true, action: onTalk)
             }
-            .padding(.top, compact ? 16 : 20)
+            .padding(.top, compact ? 14 : 18)
             if let onExplain {
                 PulseTextCTA(title: String(localized: "How does ZENO memory work?"), tint: .ai, action: onExplain)
-                    .padding(.top, 4)
+                    .padding(.top, 2)
             }
         }
         .padding(.horizontal, 20)
         .padding(.top, 18)
-        .padding(.bottom, onExplain == nil ? 18 : 6)
+        .padding(.bottom, onExplain == nil ? 16 : 6)
         .frame(maxWidth: .infinity)
         .background(shape.fill(LinearGradient(gradient: PulseTheme.Gradients.aiEntryFill, startPoint: .topLeading,
                                               endPoint: .bottomTrailing)))
@@ -289,6 +290,8 @@ struct PulseMemoryShareCard: View {
             .accessibilityHidden(true)
     }
 
+    /// "⌨ TEXT" / "mic TALK": ≈40 pt like the Journal's Smart log buttons (§2.6.33; profile-community-2026/27
+    /// measures 39), in a 2 pt margin that makes the touch target 44 pt.
     private func entryButton(_ title: String, symbol: String, talk: Bool, action: @escaping () -> Void) -> some View {
         let shape = RoundedRectangle(cornerRadius: PulseTheme.Radius.card, style: .continuous)
         return Button(action: action) {
@@ -298,7 +301,7 @@ struct PulseMemoryShareCard: View {
                     .foregroundStyle(talk ? PulseTheme.Gradients.aiEntryMic : PulseTheme.textSecondary)
                 Text(title).pulseText(.buttonLabel).foregroundStyle(PulseTheme.textPrimary)
             }
-            .frame(maxWidth: .infinity, minHeight: 48)
+            .frame(maxWidth: .infinity, minHeight: 40)
             .background {
                 if talk {
                     shape.fill(LinearGradient(gradient: PulseTheme.Gradients.aiEntryTalkButton, startPoint: .leading,
@@ -308,7 +311,8 @@ struct PulseMemoryShareCard: View {
                 }
             }
             .overlay(shape.strokeBorder(PulseTheme.textPrimary.opacity(0.08), lineWidth: 1))
-            .contentShape(shape)
+            .padding(.vertical, 2)
+            .contentShape(Rectangle())
         }
         .buttonStyle(PulsePressStyle())
     }
