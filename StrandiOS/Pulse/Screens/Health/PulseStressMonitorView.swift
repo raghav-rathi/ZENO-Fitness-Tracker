@@ -248,10 +248,10 @@ struct HealthStressMonitorRoute: PulseScreenRoute {
 }
 
 /// TOTAL DAY (§3.22 item 6; completeness-critic/14): "SUN, AUG 2 STRESS VS. TYPICAL SUNDAY", the day's
-/// time LOW / MEDIUM / HIGH as a 12 pt bar over the typical day's 8 pt bar, both in the 2026 device's softer
-/// tints, then each band's time (17 pt; whole hours, since ZENO scores stress by the hour), its change
-/// against typical (grey chips) and its name. On the dimmer card WHOOP draws it on. The typical bar, chips
-/// and footnote join when the typical weekday's pass lands.
+/// time LOW / MEDIUM / HIGH as a 12 pt bar in the stress level colours over the typical day's 8 pt bar in
+/// the same hues at half strength, then each band's time (17 pt; whole hours, since ZENO scores stress by
+/// the hour), its change against typical (grey chips) and its name. On the dimmer card WHOOP draws it on.
+/// The typical bar, chips and footnote join when the typical weekday's pass lands.
 struct HealthTotalDayCard: View {
     let dayKey: String
     let totals: StressDayTotals.Totals
