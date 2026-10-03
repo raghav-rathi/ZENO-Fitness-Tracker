@@ -368,6 +368,7 @@ struct PulseOnboardingStepPage<Illustration: View, Content: View, CTA: View>: Vi
             PulseOnboardingBackground()
             GeometryReader { outer in
                 let room = outer.size.height - PulseOnboardingMetrics.contentTop - PulseOnboardingMetrics.contentToCTA
+                let fullWidth = outer.size.width - 2 * PulseTheme.Layout.pageMargin - 1
                 ScrollView(.vertical, showsIndicators: false) {
                     VStack(alignment: .leading, spacing: 0) {
                         Spacer(minLength: 0)
@@ -385,7 +386,7 @@ struct PulseOnboardingStepPage<Illustration: View, Content: View, CTA: View>: Vi
                             // Only a full-width measurement counts: a presentation lays the page out at
                             // zero size first, where the text wraps to a column a few words wide.
                             .onGeometryChange(for: CGSize.self) { $0.size } action: { size in
-                                if size.width >= outer.size.width - 2 * PulseTheme.Layout.pageMargin - 1 {
+                                if size.width >= fullWidth {
                                     textHeight = size.height
                                 }
                             }
