@@ -51,7 +51,7 @@ struct PulseChallengeGauge: View {
                 case .progress where i < lit:
                     // From the challenge's colour at the start to near white at the progress head.
                     let along = lit > 1 ? Double(i) / Double(lit - 1) : 1
-                    head = color.mix(with: .white, by: C.litWhiteStart + (C.litWhiteEnd - C.litWhiteStart) * along)
+                    head = color.extrasBlend(toward: .white, by: C.litWhiteStart + (C.litWhiteEnd - C.litWhiteStart) * along)
                     tail = head.opacity(C.tailStart)
                 case .progress:
                     head = C.unlitTick
@@ -104,24 +104,6 @@ extension View {
                 .padding(.trailing, PulseTheme.Layout.pageMargin)
                 .padding(.top, PulseTheme.Header.navBarTop)
         }
-    }
-}
-
-private extension Color {
-    /// This colour blended toward `other` by `amount` (0…1), in sRGB.
-    func mix(with other: Color, by amount: Double) -> Color {
-        let a = UIColor(self).rgba, b = UIColor(other).rgba
-        let t = min(max(amount, 0), 1)
-        return Color(.sRGB, red: a.r + (b.r - a.r) * t, green: a.g + (b.g - a.g) * t,
-                     blue: a.b + (b.b - a.b) * t, opacity: a.a + (b.a - a.a) * t)
-    }
-}
-
-private extension UIColor {
-    var rgba: (r: Double, g: Double, b: Double, a: Double) {
-        var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
-        getRed(&r, green: &g, blue: &b, alpha: &a)
-        return (Double(r), Double(g), Double(b), Double(a))
     }
 }
 

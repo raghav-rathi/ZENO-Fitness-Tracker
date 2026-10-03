@@ -1,5 +1,6 @@
 #if os(iOS)
 import SwiftUI
+import UIKit
 import StrandDesign
 
 // MARK: - Tokens the extras screens add (group "extras")
@@ -132,21 +133,34 @@ enum PulseExtrasTheme {
         static let glowBlue = Color(hex: "#0B3D60")
         static let glowPurple = Color(hex: "#4E3560")
         static let glowSlate = Color(hex: "#141D23")
-        /// The glow starts rising at this fraction of the height.
+        /// The glow starts rising at this fraction of the height, and how strong it is down the page and at
+        /// the foot's centre.
         static let glowStart = 0.5
+        static let glowMid = 0.55
+        static let glowFoot = 0.8
+        static let glowRadiusShare: CGFloat = 0.42
         /// The year beside the wordmark: italic Bold, #758FFE → #5CBEFF.
         static let year = PulseTheme.Gradients.yearInReviewYear
         static let yearSize: CGFloat = 20
         static let wordmark = CGSize(width: 84, height: 14)
 
-        /// The progress segments at the foot: done and current white, upcoming white 30%; the current one
-        /// is long (the story does not auto-advance, so it is shown full rather than filling).
+        /// The story's own "✕" (completeness-critic/10, profile-community-2026/45: 16.6 pt across, heavier
+        /// than a nav bar's, centred 34 pt from the left edge).
+        static let closeGlyphSize: CGFloat = 21
+        static let closeCentre: CGFloat = 34
+
+        /// The progress segments at the foot (/10, /45): done and current white, upcoming white 20%
+        /// (#4E4E6A over the glow), 4 pt tall; the current one is long (the story does not auto-advance, so
+        /// it is shown full rather than filling). The row centres 56 pt above the screen's foot.
         static let segmentDone = Color.white
-        static let segmentUpcoming = Color.white.opacity(0.30)
-        static let segmentHeight: CGFloat = 3
+        static let segmentUpcoming = Color.white.opacity(0.20)
+        static let segmentHeight: CGFloat = 4
         static let segmentWidth: CGFloat = 8
-        static let segmentCurrentWidth: CGFloat = 26
+        static let segmentCurrentWidth: CGFloat = 32
         static let segmentGap: CGFloat = 4
+        static let progressRowHeight: CGFloat = 20
+        static let progressTop: CGFloat = 14
+        static let progressBottom: CGFloat = 12
 
         /// The month ruler (a comb of ticks with an orb on the month) and the orb.
         static let rulerTick = Color.white.opacity(0.22)
@@ -154,19 +168,46 @@ enum PulseExtrasTheme {
         static let orbFill = Color(hex: "#0B0C11")
         static let orbRing = Color.white.opacity(0.85)
         static let orbSize: CGFloat = 44
+        static let rulerMonthWidth: CGFloat = 64
+        static let rulerTicksPerMonth = 8
+        static let rulerTickHeight: CGFloat = 8
+        static let rulerMajorTickHeight: CGFloat = 14
+        static let orbDot: CGFloat = 10
 
-        /// The moment card: a dark outer frame around a stroked shield (/10: #0B0C11 frame, 3 pt rim).
-        static let cardFill = Color(hex: "#111216")
-        static let cardRim = Color.white.opacity(0.08)
+        /// The moment card: an inset frame darker than the page (/10 and /45: #040509 on #07080D) with a 1 pt
+        /// rim lit from the top (#1D1E22), around a shield stroked in the highlight's colour, brightening
+        /// toward the lower right (/10: #EA150F at the top, #FF5579 at the foot: the colour mixed ≈35%
+        /// toward white).
+        static let cardFill = Color(hex: "#040509")
+        static let cardRimTop = Color.white.opacity(0.10)
+        static let cardRimBottom = Color.white.opacity(0.03)
+        static let rimWhiteMix = 0.35
         static let cardSize = CGSize(width: 236, height: 258)
         static let cardTopRadius: CGFloat = 36
         static let cardBottomRadius: CGFloat = 112
         static let shieldInset: CGFloat = 13
+        static let shieldTopRadiusInset: CGFloat = 8
         static let shieldStroke: CGFloat = 4.5
+        static let momentGlyphSize: CGFloat = 30
+        static let momentUnitScale: CGFloat = 0.45
+
+        /// The pillar badge (/45): a frame hexagon with rounded corners and, inset 14 pt, a hexagon stroked
+        /// 5 pt in the pillar's colour, its corners rounded ≈16 pt; the ring of the pillar's share inside.
+        static let hexFrame = CGSize(width: 290, height: 300)
+        static let hexCornerRadius: CGFloat = 20
+        static let hexInnerCornerRadius: CGFloat = 16
+        static let hexInset: CGFloat = 14
+        static let hexStroke: CGFloat = 5
+        static let pillarRing: CGFloat = 150
+        static let pillarRingStroke: CGFloat = 10
+        static let pillarGlyphSize: CGFloat = 20
+        static let pillarValueSize: CGFloat = 40
 
         /// Type sizes (they scale with Dynamic Type from these): the sentence at the foot of a slide
-        /// (≈26 pt in WHOOP's face, 24 Medium in SF Pro), a slide's title, its caption.
-        static let sentenceSize: CGFloat = 24
+        /// (/10: ≈22 pt, caps 15.7 pt on a 29.4 pt pitch), a slide's title, its caption.
+        static let sentenceSize: CGFloat = 22
+        static let sentenceLineSpacing: CGFloat = 3
+        static let sentenceMargin: CGFloat = 22
         static let titleSize: CGFloat = 22
         static let headlineSize: CGFloat = 26
         static let bigNumberSize: CGFloat = 96
@@ -177,6 +218,7 @@ enum PulseExtrasTheme {
         static let stepsTop = Color(hex: "#2A7CC0")
         static let stepsBottom = Color(hex: "#0B4C7C")
         static let mountain = Color(hex: "#8C8F95")
+        static let mountainSize: CGFloat = 170
 
         /// Behaviour bars (/11): helps teal, hurts orange, brightest for the largest effect; tall for
         /// large effects, short for small ones; labels 11 pt Bold caps inside, values at the right.
@@ -184,21 +226,57 @@ enum PulseExtrasTheme {
         static let barShort: CGFloat = 42
         static let barRadius: CGFloat = 10
         static let barMinimumWidth = 0.32
+        static let barValueSize: CGFloat = 26
+        /// The slide shows at most this many behaviours.
+        static let behaviorRows = 6
 
         /// Persona titles (/47 #73F88B green, /48 #D87DF6 purple) and the card's frame.
         static let personaGreen = Color(hex: "#73F88B")
         static let personaPurple = Color(hex: "#D87DF6")
         static let personaCardRim = Color.white.opacity(0.10)
-        /// The card's height and side margins (/47: 323 × 486 pt on a 393 pt screen).
-        static let personaCardHeight: CGFloat = 480
+        /// The card (/49): ≈450 pt tall, 34 pt side margins, its text 40 pt from the top and 32 pt from the
+        /// sides, the title 22 pt Bold caps (caps 15.7 pt), the paragraph 17 pt Regular (rows 15.3 pt tall on
+        /// a 22.8 pt pitch: 2.5 pt over SF Pro's own line height), the lock-up 24 pt from the foot.
+        static let personaCardHeight: CGFloat = 450
         static let personaCardMargin: CGFloat = 34
+        static let personaTextTop: CGFloat = 40
+        static let personaTextSide: CGFloat = 32
+        static let personaFootReserve: CGFloat = 56
+        static let personaTitleSize: CGFloat = 22
+        static let personaTitleTracking: CGFloat = 1.2
+        static let personaParagraphSize: CGFloat = 17
+        static let personaLineSpacing: CGFloat = 2.5
+        static let personaCardRadius: CGFloat = 20
         static let personaCardFill = Color(hex: "#0C1012")
         static let personaWave = Color.white.opacity(0.07)
+        static let personaWaveHeight: CGFloat = 70
+        static let personaGlowRadius: CGFloat = 320
+        static let personaWordmark = CGSize(width: 72, height: 12)
 
-        /// The summary share card's surfaces (/09): the stat card and the row cards.
+        /// The summary share card's surfaces (/09): the stat card and the row cards, their corners, the
+        /// ring trio (≈72 pt rings, 6 pt strokes) and the row glyphs.
         static let summaryCard = Color.white.opacity(0.06)
         static let summaryRow = Color.white.opacity(0.07)
         static let summaryRowIcon = Color(hex: "#C9A15A")
+        static let summaryCardRadius: CGFloat = 16
+        static let summaryRowRadius: CGFloat = 14
+        static let summaryRing: CGFloat = 72
+        static let summaryRingStroke: CGFloat = 6
+        static let summaryUnitSize: CGFloat = 15
+        static let summaryGlyphSize: CGFloat = 20
+        static let summaryGlyphFrame: CGFloat = 40
+        /// The rendered share image: the card on its page at this width, at 3x.
+        static let shareWidth: CGFloat = 402
+        static let shareScale: CGFloat = 3
+        /// ZENO Age at the card's top right (WHOOP puts its age orb there, /09): ZENO's own plain disc, the
+        /// Healthspan palette's green when younger, the unfavourable orange when older.
+        static let ageBadge: CGFloat = 104
+        static let ageRim: CGFloat = 1.5
+        /// Under a tenth of a year either way reads as the wearer's own age.
+        static let ageSameBand = 0.05
+
+        /// The not-enough-data slide's glyph.
+        static let notEnoughGlyphSize: CGFloat = 44
     }
 
     /// ZENO Live (§3.10, [U] visuals: WHOOP's overlay was never captured, so these are ZENO's own). A dark
@@ -318,6 +396,25 @@ enum PulseExtrasTheme {
         static let stepButton: CGFloat = 36
         static let stepValueWidth: CGFloat = 76
         static let checkSize: CGFloat = 15
+    }
+}
+
+extension Color {
+    /// This colour blended toward `other` by `amount` (0…1), in sRGB: the challenge comb's heads brightening
+    /// toward white, a badge rim lightening toward its foot (iOS 17 has no `Color.mix`).
+    func extrasBlend(toward other: Color, by amount: Double) -> Color {
+        let a = UIColor(self).extrasRGBA, b = UIColor(other).extrasRGBA
+        let t = min(max(amount, 0), 1)
+        return Color(.sRGB, red: a.r + (b.r - a.r) * t, green: a.g + (b.g - a.g) * t,
+                     blue: a.b + (b.b - a.b) * t, opacity: a.a + (b.a - a.a) * t)
+    }
+}
+
+private extension UIColor {
+    var extrasRGBA: (r: Double, g: Double, b: Double, a: Double) {
+        var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+        getRed(&r, green: &g, blue: &b, alpha: &a)
+        return (Double(r), Double(g), Double(b), Double(a))
     }
 }
 

@@ -131,20 +131,23 @@ enum YearReviewFormat {
     }()
 }
 
-/// A slide's foot sentence: 24 pt Medium, left-aligned at the page margin.
+/// A slide's foot sentence: 22 pt Medium, left-aligned at the page margin (/10: caps 15.7 pt on a 29.4 pt
+/// pitch).
 private struct YearReviewSentence: View {
     let text: String
 
+    private typealias S = PulseExtrasTheme.Story
+
     var body: some View {
         Text(text)
-            .extrasFont(PulseExtrasTheme.Story.sentenceSize, weight: .medium, relativeTo: .title2)
+            .extrasFont(S.sentenceSize, weight: .medium, relativeTo: .title2)
             .foregroundStyle(PulseTheme.textPrimary)
             .multilineTextAlignment(.leading)
-            .lineSpacing(3)
+            .lineSpacing(S.sentenceLineSpacing)
             .minimumScaleFactor(0.7)
             .fixedSize(horizontal: false, vertical: true)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 22)
+            .padding(.horizontal, S.sentenceMargin)
     }
 }
 
@@ -293,7 +296,7 @@ private struct YearReviewMomentSlide: View {
             YearReviewBadgeFrame(color: content.color) {
                 VStack(spacing: 6) {
                     Image(systemName: content.symbol)
-                        .font(.system(size: 30, weight: .regular))
+                        .font(.system(size: S.momentGlyphSize, weight: .regular))
                         .foregroundStyle(content.color)
                     HStack(alignment: .firstTextBaseline, spacing: 2) {
                         Text(content.value)
@@ -301,7 +304,7 @@ private struct YearReviewMomentSlide: View {
                             .foregroundStyle(PulseTheme.textPrimary)
                         if let unit = content.unit {
                             Text(unit)
-                                .font(PulseType.numeral(S.momentValueSize * 0.45))
+                                .font(PulseType.numeral(S.momentValueSize * S.momentUnitScale))
                                 .foregroundStyle(PulseTheme.textSecondary)
                         }
                     }
@@ -340,8 +343,8 @@ private struct YearReviewMonthRuler: View {
     var body: some View {
         Canvas { context, size in
             let centre = size.width / 2
-            let monthWidth: CGFloat = 64
-            let ticksPerMonth = 8
+            let monthWidth = S.rulerMonthWidth
+            let ticksPerMonth = S.rulerTicksPerMonth
             let step = monthWidth / CGFloat(ticksPerMonth)
             let month = YearReviewFormat.monthIndex(dayKey)
             // The highlight's day sits at the centre; the year's 12 months run either side of it.
@@ -351,7 +354,7 @@ private struct YearReviewMonthRuler: View {
                     let x = yearStart + CGFloat(m) * monthWidth + CGFloat(t) * step
                     guard x > -2, x < size.width + 2, abs(x - centre) > S.orbSize / 2 + 3 else { continue }
                     let major = t == 0
-                    let h: CGFloat = major ? 14 : 8
+                    let h = major ? S.rulerMajorTickHeight : S.rulerTickHeight
                     let rect = CGRect(x: x - 0.5, y: (size.height - h) / 2, width: 1, height: h)
                     context.fill(Path(rect), with: .color(major ? S.rulerMajorTick : S.rulerTick))
                 }
@@ -360,7 +363,8 @@ private struct YearReviewMonthRuler: View {
                              width: S.orbSize, height: S.orbSize)
             context.fill(Path(ellipseIn: orb), with: .color(S.orbFill))
             context.stroke(Path(ellipseIn: orb.insetBy(dx: 2, dy: 2)), with: .color(S.orbRing), lineWidth: 2)
-            let dot = CGRect(x: centre - 5, y: size.height / 2 - 5, width: 10, height: 10)
+            let dot = CGRect(x: centre - S.orbDot / 2, y: (size.height - S.orbDot) / 2, width: S.orbDot,
+                             height: S.orbDot)
             context.fill(Path(ellipseIn: dot), with: .color(color))
         }
         .frame(height: S.orbSize + 4)
@@ -368,8 +372,9 @@ private struct YearReviewMonthRuler: View {
     }
 }
 
-/// The badge frame: a dark outer card and, inside it, a shield stroked in the highlight's colour
-/// (rounded top, a deep round foot), as WHOOP frames its badge art.
+/// The badge frame: an inset card darker than the page with a top-lit rim and, inside it, a shield stroked in
+/// the highlight's colour (rounded top, a deep round foot), brightening toward its lower right, as WHOOP
+/// frames its badge art (completeness-critic/10).
 private struct YearReviewBadgeFrame<Content: View>: View {
     let color: Color
     @ViewBuilder var content: () -> Content
@@ -380,20 +385,35 @@ private struct YearReviewBadgeFrame<Content: View>: View {
         let outer = UnevenRoundedRectangle(topLeadingRadius: S.cardTopRadius, bottomLeadingRadius: S.cardBottomRadius,
                                            bottomTrailingRadius: S.cardBottomRadius, topTrailingRadius: S.cardTopRadius,
                                            style: .continuous)
-        let inner = UnevenRoundedRectangle(topLeadingRadius: S.cardTopRadius - 8,
+        let inner = UnevenRoundedRectangle(topLeadingRadius: S.cardTopRadius - S.shieldTopRadiusInset,
                                            bottomLeadingRadius: S.cardBottomRadius - S.shieldInset,
                                            bottomTrailingRadius: S.cardBottomRadius - S.shieldInset,
-                                           topTrailingRadius: S.cardTopRadius - 8, style: .continuous)
+                                           topTrailingRadius: S.cardTopRadius - S.shieldTopRadiusInset,
+                                           style: .continuous)
         ZStack {
             outer.fill(S.cardFill)
-            outer.strokeBorder(S.cardRim, lineWidth: 1)
+            outer.strokeBorder(YearReviewRim.frame, lineWidth: 1)
             inner
-                .strokeBorder(LinearGradient(colors: [color, color.opacity(0.55)], startPoint: .top,
-                                             endPoint: .bottom), lineWidth: S.shieldStroke)
+                .strokeBorder(YearReviewRim.badge(color), lineWidth: S.shieldStroke)
                 .padding(S.shieldInset)
             content()
         }
         .frame(width: S.cardSize.width, height: S.cardSize.height)
+    }
+}
+
+/// The badges' two strokes: the frame's rim, lit from the top, and the badge's own, in its colour at the top
+/// left lightening ≈35% toward white at the lower right (/10: #EA150F at the top, #FF5579 at the foot).
+enum YearReviewRim {
+    private typealias S = PulseExtrasTheme.Story
+
+    static var frame: LinearGradient {
+        LinearGradient(colors: [S.cardRimTop, S.cardRimBottom], startPoint: .top, endPoint: .bottom)
+    }
+
+    static func badge(_ color: Color) -> LinearGradient {
+        LinearGradient(colors: [color, color.extrasBlend(toward: .white, by: S.rimWhiteMix)],
+                       startPoint: .topLeading, endPoint: .bottomTrailing)
     }
 }
 
@@ -413,26 +433,25 @@ private struct YearReviewPillarSlide: View {
             Spacer(minLength: 20)
             if let best {
                 ZStack {
-                    YearReviewHexagon()
+                    YearReviewHexagon(cornerRadius: S.hexCornerRadius)
                         .fill(S.cardFill)
-                    YearReviewHexagon()
-                        .stroke(S.cardRim, lineWidth: 1)
-                    YearReviewHexagon()
-                        .inset(by: 14)
-                        .stroke(LinearGradient(colors: [Self.color(best.pillar), Self.color(best.pillar).opacity(0.5)],
-                                               startPoint: .top, endPoint: .bottom),
-                                style: StrokeStyle(lineWidth: 3, lineJoin: .round))
-                    PulseRing(fraction: best.share, color: Self.color(best.pillar), diameter: 150, thickness: 10)
+                    YearReviewHexagon(cornerRadius: S.hexCornerRadius)
+                        .strokeBorder(YearReviewRim.frame, lineWidth: 1)
+                    YearReviewHexagon(cornerRadius: S.hexInnerCornerRadius)
+                        .inset(by: S.hexInset)
+                        .strokeBorder(YearReviewRim.badge(Self.color(best.pillar)), lineWidth: S.hexStroke)
+                    PulseRing(fraction: best.share, color: Self.color(best.pillar), diameter: S.pillarRing,
+                              thickness: S.pillarRingStroke)
                     VStack(spacing: 2) {
                         Image(systemName: Self.symbol(best.pillar))
-                            .font(.system(size: 20, weight: .regular))
+                            .font(.system(size: S.pillarGlyphSize, weight: .regular))
                             .foregroundStyle(Self.color(best.pillar))
                         Text(YearReviewFormat.percent(best.share))
-                            .font(PulseType.numeral(40))
+                            .font(PulseType.numeral(S.pillarValueSize))
                             .foregroundStyle(PulseTheme.textPrimary)
                     }
                 }
-                .frame(width: 290, height: 300)
+                .frame(width: S.hexFrame.width, height: S.hexFrame.height)
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel(String(localized: "\(Self.name(best.pillar)), \(YearReviewFormat.percent(best.share)) \(Self.markCaption(best.pillar))"))
                 Text(Self.name(best.pillar))
@@ -520,19 +539,25 @@ private struct YearReviewPillarSlide: View {
     }
 }
 
-/// A pointy-topped hexagon (WHOOP's pillar badge outline), insettable for the inner stroke.
+/// A pointy-topped hexagon with rounded corners (WHOOP's pillar badge outline, /45), insettable for the
+/// inner stroke.
 struct YearReviewHexagon: InsettableShape {
+    var cornerRadius: CGFloat = 0
     var insetAmount: CGFloat = 0
 
     func path(in rect: CGRect) -> Path {
         let r = rect.insetBy(dx: insetAmount, dy: insetAmount)
         let radius = min(r.width / sqrt(3), r.height / 2)
         let c = CGPoint(x: r.midX, y: r.midY)
-        var p = Path()
-        for i in 0..<6 {
+        let corners = (0..<6).map { i -> CGPoint in
             let angle = CGFloat(i) * .pi / 3 - .pi / 2
-            let point = CGPoint(x: c.x + radius * cos(angle), y: c.y + radius * sin(angle))
-            if i == 0 { p.move(to: point) } else { p.addLine(to: point) }
+            return CGPoint(x: c.x + radius * cos(angle), y: c.y + radius * sin(angle))
+        }
+        var p = Path()
+        // Start halfway along the last edge, then round each corner on the way round.
+        p.move(to: CGPoint(x: (corners[5].x + corners[0].x) / 2, y: (corners[5].y + corners[0].y) / 2))
+        for i in 0..<6 {
+            p.addArc(tangent1End: corners[i], tangent2End: corners[(i + 1) % 6], radius: cornerRadius)
         }
         p.closeSubpath()
         return p
@@ -554,7 +579,13 @@ private struct YearReviewBehaviorsSlide: View {
 
     private typealias S = PulseExtrasTheme.Story
 
-    private var rows: [YearReviewBehavior] { Array(snapshot.behaviors.prefix(6)) }
+    /// The ranker's top six, set out as WHOOP's slide sets them (completeness-critic/11): what helped
+    /// first, largest first, then what hurt, largest drop first.
+    private var rows: [YearReviewBehavior] {
+        let top = snapshot.behaviors.prefix(S.behaviorRows)
+        return top.filter { $0.percent >= 0 }.sorted { $0.percent > $1.percent }
+            + top.filter { $0.percent < 0 }.sorted { $0.percent < $1.percent }
+    }
 
     var body: some View {
         let largest = rows.map { abs($0.percent) }.max() ?? 1
@@ -613,7 +644,7 @@ private struct YearReviewBehaviorsSlide: View {
                     .minimumScaleFactor(0.8)
                 Spacer(minLength: 12)
                 Text(value)
-                    .font(PulseType.numeral(26))
+                    .font(PulseType.numeral(S.barValueSize))
                     .foregroundStyle(PulseTheme.textPrimary.opacity(row.significant ? 1 : 0.7))
             }
             .padding(.leading, 20)
@@ -657,7 +688,7 @@ private struct YearReviewStepsSlide: View {
                     .minimumScaleFactor(0.5)
                     .padding(.horizontal, 12)
                 Image(systemName: "mountain.2.fill")
-                    .font(.system(size: 170, weight: .regular))
+                    .font(.system(size: S.mountainSize, weight: .regular))
                     .foregroundStyle(S.mountain.opacity(0.9))
                     .padding(.top, 70)
             }
@@ -735,50 +766,53 @@ private struct YearReviewPersonaSlide: View {
                     .pulseText(.subsectionTitle)
                     .foregroundStyle(PulseTheme.textSecondary)
                 Text(persona.title)
-                    .extrasFont(24, weight: .bold, relativeTo: .title2)
-                    .tracking(1.2)
+                    .extrasFont(S.personaTitleSize, weight: .bold, relativeTo: .title2)
+                    .tracking(S.personaTitleTracking)
                     .textCase(.uppercase)
                     .foregroundStyle(persona.color)
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.top, 6)
                 Text(paragraph)
-                    .pulseText(.rowText)
+                    .extrasFont(S.personaParagraphSize, weight: .regular, relativeTo: .body)
                     .foregroundStyle(PulseTheme.textPrimary.opacity(0.85))
-                    .lineSpacing(4)
+                    .lineSpacing(S.personaLineSpacing)
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.top, 12)
             }
-            .padding(24)
-            .padding(.bottom, 56)
+            .padding(.top, S.personaTextTop)
+            .padding(.horizontal, S.personaTextSide)
+            .padding(.bottom, S.personaFootReserve)
             .fixedSize(horizontal: false, vertical: true)
             .frame(maxWidth: .infinity, minHeight: S.personaCardHeight, alignment: .topLeading)
             .overlay(alignment: .bottom) {
                 HStack(alignment: .lastTextBaseline) {
-                    PulseZenoWordmark(width: 72, height: 12)
+                    PulseZenoWordmark(width: S.personaWordmark.width, height: S.personaWordmark.height)
                     Spacer()
                     Text(verbatim: String(snapshot.year))
                         .font(.system(size: S.yearSize, weight: .bold).italic())
                         .foregroundStyle(PulseTheme.textPrimary)
                 }
-                .padding(24)
+                .padding(.horizontal, S.personaTextSide)
+                .padding(.bottom, 24)
                 .accessibilityHidden(true)
             }
             .background {
-                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                RoundedRectangle(cornerRadius: S.personaCardRadius, style: .continuous)
                     .fill(S.personaCardFill)
                     .overlay {
                         RadialGradient(colors: [persona.glow.opacity(0.9), persona.glow.opacity(0)],
-                                       center: UnitPoint(x: 0.3, y: 0.85), startRadius: 0, endRadius: 320)
-                            .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+                                       center: UnitPoint(x: 0.3, y: 0.85), startRadius: 0,
+                                       endRadius: S.personaGlowRadius)
+                            .clipShape(RoundedRectangle(cornerRadius: S.personaCardRadius, style: .continuous))
                     }
                     .overlay(alignment: .bottom) {
                         YearReviewWaves()
                             .stroke(S.personaWave, lineWidth: 1)
-                            .frame(height: 70)
-                            .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+                            .frame(height: S.personaWaveHeight)
+                            .clipShape(RoundedRectangle(cornerRadius: S.personaCardRadius, style: .continuous))
                     }
                     .overlay {
-                        RoundedRectangle(cornerRadius: 20, style: .continuous)
+                        RoundedRectangle(cornerRadius: S.personaCardRadius, style: .continuous)
                             .strokeBorder(S.personaCardRim, lineWidth: 1)
                     }
             }
@@ -843,12 +877,15 @@ private struct YearReviewWaves: Shape {
 private struct YearReviewSummarySlide: View {
     let snapshot: YearInReviewSnapshot
 
+    @EnvironmentObject private var profile: ProfileStore
     @State private var sharing = false
+
+    private typealias S = PulseExtrasTheme.Story
 
     var body: some View {
         VStack(spacing: 0) {
             ScrollView(.vertical, showsIndicators: false) {
-                YearReviewSummaryCard(snapshot: snapshot)
+                YearReviewSummaryCard(snapshot: snapshot, chronologicalAge: profile.age)
                     .padding(.horizontal, PulseTheme.Layout.pageMargin)
                     .padding(.top, 8)
             }
@@ -866,48 +903,69 @@ private struct YearReviewSummarySlide: View {
         }
     }
 
-    /// Render the card on its page to a PNG and offer it through the share sheet.
-    @MainActor
+    /// Render the card on its page and offer it through the share sheet. The view is rendered here
+    /// (ImageRenderer needs the main actor); the PNG is encoded and written off it, then the sheet is
+    /// presented back on it.
     private func share() {
+        guard !sharing else { return }
         sharing = true
-        defer { sharing = false }
-        let card = YearReviewSummaryCard(snapshot: snapshot)
+        let card = YearReviewSummaryCard(snapshot: snapshot, chronologicalAge: profile.age)
             .padding(PulseTheme.Layout.pageMargin)
-            .frame(width: 402)
-            .background(YearReviewBackground(glow: PulseExtrasTheme.Story.glowIndigo))
+            .frame(width: S.shareWidth)
+            .background(YearReviewBackground(glow: S.glowIndigo))
             .environment(\.colorScheme, .dark)
         let renderer = ImageRenderer(content: card)
-        renderer.scale = 3
-        guard let data = renderer.uiImage?.pngData() else { return }
-        let url = FileManager.default.temporaryDirectory
-            .appendingPathComponent("ZENO-\(String(snapshot.year))-Year-in-Review.png")
-        do { try data.write(to: url, options: .atomic) } catch { return }
-        PulseExtrasShareSheet.present(url)
+        renderer.scale = S.shareScale
+        guard let image = renderer.uiImage else {
+            sharing = false
+            return
+        }
+        let name = "ZENO-\(String(snapshot.year))-Year-in-Review.png"
+        Task {
+            let url = await Task.detached(priority: .userInitiated) { () -> URL? in
+                guard let data = image.pngData() else { return nil }
+                let url = FileManager.default.temporaryDirectory.appendingPathComponent(name)
+                do { try data.write(to: url, options: .atomic) } catch { return nil }
+                return url
+            }.value
+            sharing = false
+            if let url { PulseExtrasShareSheet.present(url) }
+        }
     }
 }
 
-/// The card WHOOP members share: the lock-up, days tracked and the longest streak, the three best days as
-/// rings with their dates, and the longest sleep, lowest Recovery and top activity.
+/// The card WHOOP members share: the lock-up with ZENO Age at its right, days tracked and the longest
+/// streak, the three best days as rings with their dates, and the longest sleep, lowest Recovery and top
+/// activity.
 struct YearReviewSummaryCard: View {
     let snapshot: YearInReviewSnapshot
+    /// The wearer's age in years, to say how far ZENO Age sits from it.
+    let chronologicalAge: Int?
 
     private typealias S = PulseExtrasTheme.Story
 
     var body: some View {
         let s = snapshot.summary
         VStack(alignment: .leading, spacing: 16) {
-            VStack(alignment: .leading, spacing: 6) {
-                YearReviewLockup(year: snapshot.year)
-                Text(snapshot.isPartial ? String(localized: "Year in Review, so far") : String(localized: "Year in Review"))
-                    .pulseText(.cardHeadline)
-                    .foregroundStyle(PulseTheme.textSecondary)
+            HStack(alignment: .center, spacing: 12) {
+                VStack(alignment: .leading, spacing: 6) {
+                    YearReviewLockup(year: snapshot.year)
+                    Text(snapshot.isPartial ? String(localized: "Year in Review, so far") : String(localized: "Year in Review"))
+                        .pulseText(.cardHeadline)
+                        .foregroundStyle(PulseTheme.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                if let age = snapshot.zenoAge {
+                    YearReviewAgeBadge(zenoAge: age, chronologicalAge: chronologicalAge)
+                }
             }
             HStack(spacing: 0) {
                 headline(symbol: "calendar", title: String(localized: "Days tracked"),
-                         value: String(localized: "\(s.trackedDays) days"))
+                         value: PulseChallengeText.inflected("^[\(s.trackedDays) day](inflect: true)"))
                 Rectangle().fill(PulseTheme.divider).frame(width: 1, height: 36)
                 headline(symbol: "flame.fill", title: String(localized: "Longest streak"),
-                         value: String(localized: "\(s.longestStreak) days"))
+                         value: PulseChallengeText.inflected("^[\(s.longestStreak) day](inflect: true)"))
                     .padding(.leading, 16)
             }
             HStack(alignment: .top, spacing: 0) {
@@ -921,8 +979,9 @@ struct YearReviewSummaryCard: View {
             }
             .padding(.vertical, 18)
             .frame(maxWidth: .infinity)
-            .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(S.summaryCard))
-            .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(PulseTheme.divider, lineWidth: 1))
+            .background(RoundedRectangle(cornerRadius: S.summaryCardRadius, style: .continuous).fill(S.summaryCard))
+            .overlay(RoundedRectangle(cornerRadius: S.summaryCardRadius, style: .continuous)
+                .strokeBorder(PulseTheme.divider, lineWidth: 1))
             VStack(spacing: 10) {
                 if let m = s.longestSleep {
                     row(symbol: "moon.stars.fill", title: String(localized: "Longest Sleep"),
@@ -945,7 +1004,7 @@ struct YearReviewSummaryCard: View {
     private func headline(symbol: String, title: String, value: String) -> some View {
         HStack(spacing: 10) {
             Image(systemName: symbol)
-                .font(.system(size: 20, weight: .regular))
+                .font(.system(size: S.summaryGlyphSize, weight: .regular))
                 .foregroundStyle(S.summaryRowIcon)
                 .frame(width: 28)
             VStack(alignment: .leading, spacing: 2) {
@@ -961,16 +1020,21 @@ struct YearReviewSummaryCard: View {
                       text: (Double) -> String, unit: String?) -> some View {
         VStack(spacing: 6) {
             ZStack {
-                PulseRing(fraction: moment.map { fraction($0.value) } ?? 0, color: color, diameter: 84, thickness: 6)
+                PulseRing(fraction: moment.map { fraction($0.value) } ?? 0, color: color, diameter: S.summaryRing,
+                          thickness: S.summaryRingStroke)
                 HStack(alignment: .firstTextBaseline, spacing: 1) {
                     Text(moment.map { text($0.value) } ?? "--")
                         .font(PulseType.font(.mediumValue))
                         .foregroundStyle(PulseTheme.textPrimary)
                     if let unit, moment != nil {
-                        Text(unit).font(PulseType.numeral(15)).foregroundStyle(PulseTheme.textPrimary)
+                        Text(unit).font(PulseType.numeral(S.summaryUnitSize)).foregroundStyle(PulseTheme.textPrimary)
                     }
                 }
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+                .padding(.horizontal, S.summaryRingStroke + 2)
             }
+            .frame(width: S.summaryRing, height: S.summaryRing)
             Text(title)
                 .pulseText(.coachingTitle)
                 .foregroundStyle(PulseTheme.textPrimary)
@@ -988,9 +1052,9 @@ struct YearReviewSummaryCard: View {
                      detailFirst: Bool = false) -> some View {
         HStack(spacing: 14) {
             Image(systemName: symbol)
-                .font(.system(size: 20, weight: .regular))
+                .font(.system(size: S.summaryGlyphSize, weight: .regular))
                 .foregroundStyle(S.summaryRowIcon)
-                .frame(width: 40, height: 40)
+                .frame(width: S.summaryGlyphFrame, height: S.summaryGlyphFrame)
                 .background(Circle().strokeBorder(S.summaryRowIcon.opacity(0.6), lineWidth: 1))
             VStack(alignment: .leading, spacing: 2) {
                 if detailFirst {
@@ -1006,8 +1070,66 @@ struct YearReviewSummaryCard: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
-        .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(S.summaryRow))
-        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(PulseTheme.divider, lineWidth: 1))
+        .background(RoundedRectangle(cornerRadius: S.summaryRowRadius, style: .continuous).fill(S.summaryRow))
+        .overlay(RoundedRectangle(cornerRadius: S.summaryRowRadius, style: .continuous)
+            .strokeBorder(PulseTheme.divider, lineWidth: 1))
+        .accessibilityElement(children: .combine)
+    }
+}
+
+/// ZENO Age where WHOOP's card puts its age orb (/09: "26.2 / WHOOP AGE / 8.6 years younger"): ZENO's own
+/// plain disc rather than WHOOP's orb art, in the Healthspan palette's green when younger than the wearer's
+/// age and the unfavourable orange when older. ZENO Age is the weekly Body Age the Health tab shows
+/// (`VitalityEngine`), the year's last one.
+private struct YearReviewAgeBadge: View {
+    let zenoAge: Double
+    let chronologicalAge: Int?
+
+    private typealias S = PulseExtrasTheme.Story
+
+    /// ZENO Age less the wearer's age, when the age is known.
+    private var difference: Double? { chronologicalAge.map { zenoAge - Double($0) } }
+
+    private var tint: Color {
+        guard let d = difference, d > S.ageSameBand else { return PulseTheme.Healthspan.youngerParticles }
+        return PulseTheme.negative
+    }
+
+    private var comparison: String? {
+        guard let d = difference else { return nil }
+        if abs(d) < S.ageSameBand { return String(localized: "Your own age") }
+        let years = PulseFormat.oneDecimal(abs(d))
+        return d < 0 ? String(localized: "\(years) years younger") : String(localized: "\(years) years older")
+    }
+
+    var body: some View {
+        VStack(spacing: 2) {
+            Text(PulseFormat.oneDecimal(zenoAge))
+                .font(PulseType.font(.mediumValue))
+                .foregroundStyle(PulseTheme.textPrimary)
+            Text(String(localized: "ZENO Age"))
+                .pulseText(.label)
+                .foregroundStyle(PulseTheme.textSecondary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+            if let comparison {
+                Text(comparison)
+                    .pulseText(.chipStrong)
+                    .foregroundStyle(tint)
+                    .multilineTextAlignment(.center)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.8)
+            }
+        }
+        .padding(10)
+        .frame(width: S.ageBadge, height: S.ageBadge)
+        .background {
+            Circle()
+                .fill(RadialGradient(colors: [tint.opacity(0.28), tint.opacity(0.04)], center: .center, startRadius: 0,
+                                     endRadius: S.ageBadge / 2))
+                .overlay(Circle().strokeBorder(tint.opacity(0.7), lineWidth: S.ageRim))
+        }
+        .dynamicTypeSize(...DynamicTypeSize.xLarge)
         .accessibilityElement(children: .combine)
     }
 }
@@ -1021,14 +1143,15 @@ private struct YearReviewNotEnoughSlide: View {
         VStack(spacing: 14) {
             Spacer()
             Image(systemName: "calendar.badge.clock")
-                .font(.system(size: 44, weight: .light))
+                .font(.system(size: PulseExtrasTheme.Story.notEnoughGlyphSize, weight: .light))
                 .foregroundStyle(PulseTheme.textTertiary)
                 .accessibilityHidden(true)
-            Text(String(localized: "Your year is just getting started"))
+            Text(snapshot.isPartial ? String(localized: "Your year is just getting started")
+                                    : String(localized: "Not enough of this year to tell"))
                 .extrasFont(PulseExtrasTheme.Story.titleSize, weight: .semibold, relativeTo: .title2)
                 .foregroundStyle(PulseTheme.textPrimary)
                 .multilineTextAlignment(.center)
-            Text(String(localized: "Year in Review tells its story from two weeks of scored days. You have \(snapshot.summary.trackedDays) in \(String(snapshot.year)) so far. Keep wearing your strap and it fills in."))
+            Text(message)
                 .pulseText(.body)
                 .foregroundStyle(PulseTheme.textSecondary)
                 .multilineTextAlignment(.center)
@@ -1036,6 +1159,15 @@ private struct YearReviewNotEnoughSlide: View {
             Spacer()
         }
         .padding(.horizontal, 32)
+    }
+
+    /// "So far… keep wearing" only while the year is still running; a finished year says what it had.
+    private var message: String {
+        let days = PulseChallengeText.inflected("^[\(snapshot.summary.trackedDays) scored day](inflect: true)")
+        let year = String(snapshot.year)
+        return snapshot.isPartial
+            ? String(localized: "Year in Review tells its story from two weeks of scored days. You have \(days) in \(year) so far. Keep wearing your strap and it fills in.")
+            : String(localized: "Year in Review tells its story from two weeks of scored days, and \(year) has \(days). Next year's fills in as you wear your strap.")
     }
 }
 #endif

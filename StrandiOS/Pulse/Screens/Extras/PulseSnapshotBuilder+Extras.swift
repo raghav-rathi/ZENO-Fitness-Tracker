@@ -252,10 +252,13 @@ extension PulseSnapshotBuilder {
                                              strainRange: { pct in bands[min(100, max(0, Int(pct.rounded())))] })
 
         let behaviors = await yearBehaviors(r, inYear: inYear)
+        // ZENO Age: the stored weekly Body Age the Health tab reads, the last one inside the year.
+        let bodyAge = await cached("extras.bodyAge") { await repo.exploreSeries(key: "body_age", source: "my-whoop") }
         guard isCurrent(r) else { return nil }
         return YearInReviewSnapshot(seq: r.seq, year: year, isPartial: through < lastOfYear, through: through,
                                     summary: summary, behaviors: behaviors,
-                                    topActivitySymbol: summary.topActivity.flatMap { symbolByName[$0.name] })
+                                    topActivitySymbol: summary.topActivity.flatMap { symbolByName[$0.name] },
+                                    zenoAge: bodyAge.last(where: { inYear($0.day) })?.value)
     }
 
     /// Journal behaviours against Recovery over the year: yes-days against no-days (an unanswered day is
@@ -278,13 +281,28 @@ extension PulseSnapshotBuilder {
             if let v = d.recovery { recovery[d.day] = v }
         }
         let outcome = PulseScore.recovery.displayName
-        return EffectRanker.rank(behaviors: yes, controls: no, outcomeByDay: recovery, outcome: outcome)
-            .compactMap { ranked -> YearReviewBehavior? in
-                guard let pct = ranked.effect.pctChange, pct.isFinite else { return nil }
-                return YearReviewBehavior(id: ranked.behavior, title: Self.behaviorTitle(ranked.behavior),
-                                          percent: pct, significant: ranked.effect.significant,
-                                          daysWith: ranked.effect.nWith, daysWithout: ranked.effect.nWithout)
+        let ranked = EffectRanker.rank(behaviors: yes, controls: no, outcomeByDay: recovery, outcome: outcome)
+        // The wearer's renames live in the journal catalog, a main-actor store: read them once, for these
+        // behaviours only.
+        let questions = ranked.map(\.behavior)
+        let renames: [String: String] = await MainActor.run {
+            let catalog = JournalCatalogStore()
+            var out: [String: String] = [:]
+            for q in questions {
+                if let name = catalog.item(for: q)?.displayName?.trimmingCharacters(in: .whitespacesAndNewlines),
+                   !name.isEmpty {
+                    out[q] = name
+                }
             }
+            return out
+        }
+        return ranked.compactMap { item -> YearReviewBehavior? in
+            guard let pct = item.effect.pctChange, pct.isFinite else { return nil }
+            return YearReviewBehavior(id: item.behavior,
+                                      title: renames[item.behavior] ?? Self.behaviorTitle(item.behavior),
+                                      percent: pct, significant: item.effect.significant,
+                                      daysWith: item.effect.nWith, daysWithout: item.effect.nWithout)
+        }
     }
 
     /// A short name for a journal question: "Did you drink any alcohol?" reads "Drink any alcohol".

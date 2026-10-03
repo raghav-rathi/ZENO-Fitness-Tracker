@@ -162,7 +162,10 @@ public enum YearInReview {
     public static let consistencyCoverage = 0.9
     /// A pillar this far ahead (share of days on its mark) wins the persona over consistency.
     public static let clearPillarShare = 0.5
-    /// The Everest equivalence (spec §3.39): each step counted as ≈0.16 m of climb, against 8,848.86 m.
+    /// The Everest equivalence (spec §3.39 [Z]): each step counted as ≈0.16 m of climb (a stair), against
+    /// 8,848.86 m. A deliberate deviation from WHOOP's own figure: its 2025 story calls 808,735 steps
+    /// "Everest 8 times" (profile-community-2026/50), ≈0.0875 m a step, a rule it never states. ZENO keeps the
+    /// spec's stair and says so in the sentence ("Counted as 16 cm stairs"), so the number can be checked.
     public static let metresPerStep = 0.16
     public static let everestMetres = 8_848.86
 

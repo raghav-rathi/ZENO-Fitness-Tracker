@@ -86,8 +86,8 @@ struct PulseYearInReviewView: View {
                     .gesture(swipe)
                 }
                 progress
-                    .padding(.top, 14)
-                    .padding(.bottom, 22)
+                    .padding(.top, S.progressTop)
+                    .padding(.bottom, S.progressBottom)
             }
         }
         .toolbar(.hidden, for: .navigationBar)
@@ -117,13 +117,26 @@ struct PulseYearInReviewView: View {
             // The summary card carries its own lock-up.
             if current != .summary { YearReviewLockup(year: reviewYear) }
             HStack {
-                PulseCloseButton { dismiss() }
+                closeButton
                 Spacer(minLength: 0)
             }
-            .padding(.horizontal, PulseTheme.Layout.pageMargin)
+            .padding(.leading, S.closeCentre - PulseTheme.Layout.minTapTarget / 2)
         }
         .frame(height: PulseTheme.Header.navBar)
         .padding(.top, PulseTheme.Header.navBarTop)
+    }
+
+    /// The story's "✕": larger and heavier than a nav bar's, centred 34 pt in (/10, /45).
+    private var closeButton: some View {
+        Button { dismiss() } label: {
+            Image(systemName: "xmark")
+                .font(.system(size: S.closeGlyphSize, weight: .medium))
+                .foregroundStyle(PulseTheme.textPrimary)
+                .frame(width: PulseTheme.Layout.minTapTarget, height: PulseTheme.Layout.minTapTarget)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(PulsePressStyle())
+        .accessibilityLabel(String(localized: "Close"))
     }
 
     /// Short white segments for the slides seen, a long one for this slide, short grey ones ahead.
@@ -137,9 +150,11 @@ struct PulseYearInReviewView: View {
             }
         }
         .pulseAnimation(PulseMotion.crossFade, value: index)
-        .frame(height: 20)
+        .frame(height: S.progressRowHeight)
         .accessibilityElement()
-        .accessibilityLabel(String(localized: "Slide \(index + 1) of \(count)"))
+        // VoiceOver re-reads a changed value after an adjust, not a changed label.
+        .accessibilityLabel(String(localized: "Story progress"))
+        .accessibilityValue(String(localized: "Slide \(index + 1) of \(count)"))
         .accessibilityAdjustableAction { direction in
             switch direction {
             case .increment: go(to: index + 1)
@@ -152,7 +167,7 @@ struct PulseYearInReviewView: View {
     private var loading: some View {
         VStack(spacing: PulseTheme.Layout.stackGap) {
             PulseSkeletonBlock(height: 44, width: 200)
-            PulseSkeletonBlock(height: 258, width: S.cardSize.width, radius: S.cardTopRadius)
+            PulseSkeletonBlock(height: S.cardSize.height, width: S.cardSize.width, radius: S.cardTopRadius)
             PulseSkeletonBlock(height: 24, width: 240)
         }
         .pulseSkeleton(isLoading: true)
@@ -200,13 +215,13 @@ struct YearReviewBackground: View {
             S.page
             LinearGradient(stops: [
                 .init(color: glow.opacity(0), location: S.glowStart),
-                .init(color: glow.opacity(0.55), location: 0.85),
-                .init(color: glow.opacity(0.8), location: 1)
+                .init(color: glow.opacity(S.glowMid), location: 0.85),
+                .init(color: glow.opacity(S.glowFoot), location: 1)
             ], startPoint: .top, endPoint: .bottom)
             GeometryReader { geo in
-                RadialGradient(colors: [glow.opacity(0.55), glow.opacity(0)],
+                RadialGradient(colors: [glow.opacity(S.glowMid), glow.opacity(0)],
                                center: UnitPoint(x: 0.5, y: 1.02),
-                               startRadius: 0, endRadius: geo.size.height * 0.42)
+                               startRadius: 0, endRadius: geo.size.height * S.glowRadiusShare)
             }
         }
         .ignoresSafeArea()

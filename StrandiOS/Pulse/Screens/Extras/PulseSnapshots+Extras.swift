@@ -102,13 +102,17 @@ struct YearInReviewSnapshot: Equatable {
     let behaviors: [YearReviewBehavior]
     /// The most logged activity's glyph.
     let topActivitySymbol: String?
+    /// ZENO Age: the year's last weekly Body Age (`VitalityEngine`, the value the Health tab shows), or nil
+    /// when none was computed in the year.
+    let zenoAge: Double?
 }
 
 /// One behaviour on the "Behavior impacts on Recovery" slide.
 struct YearReviewBehavior: Equatable, Identifiable {
     /// The journal question, verbatim (the behaviour's key).
     let id: String
-    /// A short name for the bar ("Drink any alcohol").
+    /// The bar's label: the wearer's own name for the behaviour when they renamed it in the journal, else a
+    /// short form of the question ("Drink any alcohol").
     let title: String
     /// Recovery on days with the behaviour against days without, as a percent of the without-days' mean.
     let percent: Double
