@@ -166,13 +166,16 @@ enum PulseRoute: Hashable {
         }
     }
 
-    /// How WHOOP presents it (§1.6).
+    /// How WHOOP presents it (§1.6). The Sleep Planner follows the 2026 iOS app, where it is full screen.
+    /// App Settings departs from it: WHOOP presents the page with "✕" over the visible tab bar (§3.33), but
+    /// here it is pushed from More, with "‹" and no capsule like every pushed page. A modal's own stack only
+    /// pushes, and pushed this way its AI Settings and Data Export still open as the "✕" sheets they are.
     var presentation: PulsePresentation {
         switch self {
         case .customizeDashboard, .startActivity, .deviceSettings, .journal, .onboarding, .strengthTrainer,
-             .yearInReview, .dayTimeline, .guidedSession:
+             .yearInReview, .dayTimeline, .guidedSession, .sleepPlanner:
             return .fullScreen
-        case .sleepPlanner, .addActivity, .appSettings, .coach:
+        case .addActivity, .coach:
             return .sheet
         case .weeklyPlan(let editing):
             return editing ? .sheet : .push
@@ -485,6 +488,7 @@ extension PulseRoute {
             ("year-in-review", .yearInReview), ("challenges", .challenges), ("day-timeline", .dayTimeline),
             ("privacy-data", .privacyData), ("report-problem", .reportProblem), ("first-week", .firstWeek),
             ("training-load", .trainingLoad), ("guided-session", .guidedSession),
+            ("zeno-live", PulseZenoLiveRoute().route),
             ("screen-sample", PulseSampleScreenRoute(name: "Sample").route),
         ]
         let classic: [(String, PulseClassicDestination)] = [

@@ -36,16 +36,18 @@ enum PulseShellSheet: Identifiable {
 ///
 /// Everything the classic `RootTabView` gives the rest of the app is kept: pop-to-root then scroll-to-top
 /// on a tab re-tap, every `NavRouter` request, the Home Screen quick actions (held until the launch gates
-/// clear), the gym-session bar and sheet, the launch refresh and the backup catch-up. It observes only the
-/// router, the quick-action delegate, the scene phase and the Coach switch; the repository, the live strap
-/// state, the Coach engine and the gym session are each observed by a small leaf so their frequent
-/// publishes never re-render the shell.
+/// clear), the gym-session bar and its live screen, the launch refresh and the backup catch-up. It also
+/// opens the Pulse routes a tapped notification asks for (`PulseExternalRoutes`, held like the quick
+/// actions). It observes only the router, the quick-action delegate, those requests, the scene phase and
+/// the Coach switch; the repository, the live strap state, the Coach engine and the gym session are each
+/// observed by a small leaf so their frequent publishes never re-render the shell.
 struct PulseRootView: View {
     /// External entry points wait until the mandatory first-run gates have completed (see RootTabView).
     let homeScreenQuickActionsEnabled: Bool
 
     @EnvironmentObject private var router: NavRouter
     @EnvironmentObject private var homeScreenQuickActions: HomeScreenQuickActionSceneDelegate
+    @EnvironmentObject private var externalRoutes: PulseExternalRoutes
     @AppStorage("noop.coachEnabled") private var coachEnabled = true
     @Environment(\.scenePhase) private var scenePhase
 
@@ -139,7 +141,8 @@ struct PulseRootView: View {
             }
         }
         .modifier(PulseLiftSessionChrome(
-            bottomPadding: selectedTabAtRoot ? max(8, barTopFromScreenBottom - bottomSafeArea + 8) : 8))
+            bottomPadding: selectedTabAtRoot ? max(8, barTopFromScreenBottom - bottomSafeArea + 8) : 8,
+            presentsSession: sheet == nil && cover == nil))
         .overlay {
             if selectedTabAtRoot {
                 // A flexible column, so ignoring the bottom safe area really reaches the screen's edge
@@ -203,16 +206,22 @@ struct PulseRootView: View {
             router.quickActionsRequested = false
         }
         // A cold-launch Home Screen action is already pending when the shell appears; a warm one arrives
-        // through the change callback. Both open the same screens as the ＋ menu.
+        // through the change callback. Both open the same screens as the ＋ menu. A notification's route
+        // waits the same way.
         .onAppear {
             presentPendingHomeScreenQuickActionIfPossible()
             applyDebugLaunchState()
+            openPendingExternalRouteIfPossible()
         }
         .onChange(of: homeScreenQuickActions.pendingAction) { _, _ in
             presentPendingHomeScreenQuickActionIfPossible()
         }
+        .onChange(of: externalRoutes.pending) { _, _ in
+            openPendingExternalRouteIfPossible()
+        }
         .onChange(of: homeScreenQuickActionsEnabled) { _, _ in
             presentPendingHomeScreenQuickActionIfPossible()
+            openPendingExternalRouteIfPossible()
         }
         .onChange(of: scenePhase) { _, phase in
             if phase == .active { model.sceneBecameActive() }
@@ -426,6 +435,23 @@ struct PulseRootView: View {
         homeScreenQuickActions.consume(action)
         perform(destination)
     }
+
+    // MARK: Notification routes
+
+    /// The route a tapped notification asked for, once the launch gates have cleared. A pushed screen opens
+    /// on Home, where Pulse's day lives (the Weekly Plan is Home's My Plan), at the root of its stack, as
+    /// NavRouter's Trends opens on its tab; a modal one presents.
+    private func openPendingExternalRouteIfPossible() {
+        guard homeScreenQuickActionsEnabled, let route = externalRoutes.pending else { return }
+        externalRoutes.pending = nil
+        if route.presentation == .push {
+            selectedTab = .home
+            homePath = NavigationPath()
+            homePath.appendPulse(route)
+        } else {
+            present(route)
+        }
+    }
 }
 
 private struct PulseBottomSafeAreaKey: PreferenceKey {
@@ -523,14 +549,28 @@ private struct PulseCoachProbe: View {
                 if now != configured { configured = now }
             }
             .accessibilityHidden(true)
+            #if DEBUG
+            // `--pulse-coach-analyzing`: hold the Coach mid-reply, publishing as a stream does, for captures.
+            .task {
+                guard PulseDebugLaunch.coachAnalyzing else { return }
+                coach.sending = true
+                while !Task.isCancelled {
+                    try? await Task.sleep(nanoseconds: 100_000_000)
+                    coach.objectWillChange.send()
+                }
+            }
+            #endif
     }
 }
 
-/// The running gym session, reachable from any tab: its bar above the floating tab bar and its sheet. A
-/// modifier so the session's frequent publishes re-render this chrome, not the tabs inside it.
+/// The running gym session, reachable from any tab: its bar above the floating tab bar, and the session
+/// itself while `LiftSessionController.isPresented` asks for it. A modifier so the session's frequent
+/// publishes re-render this chrome, not the tabs inside it.
 private struct PulseLiftSessionChrome: ViewModifier {
     /// Room under the bar: the capsule's height above the bottom safe edge while it shows.
     let bottomPadding: CGFloat
+    /// False while the shell presents a sheet or cover: that modal's host presents the session instead.
+    let presentsSession: Bool
     @EnvironmentObject private var liftSession: LiftSessionController
 
     func body(content: Content) -> some View {
@@ -545,9 +585,36 @@ private struct PulseLiftSessionChrome: ViewModifier {
             }
             .animation(.easeInOut(duration: 0.25), value: liftSession.isActive)
             // A session left running by a previous launch comes back as the BAR, not a sheet in the face.
-            .sheet(isPresented: $liftSession.isPresented) {
-                LiftSessionView { }
+            .modifier(PulseLiftSessionPresenter(isActive: presentsSession))
+            #if DEBUG
+            // `--pulse-sheet session`: open a running session at launch, as a tap on its bar does.
+            .task {
+                if PulseDebugLaunch.sheet == "session" && liftSession.isActive { liftSession.isPresented = true }
             }
+            #endif
+    }
+}
+
+/// Presents the running gym session whenever `LiftSessionController.isPresented` is set (starting a
+/// workout, Resume, a tap on the bar): the rebuilt live screen full screen (`PulseStrengthLiveRoute`), or
+/// the classic sheet until Strength is rebuilt. A view under a modal cannot present, so exactly one of
+/// these is active at a time: the shell's while nothing covers it (`PulseLiftSessionChrome`), otherwise
+/// the host of the modal on top (`PulseModalHost`), which the session then covers.
+struct PulseLiftSessionPresenter: ViewModifier {
+    let isActive: Bool
+    @EnvironmentObject private var liftSession: LiftSessionController
+
+    private var isPresented: Binding<Bool> {
+        Binding(get: { isActive && liftSession.isPresented },
+                set: { liftSession.isPresented = $0 })
+    }
+
+    func body(content: Content) -> some View {
+        if PulseStrengthTrainerView.isRebuilt {
+            content.fullScreenCover(isPresented: isPresented) { PulseStrengthLiveRoute().view }
+        } else {
+            content.sheet(isPresented: isPresented) { LiftSessionView { } }
+        }
     }
 }
 #endif

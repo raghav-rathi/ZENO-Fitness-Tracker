@@ -22,7 +22,6 @@ struct PulseStrengthWorkoutView: View {
     @AppStorage(UnitPrefs.systemKey) private var unitSystemRaw = UnitSystem.metric.rawValue
     @State private var snapshot: StrengthTrainerSnapshot?
     @State private var editing: PulseStrengthEditTarget?
-    @State private var showsLive = false
     @State private var starting = false
 
     private var unitSystem: UnitSystem { UnitSystem(rawValue: unitSystemRaw) ?? .metric }
@@ -59,7 +58,6 @@ struct PulseStrengthWorkoutView: View {
         .sheet(item: $editing) { target in
             LiftProgramEditorSheet(program: target.program) { PulseStrengthVersion.shared.bump() }
         }
-        .fullScreenCover(isPresented: $showsLive) { PulseStrengthLiveSessionView() }
     }
 
     private func load() async {
@@ -192,17 +190,17 @@ struct PulseStrengthWorkoutView: View {
         }
     }
 
+    /// START WORKOUT: a new session, or the one already running; either raises `isPresented`, and the shell
+    /// opens the live screen.
     private func start(_ workout: StrengthWorkout) async {
         if session.isActive {
-            showsLive = true
+            session.isPresented = true
             return
         }
         starting = true
         defer { starting = false }
         guard let plan = await PulseStrengthSessionStarter.plan(for: workout.program, repo: repo), !plan.isEmpty else { return }
         session.start(plan: plan, programId: workout.program.id, programName: workout.program.name)
-        session.isPresented = false
-        showsLive = true
     }
 }
 #endif

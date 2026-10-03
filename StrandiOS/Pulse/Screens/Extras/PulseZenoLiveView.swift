@@ -51,12 +51,9 @@ struct PulseZenoLiveView: View {
             }
             .scrollClipDisabled()
 
-            // Side by side while both labels fit at half the width each, stacked once they do not, so a
-            // large text size never cuts "CHANGE PHOTO" short.
-            ViewThatFits(in: .horizontal) {
-                ExtrasEqualWidthRow(spacing: PulseTheme.Layout.gridGap) { photoButton; shareButton }
-                VStack(spacing: PulseTheme.Layout.gridGap) { photoButton; shareButton }
-            }
+            // Side by side while both labels fit half the width each, stacked once they do not, so a large
+            // text size never cuts "CHANGE PHOTO" short.
+            PulseButtonRow { photoButton; shareButton }
             Text(String(localized: "Drag the numbers where you want them. The picture is made on this iPhone and leaves it only if you share it."))
                 .pulseText(.legend)
                 .foregroundStyle(PulseTheme.textTertiary)
@@ -90,6 +87,12 @@ struct PulseZenoLiveView: View {
                let t = ZenoLiveTemplate(rawValue: args[i + 1]) {
                 template = t
             }
+        }
+        .task {
+            // `--pulse-zeno-live-share` (with the sample photo): open the share sheet, as SHARE does.
+            guard CommandLine.arguments.contains("--pulse-zeno-live-share") else { return }
+            try? await Task.sleep(nanoseconds: 1_500_000_000)
+            share()
         }
         #endif
     }
@@ -196,32 +199,6 @@ struct PulseZenoLiveView: View {
         ]
         guard let image = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else { return nil }
         return UIImage(cgImage: image)
-    }
-}
-
-/// Buttons side by side at equal widths, whose ideal width is that of the widest one times their number, so
-/// a `ViewThatFits` only keeps them in a row when every label fits its equal share (the shared
-/// `PulseButtonRow` measures their natural widths, then splits the row evenly, and can cut the longer one).
-/// `allowedShrink` is how far a label may scale down to fit (Pulse's buttons allow 0.8 on their text).
-struct ExtrasEqualWidthRow: Layout {
-    var spacing: CGFloat
-    var allowedShrink: CGFloat = 0.85
-
-    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
-        let ideals = subviews.map { $0.sizeThatFits(.unspecified) }
-        let count = CGFloat(max(1, subviews.count))
-        let ideal = (ideals.map(\.width).max() ?? 0) * allowedShrink * count + spacing * (count - 1)
-        let height = ideals.map(\.height).max() ?? 0
-        return CGSize(width: proposal.width ?? ideal, height: height)
-    }
-
-    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
-        let count = CGFloat(max(1, subviews.count))
-        let width = (bounds.width - spacing * (count - 1)) / count
-        for (i, subview) in subviews.enumerated() {
-            subview.place(at: CGPoint(x: bounds.minX + CGFloat(i) * (width + spacing), y: bounds.midY),
-                          anchor: .leading, proposal: ProposedViewSize(width: width, height: bounds.height))
-        }
     }
 }
 

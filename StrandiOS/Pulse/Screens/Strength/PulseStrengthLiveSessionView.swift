@@ -4,9 +4,9 @@ import StrandDesign
 import StrandAnalytics
 import WhoopStore
 
-/// The live session as a destination of its own, full screen, so whatever shows the running session can
-/// open THIS screen. The shell's session bar (`PulseLiftSessionChrome`, foundation-owned) still opens the
-/// classic `LiftSessionView` sheet; it should open this route while `PulseStrengthTrainerView.isRebuilt`.
+/// The live session as a destination of its own, full screen. The shell presents it whenever
+/// `LiftSessionController.isPresented` is set (`PulseLiftSessionPresenter`): a workout started or resumed
+/// here or in the Lift Log, and a tap on the session bar.
 struct PulseStrengthLiveRoute: PulseScreenRoute {
     var presentation: PulsePresentation { .fullScreen }
     var view: some View { PulseStrengthLiveSessionView() }
@@ -81,7 +81,8 @@ struct PulseStrengthLiveSessionView: View {
         .environment(\.colorScheme, .dark)
         // Opened as a route it sits in a navigation stack; its header is its own.
         .toolbar(.hidden, for: .navigationBar)
-        .task(id: session.engine?.plan.map(\.exercise)) { await loadLastTime() }
+        // What each exercise lifted last time (the grey numbers' middle layer), again when the exercises change.
+        .task(id: session.engine?.plan.map(\.exercise)) { await session.loadLastSession(from: repo) }
         .sheet(isPresented: $showsFinish) {
             PulseStrengthFinishSheet(onDone: { dismiss() })
         }
@@ -336,26 +337,6 @@ struct PulseStrengthLiveSessionView: View {
                 .frame(maxWidth: 220)
         }
         .padding(32)
-    }
-
-    // MARK: Last time
-
-    /// What was lifted for each exercise LAST time, by set number — the middle layer of the grey numbers,
-    /// handed to the controller that owns the chain. The Lift Log's sheet does the same read
-    /// (`LiftSessionView.loadLastTime`); this screen does it so its grey numbers match.
-    private func loadLastTime() async {
-        guard let engine = session.engine, let store = await repo.storeHandle() else { return }
-        var out: [String: [Int: LiftSetCarry]] = [:]
-        for exercise in NSOrderedSet(array: engine.plan.map(\.exercise)).compactMap({ $0 as? String }) {
-            let rows = (try? await store.lastLiftSets(deviceId: repo.deviceId, exercise: exercise,
-                                                      before: engine.startTs)) ?? []
-            var bySet: [Int: LiftSetCarry] = [:]
-            for row in rows where !row.isWarmup {
-                bySet[row.setIndex] = LiftSetCarry(weightKg: row.weightKg, reps: row.reps)
-            }
-            out[exercise] = bySet
-        }
-        session.setLastSession(out)
     }
 }
 

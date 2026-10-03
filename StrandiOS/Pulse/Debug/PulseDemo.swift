@@ -79,7 +79,10 @@ enum PulseDemo {
 ///   `--pulse-route <name>`             open any route (names: `PulseRoute.debugCatalog`)
 ///   `--pulse-present <name>`           present any route modally
 ///   `--pulse-gallery`                  present the component gallery
-///   `--pulse-sheet actions|coach|menu` present the ＋ sheet or the Coach sheet, or open Home's menu
+///   `--pulse-coach-analyzing`          the Coach mid-reply (the floating button's "Analyzing…" pill)
+///   `--pulse-notification-tap <category>`  a tap on a notification of that category
+///   `--pulse-sheet actions|coach|menu|session` present the ＋ sheet or the Coach sheet, open Home's
+///                                      menu, or open a running gym session as its bar does
 ///   `--pulse-scroll <anchor>`          scroll to a section id ("myday", "stats", "stress", "bottom", …)
 enum PulseDebugLaunch {
     private static func value(_ flag: String) -> String? {
@@ -92,8 +95,8 @@ enum PulseDebugLaunch {
         value("--pulse-tab").flatMap(PulseTab.init(rawValue:))
     }
 
-    /// `--pulse-sheet actions|coach|menu`: present the ＋ sheet or the Coach sheet at launch, or open the
-    /// anchored action menu from Home's "+".
+    /// `--pulse-sheet actions|coach|menu|session`: present the ＋ sheet or the Coach sheet at launch, open
+    /// the anchored action menu from Home's "+", or open the gym session a previous launch left running.
     static var sheet: String? { value("--pulse-sheet") }
 
     static var dayOffset: Int? { value("--pulse-day").flatMap(Int.init) }
@@ -122,7 +125,7 @@ enum PulseDebugLaunch {
     /// activity-picker, healthspan, health-monitor, stress-monitor, app-settings, device-settings,
     /// profile, levels, achievements, day-streak, journal, behavior-insights, weekly-plan, edit-plan,
     /// cycle-insights, coach, memory, onboarding, strength-trainer, year-in-review, challenges,
-    /// day-timeline, guided-session, classic-<screen> (classic-trends, classic-settings, …) and
+    /// day-timeline, guided-session, zeno-live, classic-<screen> (classic-trends, classic-settings, …) and
     /// tab-<route> (tab-steps, tab-metric:<key>, …).
     static var route: PulseRoute? {
         value("--pulse-route").flatMap(PulseRoute.debugNamed)
@@ -136,6 +139,14 @@ enum PulseDebugLaunch {
 
     /// `--pulse-gallery`: present the component gallery (`PulseComponentGallery`).
     static var showsGallery: Bool { CommandLine.arguments.contains("--pulse-gallery") }
+
+    /// `--pulse-coach-analyzing`: keep the Coach writing a reply (a stream of publishes), so the floating
+    /// Coach button's "Analyzing…" pill can be captured.
+    static var coachAnalyzing: Bool { CommandLine.arguments.contains("--pulse-coach-analyzing") }
+
+    /// `--pulse-notification-tap <category>`: route a tap on a notification of that category at launch
+    /// (`NotificationPresenter.routes`), e.g. `zeno.plan.checkIn`, since `simctl` cannot tap a banner.
+    static var notificationTap: String? { value("--pulse-notification-tap") }
 
     /// The section id to scroll to, prefixed as the views tag them.
     static var scrollAnchor: String? { value("--pulse-scroll").map { "pulse.\($0)" } }
@@ -161,10 +172,10 @@ struct PulseDemoScreen: View {
     private var content: some View {
         switch kind {
         case .home: PulseHomeView()
-        case .recovery: PulseRecoveryView()
-        case .strain: PulseStrainView()
-        case .sleep: PulseSleepView()
-        case .health: PulseHealthView(onAction: { _ in })
+        case .recovery: PulseRecoveryDiveView()
+        case .strain: PulseStrainDiveView()
+        case .sleep: PulseSleepDiveView()
+        case .health: PulseHealthTabView()
         case .more: PulseMoreView()
         }
     }

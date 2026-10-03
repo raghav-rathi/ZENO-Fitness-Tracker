@@ -24,6 +24,9 @@ enum PulseNavTrailing {
     case achievement(symbol: String, tint: Color, count: Int, action: () -> Void)
     /// A plain glyph: ⚙ (Stress Monitor, Menstrual), a history clock (Coach), "?" (Sleep Planner), "•••".
     case symbol(String, accessibilityLabel: String, action: () -> Void)
+    /// A glyph of the screen's own that no symbol draws (WHOOP's outlined "ooo"): `draw` paints it into the
+    /// 44 pt slot (its size), stroking or filling with `.foreground`, which is the bar's white.
+    case custom(accessibilityLabel: String, action: () -> Void, draw: (inout GraphicsContext, CGSize) -> Void)
 
     var isNone: Bool {
         if case .none = self { return true }
@@ -218,6 +221,15 @@ struct PulseNavBar: View {
             Button(action: action) {
                 Image(systemName: symbol)
                     .font(.system(size: 18, weight: .regular))
+                    .foregroundStyle(PulseTheme.textPrimary)
+                    .frame(width: PulseTheme.Layout.minTapTarget, height: PulseTheme.Layout.minTapTarget)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(PulsePressStyle())
+            .accessibilityLabel(label)
+        case .custom(let label, let action, let draw):
+            Button(action: action) {
+                Canvas(renderer: draw)
                     .foregroundStyle(PulseTheme.textPrimary)
                     .frame(width: PulseTheme.Layout.minTapTarget, height: PulseTheme.Layout.minTapTarget)
                     .contentShape(Rectangle())

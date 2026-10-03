@@ -24,6 +24,9 @@ struct StrandiOSApp: App {
     /// Shared cross-screen navigation hook (e.g. Live → Devices). The iOS shell (`RootTabView`)
     /// observes it and presents the Devices manager.
     @StateObject private var router: NavRouter
+    /// Pulse routes a tapped notification asks for (the Weekly Plan's Friday check-in). The Pulse shell
+    /// opens them; NavRouter's destinations are shared with shells that have no such screens.
+    @StateObject private var pulseRoutes: PulseExternalRoutes
     /// NOOP's live heart rate banner. Built in `init` and fed from there (`LiveActivityController.follow`), not from
     /// a view: a process iOS starts in the background need not build one.
     @State private var liveActivity: LiveActivityController
@@ -91,6 +94,18 @@ struct StrandiOSApp: App {
         let router = NavRouter()
         _router = StateObject(wrappedValue: router)
         NotificationPresenter.shared.onCoachBriefTapped = { [weak router] in router?.openCoach() }
+        // The Weekly Plan's Friday check-in opens Plan Overview. The plan is a Pulse screen, so the tap opens
+        // the app where it was while the classic tabs are on.
+        let pulseRoutes = PulseExternalRoutes()
+        _pulseRoutes = StateObject(wrappedValue: pulseRoutes)
+        NotificationPresenter.shared.routes[PulsePlanReminders.category] = { [weak pulseRoutes] in
+            guard UserDefaults.standard.object(forKey: "pulse.enabled") as? Bool ?? true else { return }
+            pulseRoutes?.pending = .weeklyPlan(editing: false)
+        }
+        #if DEBUG
+        // `--pulse-notification-tap <category>`: route a tap on that category at launch, as the delegate would.
+        if let category = PulseDebugLaunch.notificationTap { NotificationPresenter.shared.routes[category]?() }
+        #endif
         let model = AppModel()
         _model = StateObject(wrappedValue: model)
         CoachBriefScheduler.register(generateBrief: { [weak coach = model.coach] in
@@ -138,6 +153,13 @@ struct StrandiOSApp: App {
         // Before any view or publisher exists: the first push to the Lock Screen banner must find the
         // session already running, or it ends the banner iOS kept alive across the restart.
         liftSession.resumeSaved()
+        // A resumed session comes back as the bar, with no session screen open to load what each exercise
+        // lifted last time; without this, the bar and the Lock Screen banner would show a set's program
+        // target where the session screen shows last time's numbers.
+        if liftSession.isActive {
+            let repo = model.repo
+            Task { await liftSession.loadLastSession(from: repo) }
+        }
         // #1538: a strap offload completes while the app is BACKGROUNDED — it stays alive as a
         // bluetooth-central to receive it — and the re-score it triggers took nearly eight minutes on the
         // reporter's install, far longer than that wake survives. The pass is all-or-nothing, so being
@@ -236,6 +258,7 @@ struct StrandiOSApp: App {
                 .environmentObject(model.coach)
                 .environmentObject(health)
                 .environmentObject(router)
+                .environmentObject(pulseRoutes)
                 .environmentObject(UpdateStore.shared)
                 .environmentObject(liftSession)
                 // v5 L3: the shared stress check-in nudge surface, so the Breathe screen's passive
@@ -461,7 +484,9 @@ struct StrandiOSApp: App {
 
 /// iOS root — the `RootTabView` shell with the first-run onboarding/pairing wizard overlaid until
 /// complete, the Terms acknowledgment gate over everything until the current version is accepted, and
-/// a "What's New" changelog sheet shown automatically after an update.
+/// a "What's New" changelog sheet shown automatically after an update. With the Pulse shell on
+/// (`PulseRootView`), its own first run (`PulseOnboardingView`) stands in for the wizard and the gate, on
+/// the same keys.
 ///
 /// This mirrors the macOS `ContentView` (same `@AppStorage` keys, same gate ordering) but swaps the
 /// excluded `RootView()` sidebar for `RootTabView()`. The shared `OnboardingWizard`, `TermsGateView`,
@@ -505,7 +530,7 @@ private struct iOSRootView: View {
             } else {
                 RootTabView(homeScreenQuickActionsEnabled: gatesCleared)
             }
-            if !onboarded && !demoBypass {
+            if !onboarded && !demoBypass && !pulseFirstRun {
                 OnboardingWizard(onFinished: {
                     onboarded = true
                     // A brand-new user just saw the expectations in onboarding — don't also pop the
@@ -517,13 +542,30 @@ private struct iOSRootView: View {
             }
             // Terms acknowledgment gate — over EVERYTHING (before onboarding/pairing/Bluetooth) until
             // the current terms version is accepted; re-appears if the terms materially change.
-            if acceptedTerms != Terms.currentVersion && !demoBypass {
+            if acceptedTerms != Terms.currentVersion && !demoBypass && !pulseFirstRun {
                 TermsGateView(onAccept: {
                     // Keep any external action behind the gate while the accepted-terms change decides
                     // whether What's New must present next. This write must precede acceptedTerms.
                     automaticLaunchSheetResolved = false
                     acceptedTerms = Terms.currentVersion
                 })
+                    .transition(.opacity)
+                    .zIndex(2)
+            }
+            // The Pulse shell's first run: the same two gates on the same keys and writes, as one flow on
+            // WHOOP's template (terms first, then setup; the terms alone when only they changed).
+            if pulseFirstRun && (!onboarded || acceptedTerms != Terms.currentVersion) && !demoBypass {
+                PulseOnboardingView(
+                    needsTerms: acceptedTerms != Terms.currentVersion,
+                    needsSetup: !onboarded,
+                    onAcceptTerms: {
+                        automaticLaunchSheetResolved = false
+                        acceptedTerms = Terms.currentVersion
+                    },
+                    onFinished: {
+                        onboarded = true
+                        lastSeenChangelog = AppChangelog.currentVersion
+                    })
                     .transition(.opacity)
                     .zIndex(2)
             }
@@ -557,6 +599,10 @@ private struct iOSRootView: View {
         }
         .onChange(of: acceptedTerms) { _, _ in showWhatsNewIfDue() }
     }
+
+    /// With the Pulse shell on, its own first run (`PulseOnboardingView`) replaces the classic wizard and
+    /// terms gate; the classic shell keeps them.
+    private var pulseFirstRun: Bool { pulseEnabled && PulseOnboardingView.isRebuilt }
 
     /// Whether an external entry point may open a screen: every mandatory first-run gate has cleared.
     private var gatesCleared: Bool {

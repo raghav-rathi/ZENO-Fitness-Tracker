@@ -17,7 +17,8 @@ import WhoopStore
 ///     the Lift Log, the week's sets per muscle and the recent sessions (→ the session detail);
 ///   - a running session opens the live screen (`PulseStrengthLiveSessionView`), which drives the app's
 ///     one `LiftSessionController`, so the strap gesture, the rest buzzes and the Lock Screen banner work
-///     exactly as before.
+///     exactly as before. Starting or resuming one sets the controller's `isPresented`, and the shell
+///     presents the live screen (`PulseLiftSessionPresenter`), as it does from the session bar.
 /// No figure here feeds Strain: Strain stays what the strap measured from heart rate.
 struct PulseStrengthTrainerView: View {
     /// Rebuilt: the ＋ menu's STRENGTH TRAINER and the Home Screen quick action open this screen.
@@ -43,7 +44,6 @@ struct PulseStrengthTrainerView: View {
     @State private var editing: PulseStrengthEditTarget?
     @State private var importing = false
     @State private var viewing: PulseStrengthSessionTarget?
-    @State private var showsLive = false
     @State private var showsInfo = false
     @State private var deleting: LiftProgramRow?
 
@@ -88,7 +88,6 @@ struct PulseStrengthTrainerView: View {
             LiftSessionDetailSheet(session: target.session) { PulseStrengthVersion.shared.bump() }
         }
         .sheet(isPresented: $showsInfo) { PulseStrengthInfoSheet() }
-        .fullScreenCover(isPresented: $showsLive) { PulseStrengthLiveSessionView() }
         .confirmationDialog(String(localized: "Delete this workout?"), isPresented: deletingPresented,
                             titleVisibility: .visible, presenting: deleting) { program in
             Button(String(localized: "Delete \(program.name)"), role: .destructive) { delete(program) }
@@ -222,7 +221,7 @@ struct PulseStrengthTrainerView: View {
                     .lineLimit(dynamicTypeSize.isAccessibilitySize ? 3 : 1)
             }
         }
-        return Button { showsLive = true } label: {
+        return Button { session.isPresented = true } label: {
             Group {
                 // At the accessibility sizes RESUME drops under the text rather than squeezing every word.
                 if dynamicTypeSize.isAccessibilitySize {
@@ -436,18 +435,15 @@ struct PulseStrengthTrainerView: View {
     // MARK: Actions
 
     /// Start `program` the way the Lift Log does (its lines snapshot into the plan, classified from the
-    /// exercise vocabulary), refusing a second session over a running one, then open the live screen here
-    /// rather than the shell's classic sheet.
+    /// exercise vocabulary), refusing a second session over a running one, which is resumed instead.
+    /// `start` raises `isPresented`, so the shell opens the live screen either way.
     private func start(_ program: LiftProgramRow) async {
         guard !session.isActive else {
-            showsLive = true
+            session.isPresented = true
             return
         }
         guard let plan = await PulseStrengthSessionStarter.plan(for: program, repo: repo), !plan.isEmpty else { return }
         session.start(plan: plan, programId: program.id, programName: program.name)
-        // `start` raises the shell's classic session sheet; this screen shows its own instead.
-        session.isPresented = false
-        showsLive = true
     }
 
     private func delete(_ program: LiftProgramRow) {
@@ -487,7 +483,7 @@ struct PulseStrengthTrainerView: View {
         if let i = args.firstIndex(of: "--pulse-strength-live"), i + 1 < args.count {
             await PulseStrengthDemo.seedIfRequested(repo: repo)
             await PulseStrengthDemo.startLive(stage: args[i + 1], session: session, repo: repo)
-            showsLive = true
+            session.isPresented = true
         }
     }
     #endif

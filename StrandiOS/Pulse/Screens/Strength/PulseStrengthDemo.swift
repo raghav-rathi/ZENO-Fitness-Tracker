@@ -182,7 +182,6 @@ enum PulseStrengthDemo {
         guard let program = await program(named: "Upper A", repo: repo),
               let plan = await PulseStrengthSessionStarter.plan(for: program, repo: repo), !plan.isEmpty else { return }
         session.start(plan: plan, programId: program.id, programName: program.name)
-        session.isPresented = false
         switch stage {
         case "active", "exercises":
             session.advance()

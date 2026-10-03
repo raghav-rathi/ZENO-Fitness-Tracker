@@ -75,7 +75,7 @@ struct PulseLink<Label: View>: View {
 
 /// The ＋ actions and the screens they open.
 enum PulseQuickAction: String, Identifiable {
-    case menu, live, workout, addActivity, liftLog, intervals, breathe, journal
+    case menu, live, workout, addActivity, liftLog, intervals, breathe, journal, zenoLive
     var id: String { rawValue }
 
     /// The route an action opens, honouring the rebuild flags (the menu itself has none).
@@ -89,14 +89,16 @@ enum PulseQuickAction: String, Identifiable {
         case .intervals: return .classic(.intervals)
         case .breathe: return .classic(.breathe)
         case .journal: return PulseRoute.journal(dayOffset: nil).forExistingEntryPoint
+        case .zenoLive: return PulseZenoLiveRoute().route
         }
     }
 }
 
 /// A route presented modally: its own NavigationStack and path, its root marked as a modal root (so a
 /// Pulse screen shows "✕"), "Done" for a classic screen, and a navigator that pushes inside the modal.
-/// The shell cannot present over its own modal, so the Coach sheet and the ＋ sheet open from here while
-/// one is up, and a ＋ action's screen is pushed inside the modal rather than replacing it.
+/// The shell cannot present over its own modal, so the Coach sheet, the ＋ sheet and a gym session started
+/// or resumed here (the Strength Trainer) open from here while one is up, and a ＋ action's screen is
+/// pushed inside the modal rather than replacing it.
 struct PulseModalHost: View {
     let route: PulseRoute
 
@@ -130,6 +132,7 @@ struct PulseModalHost: View {
                 if let route = picked.route { open(route) }
             }, onClose: { showsActions = false })
         }
+        .modifier(PulseLiftSessionPresenter(isActive: coachSheet == nil && !showsActions))
         .tint(PulseTheme.chromeTint)
     }
 
@@ -186,5 +189,16 @@ struct PulseCoachSeed: Identifiable {
 struct PulseModal: Identifiable {
     let route: PulseRoute
     var id: String { String(describing: route) }
+}
+
+/// A Pulse route asked for from outside the app's screens: a tapped notification, wired by the app root
+/// (`NotificationPresenter.routes`; the Weekly Plan's Friday check-in). Like a Home Screen quick action it
+/// waits until the shell may open it (the launch gates cleared), and the shell clears it once handled.
+/// It is not a `NavRouter` destination: those are shared with the classic tabs and the macOS sidebar,
+/// which have no Weekly Plan to open.
+@MainActor
+final class PulseExternalRoutes: ObservableObject {
+    /// The route to open, or nil.
+    @Published var pending: PulseRoute?
 }
 #endif
