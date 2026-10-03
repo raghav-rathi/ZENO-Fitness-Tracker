@@ -315,10 +315,12 @@ struct PulseCycleLogSheet: View {
 }
 
 /// LOG CYCLE on a cycle card outside the page (the Health tab's): this page's own log sheet on today, so a
-/// period or a symptom logged from a card looks and is saved exactly as on Menstrual Cycle Insights.
-/// A card holds no cycle snapshot, so the sheet reads the logs once for how far back its pager reaches (the
-/// page's own rule, `PulseCycleDates.firstLogDay`). Closing it re-runs the temperature engine, as closing
-/// the page's sheet does, so the card's phase follows what was logged.
+/// period or a symptom logged from a card looks and is saved exactly as on Menstrual Cycle Insights. It
+/// reads the logs itself for how far back its pager reaches (the page's own rule,
+/// `PulseCycleDates.firstLogDay`), so a card opens it with nothing in hand. Each log it saves bumps
+/// `Repository.cycleTrackingSeq`, on which the card re-reads the logs; closing the sheet re-runs the
+/// temperature engine, as closing the page's sheet does, so the engine's estimate and its check of the
+/// logged period start follow the new log too.
 struct PulseCycleCardLogSheet: View {
     @EnvironmentObject private var repo: Repository
     @State private var today = Repository.localDayKey(Date())
