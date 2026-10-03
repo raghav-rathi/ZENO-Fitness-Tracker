@@ -505,7 +505,7 @@ private struct iOSRootView: View {
             } else {
                 RootTabView(homeScreenQuickActionsEnabled: gatesCleared)
             }
-            if !onboarded && !demoBypass && !pulseFirstRun {
+            if !onboarded && !demoBypass {
                 OnboardingWizard(onFinished: {
                     onboarded = true
                     // A brand-new user just saw the expectations in onboarding — don't also pop the
@@ -517,30 +517,13 @@ private struct iOSRootView: View {
             }
             // Terms acknowledgment gate — over EVERYTHING (before onboarding/pairing/Bluetooth) until
             // the current terms version is accepted; re-appears if the terms materially change.
-            if acceptedTerms != Terms.currentVersion && !demoBypass && !pulseFirstRun {
+            if acceptedTerms != Terms.currentVersion && !demoBypass {
                 TermsGateView(onAccept: {
                     // Keep any external action behind the gate while the accepted-terms change decides
                     // whether What's New must present next. This write must precede acceptedTerms.
                     automaticLaunchSheetResolved = false
                     acceptedTerms = Terms.currentVersion
                 })
-                    .transition(.opacity)
-                    .zIndex(2)
-            }
-            // The Pulse shell's first run: the same two gates on the same keys and writes, as one flow on
-            // WHOOP's template (terms first, then setup; the terms alone when only they changed).
-            if pulseFirstRun && (!onboarded || acceptedTerms != Terms.currentVersion) && !demoBypass {
-                PulseOnboardingView(
-                    needsTerms: acceptedTerms != Terms.currentVersion,
-                    needsSetup: !onboarded,
-                    onAcceptTerms: {
-                        automaticLaunchSheetResolved = false
-                        acceptedTerms = Terms.currentVersion
-                    },
-                    onFinished: {
-                        onboarded = true
-                        lastSeenChangelog = AppChangelog.currentVersion
-                    })
                     .transition(.opacity)
                     .zIndex(2)
             }
@@ -574,10 +557,6 @@ private struct iOSRootView: View {
         }
         .onChange(of: acceptedTerms) { _, _ in showWhatsNewIfDue() }
     }
-
-    /// With the Pulse shell on, its own first run (`PulseOnboardingView`) replaces the classic wizard and
-    /// terms gate; the classic shell keeps them.
-    private var pulseFirstRun: Bool { pulseEnabled && PulseOnboardingView.isRebuilt }
 
     /// Whether an external entry point may open a screen: every mandatory first-run gate has cleared.
     private var gatesCleared: Bool {

@@ -14,16 +14,21 @@ import StrandDesign
 ///       → Welcome to ZENO → What to Expect Next → Home
 ///
 /// Two ways in:
-///   - the FIRST RUN, from the app root while the Pulse shell is on (`init(needsTerms:needsSetup:…)`): the
-///     same gates as the classic pair, on the same keys. `needsTerms` alone (an existing user whose terms
-///     changed) shows only the two legal steps; accepting clears the gate exactly as `TermsGateView` did.
+///   - the FIRST RUN (`init(needsTerms:needsSetup:onAcceptTerms:onFinished:)`): the same gates as the
+///     classic pair, on the same keys. `needsTerms` alone (an existing user whose terms changed) shows only
+///     the legal steps; accepting clears the gate exactly as `TermsGateView` did. The app root presents
+///     it, and the app root is the foundation's: `iOSRootView` shows this flow in place of the classic
+///     wizard and terms gate when `pulseEnabled && PulseOnboardingView.isRebuilt`, with
+///     `onAcceptTerms` storing `Terms.currentVersion` (after resetting its launch-sheet flag) and
+///     `onFinished` setting `noop.onboarded` and the last-seen changelog, as the classic pair do. Until that
+///     call site lands, a first launch still shows the classic pair.
 ///   - the `.onboarding` route (`init()`), a replay from inside the app: the legal steps only while the
 ///     terms are not accepted, and finishing simply closes it.
 ///
 /// The classic Appearance step is dropped (Pulse is dark only, §3.38); its other steps are all here.
 struct PulseOnboardingView: View {
-    /// Rebuilt: with the Pulse shell on, first launch shows this flow instead of the classic wizard and
-    /// terms gate (`iOSRootView`). The `.onboarding` route has no classic fallback either way.
+    /// Rebuilt: the `.onboarding` route opens this flow, and the app root's first-run switch reads this
+    /// flag (above). The `.onboarding` route has no classic fallback either way.
     static let isRebuilt = true
 
     /// What the first run must still do, and how it reports back to the app root.
