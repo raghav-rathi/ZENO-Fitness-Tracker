@@ -240,16 +240,12 @@ extension PulseSnapshotBuilder {
             return YearInReview.Activity(day: key, name: name, minutes: seconds / 60)
         }
 
-        // Strain's optimal range for a Recovery: the band rule the Strain target and the dial use
-        // (`CoupledView.optimalStrainRange`), read once on the main actor for every whole percent.
-        let bands: [ClosedRange<Double>?] = await MainActor.run {
-            (0...100).map { pct in
-                CoupledView.optimalStrainRange(recovery: Double(pct)).map { Double($0.lowerBound)...Double($0.upperBound) }
-            }
-        }
-        guard isCurrent(r) else { return nil }
+        // Strain's optimal range for a Recovery: the band rule the Strain target and the dial use, through
+        // the builder's lookup (`optimalStrainRange(percent:)`, CoupledView's bands read once on the main actor).
         let summary = YearInReview.summarize(year: year, through: through, days: days, activities: activities,
-                                             strainRange: { pct in bands[min(100, max(0, Int(pct.rounded())))] })
+                                             strainRange: { pct in
+                                                 optimalStrainRange(percent: PulseDisplay.displayedPercent(pct))
+                                             })
 
         let behaviors = await yearBehaviors(r, inYear: inYear)
         // ZENO Age: the stored weekly Body Age the Health tab reads, the last one inside the year.

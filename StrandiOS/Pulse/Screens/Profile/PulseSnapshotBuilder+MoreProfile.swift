@@ -76,10 +76,9 @@ extension PulseSnapshotBuilder {
         for row in r.days { rowByDay[row.day] = row }
         let resolved = days.map { d -> ProfileDay in
             let strain = d.strain.map { UnitFormatter.effortValue($0, scale: .whoop) }
-            let optimal = d.recovery.flatMap { recovery -> ClosedRange<Double>? in
-                let shown = Double(PulseDisplay.displayedPercent(recovery))
-                return CoupledView.optimalStrainRange(recovery: shown).map { Double($0.lowerBound)...Double($0.upperBound) }
-            }
+            // The Strain target's band for the Recovery the dial prints, through the builder's own lookup of
+            // CoupledView's bands (read once on the main actor, where that rule lives).
+            let optimal = d.recovery.flatMap { optimalStrainRange(percent: PulseDisplay.displayedPercent($0)) }
             return ProfileDay(key: d.day,
                               sleepPerformance: sleepPerformance(dayKey: d.day,
                                                                  rest: restByDay[d.day].map { [(day: d.day, value: $0)] } ?? [],
