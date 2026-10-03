@@ -120,6 +120,20 @@ enum PulsePlanSection: Int, CaseIterable, Identifiable {
         }
     }
 
+    /// The section's name in DEBUG scroll anchors (`--pulse-scroll plan-sleep`).
+    var debugName: String {
+        switch self {
+        case .hrZones45: return "zones45"
+        case .hrZones13: return "zones13"
+        case .strength: return "strength"
+        case .sleep: return "sleep"
+        case .strain: return "strain"
+        case .steps: return "steps"
+        case .activities: return "activities"
+        case .behaviors: return "behaviors"
+        }
+    }
+
     init(_ kind: PulsePlanGoal.Kind) {
         switch kind {
         case .hrZones45: self = .hrZones45
@@ -227,7 +241,9 @@ extension PulsePlan.Template {
 final class PulsePlanStore {
     static let shared = PulsePlanStore()
 
-    private(set) var plan: PulsePlan?
+    private(set) var plan: PulsePlan? { didSet { revision &+= 1 } }
+    /// Bumped on every change, so a screen can tell a plan was started or edited.
+    private(set) var revision = 0
 
     @ObservationIgnored private let defaults: UserDefaults
     @ObservationIgnored private let key = "pulse.plan.v1"

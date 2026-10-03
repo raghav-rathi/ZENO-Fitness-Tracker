@@ -45,6 +45,24 @@ enum JournalPlanDebug {
     static var scrollAnchor: String? { value("--jp-scroll") }
 
     @MainActor private static var appliedJournal = false
+    @MainActor private static var appliedPlan = false
+
+    /// Open the --jp-plan-screen sheet on Plan Overview's first load.
+    @MainActor
+    static func applyPlanScreen(editor: inout PlanEditorSheet?, showRecap: inout Bool) {
+        guard !appliedPlan, let screen = planScreen else { return }
+        appliedPlan = true
+        switch screen {
+        case "recap": showRecap = true
+        case "behavior": editor = .behaviors
+        case "add": editor = .add
+        default:
+            if screen.hasPrefix("goal:"),
+               let section = PulsePlanSection.allCases.first(where: { "goal:\($0.rawValue)" == screen || "goal:\($0)" == screen }) {
+                editor = .section(section)
+            }
+        }
+    }
     @MainActor private static var seeded = false
 
     /// Stage the launch state on the Journal's first load: answers (--jp-stage) and a sheet or dialog.
@@ -125,9 +143,10 @@ enum JournalPlanDebug {
                      PulsePlanGoal(kind: .sleepPerformance, value: 85),
                      PulsePlanGoal(kind: .behavior, days: 4, subject: "Did you drink any alcohol?", avoid: true)]
         }
-        // Started last Monday, so the week is whole.
-        let monday = PulseJournalView.dayKey(offset: 0)
-        PulsePlanStore.shared.start(template, goals: goals, today: WeeklyPlanProgress.weekStart(of: monday) ?? monday)
+        // Started two Mondays ago, so this week and last week are whole (the recap has a week to show).
+        let today = PulseJournalView.dayKey(offset: 0)
+        let monday = WeeklyPlanProgress.weekStart(of: today).flatMap { PulseDisplay.dayKey($0, offsetBy: -14) } ?? today
+        PulsePlanStore.shared.start(template, goals: goals, today: monday)
     }
 }
 #endif
