@@ -346,7 +346,7 @@ enum PulseDigestBuilder {
                              value: "\(PulseDisplay.displayedPercent(r.value))", unit: "%"))
         }
         if let s = best(inputs.strain) {
-            out.append(.init(id: "strain", symbol: "speedometer", title: String(localized: "Max Strain"), day: day(s.day),
+            out.append(.init(id: "strain", symbol: "dumbbell", title: String(localized: "Max Strain"), day: day(s.day),
                              value: PulseFormat.oneDecimal(s.value), unit: ""))
         }
         if let h = best(inputs.hours) {
