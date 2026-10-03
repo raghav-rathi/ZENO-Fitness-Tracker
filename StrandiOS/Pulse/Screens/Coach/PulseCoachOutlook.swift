@@ -116,7 +116,7 @@ enum PulseCoachOutlook {
     }
 
     private static func bedtimeLine(_ tonight: PulseTonight) -> String {
-        String(localized: "Aim to be asleep by **\(PulseFormat.clock(tonight.bedtime))** to get the **\(PulseFormat.duration(minutes: tonight.needMin))** of sleep you need tonight.")
+        String(localized: "Aim to be asleep by **\(PulseFormat.clock(tonight.asleepBy))** to get the **\(PulseFormat.duration(minutes: tonight.needMin))** of sleep you need tonight.")
     }
 }
 
