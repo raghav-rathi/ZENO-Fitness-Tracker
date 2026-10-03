@@ -514,7 +514,7 @@ private struct PulseCoachingStackContent: View, Equatable {
             return .init(id: card.id, title: String(localized: "Your Week in Review"),
                          body: String(localized: "See how last week's Recovery, Strain and Sleep added up."),
                          cta: String(localized: "View week"), symbol: "calendar", style: .feature,
-                         route: PulseRoute.weeklyDigest.forExistingEntryPoint)
+                         route: PulseWeeklyDigestRoute(page: 1).route)
         case .whatsNew:
             return .init(id: card.id, title: String(localized: "What's New in ZENO"),
                          body: String(localized: "See what changed in this version of ZENO."),
