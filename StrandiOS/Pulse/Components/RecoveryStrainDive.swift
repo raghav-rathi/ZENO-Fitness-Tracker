@@ -452,7 +452,8 @@ struct PulseConfidenceChip: View {
 /// A dive's insight sentence while the Coach is switched off (§1.2 [Z], §3.4 item 4 [Z]): a plain card with
 /// no CTA, so the explanation survives without dressing local copy as the Coach's. With the Coach on the
 /// floating coach summary pill takes its place, so the dives show it only when `coach.availability` is
-/// `.off` and a page never carries two insight surfaces.
+/// `.off` and a page never carries two insight surfaces. Its lines keep the inline insight card's ≈20 pt
+/// pitch (deep-dives-2026/57).
 struct PulseDiveInsight: View {
     let text: String
 
@@ -460,6 +461,7 @@ struct PulseDiveInsight: View {
         PulseCard {
             Text(text)
                 .pulseText(.body)
+                .lineSpacing(3.5)
                 .foregroundStyle(PulseTheme.textPrimary)
                 .fixedSize(horizontal: false, vertical: true)
         }
