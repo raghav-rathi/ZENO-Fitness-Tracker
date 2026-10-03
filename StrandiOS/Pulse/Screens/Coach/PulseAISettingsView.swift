@@ -72,7 +72,7 @@ struct PulseAISettingsView: View {
                         .padding(.top, 22)
                 }
                 toggleBlock(title: String(localized: "Memory"), isOn: $memoryEnabled,
-                            help: String(localized: "Allow Coach to use what you save in My Memory to personalise its guidance. Memories are stored only on this iPhone; active ones go with every question to the provider you chose."))
+                            help: String(localized: "Allow Coach to use what you save in My Memory to personalise its guidance. Memories are stored only on this iPhone; active ones go with every question and your morning brief to the provider you chose."))
                     .padding(.top, 22)
 
                 PulseCoachDashedRule()

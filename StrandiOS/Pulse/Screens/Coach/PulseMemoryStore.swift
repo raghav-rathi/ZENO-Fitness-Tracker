@@ -78,7 +78,8 @@ final class PulseMemoryStore {
         items = decoded.sorted { $0.createdAt > $1.createdAt }
     }
 
-    /// The memories a new conversation carries: active ones, while Memory is switched on.
+    /// The memories every request to the provider carries (a question, the morning brief): active ones,
+    /// while Memory is switched on.
     var promptItems: [PulseMemoryItem] {
         loadIfNeeded()
         return Self.isEnabled ? items.filter(\.isActive) : []
