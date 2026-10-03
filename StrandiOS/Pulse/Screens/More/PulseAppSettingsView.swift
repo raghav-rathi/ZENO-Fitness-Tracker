@@ -63,9 +63,13 @@ struct PulseAppSettingsView: View {
         #if DEBUG
         guard let name = PulseMoreDebug.take(prefixes: ["activity-settings", "ai-settings", "data-export", "units",
                                                         "integrations", "journal-settings", "notifications",
-                                                        "hormonal-insights", "hide-metrics", "apple-health"])
+                                                        "hormonal-insights", "hide-metrics", "apple-health",
+                                                        "heart-rate-settings"])
         else { return }
         switch name {
+        case "heart-rate-settings":
+            navigator.open(PulseActivitySettingsRoute().route)
+            navigator.open(PulseHeartRateSettingsRoute().route)
         case "ai-settings": modal = .ai
         case "data-export": modal = .export
         case "activity-settings": navigator.open(PulseActivitySettingsRoute().route)

@@ -263,14 +263,13 @@ struct PulseHideMetricsView: View {
 
 // MARK: Activity settings
 
-/// ACTIVITY SETTINGS: activity detection, keeping the screen on during a workout, and HEART RATE SETTINGS
-/// (resting and max heart rate, and the zones built from them).
+/// ACTIVITY SETTINGS: activity detection, keeping the screen on during a workout, and the way into HEART
+/// RATE SETTINGS (its own page, as help-center/98 draws it: resting and max heart rate, and the zones).
 struct PulseActivitySettingsView: View {
     @EnvironmentObject private var profile: ProfileStore
+    @Environment(\.pulseNavigator) private var navigator
     @AppStorage(PuffinExperiment.autoDetectWorkoutsKey) private var autoDetect = false
     @AppStorage("workoutKeepScreenOn") private var keepScreenOn = false
-    @State private var editingMaxHR = false
-    @State private var maxHRDraft = 0
 
     var body: some View {
         PulseScreenScaffold(title: String(localized: "Activity settings"), spacing: MoreLayout.sectionGap) {
@@ -281,90 +280,20 @@ struct PulseActivitySettingsView: View {
                 MoreToggleRow(title: String(localized: "Keep screen on"), isOn: $keepScreenOn,
                               help: String(localized: "Holds the screen awake while a workout records, so your live heart rate stays visible."))
             }
-            VStack(alignment: .leading, spacing: 16) {
-                MoreSectionHeader(String(localized: "Heart rate settings"))
-                MorePageIntro(title: String(localized: "Heart Rate Zones"),
-                              text: profile.hasCustomHRZones
-                                ? String(localized: "Your own zone boundaries.")
-                                : String(localized: "Calculated with the heart-rate reserve formula from your max and resting heart rate."))
-                VStack(spacing: PulseTheme.Row.listGap) {
-                    MoreListRow(symbol: "heart", title: String(localized: "Resting HR"),
-                                trailing: .value(profile.zoneRestingHR.map { String(localized: "\(Int($0.rounded())) bpm") }
-                                                 ?? String(localized: "After your first night")))
-                    MoreButtonRow(symbol: "bolt.heart", title: String(localized: "Max HR"),
-                                  subtitle: profile.hrMaxOverride > 0 ? String(localized: "Set by you")
-                                                                      : String(localized: "Estimated from your age"),
-                                  trailing: .value(String(localized: "\(profile.hrMax) bpm"))) {
-                        maxHRDraft = profile.hrMaxOverride
-                        editingMaxHR = true
-                    }
-                    MoreToggleRow(title: String(localized: "Manual heart rate zones"),
-                                  isOn: Binding(get: { profile.hasCustomHRZones },
-                                                set: { profile.setCustomHRZonesEnabled($0) }))
-                }
-                PulseZoneTable(zones: profile.hrZoneSet.zones)
-                if profile.hasCustomHRZones {
-                    MoreLinkRow(.classic(.settings), symbol: "pencil", title: String(localized: "Edit zone boundaries"),
-                                subtitle: String(localized: "In Classic settings › Profile"))
+            MoreSection(nil) {
+                MoreButtonRow(symbol: "heart", title: String(localized: "Heart rate settings"),
+                              subtitle: summary, trailing: .chevron) {
+                    navigator.open(PulseHeartRateSettingsRoute().route)
                 }
             }
-        }
-        .sheet(isPresented: $editingMaxHR) {
-            PulseWheelPickerSheet(title: String(localized: "Max heart rate"),
-                                  options: [0] + Array(140...230), selection: $maxHRDraft,
-                                  label: { $0 == 0 ? String(localized: "Auto (\(Self.tanaka(profile.age)) bpm)")
-                                                   : String(localized: "\($0) bpm") },
-                                  onConfirm: {
-                                      profile.hrMaxOverride = maxHRDraft
-                                      editingMaxHR = false
-                                  },
-                                  onCancel: { editingMaxHR = false })
-                .presentationDetents([.height(380)])
         }
     }
 
-    /// The age estimate `ProfileStore.hrMax` falls back to.
-    private static func tanaka(_ age: Int) -> Int { Int((208 - 0.7 * Double(age)).rounded()) }
-}
-
-/// "ZONE | MIN | MAX", Zone 5 down to Zone 1, each edged in its zone colour (help-center/98).
-struct PulseZoneTable: View {
-    let zones: [HRZone]
-
-    var body: some View {
-        VStack(spacing: 0) {
-            HStack {
-                Text(String(localized: "Zone")).frame(maxWidth: .infinity, alignment: .leading)
-                Text(String(localized: "Zone min")).frame(width: 90, alignment: .trailing)
-                Text(String(localized: "Zone max")).frame(width: 90, alignment: .trailing)
-            }
-            .pulseText(.label)
-            .foregroundStyle(PulseTheme.textTertiary)
-            .padding(.bottom, 10)
-            ForEach(zones.sorted { $0.number > $1.number }, id: \.number) { zone in
-                HStack(spacing: 12) {
-                    RoundedRectangle(cornerRadius: 1.5).fill(PulseTheme.Zone.color(zone.number)).frame(width: 3, height: 22)
-                    Text(String(localized: "Zone \(zone.number)"))
-                        .pulseText(.cardTitle)
-                        .foregroundStyle(PulseTheme.textPrimary)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                    Text(String(localized: "\(Int(zone.lower.rounded())) bpm"))
-                        .pulseText(.rowValue)
-                        .foregroundStyle(PulseTheme.textPrimary)
-                        .frame(width: 90, alignment: .trailing)
-                    // Every zone's top is exclusive but the last, whose top is the max heart rate itself.
-                    Text(String(localized: "\(Int(zone.upper.rounded()) - (zone.number == 5 ? 0 : 1)) bpm"))
-                        .pulseText(.rowValue)
-                        .foregroundStyle(PulseTheme.textSecondary)
-                        .frame(width: 90, alignment: .trailing)
-                }
-                .padding(.vertical, 9)
-                .accessibilityElement(children: .combine)
-                if zone.number != 1 { PulseDivider() }
-            }
-        }
-        .padding(16)
-        .pulseCardBackground()
+    /// "Max 187 bpm · zones from your heart-rate reserve", or "Manual zones".
+    private var summary: String {
+        let zones = profile.hasCustomHRZones ? String(localized: "manual zones")
+                                             : String(localized: "zones from your heart-rate reserve")
+        return String(localized: "Max \(profile.hrMax) bpm · \(zones)")
     }
 }
 #endif
