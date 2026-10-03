@@ -167,11 +167,11 @@ extension PulseSnapshotBuilder {
     // MARK: What shaped it
 
     /// One engine driver in this dive's words: the WHOOP names (Sleep performance, not "Sleep quality"),
-    /// "rpm" for breaths, and a skin-temperature deviation that keeps its degree sign and never prints a
-    /// negative zero. The numbers are the engine's own, read off its texts, so the points and the figures
-    /// beside them come from one computation.
+    /// "rpm" for breaths, and the engine's figures re-printed in the active locale ("14,9 rpm" where the
+    /// decimal is a comma). The numbers are the engine's own, read off its texts, so the points and the
+    /// figures beside them come from one computation.
     static func shapedRow(_ driver: ChargeDriver, skinDeviation: Double?,
-                                      fahrenheit: Bool) -> RecoveryDiveSnapshot.Shaped.Row {
+                          fahrenheit: Bool) -> RecoveryDiveSnapshot.Shaped.Row {
         let value = leadingNumber(driver.valueText)
         let baseline = leadingNumber(driver.baselineText)
         let title: String
@@ -179,13 +179,13 @@ extension PulseSnapshotBuilder {
         switch driver.label {
         case "Heart rate variability":
             title = String(localized: "Heart rate variability")
-            detail = measured(value, baseline, unit: "ms", fallback: driver)
+            detail = measured(value, baseline, unit: "ms", format: PulseFormat.whole, fallback: driver)
         case "Resting heart rate":
             title = String(localized: "Resting heart rate")
-            detail = measured(value, baseline, unit: "bpm", fallback: driver)
+            detail = measured(value, baseline, unit: "bpm", format: PulseFormat.whole, fallback: driver)
         case "Respiratory rate":
             title = String(localized: "Respiratory rate")
-            detail = measured(value, baseline, unit: "rpm", fallback: driver)
+            detail = measured(value, baseline, unit: "rpm", format: PulseFormat.oneDecimal, fallback: driver)
         case "Sleep quality":
             // Scored against a fixed good night, not a learned baseline: the value alone.
             title = String(localized: "Sleep performance")
@@ -193,12 +193,7 @@ extension PulseSnapshotBuilder {
         case "Skin temperature":
             title = String(localized: "Skin temperature")
             if let dev = skinDeviation, dev.isFinite {
-                let kind = SkinTempDisplay.kind(of: dev)
-                let number = SkinTempDisplay.numberString(dev, kind: kind, fahrenheit: fahrenheit)
-                let unit = SkinTempDisplay.unitSymbol(kind: kind, fahrenheit: fahrenheit)
-                detail = kind == .deviation
-                    ? String(localized: "\(number) \(unit) vs baseline")
-                    : "\(number) \(unit)"
+                detail = skinTemperature(dev, fahrenheit: fahrenheit)
             } else {
                 detail = driver.valueText
             }
@@ -222,19 +217,43 @@ extension PulseSnapshotBuilder {
     }
 
     /// "65 ms · baseline 68 ms" from the engine's numbers; the engine's own texts if they do not parse.
-    private static func measured(_ value: String?, _ baseline: String?, unit: String,
-                                             fallback: ChargeDriver) -> String {
+    private static func measured(_ value: Double?, _ baseline: Double?, unit: String,
+                                 format: (Double) -> String, fallback: ChargeDriver) -> String {
         guard let value else {
             return [fallback.valueText, fallback.baselineText].filter { !$0.isEmpty }.joined(separator: " · ")
         }
-        guard let baseline else { return "\(value) \(unit)" }
-        return String(localized: "\(value) \(unit) · baseline \(baseline) \(unit)")
+        guard let baseline else { return "\(format(value)) \(unit)" }
+        return String(localized: "\(format(value)) \(unit) · baseline \(format(baseline)) \(unit)")
     }
 
-    /// The number an engine text starts with ("68" from "68 ms baseline", "15.1" from "15.1 br/min").
-    static func leadingNumber(_ text: String) -> String? {
-        guard let token = text.split(separator: " ").first.map(String.init), Double(token) != nil else { return nil }
-        return token
+    /// The number an engine text starts with (68 from "68 ms baseline", 15.1 from "15.1 br/min"). The
+    /// engine writes POSIX numbers, whatever the locale.
+    static func leadingNumber(_ text: String) -> Double? {
+        guard let token = text.split(separator: " ").first.map(String.init),
+              let value = Double(token), value.isFinite else { return nil }
+        return value
+    }
+
+    /// The night's skin temperature as §3.4 writes it: a live deviation from the personal baseline is
+    /// signed, one decimal in the active locale ("+0.4 °C vs baseline", "−0.1 °C vs baseline", and no
+    /// sign on a figure that prints as zero); an imported absolute reading is the temperature ("34.2 °C").
+    static func skinTemperature(_ value: Double, fahrenheit: Bool) -> String {
+        let unit = fahrenheit ? "°F" : "°C"
+        switch SkinTempDisplay.kind(of: value) {
+        case .absolute:
+            return "\(PulseFormat.oneDecimal(fahrenheit ? value * 9 / 5 + 32 : value)) \(unit)"
+        case .deviation:
+            let signed = signedOneDecimal(fahrenheit ? value * 9 / 5 : value)
+            return String(localized: "\(signed) \(unit) vs baseline")
+        }
+    }
+
+    /// One decimal in the active locale with an explicit sign, "−" (U+2212) for a negative; a figure
+    /// that prints as zero carries no sign.
+    static func signedOneDecimal(_ value: Double) -> String {
+        let magnitude = PulseFormat.oneDecimal(abs(value))
+        guard magnitude != PulseFormat.oneDecimal(0) else { return magnitude }
+        return (value > 0 ? "+" : "\u{2212}") + magnitude
     }
 
     // MARK: Behaviours

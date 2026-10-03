@@ -332,8 +332,8 @@ struct PulsePointsChip: View {
             return size == 1 ? String(localized: "+1 pt") : String(localized: "+\(size) pts")
         }
         if points < 0 {
-            // The hyphen-minus every other signed figure on the card prints ("-0.1 Δ°C").
-            return size == 1 ? String(localized: "-1 pt") : String(localized: "-\(size) pts")
+            // The minus sign (U+2212) the spec writes and the skin temperature beside it prints.
+            return size == 1 ? String(localized: "\u{2212}1 pt") : String(localized: "\u{2212}\(size) pts")
         }
         return String(localized: "0 pts")
     }
