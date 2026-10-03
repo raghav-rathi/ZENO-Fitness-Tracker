@@ -95,8 +95,9 @@ enum PulseQuickAction: String, Identifiable {
 
 /// A route presented modally: its own NavigationStack and path, its root marked as a modal root (so a
 /// Pulse screen shows "✕"), "Done" for a classic screen, and a navigator that pushes inside the modal.
-/// The shell cannot present over its own modal, so the Coach sheet and the ＋ sheet open from here while
-/// one is up, and a ＋ action's screen is pushed inside the modal rather than replacing it.
+/// The shell cannot present over its own modal, so the Coach sheet, the ＋ sheet and a gym session started
+/// or resumed here (the Strength Trainer) open from here while one is up, and a ＋ action's screen is
+/// pushed inside the modal rather than replacing it.
 struct PulseModalHost: View {
     let route: PulseRoute
 
@@ -130,6 +131,7 @@ struct PulseModalHost: View {
                 if let route = picked.route { open(route) }
             }, onClose: { showsActions = false })
         }
+        .modifier(PulseLiftSessionPresenter(isActive: coachSheet == nil && !showsActions))
         .tint(PulseTheme.chromeTint)
     }
 

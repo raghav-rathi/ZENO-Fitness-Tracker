@@ -79,7 +79,8 @@ enum PulseDemo {
 ///   `--pulse-route <name>`             open any route (names: `PulseRoute.debugCatalog`)
 ///   `--pulse-present <name>`           present any route modally
 ///   `--pulse-gallery`                  present the component gallery
-///   `--pulse-sheet actions|coach|menu` present the ＋ sheet or the Coach sheet, or open Home's menu
+///   `--pulse-sheet actions|coach|menu|session` present the ＋ sheet or the Coach sheet, open Home's
+///                                      menu, or open a running gym session as its bar does
 ///   `--pulse-scroll <anchor>`          scroll to a section id ("myday", "stats", "stress", "bottom", …)
 enum PulseDebugLaunch {
     private static func value(_ flag: String) -> String? {
@@ -92,8 +93,8 @@ enum PulseDebugLaunch {
         value("--pulse-tab").flatMap(PulseTab.init(rawValue:))
     }
 
-    /// `--pulse-sheet actions|coach|menu`: present the ＋ sheet or the Coach sheet at launch, or open the
-    /// anchored action menu from Home's "+".
+    /// `--pulse-sheet actions|coach|menu|session`: present the ＋ sheet or the Coach sheet at launch, open
+    /// the anchored action menu from Home's "+", or open the gym session a previous launch left running.
     static var sheet: String? { value("--pulse-sheet") }
 
     static var dayOffset: Int? { value("--pulse-day").flatMap(Int.init) }

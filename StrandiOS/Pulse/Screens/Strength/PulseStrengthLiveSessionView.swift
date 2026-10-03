@@ -4,9 +4,9 @@ import StrandDesign
 import StrandAnalytics
 import WhoopStore
 
-/// The live session as a destination of its own, full screen, so whatever shows the running session can
-/// open THIS screen. The shell's session bar (`PulseLiftSessionChrome`, foundation-owned) still opens the
-/// classic `LiftSessionView` sheet; it should open this route while `PulseStrengthTrainerView.isRebuilt`.
+/// The live session as a destination of its own, full screen. The shell presents it whenever
+/// `LiftSessionController.isPresented` is set (`PulseLiftSessionPresenter`): a workout started or resumed
+/// here or in the Lift Log, and a tap on the session bar.
 struct PulseStrengthLiveRoute: PulseScreenRoute {
     var presentation: PulsePresentation { .fullScreen }
     var view: some View { PulseStrengthLiveSessionView() }

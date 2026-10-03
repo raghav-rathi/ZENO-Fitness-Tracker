@@ -36,7 +36,7 @@ enum PulseShellSheet: Identifiable {
 ///
 /// Everything the classic `RootTabView` gives the rest of the app is kept: pop-to-root then scroll-to-top
 /// on a tab re-tap, every `NavRouter` request, the Home Screen quick actions (held until the launch gates
-/// clear), the gym-session bar and sheet, the launch refresh and the backup catch-up. It observes only the
+/// clear), the gym-session bar and its live screen, the launch refresh and the backup catch-up. It observes only the
 /// router, the quick-action delegate, the scene phase and the Coach switch; the repository, the live strap
 /// state, the Coach engine and the gym session are each observed by a small leaf so their frequent
 /// publishes never re-render the shell.
@@ -139,7 +139,8 @@ struct PulseRootView: View {
             }
         }
         .modifier(PulseLiftSessionChrome(
-            bottomPadding: selectedTabAtRoot ? max(8, barTopFromScreenBottom - bottomSafeArea + 8) : 8))
+            bottomPadding: selectedTabAtRoot ? max(8, barTopFromScreenBottom - bottomSafeArea + 8) : 8,
+            presentsSession: sheet == nil && cover == nil))
         .overlay {
             if selectedTabAtRoot {
                 // A flexible column, so ignoring the bottom safe area really reaches the screen's edge
@@ -526,11 +527,14 @@ private struct PulseCoachProbe: View {
     }
 }
 
-/// The running gym session, reachable from any tab: its bar above the floating tab bar and its sheet. A
-/// modifier so the session's frequent publishes re-render this chrome, not the tabs inside it.
+/// The running gym session, reachable from any tab: its bar above the floating tab bar, and the session
+/// itself while `LiftSessionController.isPresented` asks for it. A modifier so the session's frequent
+/// publishes re-render this chrome, not the tabs inside it.
 private struct PulseLiftSessionChrome: ViewModifier {
     /// Room under the bar: the capsule's height above the bottom safe edge while it shows.
     let bottomPadding: CGFloat
+    /// False while the shell presents a sheet or cover: that modal's host presents the session instead.
+    let presentsSession: Bool
     @EnvironmentObject private var liftSession: LiftSessionController
 
     func body(content: Content) -> some View {
@@ -545,9 +549,36 @@ private struct PulseLiftSessionChrome: ViewModifier {
             }
             .animation(.easeInOut(duration: 0.25), value: liftSession.isActive)
             // A session left running by a previous launch comes back as the BAR, not a sheet in the face.
-            .sheet(isPresented: $liftSession.isPresented) {
-                LiftSessionView { }
+            .modifier(PulseLiftSessionPresenter(isActive: presentsSession))
+            #if DEBUG
+            // `--pulse-sheet session`: open a running session at launch, as a tap on its bar does.
+            .task {
+                if PulseDebugLaunch.sheet == "session" && liftSession.isActive { liftSession.isPresented = true }
             }
+            #endif
+    }
+}
+
+/// Presents the running gym session whenever `LiftSessionController.isPresented` is set (starting a
+/// workout, Resume, a tap on the bar): the rebuilt live screen full screen (`PulseStrengthLiveRoute`), or
+/// the classic sheet until Strength is rebuilt. A view under a modal cannot present, so exactly one of
+/// these is active at a time: the shell's while nothing covers it (`PulseLiftSessionChrome`), otherwise
+/// the host of the modal on top (`PulseModalHost`), which the session then covers.
+struct PulseLiftSessionPresenter: ViewModifier {
+    let isActive: Bool
+    @EnvironmentObject private var liftSession: LiftSessionController
+
+    private var isPresented: Binding<Bool> {
+        Binding(get: { isActive && liftSession.isPresented },
+                set: { liftSession.isPresented = $0 })
+    }
+
+    func body(content: Content) -> some View {
+        if PulseStrengthTrainerView.isRebuilt {
+            content.fullScreenCover(isPresented: isPresented) { PulseStrengthLiveRoute().view }
+        } else {
+            content.sheet(isPresented: isPresented) { LiftSessionView { } }
+        }
     }
 }
 #endif
