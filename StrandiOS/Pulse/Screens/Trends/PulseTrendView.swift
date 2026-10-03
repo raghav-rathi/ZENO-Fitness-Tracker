@@ -114,6 +114,8 @@ struct PulseTrendView: View {
             await builder.trendView(request, key: key, range: range, page: page, units: units,
                                     cycleOverlay: cycle, anchorOffset: offset)
         }) {
+            // A build that finishes after the range or page moved on belongs to a page no longer shown.
+            guard !Task.isCancelled else { return }
             snapshot = s
             // The builder clamps a page past the history; keep the state in step with what is shown. Only
             // once the series has a reading: a build that runs before the store is read (at launch, or a
@@ -126,7 +128,7 @@ struct PulseTrendView: View {
         if let rows = await model.build(dayOffset: 0, { builder, request in
             await builder.trendCorrelations(request, key: key, range: range, page: page, units: units,
                                             anchorOffset: offset)
-        }) {
+        }), !Task.isCancelled {
             correlations = rows
         }
     }
