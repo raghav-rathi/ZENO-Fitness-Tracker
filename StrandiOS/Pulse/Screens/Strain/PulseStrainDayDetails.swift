@@ -21,7 +21,7 @@ struct PulseStrainDayDetails: View {
                     PulseStrainTargetCard(target: target)
                         .id("pulse.target")
                 }
-                PulseStrainBuildChart(base: snapshot.base, target: snapshot.ownTarget)
+                PulseStrainBuildChart(base: snapshot.base, target: snapshot.ownTarget, isToday: snapshot.day.isToday)
                     .id("pulse.build")
                 PulseStrainHeartRateChart(base: snapshot.base)
                     .id("pulse.hr")
@@ -132,10 +132,13 @@ private struct PulseStrainTargetTrack: View {
 // MARK: - Through the day
 
 /// THROUGH THE DAY: the day's Strain as it accumulated (the same scorer as the dial), over the optimal
-/// range; a dashed line marks the day's total when it runs ahead of the heart-rate trace.
+/// range; a dashed line marks the day's total when it runs ahead of the heart-rate trace. Without a trace,
+/// today says where it will appear and a past day says none was recorded, as HEART RATE and TIME IN ZONES
+/// do.
 private struct PulseStrainBuildChart: View {
     let base: StrainSnapshot
     let target: PulseStrainTarget?
+    let isToday: Bool
 
     /// The day's Strain when it runs ahead of the curve's end: the dial floors today's live score at the
     /// stored day row, which can carry load this trace does not show (a logged workout).
@@ -158,7 +161,9 @@ private struct PulseStrainBuildChart: View {
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 } else {
-                    Text(String(localized: "Strain builds here as your strap records heart rate through the day."))
+                    Text(isToday
+                         ? String(localized: "Strain builds here as your strap records heart rate through the day.")
+                         : String(localized: "No heart rate recorded for this day."))
                         .pulseText(.body)
                         .foregroundStyle(PulseTheme.textSecondary)
                         .frame(maxWidth: .infinity, minHeight: 80, alignment: .leading)
@@ -363,16 +368,23 @@ private struct PulseStrainTimeInZones: View {
 
 // MARK: - Calories and heart rate
 
-/// CALORIES · AVG HR · PEAK HR, three equal tiles.
+/// CALORIES · AVG HR · PEAK HR: three equal tiles side by side, stacked full width when their figures
+/// would not fit side by side (large Dynamic Type, long labels), so a value never truncates.
 private struct PulseStrainStatsRow: View {
     let base: StrainSnapshot
 
     var body: some View {
-        HStack(spacing: PulseTheme.Layout.gridGap) {
-            tile(String(localized: "Calories"), base.calories.map { PulseFormat.grouped($0) }, "kcal")
-            tile(String(localized: "Avg HR"), base.averageHR.map { "\($0)" }, "bpm")
-            tile(String(localized: "Peak HR"), base.peakHR.map { "\($0)" }, "bpm")
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: PulseTheme.Layout.gridGap) { tiles }
+            VStack(spacing: PulseTheme.Layout.gridGap) { tiles }
         }
+    }
+
+    @ViewBuilder
+    private var tiles: some View {
+        tile(String(localized: "Calories"), base.calories.map { PulseFormat.grouped($0) }, "kcal")
+        tile(String(localized: "Avg HR"), base.averageHR.map { "\($0)" }, "bpm")
+        tile(String(localized: "Peak HR"), base.peakHR.map { "\($0)" }, "bpm")
     }
 
     private func tile(_ title: String, _ value: String?, _ unit: String) -> some View {
