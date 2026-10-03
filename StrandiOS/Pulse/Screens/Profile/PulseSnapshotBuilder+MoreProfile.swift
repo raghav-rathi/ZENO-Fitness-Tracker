@@ -16,6 +16,16 @@ import WhoopStore
 //   - Sleep Performance per night is `sleepPerformance(dayKey:rest:days:)`, the Sleep dial's resolver;
 //   - Strain is the stored day on the 0–21 scale, the way the dives print it;
 //   - ZENO Age is the newest Body Age point, as `health(_:)` reads it.
+//
+// Profile, Levels, Achievements, Day Streak and Achievement Details can be alive at once (each pushed on
+// the last), and each asks for the snapshot when the store refreshes. The first build of a refresh is
+// kept for the others (`ProfileSnapshotShelf`), so a refresh costs one pass over the history, not five.
+
+/// The profile snapshots built during one refresh, by age, load state and day. A class held in the
+/// builder's per-refresh cache, so it is dropped with that cache when the next refresh begins.
+final class ProfileSnapshotShelf {
+    var built: [String: ProfileSnapshot] = [:]
+}
 
 extension PulseSnapshotBuilder {
 
@@ -24,6 +34,15 @@ extension PulseSnapshotBuilder {
     /// a nil age leaves ZENO Age out.
     func profile(_ r: PulseRequest, calendarAge: Int?, storeLoaded: Bool) async -> ProfileSnapshot? {
         begin(r.seq)
+        let shelf = await cached("moreprofile.snapshots") { ProfileSnapshotShelf() }
+        let shelfKey = "\(calendarAge ?? -1)|\(storeLoaded)|\(Repository.localDayKey(r.now))"
+        if let kept = shelf.built[shelfKey], kept.seq == r.seq { return kept }
+        guard let built = await buildProfile(r, calendarAge: calendarAge, storeLoaded: storeLoaded) else { return nil }
+        shelf.built[shelfKey] = built
+        return built
+    }
+
+    private func buildProfile(_ r: PulseRequest, calendarAge: Int?, storeLoaded: Bool) async -> ProfileSnapshot? {
         let rest = await restSeries()
         let workouts = await workoutRows()
         let bodyAge = await cached("moreprofile.bodyAge") {
@@ -48,7 +67,13 @@ extension PulseSnapshotBuilder {
                                                              firstDay: days.first?.day),
                                    milestone: PulseDayStreak.milestoneProgress(days: streaks.current))
 
-        // One resolved row per day, shared by the badges and the highlights.
+        // One resolved row per day, shared by the badges and the highlights. Sleep Performance goes through
+        // the Sleep dial's own resolver, handed only that day's points (looked up once, not scanned for per
+        // day), so years of history stay one pass. The last point per day wins, as `last(where:)` resolves.
+        var restByDay: [String: Double] = [:]
+        for point in rest { restByDay[point.day] = point.value }
+        var rowByDay: [String: DailyMetric] = [:]
+        for row in r.days { rowByDay[row.day] = row }
         let resolved = days.map { d -> ProfileDay in
             let strain = d.strain.map { UnitFormatter.effortValue($0, scale: .whoop) }
             let optimal = d.recovery.flatMap { recovery -> ClosedRange<Double>? in
@@ -56,7 +81,9 @@ extension PulseSnapshotBuilder {
                 return CoupledView.optimalStrainRange(recovery: shown).map { Double($0.lowerBound)...Double($0.upperBound) }
             }
             return ProfileDay(key: d.day,
-                              sleepPerformance: sleepPerformance(dayKey: d.day, rest: rest, days: r.days),
+                              sleepPerformance: sleepPerformance(dayKey: d.day,
+                                                                 rest: restByDay[d.day].map { [(day: d.day, value: $0)] } ?? [],
+                                                                 days: rowByDay[d.day].map { [$0] } ?? []),
                               asleepMinutes: d.totalSleepMin,
                               recovery: d.recovery, strain: strain, optimalStrain: optimal,
                               restingHR: d.restingHr, hrv: d.avgHrv)
@@ -104,9 +131,19 @@ extension PulseSnapshotBuilder {
     func firstWeek(_ r: PulseRequest) async -> FirstWeekSnapshot? {
         begin(r.seq)
         let workouts = await workoutRows()
-        let journal = await repo.nativeJournalDays(from: "0000-01-01", to: "9999-12-31")
+        let hasJournal = await cached("moreprofile.anyJournal") { await anyNativeJournal(r) }
         guard isCurrent(r) else { return nil }
-        return FirstWeekSnapshot(seq: r.seq, hasActivity: !workouts.isEmpty, hasJournal: !journal.isEmpty)
+        return FirstWeekSnapshot(seq: r.seq, hasActivity: !workouts.isEmpty, hasJournal: hasJournal)
+    }
+
+    /// Whether any native journal entry exists, reading the last 30 days first: someone who journals has
+    /// an entry there, so the whole history is read only when there is none (and then it is short).
+    private func anyNativeJournal(_ r: PulseRequest) async -> Bool {
+        let today = Repository.localDayKey(r.now)
+        let recentFrom = PulseDisplay.dayKey(today, offsetBy: -29) ?? today
+        if !(await repo.nativeJournalDays(from: recentFrom, to: today)).isEmpty { return true }
+        guard let before = PulseDisplay.dayKey(recentFrom, offsetBy: -1) else { return false }
+        return !(await repo.nativeJournalDays(from: "0000-01-01", to: before)).isEmpty
     }
 
     // MARK: Pieces
