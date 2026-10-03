@@ -140,8 +140,12 @@ struct ActivityStressSummary: Equatable {
     /// The reading nearest the activity's start and the next one nearest its end, 0–3.
     let start: Double
     let end: Double
-    /// The change printed in the headline, as the readings round: end − start.
-    var change: Double { (end * 10).rounded() / 10 - (start * 10).rounded() / 10 }
+    /// The readings as every stress readout prints a level, the Stress Monitor's gauge included: cut to one
+    /// decimal (`HealthStressGauge.printed`), so a reading the gauge shows reads the same here.
+    var shownStart: Double { HealthStressGauge.printed(start) }
+    var shownEnd: Double { HealthStressGauge.printed(end) }
+    /// The change printed in the headline, between the readings as they print: end − start.
+    var change: Double { shownEnd - shownStart }
 }
 
 /// IMPACT ON RECOVERY (§3.6, e03): locked until there are five days with this activity and five without
