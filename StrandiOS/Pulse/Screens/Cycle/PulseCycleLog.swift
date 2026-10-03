@@ -16,18 +16,21 @@ import StrandAnalytics
 // The period START stays the anchor the temperature engine cross-validates against. Logging flow keeps it
 // in step: a period day with no start in the 10 days before it becomes a start, one just before the
 // current start moves the start back, and clearing the flow on a start day moves the start to the next
-// flow day or removes it. So every period-flow day written here has a start at most 9 days before it, and a
-// period-flow day without one can only be left over from the classic tracker's deletes, which remove
-// starts alone ("Delete all period history" and its per-start delete in `SkinTempCardsView`). Reading
-// ignores such a left-over day, so a period the wearer deleted is never drawn again; its symptoms stay,
-// because symptoms are not period history and a symptom-only log is legitimate (menopause, or before the
-// first period is logged). Nothing here leaves the device.
+// flow day or removes it. So every period-flow day written here has a start at most 9 days before it. The
+// classic tracker's deletes (`SkinTempCardsView`) keep that true on the iPhone: its per-start delete takes
+// the period's flow days with the start (`Repository.deletePeriod(startingOn:)`), and "Delete all period
+// history" calls `deleteAllCycleLogs()`. A period-flow day without a start can still arrive from deletes
+// that removed starts alone: an earlier build's, or the Mac's "Delete all period history" over a restored
+// iPhone backup. Reading ignores such a left-over day, so a period the wearer deleted is never drawn again.
+// Symptoms, spotting and "no flow" days outlive a single start's delete and are always read: they are not
+// period history, and a symptom-only log is legitimate (menopause, or before the first period is logged).
+// Nothing here leaves the device.
 //
 // Android parity: the Android twin of `CycleTrackingStore` reads `period_start` only. A `.noopbak` restored
 // on Android carries these rows untouched (the source is backed up whole) but shows period starts only,
 // until Android reads `period_flow` and `symptom_<id>` the same way.
 enum PulseCycleLog {
-    static let flowKey = "period_flow"
+    static let flowKey = CycleTrackingStore.periodFlowKey
     static let symptomPrefix = "symptom_"
 
     /// The page's mode (§3.24 Settings, [Z] perimenopause and menopause).
