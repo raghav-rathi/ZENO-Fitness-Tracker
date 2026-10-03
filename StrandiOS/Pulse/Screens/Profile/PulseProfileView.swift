@@ -88,6 +88,7 @@ struct PulseProfileView: View {
                     Text(subline)
                         .pulseText(.body)
                         .foregroundStyle(PulseTheme.textSecondary)
+                        .accessibilityLabel(spokenSubline)
                 }
                 Spacer(minLength: 8)
                 PulseLink(PulseEditProfileRoute().route) {
@@ -117,11 +118,19 @@ struct PulseProfileView: View {
         }
     }
 
-    /// "37 • WHOOP 4.0": age and strap (spec §3.30 [Z]; no username, no country).
+    /// "37 • WHOOP 4.0": the bare age and the strap, as WHOOP lists "@GandW • 56 • GB" with no unit
+    /// (spec §3.30 [Z]; no username, no country).
     private var subline: String {
-        var parts = [String(localized: "\(profile.age) yrs")]
+        var parts = [profile.age.formatted()]
         if let strap = strapName { parts.append(strap) }
         return parts.joined(separator: " • ")
+    }
+
+    /// The subline as VoiceOver reads it, where a bare number would not say it is an age.
+    private var spokenSubline: String {
+        var parts = [String(localized: "Age \(profile.age)")]
+        if let strap = strapName { parts.append(strap) }
+        return parts.joined(separator: ", ")
     }
 
     /// The paired strap's model; nothing for the row a fresh install seeds before any strap connects
