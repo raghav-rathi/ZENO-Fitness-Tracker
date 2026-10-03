@@ -106,11 +106,41 @@ final class CycleMetricPatternsTests: XCTestCase {
         XCTAssertEqual(s.expected.count, 28)
         XCTAssertEqual(s.expected[19].value, 0.4, accuracy: 1e-9)
         XCTAssertEqual(s.expected[4].value, -0.2, accuracy: 1e-9)
+        // The trend eases the step at day 15 over a week of cycle days, at the same 28 cycle days.
+        XCTAssertEqual(s.expectedTrend.map(\.cycleDay), s.expected.map(\.cycleDay))
+        XCTAssertEqual(s.expectedTrend[13].value, (4 * -0.2 + 3 * 0.4) / 7, accuracy: 1e-9)  // day 14
+        XCTAssertEqual(s.expectedTrend[14].value, (3 * -0.2 + 4 * 0.4) / 7, accuracy: 1e-9)  // day 15
+        XCTAssertEqual(s.expectedTrend[4].value, -0.2, accuracy: 1e-9)
+        // At the first cycle day the window holds only days 1-4.
+        let edge = s.expected.prefix(4).map(\.value).reduce(0, +) / 4
+        XCTAssertEqual(s.expectedTrend[0].value, edge, accuracy: 1e-9)
 
         let one = C.cycleSeries(values: values, cycleStarts: Array(starts.suffix(2)), today: day("2026-08-24", 9),
                                 relativeToZero: true)!
         XCTAssertEqual(one.previousCycles, 1)
         XCTAssertTrue(one.expected.isEmpty)
+    }
+
+    func testCentredMeanSpreadsASpikeOverAWeek() {
+        let points = (1...20).map { C.Point(cycleDay: $0, value: $0 == 10 ? 0.7 : 0) }
+        let trend = C.centredMean(points, halfWindow: 3)
+        XCTAssertEqual(trend.count, 20)
+        XCTAssertEqual(trend[9].value, 0.1, accuracy: 1e-9)      // day 10: 0.7 / 7
+        XCTAssertEqual(trend[6].value, 0.1, accuracy: 1e-9)      // day 7 still reaches day 10
+        XCTAssertEqual(trend[5].value, 0, accuracy: 1e-9)        // day 6 does not
+        XCTAssertEqual(trend[0].value, 0, accuracy: 1e-9)
+    }
+
+    func testCentredMeanNeverFillsAGap() {
+        // Days 4-9 have no value: the trend keeps exactly the days it was given, and an edge or a gap
+        // averages only the neighbours that exist.
+        let points = [C.Point(cycleDay: 1, value: 1), C.Point(cycleDay: 2, value: 2), C.Point(cycleDay: 3, value: 3),
+                      C.Point(cycleDay: 10, value: 10), C.Point(cycleDay: 11, value: 20)]
+        let trend = C.centredMean(points, halfWindow: 3)
+        XCTAssertEqual(trend.map(\.cycleDay), [1, 2, 3, 10, 11])
+        XCTAssertEqual(trend[0].value, 2, accuracy: 1e-9)        // (1 + 2 + 3) / 3
+        XCTAssertEqual(trend[3].value, 15, accuracy: 1e-9)       // (10 + 20) / 2: day 3 is 7 days away
+        XCTAssertEqual(C.centredMean(points, halfWindow: 0), points)
     }
 
     func testImplausiblePreviousCycleIsNotAveraged() {

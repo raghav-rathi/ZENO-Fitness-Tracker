@@ -7,7 +7,8 @@ import Foundation
 //   - `compare`: a metric's mean on the days of one phase against its mean over every day with a phase,
 //     judged higher / lower / typical by how far apart they sit in the metric's own spread;
 //   - `cycleSeries`: the current cycle's smoothed deviation from the personal baseline by cycle day, and,
-//     once enough previous cycles are logged, their average at each cycle day as the "expected" trend.
+//     once enough previous cycles are logged, their average at each cycle day, plus that average smoothed
+//     over a week of cycle days as the "expected" trend.
 // A missing day is skipped, never drawn as zero.
 public enum CycleMetricPatterns {
 
@@ -21,6 +22,8 @@ public enum CycleMetricPatterns {
     public static let minPreviousCycles = 2
     /// The most recent completed cycles the expected trend averages.
     public static let previousCyclesAveraged = 3
+    /// Cycle days on each side of a day that the expected trend's centred mean takes in (3: a week).
+    public static let trendHalfWindow = 3
 
     public enum Direction: String, Sendable, Equatable {
         case higher, lower, typical
@@ -81,16 +84,41 @@ public enum CycleMetricPatterns {
         public let current: [Point]
         /// The previous cycles' average deviation at each cycle day where `minPreviousCycles` contribute.
         public let expected: [Point]
+        /// `expected` as a trend: its centred mean over `trendHalfWindow` cycle days each side, at the same
+        /// cycle days. Three cycles averaged night by night still zig-zag; the trend is what the chart's
+        /// "Expected Trend" area draws.
+        public let expectedTrend: [Point]
         /// Completed cycles averaged into `expected`.
         public let previousCycles: Int
         /// What the deviations are measured from (0 for a series that is already a deviation).
         public let baseline: Double
 
-        public init(current: [Point], expected: [Point], previousCycles: Int, baseline: Double) {
+        public init(current: [Point], expected: [Point], expectedTrend: [Point]? = nil, previousCycles: Int,
+                    baseline: Double) {
             self.current = current
             self.expected = expected
+            self.expectedTrend = expectedTrend ?? CycleMetricPatterns.centredMean(expected,
+                                                                                  halfWindow: CycleMetricPatterns.trendHalfWindow)
             self.previousCycles = previousCycles
             self.baseline = baseline
+        }
+    }
+
+    /// Each point replaced by the mean of the points within `halfWindow` cycle days of it (itself included),
+    /// at the same cycle days. Near an end or a gap the window holds only the points that exist, so a gap is
+    /// never filled and a missing day never counts as zero.
+    public static func centredMean(_ points: [Point], halfWindow: Int) -> [Point] {
+        guard halfWindow > 0 else { return points }
+        let byDay = Dictionary(points.map { ($0.cycleDay, $0.value) }, uniquingKeysWith: { first, _ in first })
+        return points.map { p in
+            var sum = 0.0, n = 0.0
+            for d in (p.cycleDay - halfWindow)...(p.cycleDay + halfWindow) {
+                if let v = byDay[d], v.isFinite {
+                    sum += v
+                    n += 1
+                }
+            }
+            return Point(cycleDay: p.cycleDay, value: n > 0 ? sum / n : p.value)
         }
     }
 
