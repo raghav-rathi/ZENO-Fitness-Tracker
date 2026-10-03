@@ -25,6 +25,8 @@ struct HealthAgeHero: View {
                 HealthOrbReading(age: PulseFormat.oneDecimal(summary.week.zenoAge),
                                  yearsLine: healthYearsLine(summary.week.yearsYounger), hue: summary.week.hue)
             }
+            // DEBUG `--pulse-scroll orbmid` lands here: the orb half under the title, as WHOOP shows it scrolled.
+            .overlay { Color.clear.frame(width: 1, height: 1).id("pulse.orbmid") }
             .frame(maxWidth: .infinity)
             .padding(.top, 8)
             .padding(.bottom, 12)
@@ -147,10 +149,9 @@ struct HealthPaceCard: View {
         VStack(alignment: .leading, spacing: 18) {
             HStack(alignment: .center, spacing: 8) {
                 PulseCardTitle(String(localized: "Pace of Aging"))
-                    .layoutPriority(1)
-                Spacer(minLength: 4)
                 if let change = summary.paceChange {
                     HealthPaceChangeChip(change: change)
+                        .fixedSize()
                 }
             }
             HealthPaceRuler(pace: summary.pace)

@@ -188,7 +188,9 @@ struct PulseStressMonitorView: View {
     private var coachSeed: String? {
         guard let s = shown else { return nil }
         var parts = [String(localized: "Stress Monitor, \(s.title)")]
-        if let g = s.day.gaugeLevel { parts.append(String(localized: "level \(PulseFormat.oneDecimal(g.level)) of 3")) }
+        if let g = s.day.gaugeLevel {
+            parts.append(String(localized: "level \(PulseFormat.oneDecimal(HealthStressGauge.printed(g.level))) of 3"))
+        }
         if s.totals.scoredMinutes > 0 {
             parts.append(String(localized: "high \(PulseFormat.hoursMinutes(Double(s.totals.highMinutes))), medium \(PulseFormat.hoursMinutes(Double(s.totals.mediumMinutes))), low \(PulseFormat.hoursMinutes(Double(s.totals.lowMinutes)))"))
         }

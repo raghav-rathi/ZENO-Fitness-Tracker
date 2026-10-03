@@ -468,16 +468,18 @@ struct HealthAgeTrendChart: View {
                         .interpolationMethod(.stepEnd)
                 }
                 if let last = weeks.last {
+                    // The two end labels point away from each other: the higher line's above, the lower's below.
+                    let zenoAbove = last.zenoAge >= last.chronoAge
                     PointMark(x: .value("Week", weeks.count - 1), y: .value("Age", last.zenoAge))
                         .foregroundStyle(colour)
-                        .annotation(position: .bottom, spacing: 4) {
+                        .annotation(position: zenoAbove ? .top : .bottom, alignment: .trailing, spacing: 4) {
                             Text(PulseFormat.oneDecimal(last.zenoAge))
                                 .font(PulseType.numeral(12))
                                 .foregroundStyle(colour)
                         }
                     PointMark(x: .value("Week", weeks.count - 1), y: .value("Age", last.chronoAge))
                         .foregroundStyle(Color.white)
-                        .annotation(position: .top, spacing: 4) {
+                        .annotation(position: zenoAbove ? .bottom : .top, alignment: .trailing, spacing: 4) {
                             Text(PulseFormat.oneDecimal(last.chronoAge))
                                 .font(PulseType.numeral(12))
                                 .foregroundStyle(PulseTheme.textPrimary)
@@ -488,8 +490,10 @@ struct HealthAgeTrendChart: View {
             .chartXScale(domain: 0...max(1, weeks.count - 1))
             .chartXAxis {
                 AxisMarks(values: xLabelIndices) { value in
-                    AxisValueLabel {
-                        if let i = value.as(Int.self), weeks.indices.contains(i) {
+                    let i = value.as(Int.self) ?? 0
+                    AxisValueLabel(anchor: i == 0 ? .topLeading : (i == weeks.count - 1 ? .topTrailing : .top),
+                                   collisionResolution: .disabled) {
+                        if weeks.indices.contains(i) {
                             Text(PulseFormat.dayLabel(weeks[i].id, template: "MMMd"))
                                 .font(PulseType.font(.axis))
                                 .foregroundStyle(PulseTheme.textTertiary)
@@ -560,8 +564,10 @@ struct HealthPaceTrendChart: View {
         .chartXScale(domain: 0...max(1, points.count - 1))
         .chartXAxis {
             AxisMarks(values: points.count > 2 ? [0, points.count / 2, points.count - 1] : Array(points.indices)) { value in
-                AxisValueLabel {
-                    if let i = value.as(Int.self), points.indices.contains(i) {
+                let i = value.as(Int.self) ?? 0
+                AxisValueLabel(anchor: i == 0 ? .topLeading : (i == points.count - 1 ? .topTrailing : .top),
+                               collisionResolution: .disabled) {
+                    if points.indices.contains(i) {
                         Text(PulseFormat.dayLabel(points[i].id, template: "MMMd"))
                             .font(PulseType.font(.axis))
                             .foregroundStyle(PulseTheme.textTertiary)

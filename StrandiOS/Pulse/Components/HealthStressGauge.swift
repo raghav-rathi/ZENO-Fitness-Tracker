@@ -22,7 +22,16 @@ struct HealthStressGauge: View {
     /// wraps, and a cap drawn at 359° would take the last colour).
     private static let margin = 0.03
 
-    private var band: PulseTheme.Stress.Level? { level.map { PulseTheme.Stress.Level(value: $0) } }
+    /// The value as printed: cut, not rounded, to one decimal, so the figure never crosses into a band its
+    /// reading is not in ("1.96" reads 1.9 MEDIUM, never 2.0 MEDIUM).
+    private var shownLevel: Double? { level.map { HealthStressGauge.printed($0) } }
+
+    private var band: PulseTheme.Stress.Level? { shownLevel.map { PulseTheme.Stress.Level(value: $0) } }
+
+    /// One decimal, truncated.
+    static func printed(_ level: Double) -> Double {
+        (min(3, max(0, level)) * 10).rounded(.down) / 10
+    }
 
     var body: some View {
         let r = diameter / 2
@@ -58,7 +67,7 @@ struct HealthStressGauge: View {
 
     private var accessibility: String {
         guard let level else { return String(localized: "No reading") }
-        var parts = [String(localized: "\(PulseFormat.oneDecimal(level)) out of 3"), word(band)]
+        var parts = [String(localized: "\(PulseFormat.oneDecimal(HealthStressGauge.printed(level))) out of 3"), word(band)]
         if let caption { parts.append(caption) }
         return parts.filter { !$0.isEmpty }.joined(separator: ", ")
     }
@@ -74,7 +83,7 @@ struct HealthStressGauge: View {
 
     private var centre: some View {
         VStack(spacing: 6) {
-            Text(level.map { PulseFormat.oneDecimal($0) } ?? "--")
+            Text(shownLevel.map { PulseFormat.oneDecimal($0) } ?? "--")
                 .font(PulseType.font(.stressValue))
                 .foregroundStyle(level == nil ? PulseTheme.textDisabled : PulseTheme.textPrimary)
                 .pulseNumericTransition()

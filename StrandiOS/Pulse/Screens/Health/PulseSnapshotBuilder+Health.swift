@@ -16,7 +16,18 @@ import WhoopProtocol
 //   - `healthAgeWeeks` ZENO Age per week, with the whole-year age the engine scored it with;
 //   - `stressDay`      a day's stress level AND curve, from the intraday curve (one source for both).
 
+/// Carries an optional value through the builder's per-refresh cache.
+private struct HealthCacheBox<T> {
+    let value: T?
+}
+
 extension PulseSnapshotBuilder {
+
+    /// `cached(_:load:)` for an optional value. The core slot looks a key up with `as? T`, and when `T` is
+    /// itself optional a missing key casts to a cached `nil`, so the value would never load; boxed, it does.
+    func cachedOptional<T>(_ key: String, load: () async -> T?) async -> T? {
+        await cached(key) { HealthCacheBox(value: await load()) }.value
+    }
 
     // MARK: - Health tab
 
@@ -131,7 +142,7 @@ extension PulseSnapshotBuilder {
     /// What the Lab Book holds, by category (nil when it is empty). Status-free: the Lab Book never judges
     /// a value (LabBookView's promise).
     func healthLabs() async -> HealthLabsSummary? {
-        await cached("health.labs") { () async -> HealthLabsSummary? in
+        await cachedOptional("health.labs") { () async -> HealthLabsSummary? in
             guard let store = await repo.storeHandle() else { return nil }
             let deviceId = await repo.deviceId
             var rows: [(LabMarkerCategory, LabMarkerRow)] = []
@@ -397,7 +408,7 @@ extension PulseSnapshotBuilder {
     func dailyStress(_ r: PulseRequest, dayKey: String, isToday: Bool) async -> Double? {
         let stored = await stressStoredSeries()
         if isToday {
-            return await cached("health.stress.daily.today") { () async -> Double? in
+            return await cachedOptional("health.stress.daily.today") { () async -> Double? in
                 StressModel(days: r.days, stored: stored)?.score
             }
         }
@@ -533,8 +544,19 @@ extension PulseSnapshotBuilder {
         let years = Dictionary(contributions.map { ($0.key, VitalityEngine.years(for: $0)) },
                                uniquingKeysWith: { _, last in last })
 
+        // Steps for the row when the week's ZENO Age had none of its own (a WHOOP 4.0 counts no steps): the
+        // app's one steps resolver, shown alongside without an effect.
+        var resolvedSteps: [(day: String, value: Double)] = []
+        if inputs.steps == nil, let from = PulseDisplay.dayKey(endKey, offsetBy: -181) {
+            resolvedSteps = await cached("health.steps.\(endKey)") {
+                await repo.resolvedStepDays(from: from, to: endKey).days
+                    .filter { $0.day != todayKey }
+                    .map { (day: $0.day, value: Double($0.steps)) }
+            }
+        }
+        guard isCurrent(r) else { return nil }
         let pillars = healthspanPillars(r, endKey: endKey, chrono: week.chronoAge, inputs: inputs, years: years,
-                                        lean: lean)
+                                        lean: lean, resolvedSteps: resolvedSteps)
         let insight = healthspanInsight(summary: summary, contributions: contributions)
         return HealthspanSnapshot(seq: r.seq, weeks: weeks, summary: summary, unlock: nil, paceSeries: paceSeries,
                                   isCurrentWeek: isCurrentWeek, daysLeftInWeek: daysLeft, insight: insight,
@@ -605,8 +627,8 @@ extension PulseSnapshotBuilder {
     // MARK: Pillars
 
     private func healthspanPillars(_ r: PulseRequest, endKey: String, chrono: Double, inputs: WeekInputs,
-                                   years: [String: Double],
-                                   lean: [(day: String, value: Double)]) -> [HealthspanPillar] {
+                                   years: [String: Double], lean: [(day: String, value: Double)],
+                                   resolvedSteps: [(day: String, value: Double)]) -> [HealthspanPillar] {
         let sixFrom = PulseDisplay.dayKey(endKey, offsetBy: -181) ?? endKey
         let thirtyFrom = PulseDisplay.dayKey(endKey, offsetBy: -29) ?? endKey
         let rows = r.days.filter { $0.day <= endKey }
@@ -656,7 +678,9 @@ extension PulseSnapshotBuilder {
                              years: years["consistency"], label: String(localized: "how regular your sleep was"),
                              route: nil)
         // Strain
-        let steps = row(id: "steps", title: String(localized: "Steps"),
+        let steps: HealthspanRow?
+        if inputs.steps != nil || resolvedSteps.isEmpty {
+            steps = row(id: "steps", title: String(localized: "Steps"),
                         value: inputs.steps, text: { PulseFormat.grouped($0) }, unit: "",
                         scale: 2_000...14_000, low: "2k", high: "14k",
                         tones: tones(2_000...14_000) { VitalityEngine.Inputs(chronoAge: chrono, steps: $0) },
@@ -664,6 +688,19 @@ extension PulseSnapshotBuilder {
                         thirty: average({ $0.steps.map(Double.init) }, from: thirtyFrom),
                         years: years["steps"], label: String(localized: "your daily steps"),
                         route: PulseRoute.tab(.steps(day: nil)))
+        } else {
+            func mean(from: String) -> Double? {
+                let xs = resolvedSteps.filter { $0.day >= from && $0.day <= endKey }.map(\.value)
+                return xs.isEmpty ? nil : xs.reduce(0, +) / Double(xs.count)
+            }
+            steps = row(id: "steps", title: String(localized: "Steps"),
+                        value: PulseDisplay.dayKey(endKey, offsetBy: -6).flatMap { mean(from: $0) },
+                        text: { PulseFormat.grouped($0) }, unit: "",
+                        scale: 2_000...14_000, low: "2k", high: "14k", tones: [],
+                        six: mean(from: sixFrom), thirty: mean(from: thirtyFrom),
+                        years: nil, label: String(localized: "your daily steps"),
+                        route: PulseRoute.tab(.steps(day: nil)))
+        }
         // Fitness
         let rhr = row(id: "rhr", title: String(localized: "RHR"),
                       value: inputs.rhr, text: { PulseFormat.whole($0) }, unit: "bpm",
@@ -728,7 +765,7 @@ extension PulseSnapshotBuilder {
             }
         } else if let valueText {
             verdict = String(localized: "Tracked alongside")
-            sentence = String(localized: "This week \(label) came to \(valueText). ZENO Age doesn't use it yet, so it is here to follow next to it.")
+            sentence = String(localized: "This week \(label) came to \(valueText). This week's ZENO Age did not use it, so it is shown here without an effect.")
         } else {
             verdict = String(localized: "No reading this week")
             sentence = String(localized: "There is no reading for \(label) this week, so it is left out of this week's ZENO Age.")

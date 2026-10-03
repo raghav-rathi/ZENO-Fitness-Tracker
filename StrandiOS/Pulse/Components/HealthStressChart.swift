@@ -28,7 +28,6 @@ struct HealthStressDayChart: View {
     @State private var zoomed = false
 
     private static let zoomSpan: TimeInterval = 6 * 3600
-    private static let yAxisWidth: CGFloat = 30
 
     private var shown: ClosedRange<Date> {
         guard zoomed else { return window }
@@ -51,30 +50,23 @@ struct HealthStressDayChart: View {
 
     private var hasReadings: Bool { shownPoints.contains { $0.value != nil } }
 
-    /// Four instants across the window: its start, two inner thirds and its end.
+    /// Four instants across the window: its start, its end, and between them the whole hours nearest its
+    /// thirds ("11:02 PM · 7:00 AM · 3:00 PM · 10:49 PM", completeness-critic/14).
     private var ticks: [Date] {
         let span = shown.upperBound.timeIntervalSince(shown.lowerBound)
-        return (0...3).map { shown.lowerBound.addingTimeInterval(span * Double($0) / 3) }
+        let cal = Calendar.current
+        let inner = [1.0, 2.0].map { third -> Date in
+            let t = shown.lowerBound.addingTimeInterval(span * third / 3)
+            guard span >= 3 * 3600, let hour = cal.dateInterval(of: .hour, for: t)?.start else { return t }
+            return t.timeIntervalSince(hour) >= 1800 ? hour.addingTimeInterval(3600) : hour
+        }
+        return [shown.lowerBound] + inner + [shown.upperBound]
     }
 
     var body: some View {
-        VStack(spacing: 8) {
-            chart
-                .frame(height: height)
-                .padding(.top, 22)
-            HStack(spacing: 4) {
-                ForEach(Array(ticks.enumerated()), id: \.offset) { index, date in
-                    Text(PulseFormat.clock(date))
-                        .font(index == 3 ? PulseType.numeral(12) : PulseType.font(.axis))
-                        .foregroundStyle(index == 3 ? PulseTheme.textPrimary : PulseTheme.textTertiary)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.8)
-                    if index < 3 { Spacer(minLength: 2) }
-                }
-            }
-            .padding(.leading, Self.yAxisWidth - 8)
-            .accessibilityHidden(true)
-        }
+        chart
+            .frame(height: height + 22)
+            .padding(.top, 22)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(String(localized: "Stress through the day"))
         .accessibilityValue(summary)
@@ -131,7 +123,20 @@ struct HealthStressDayChart: View {
         }
         .chartXScale(domain: shown)
         .chartYScale(domain: 0...3)
-        .chartXAxis(.hidden)
+        .chartXAxis {
+            // The start and end labels sit inside the plot's edges; the two inner ones centre on their hour.
+            AxisMarks(values: ticks) { value in
+                if let date = value.as(Date.self) {
+                    let index = ticks.firstIndex(of: date) ?? 1
+                    AxisValueLabel(anchor: index == 0 ? .topLeading : (index == 3 ? .topTrailing : .top),
+                                   collisionResolution: .disabled) {
+                        Text(PulseFormat.clock(date))
+                            .font(index == 3 ? PulseType.numeral(12) : PulseType.font(.axis))
+                            .foregroundStyle(index == 3 ? PulseTheme.textPrimary : PulseTheme.textTertiary)
+                    }
+                }
+            }
+        }
         .chartYAxis {
             AxisMarks(position: .leading, values: [0.0, 1.0, 2.0, 3.0]) { value in
                 AxisGridLine(stroke: StrokeStyle(lineWidth: 1)).foregroundStyle(PulseTheme.gridOnPage)
