@@ -478,3 +478,64 @@ struct BehaviorLockedTrack: View {
     }
 }
 #endif
+
+#if os(iOS)
+// MARK: Scroll backdrop
+
+/// For a page with its own background (not `PulseScreenScaffold`): once content scrolls under the bar, a
+/// solid band of `color` behind the bar and status bar with a short fade below it, so text never runs
+/// under the title. Put `JournalPlanScrollMarker()` first in the scroll content and name the scroll view's
+/// coordinate space `JournalPlanScrollMarker.space`.
+struct JournalPlanScrollBackdrop: View {
+    let color: Color
+    var fade: CGFloat = PulseTheme.Header.barFade
+
+    var body: some View {
+        GeometryReader { geo in
+            VStack(spacing: 0) {
+                color.frame(height: geo.safeAreaInsets.top)
+                LinearGradient(colors: [color, color.opacity(0)], startPoint: .top, endPoint: .bottom)
+                    .frame(height: fade)
+                Spacer(minLength: 0)
+            }
+            .ignoresSafeArea()
+        }
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+    }
+}
+
+/// Reports how far the scroll content's top has moved (see `JournalPlanScrollBackdrop`).
+struct JournalPlanScrollMarker: View {
+    static let space = "jp.scroll"
+
+    var body: some View {
+        Color.clear
+            .frame(height: 0)
+            .background(GeometryReader { geo in
+                Color.clear.preference(key: JournalPlanScrollTopKey.self,
+                                       value: geo.frame(in: .named(Self.space)).minY)
+            })
+    }
+}
+
+struct JournalPlanScrollTopKey: PreferenceKey {
+    static var defaultValue: CGFloat? = nil
+    static func reduce(value: inout CGFloat?, nextValue: () -> CGFloat?) {
+        value = nextValue() ?? value
+    }
+}
+
+extension View {
+    /// Sets `scrolled` once the content's top has moved above where it first rested.
+    func journalPlanTrackScroll(_ scrolled: Binding<Bool>, rest: Binding<CGFloat?>) -> some View {
+        coordinateSpace(name: JournalPlanScrollMarker.space)
+            .onPreferenceChange(JournalPlanScrollTopKey.self) { top in
+                guard let top else { return }
+                if rest.wrappedValue == nil { rest.wrappedValue = top }
+                let under = top < (rest.wrappedValue ?? top) - 1
+                if under != scrolled.wrappedValue { scrolled.wrappedValue = under }
+            }
+    }
+}
+#endif

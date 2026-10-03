@@ -16,6 +16,7 @@ import StrandAnalytics
 //   --jp-query <text>          SELECT BEHAVIORS opens with a search
 //   --jp-details <identity>    Behavior Insights pushes Behavior Details for a behaviour (lib.alcohol,
 //                              auto.sleepPerformance, …; "first" = the first tested row)
+//   --jp-expand                Behavior Details opens with its amount breakdown expanded
 //   --jp-plan <template>       start a plan (boostFitness | feelBetter | sleepDeeper | custom) if none is active
 //   --jp-plan-screen <name>    Plan Overview opens recap | checkin | goal:<kind> | behavior
 //   --jp-plan-expanded         the Home plan card starts expanded
@@ -38,6 +39,8 @@ enum JournalPlanDebug {
     static var planTemplate: String? { value("--jp-plan") }
     static var planScreen: String? { value("--jp-plan-screen") }
     static var planExpanded: Bool { has("--jp-plan-expanded") }
+    /// `--jp-expand`: Behavior Details opens with its breakdown expanded.
+    static var detailsExpanded: Bool { has("--jp-expand") }
     /// `--jp-scroll <anchor>`: the Journal or a Plan screen scrolls to `.id("jp.<anchor>")` once loaded.
     static var scrollAnchor: String? { value("--jp-scroll") }
 
