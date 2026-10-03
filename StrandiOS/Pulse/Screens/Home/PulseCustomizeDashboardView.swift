@@ -4,7 +4,7 @@ import SwiftUI
 /// Customize Dashboard (WHOOP_UI_SPEC §3.13, reviews/04, reviews/r110), presented as a full-screen modal:
 /// "✕ · CUSTOMIZE DASHBOARD"; the dashboard's items as 57 pt cards in their order, each with a "–" [Z]
 /// (WHOOP members could not find how to remove one) beside the ≡ drag handle at the right, a small
-/// bar-chart glyph on the two chart cards; then "ADD TO MY DASHBOARD" and every other item with a "+".
+/// bar-chart glyph on the two chart cards; then "ADD TO MY DASHBOARD" and every other item with a "+", A to Z.
 /// Both lists keep their names in one column ≈42 pt in from the card, as WHOOP's do. SAVE is pinned at the
 /// bottom, a recovery-blue outline capsule (322 × 52) that wakes once something changed.
 ///
@@ -42,7 +42,7 @@ struct PulseCustomizeDashboardView: View {
                     .onMove { from, to in self.draft?.moveVisible(from: from, to: to) }
                 }
                 Section {
-                    ForEach(draft.hidden) { item in
+                    ForEach(Self.alphabetical(draft.hidden)) { item in
                         addRow(item)
                             .moveDisabled(true)
                     }
@@ -71,6 +71,13 @@ struct PulseCustomizeDashboardView: View {
                 draft = EditableLayoutDraft(visible: saved, allItems: PulseDashboardItem.allCases)
             }
         }
+    }
+
+    /// ADD TO MY DASHBOARD in alphabetical order, as WHOOP lists it (reviews/04: AVERAGE HEART RATE,
+    /// CALORIES, HOURS OF SLEEP, HR ZONES 1-3 …; r110), so a removed item lands in its place. Only the
+    /// list shown is sorted: the draft's `hidden` keeps its order for the classic layout editors.
+    private static func alphabetical(_ items: [PulseDashboardItem]) -> [PulseDashboardItem] {
+        items.sorted { $0.title.localizedStandardCompare($1.title) == .orderedAscending }
     }
 
     // MARK: Rows
