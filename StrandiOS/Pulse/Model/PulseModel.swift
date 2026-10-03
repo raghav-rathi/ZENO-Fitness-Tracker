@@ -11,7 +11,7 @@ import WhoopStore
 /// It owns the selected day, captures a `PulseRequest` from the repository in a single main-actor hop,
 /// hands it to the off-main `PulseSnapshotBuilder`, and publishes the snapshot that comes back. It
 /// rebuilds when the repository's `refreshSeq` moves, when the day changes, and when a display
-/// preference changes; nothing else invalidates a snapshot.
+/// preference or the profile it scores with changes; nothing else invalidates a snapshot.
 ///
 /// `@Observable`, so a view re-renders only for the properties it actually reads: the Home dials for
 /// `home`, the day title for `dayOffset`, a screen's reload for `detailKey`. A published build is dropped
@@ -29,7 +29,8 @@ final class PulseModel {
     /// How far back Home can go (the earliest banked day).
     private(set) var maxDayOffset = 0
     private(set) var home: HomeSnapshot?
-    /// Bumped whenever the display preferences change, so detail screens reload.
+    /// Bumped whenever the display preferences or the profile the builds score with (Effort's HR max, sex,
+    /// the heart-rate zones) change, so detail screens reload.
     private(set) var prefsVersion = 0
 
     /// The key a detail screen's `.task(id:)` reloads on.
@@ -44,6 +45,8 @@ final class PulseModel {
     @ObservationIgnored private weak var ble: BLEManager?
     @ObservationIgnored private var builder: PulseSnapshotBuilder?
     @ObservationIgnored private var prefs = PulsePrefs()
+    /// The scoring profile the last profile change was checked against (`profileChanged`).
+    @ObservationIgnored private var scoringProfile: PulseProfile?
     @ObservationIgnored private var cancellables = Set<AnyCancellable>()
     @ObservationIgnored private var homeTask: Task<Void, Never>?
     /// A day to open on once the history's extent is known (DEBUG `--pulse-day`).
@@ -55,6 +58,7 @@ final class PulseModel {
         self.repo = repo
         self.profile = profile
         self.ble = ble
+        scoringProfile = Self.scoringProfile(profile)
         builder = PulseSnapshotBuilder(repo: repo, strainBands: PulseSnapshotBuilder.optimalStrainBands())
         #if DEBUG
         pendingDayOffset = PulseDebugLaunch.dayOffset
@@ -68,11 +72,12 @@ final class PulseModel {
                 Task { @MainActor [weak self] in self?.refreshChanged(to: value) }
             }
             .store(in: &cancellables)
-        // A new HR max or sex re-scores Effort; debounced so typing into a profile field is one rebuild.
+        // A new HR max or sex re-scores Effort and new zones re-bin; debounced so typing into a profile
+        // field is one rebuild.
         profile.objectWillChange
             .debounce(for: .milliseconds(500), scheduler: RunLoop.main)
             .sink { [weak self] _ in
-                Task { @MainActor [weak self] in self?.invalidateAll() }
+                Task { @MainActor [weak self] in self?.profileChanged() }
             }
             .store(in: &cancellables)
         refreshChanged(to: repo.refreshSeq)
@@ -100,6 +105,23 @@ final class PulseModel {
     private func invalidateAll() {
         updateMaxOffset()
         rebuildHome()
+    }
+
+    /// The profile changed. When what the builds score with changed (Effort's HR max or sex, the zones),
+    /// rebuild everything as a display preference does, Home's extras and the open screen included; an
+    /// edit that changes none of it (a name, a photo) rebuilds nothing.
+    private func profileChanged() {
+        guard let profile else { return }
+        let scoring = Self.scoringProfile(profile)
+        guard scoring != scoringProfile else { return }
+        scoringProfile = scoring
+        prefsVersion &+= 1
+        invalidateAll()
+    }
+
+    /// The profile values a build scores with, as a request captures them.
+    private static func scoringProfile(_ profile: ProfileStore) -> PulseProfile {
+        PulseProfile(effortHRmax: profile.effortHRmax, sex: profile.sex, zoneSet: profile.hrZoneSet)
     }
 
     /// The app came back to the foreground: the logical day may have rolled and today's live strain has
@@ -182,8 +204,7 @@ final class PulseModel {
             importedSleep: repo.importedSleep,
             vitalRows: repo.vitalMetricRows,
             prefs: prefs,
-            profile: PulseProfile(effortHRmax: profile.effortHRmax, sex: profile.sex,
-                                  zoneSet: profile.hrZoneSet))
+            profile: Self.scoringProfile(profile))
     }
 
     // MARK: Builds

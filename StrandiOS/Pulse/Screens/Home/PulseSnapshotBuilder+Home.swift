@@ -309,6 +309,8 @@ extension PulseSnapshotBuilder {
     /// reader). An activity with neither adds no minutes and is counted as unresolved.
     private func zoneDays(_ r: PulseRequest, rows: [WorkoutRow], daysBack: Int) async -> [String: ZoneDay] {
         guard let first = PulseDisplay.dayKey(r.day.key, offsetBy: -daysBack) else { return [:] }
+        // The bounds the heart rate is binned by: an edit to HR max or the zones re-bins within the refresh.
+        let bounds = r.profile.zoneSet.zones.map { "\($0.lower)-\($0.upper)" }.joined(separator: ",")
         var out: [String: ZoneDay] = [:]
         for w in rows {
             let day = Repository.localDayKey(Date(timeIntervalSince1970: TimeInterval(w.startTs)))
@@ -317,7 +319,7 @@ extension PulseSnapshotBuilder {
             if let pct = WorkoutZones.percents(w.zonesJSON) {
                 let total = (w.durationS ?? Double(w.endTs - w.startTs)) / 60
                 minutes = (0..<5).map { total * pct[$0] / 100 }
-            } else if let binned = await cached("home.zones.\(w.startTs)|\(w.endTs)|\(w.source)", load: {
+            } else if let binned = await cached("home.zones.\(w.startTs)|\(w.endTs)|\(w.source)|\(bounds)", load: {
                 await repo.workoutZoneMinutes(from: w.startTs, to: w.endTs, zoneSet: r.profile.zoneSet, source: w.source)
             }) {
                 // `timeInZone` reports zones 1-5 in order.
