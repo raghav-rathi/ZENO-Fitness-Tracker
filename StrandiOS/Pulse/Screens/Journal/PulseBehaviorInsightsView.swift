@@ -39,7 +39,8 @@ struct PulseBehaviorInsightsView: View {
                 }
             }
         }
-        .task(id: model.detailKey) { await load() }
+        // An always-today page: it reloads with the data, not with Home's selected day.
+        .task(id: model.healthKey) { await load() }
         .sheet(isPresented: $showSelector) {
             PulseSelectBehaviorsView(catalog: catalog, importedQuestions: imported) {
                 Task { await load() }
@@ -70,7 +71,7 @@ struct PulseBehaviorInsightsView: View {
 
             if !s.unlocked.isEmpty {
                 legend
-                    .padding(.top, 24)
+                    .padding(.top, PulseTheme.JournalPlan.insightsLegendTop)
                 VStack(spacing: PulseTheme.JournalPlan.insightsCardGap) {
                     ForEach(s.unlocked) { row in
                         PulseLink(PulseBehaviorDetailsRoute(identity: row.id).route) {
@@ -79,7 +80,7 @@ struct PulseBehaviorInsightsView: View {
                         .buttonStyle(PulsePressStyle())
                     }
                 }
-                .padding(.top, 10)
+                .padding(.top, PulseTheme.JournalPlan.insightsListTop)
             }
 
             if !locked.isEmpty || s.recoveries < s.recoveriesNeeded {
@@ -136,11 +137,12 @@ struct PulseBehaviorInsightsView: View {
         .accessibilityLabel(String(localized: "Percent impact on Recovery: behaviors that hurt on the left, that help on the right"))
     }
 
+    /// A 15 pt tinted square with a small 8 pt triangle (journal-plan-2026/20).
     private func legendChip(symbol: String, fill: Color, color: Color) -> some View {
         Image(systemName: symbol)
-            .font(PulseTheme.JournalPlan.smallGlyph)
+            .font(PulseTheme.JournalPlan.legendGlyph)
             .foregroundStyle(color)
-            .frame(width: 18, height: 18)
+            .frame(width: PulseTheme.JournalPlan.legendChipSize, height: PulseTheme.JournalPlan.legendChipSize)
             .background(RoundedRectangle(cornerRadius: PulseTheme.Radius.badge, style: .circular).fill(fill))
     }
 
@@ -298,6 +300,7 @@ struct PulseBehaviorInsightsView: View {
 
     private func load() async {
         if let s = await model.build(dayOffset: 0, { builder, r in
+            builder.begin(r.seq)        // the questions' cache belongs to this refresh
             let questions = await builder.importedJournalQuestions()
             return await builder.behaviorInsights(r).map { ($0, questions) }
         }) {

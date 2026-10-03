@@ -4,13 +4,15 @@ import StrandAnalytics
 
 /// Behavior Details (WHOOP_UI_SPEC §3.18), pushed from Behavior Insights.
 ///
-/// "‹ BEHAVIOR DETAILS" over a hero (ZENO draws the behaviour's symbol on a soft glow; no stock photos [Z]),
-/// the behaviour's name, then the RECOVERY IMPACT card: its verdict chip, the wide diverging bar with the
-/// % impact, and, for a behaviour with a logged amount, the expandable breakdown by amount ("1 Drink",
-/// "2-6 Drinks"). WHOOP's member-average tick and caption are population data and are left out [POP].
-/// Then the 90-day yes / no counts, Logging History (three months of yes / no / missing days; journal
-/// behaviours only), "Impact of …" in ZENO's own words with the wearer's own numbers, and a
-/// RECOMMENDATION. Every figure comes from the same analysis Behavior Insights shows.
+/// "‹ BEHAVIOR DETAILS" over a hero that scrolls with the page (ZENO draws the behaviour's symbol on a soft
+/// glow; no stock photos [Z]), the behaviour's name, then the RECOVERY IMPACT card: its verdict chip, the
+/// wide diverging bar with the % impact, and, for a behaviour with a logged amount, the expandable breakdown
+/// by amount ("1 Drink", "2-6 Drinks"). WHOOP's member-average tick and caption are population data and are
+/// left out [POP]. Then Logging History (three months of yes / no / missing days; journal behaviours only),
+/// "Impact of …" in ZENO's own words with the wearer's own numbers, and a RECOMMENDATION, in the Sep 2026
+/// order (journal-plan-2026/26 and the storyboard): the April variant's 90-day count card (26a) is left out,
+/// so the page never shows the yes / no counts over two different windows. Every figure comes from the same
+/// analysis Behavior Insights shows.
 struct PulseBehaviorDetailsView: View {
     let identity: String
 
@@ -23,6 +25,10 @@ struct PulseBehaviorDetailsView: View {
     @State private var historyPage = 0
     @State private var scrolled = false
     @State private var restTop: CGFloat?
+    /// The scroll view's top edge in the window (under the bar), to lift the hero to the screen's top.
+    @State private var viewTop: CGFloat?
+    /// The Logging History pager's width: 260 pt at the default size, wider as its title grows.
+    @ScaledMetric(relativeTo: .caption) private var pagerWidth: CGFloat = 260
 
     private var isAuto: Bool { PulseBehaviorLibrary.Auto(rawValue: identity) != nil }
     private var definition: PulseBehaviorDefinition? {
@@ -43,21 +49,34 @@ struct PulseBehaviorDetailsView: View {
                     .foregroundStyle(PulseTheme.textPrimary)
                     .fixedSize(horizontal: false, vertical: true)
                     .accessibilityAddTraits(.isHeader)
-                    .padding(.top, 110)
+                    .padding(.top, PulseTheme.JournalPlan.detailsTitleTop)
                 PulseLoadingGate(isLoading: snapshot == nil) {
                     if let snapshot { content(snapshot) }
                 } skeleton: {
-                    PulseSkeleton.cards([150, 90, 220])
+                    PulseSkeleton.cards([150, 220, 160])
                         .padding(.top, 20)
                 }
             }
             .padding(.horizontal, PulseTheme.Layout.pageMargin)
             .padding(.bottom, PulseTheme.Layout.floatingChromeInset + 16)
+            // Never wider than the screen, whatever a row inside asks for at large text sizes.
+            .frame(maxWidth: .infinity, alignment: .leading)
+            // The hero scrolls with the name (WHOOP's photo does), lifted from where the content rests to
+            // the screen's top edge, under the bar and the status bar.
+            .background(alignment: .top) {
+                hero
+                    .offset(y: -((viewTop ?? 0) + (restTop ?? 0)))
+                    .opacity(viewTop == nil || restTop == nil ? 0 : 1)
+            }
         }
+        // The hero draws above the scroll view's top edge; content scrolled up there passes under the
+        // backdrop band (below) like any page under Pulse's bar.
+        .scrollClipDisabled()
+        .journalPlanReadTop($viewTop)
         .pulseDebugScroll(proxy, ready: snapshot != nil)
         .journalPlanTrackScroll($scrolled, rest: $restTop)
         }
-        .background(hero.ignoresSafeArea())
+        .background(PulseTheme.JournalPlan.detailsPage.ignoresSafeArea())
         .overlay(alignment: .top) {
             JournalPlanScrollBackdrop(color: PulseTheme.JournalPlan.detailsPage)
                 .opacity(scrolled ? 1 : 0)
@@ -66,25 +85,25 @@ struct PulseBehaviorDetailsView: View {
         .pulseNavHeader(String(localized: "Behavior Details"))
         .overlay { PulseFloatingCoach(accessory: .button, seed: coachSeed) }
         .environment(\.colorScheme, .dark)
-        .task(id: model.detailKey) { await load() }
+        .task(id: model.healthKey) { await load() }
     }
 
     // MARK: Hero
 
-    /// The behaviour's symbol, large and faint, on a soft glow that fades into the page.
+    /// The behaviour's symbol, large and faint, on a soft glow that fades into the page, sized from the
+    /// screen's top edge.
     private var hero: some View {
         ZStack(alignment: .topTrailing) {
-            PulseTheme.JournalPlan.detailsPage
             RadialGradient(colors: [PulseTheme.JournalPlan.heroGlow, PulseTheme.JournalPlan.detailsPage],
                            center: .topTrailing, startRadius: 10, endRadius: PulseTheme.JournalPlan.heroHeight * 1.3)
-                .frame(height: PulseTheme.JournalPlan.heroHeight * 1.4)
-                .frame(maxHeight: .infinity, alignment: .top)
             Image(systemName: symbol)
                 .font(PulseTheme.JournalPlan.heroSymbolFont)
                 .foregroundStyle(PulseTheme.JournalPlan.heroSymbol)
                 .padding(.top, 70)
                 .padding(.trailing, 6)
         }
+        .frame(height: PulseTheme.JournalPlan.heroHeight * 1.4, alignment: .top)
+        .allowsHitTesting(false)
         .accessibilityHidden(true)
     }
 
@@ -95,10 +114,6 @@ struct PulseBehaviorDetailsView: View {
         VStack(alignment: .leading, spacing: 0) {
             impactCard(s)
                 .padding(.top, 20)
-            if !isAuto, let row = s.row {
-                countCard(row, question: names?.question(identity) ?? s.question)
-                    .padding(.top, 16)
-            }
             if !isAuto {
                 loggingHistory(s)
                     .padding(.top, 36)
@@ -118,30 +133,29 @@ struct PulseBehaviorDetailsView: View {
         let row = s.row
         let tested = row?.impact != nil
         let effect = BehaviorImpactFormat.effect(impact: row?.impact, significant: row?.significant ?? false)
+        let verdict: BehaviorVerdictChip.Verdict = effect == .helps ? .positive : (effect == .hurts ? .negative : .neutral)
         return VStack(alignment: .leading, spacing: 16) {
-            HStack(alignment: .center, spacing: 10) {
-                Text(String(localized: "Recovery Impact"))
-                    .pulseText(.menuLabel)
-                    .foregroundStyle(PulseTheme.textPrimary)
-                    .lineLimit(1)
-                    .fixedSize()
-                    .layoutPriority(2)
-                Spacer(minLength: 6)
-                if tested {
-                    BehaviorVerdictChip(verdict: effect == .helps ? .positive : (effect == .hurts ? .negative : .neutral))
-                        .layoutPriority(1)
+            // One row while it fits; at large text sizes the chip and ⌄ drop under the title.
+            ViewThatFits(in: .horizontal) {
+                HStack(alignment: .center, spacing: 10) {
+                    Text(String(localized: "Recovery Impact"))
+                        .pulseText(.menuLabel)
+                        .foregroundStyle(PulseTheme.textPrimary)
+                        .lineLimit(1)
+                        .accessibilityAddTraits(.isHeader)
+                    Spacer(minLength: 6)
+                    if tested { BehaviorVerdictChip(verdict: verdict) }
+                    if !s.buckets.isEmpty { breakdownToggle }
                 }
-                if !s.buckets.isEmpty {
-                    Button { expanded.toggle() } label: {
-                        Image(systemName: expanded ? "chevron.up" : "chevron.down")
-                            .font(PulseTheme.JournalPlan.checkGlyph)
-                            .foregroundStyle(PulseTheme.textSecondary)
-                            .frame(width: 24, height: PulseTheme.Layout.minTapTarget)
-                            .contentShape(Rectangle().inset(by: -10))
+                VStack(alignment: .leading, spacing: 10) {
+                    PulseWordWrapText(String(localized: "Recovery Impact"), style: .menuLabel)
+                        .foregroundStyle(PulseTheme.textPrimary)
+                        .accessibilityAddTraits(.isHeader)
+                    HStack(alignment: .center, spacing: 10) {
+                        if tested { BehaviorVerdictChip(verdict: verdict) }
+                        Spacer(minLength: 6)
+                        if !s.buckets.isEmpty { breakdownToggle }
                     }
-                    .buttonStyle(PulsePressStyle())
-                    .padding(.vertical, -10)
-                    .accessibilityLabel(expanded ? String(localized: "Hide the breakdown") : String(localized: "Show the breakdown"))
                 }
             }
             if let impact = row?.impact {
@@ -165,8 +179,24 @@ struct PulseBehaviorDetailsView: View {
             }
         }
         .padding(20)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .background(RoundedRectangle(cornerRadius: PulseTheme.Radius.dialog, style: .continuous)
             .fill(PulseTheme.JournalPlan.detailsImpactCard))
+        .dynamicTypeSize(...DynamicTypeSize.accessibility3)
+    }
+
+    /// "⌄" / "⌃": the amount breakdown.
+    private var breakdownToggle: some View {
+        Button { expanded.toggle() } label: {
+            Image(systemName: expanded ? "chevron.up" : "chevron.down")
+                .font(PulseTheme.JournalPlan.checkGlyph)
+                .foregroundStyle(PulseTheme.textSecondary)
+                .frame(width: 24, height: PulseTheme.Layout.minTapTarget)
+                .contentShape(Rectangle().inset(by: -10))
+        }
+        .buttonStyle(PulsePressStyle())
+        .padding(.vertical, -10)
+        .accessibilityLabel(expanded ? String(localized: "Hide the breakdown") : String(localized: "Show the breakdown"))
     }
 
     /// The Behavior Details bar: wider and taller than a list row's, the value beside it.
@@ -194,10 +224,8 @@ struct PulseBehaviorDetailsView: View {
     private func breakdown(_ s: BehaviorDetailsSnapshot) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             if let header = s.breakdownTitle {
-                Text(header)
-                    .pulseText(.menuLabel)
+                PulseWordWrapText(header, style: .menuLabel)
                     .foregroundStyle(PulseTheme.textSecondary)
-                    .fixedSize(horizontal: false, vertical: true)
             }
             ForEach(s.buckets.filter { $0.days > 0 }) { bucket in
                 HStack {
@@ -208,7 +236,7 @@ struct PulseBehaviorDetailsView: View {
                     if let impact = bucket.impact {
                         let effect = BehaviorImpactFormat.effect(impact: impact, significant: bucket.significant)
                         Text(BehaviorImpactFormat.text(impact))
-                            .font(PulseType.font(.rowValue))
+                            .pulseText(.rowValue)
                             .foregroundStyle(BehaviorImpactFormat.color(effect))
                     } else {
                         Text(bucket.days == 1 ? String(localized: "1 day so far") : String(localized: "\(bucket.days) days so far"))
@@ -229,47 +257,6 @@ struct PulseBehaviorDetailsView: View {
             .fill(PulseTheme.JournalPlan.detailsBreakdown))
     }
 
-    // MARK: Counts (journal-plan-2026/26a)
-
-    private func countCard(_ row: BehaviorImpactRowData, question: String?) -> some View {
-        HStack(alignment: .center, spacing: 16) {
-            VStack(alignment: .leading, spacing: 6) {
-                if let question {
-                    Text(question)
-                        .pulseText(.coachingTitle)
-                        .foregroundStyle(PulseTheme.textPrimary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                Text(String(localized: "# of times this behavior has been logged yes or no in the past 90 days"))
-                    .pulseText(.rowSubline)
-                    .foregroundStyle(PulseTheme.textSecondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            Spacer(minLength: 0)
-            countSquare(symbol: "xmark", count: row.no, color: PulseTheme.textPrimary)
-            countSquare(symbol: "checkmark", count: row.yes, color: PulseTheme.Journal.historyYes)
-        }
-        .padding(16)
-        .background(RoundedRectangle(cornerRadius: PulseTheme.Radius.card, style: .circular).fill(PulseTheme.card))
-        .accessibilityElement(children: .combine)
-    }
-
-    private func countSquare(symbol: String, count: Int, color: Color) -> some View {
-        VStack(spacing: 8) {
-            Image(systemName: symbol)
-                .font(PulseTheme.JournalPlan.checkGlyph)
-                .foregroundStyle(color)
-            Text(verbatim: "\(count)")
-                .font(PulseType.font(.rowValue))
-                .foregroundStyle(color)
-                .frame(width: 44, height: 44)
-                .overlay(RoundedRectangle(cornerRadius: PulseTheme.Radius.toggle, style: .circular)
-                    .strokeBorder(color, lineWidth: 1.5))
-        }
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(symbol == "checkmark" ? String(localized: "\(count) yes") : String(localized: "\(count) no"))
-    }
-
     // MARK: Logging History (§2.7)
 
     private func loggingHistory(_ s: BehaviorDetailsSnapshot) -> some View {
@@ -284,14 +271,22 @@ struct PulseBehaviorDetailsView: View {
                 .accessibilityAddTraits(.isHeader)
             PulseRangePager(title: pagerTitle(months), canGoBack: canGoBack, canGoForward: historyPage > 0,
                             onBack: { historyPage += 1 }, onForward: { historyPage = max(0, historyPage - 1) })
-                .frame(maxWidth: 260)
+                .frame(maxWidth: pagerWidth)
+                .dynamicTypeSize(...DynamicTypeSize.accessibility1)
+            // The calendar is a chart of fixed 10 pt dots: its letters stop growing where seven columns
+            // of three months still fit the width.
             HStack(alignment: .top, spacing: 12) {
                 ForEach(months, id: \.month) { m in monthBlock(m, today: s.today) }
             }
-            HStack(spacing: 14) {
-                legendDot(fill: PulseTheme.Journal.historyYes, text: String(localized: "Yes (\(months.map(\.yesCount).reduce(0, +)))"))
-                legendDot(fill: PulseTheme.Journal.historyNo, text: String(localized: "No (\(months.map(\.noCount).reduce(0, +)))"))
-                legendDot(fill: nil, text: String(localized: "Missing (\(months.map(\.missingCount).reduce(0, +)))"))
+            .dynamicTypeSize(...DynamicTypeSize.xxLarge)
+            let yes = legendDot(fill: PulseTheme.Journal.historyYes,
+                                text: String(localized: "Yes (\(months.map(\.yesCount).reduce(0, +)))"))
+            let no = legendDot(fill: PulseTheme.Journal.historyNo,
+                               text: String(localized: "No (\(months.map(\.noCount).reduce(0, +)))"))
+            let missing = legendDot(fill: nil, text: String(localized: "Missing (\(months.map(\.missingCount).reduce(0, +)))"))
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 14) { yes; no; missing }
+                VStack(alignment: .leading, spacing: 8) { yes; no; missing }
             }
         }
     }
@@ -453,9 +448,19 @@ struct PulseBehaviorDetailsView: View {
             out.append(String(localized: "ZENO compares your Recovery on the days you answered yes with the days you answered no, so you can see whether this behavior lines up with how you recover."))
         }
         if let row = s.row, let with = row.meanWith, let without = row.meanWithout {
-            out.append(String(localized: "Over the past 90 days your Recovery averaged \(Int(with.rounded()))% on \(row.nWith) days with it and \(Int(without.rounded()))% on \(row.nWithout) days without. This is an association in your own data, not proof of cause."))
+            let (a, b) = Self.means(with, without)
+            out.append(String(localized: "Over the past 90 days your Recovery averaged \(a) on \(row.nWith) days with it and \(b) on \(row.nWithout) days without. This is an association in your own data, not proof of cause."))
         }
         return out
+    }
+
+    /// The two means as whole percents, or to one decimal when they round to the same whole number, so the
+    /// sentence never reads "41% and 41%" beside a "+1%" impact.
+    static func means(_ with: Double, _ without: Double) -> (String, String) {
+        if Int(with.rounded()) == Int(without.rounded()) {
+            return (String(format: "%.1f%%", with), String(format: "%.1f%%", without))
+        }
+        return ("\(Int(with.rounded()))%", "\(Int(without.rounded()))%")
     }
 
     private func recommendationText(_ s: BehaviorDetailsSnapshot) -> String {
@@ -493,6 +498,7 @@ struct PulseBehaviorDetailsView: View {
         let unit = catalog.resolvedItems(imported: [], includeHidden: true)
             .first { PulseBehaviorLibrary.identity(for: $0.canonical) == id }?.kind.unitLabel
         if let s = await model.build(dayOffset: 0, { builder, r in
+            builder.begin(r.seq)        // the questions' cache belongs to this refresh
             let questions = await builder.importedJournalQuestions()
             return await builder.behaviorDetails(r, identity: id, followUpEdges: edges, customUnit: unit)
                 .map { ($0, questions) }
