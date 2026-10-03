@@ -152,16 +152,13 @@ struct PulseDailyOutlookView: View {
     @Environment(\.pulseCoach) private var coach
     @ScaledMetric(relativeTo: .body) private var bulletSize: CGFloat = 5
 
-    /// Where the page's three colours sit, sampled at the left edge of reviews/88: slate by 35% of the
-    /// height and flat near-black from ≈47%, not a tan → slate run down the whole page.
-    // TODO(foundation): carry these locations on `Gradients.dailyOutlookPage` itself.
-    private static let pageLocations: [CGFloat] = [0, 0.35, 0.47]
-
+    /// The page: `Gradients.dailyOutlookPage`, or in the evening the Day in Review pill's indigo over the
+    /// page's foot at the same stops.
     private var page: Gradient {
-        let colors = content.evening
-            ? PulseTheme.Gradients.pillEvening.stops.map(\.color) + [PulseTheme.pageBottom]
-            : PulseTheme.Gradients.dailyOutlookPage.stops.map(\.color)
-        return Gradient(stops: zip(colors, Self.pageLocations).map { Gradient.Stop(color: $0, location: $1) })
+        let outlook = PulseTheme.Gradients.dailyOutlookPage
+        guard content.evening else { return outlook }
+        let colors = PulseTheme.Gradients.pillEvening.stops.map(\.color) + [PulseTheme.pageBottom]
+        return Gradient(stops: zip(colors, outlook.stops.map(\.location)).map { Gradient.Stop(color: $0, location: $1) })
     }
 
     var body: some View {

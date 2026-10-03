@@ -86,8 +86,13 @@ extension PulseTheme {
             .init(color: Color(hex: "#12161F"), location: 0.32),
             .init(color: Color(hex: "#101518"), location: 1.00),
         ])
-        /// The Daily Outlook page.
-        static let dailyOutlookPage = Gradient(colors: [Color(hex: "#776E61"), Color(hex: "#232D37"), Color(hex: "#111417")])
+        /// The Daily Outlook page, sampled at the left edge of reviews/88: tan at the top, slate by 35% of the
+        /// height and flat near-black from ≈47%, not a tan → slate run down the whole page.
+        static let dailyOutlookPage = Gradient(stops: [
+            .init(color: Color(hex: "#776E61"), location: 0),
+            .init(color: Color(hex: "#232D37"), location: 0.35),
+            .init(color: Color(hex: "#111417"), location: 0.47),
+        ])
         /// The Coach sheet: near black with an indigo glow at the top.
         static let coachSheet = Gradient(colors: [Color(hex: "#1C2438"), Color(hex: "#04080C")])
         static let coachUserBubble = Color(hex: "#343850")
