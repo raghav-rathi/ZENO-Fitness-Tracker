@@ -140,12 +140,14 @@ struct PulsePlanHomeCard: View {
 
     // MARK: No plan (§3.1 item 9 "Empty state")
 
+    /// The title sits a size below the "My Plan" header over the card (WHOOP's caps measure 0.70 of the
+    /// header's on reviews/r113 and completeness-critic/16): 17 pt Semibold, the bottom of the spec's range.
     private var emptyCard: some View {
         PulseLink(.weeklyPlan(editing: false)) {
             HStack(alignment: .center, spacing: 12) {
                 VStack(alignment: .leading, spacing: 8) {
                     Text(String(localized: "Build Your Best Self"))
-                        .pulseText(.cardHeadline)
+                        .pulseText(.subsectionTitle)
                         .foregroundStyle(PulseTheme.textPrimary)
                     Text(String(localized: "Set goals, track progress, and turn small actions into long-term wins."))
                         .pulseText(.body)
