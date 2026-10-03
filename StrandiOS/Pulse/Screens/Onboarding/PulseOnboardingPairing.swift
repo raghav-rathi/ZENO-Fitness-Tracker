@@ -155,9 +155,9 @@ struct PulseOnboardingPutOnStep: View {
         PulseOnboardingStepPage(
             title: String(localized: "Put On Your Strap"),
             subtitle: String(localized: "Wear it snug on your wrist or bicep, with the sensor against your skin."),
-            art: .large,
+            art: .device,
             onBack: onBack,
-            illustration: { PulseStrapIllustration(podWidth: 122) },
+            illustration: { PulseStrapIllustration(podWidth: 122, length: PulseOnboardingMetrics.deviceArtHeight) },
             content: {
                 VStack(alignment: .leading, spacing: 12) {
                     PulseOnboardingCheckLine(text: String(localized: "Snug but comfortable: the sensor needs skin contact to read your heart."))
@@ -178,9 +178,9 @@ struct PulseOnboardingWakeUpStep: View {
         PulseOnboardingStepPage(
             title: String(localized: "Wake Up Your Strap"),
             subtitle: String(localized: "Give it a few minutes on the charger if the battery is low. A strap with no charge can't be found."),
-            art: .large,
+            art: .device,
             onBack: onBack,
-            illustration: { PulseStrapIllustration(charging: true, podWidth: 122) },
+            illustration: { PulseStrapIllustration(charging: true, podWidth: 122, length: PulseOnboardingMetrics.deviceArtHeight) },
             content: {
                 PulseOnboardingCheckLine(text: String(localized: "Keep it within about a metre of your iPhone while it pairs."))
             },
@@ -201,9 +201,9 @@ struct PulseOnboardingPairingModeStep: View {
             title: String(localized: "Check for Pairing Mode"),
             subtitle: subtitle,
             trailing: .text(String(localized: "Skip"), onSkip),
-            art: .large,
+            art: .device,
             onBack: onBack,
-            illustration: { PulseStrapIllustration(led: true, podWidth: 110) },
+            illustration: { PulseStrapIllustration(led: true, podWidth: 110, length: PulseOnboardingMetrics.deviceArtHeight) },
             content: {
                 VStack(alignment: .leading, spacing: 10) {
                     PulseOnboardingFieldLabel(String(localized: "Your strap"))
@@ -455,7 +455,14 @@ private struct PulseOnboardingStrapList<Content: View>: View {
     @ViewBuilder let content: ([(uuid: String, name: String, rssi: Int)]) -> Content
 
     var body: some View {
-        content(ble.discoveredWhoops.sorted { $0.rssi > $1.rssi })
+        content(straps)
+    }
+
+    private var straps: [(uuid: String, name: String, rssi: Int)] {
+        #if DEBUG
+        if let forced = PulseOnboardingStep.debugFoundStraps { return forced }
+        #endif
+        return ble.discoveredWhoops.sorted { $0.rssi > $1.rssi }
     }
 }
 

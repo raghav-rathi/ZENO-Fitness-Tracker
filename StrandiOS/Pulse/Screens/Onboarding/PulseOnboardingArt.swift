@@ -10,29 +10,36 @@ import StrandDesign
 // without its art. Nothing here moves on its own (no ambient animation).
 
 /// A step's illustration: an SF Symbol in a grey top-lit gradient (the clay look) with one small blue
-/// accent symbol, left-aligned in the template's ≈90 pt slot.
+/// accent symbol just off its corner, standing on the bottom of the template's ≈90 pt slot.
 struct PulseOnboardingIllustration: View {
     let symbol: String
     var accent: String?
-    /// Where the accent sits on the symbol.
+    /// Which corner of the symbol the accent sits on.
     var accentAlignment: Alignment = .bottomTrailing
 
+    /// The glyph's height. WHOOP's clay renders stand 80–90 pt tall (15b, 22d); the symbol is drawn
+    /// resizable so its frame is its ink, and the gap to the title is exactly the template's (a symbol
+    /// set at a font size carries a descent that differs from symbol to symbol).
+    static let glyphHeight: CGFloat = 80
+
     var body: some View {
-        ZStack(alignment: accentAlignment) {
-            Image(systemName: symbol)
-                .font(.system(size: 66, weight: .regular))
-                .foregroundStyle(LinearGradient(colors: [PulseOnboardingColors.illustrationTop,
-                                                         PulseOnboardingColors.illustrationBottom],
-                                                startPoint: .top, endPoint: .bottom))
-                .padding(10)
-            if let accent {
-                Image(systemName: accent)
-                    .font(.system(size: 22, weight: .semibold))
-                    .foregroundStyle(PulseOnboardingColors.accentBlue)
+        Image(systemName: symbol)
+            .resizable()
+            .scaledToFit()
+            .frame(height: Self.glyphHeight)
+            .foregroundStyle(LinearGradient(colors: [PulseOnboardingColors.illustrationTop,
+                                                     PulseOnboardingColors.illustrationBottom],
+                                            startPoint: .top, endPoint: .bottom))
+            .overlay(alignment: accentAlignment) {
+                if let accent {
+                    Image(systemName: accent)
+                        .font(.system(size: 22, weight: .semibold))
+                        .foregroundStyle(PulseOnboardingColors.accentBlue)
+                        .offset(x: 12, y: accentAlignment == .topTrailing ? -8 : 4)
+                }
             }
-        }
-        .frame(height: PulseOnboardingMetrics.illustrationHeight, alignment: .bottomLeading)
-        .accessibilityHidden(true)
+            .frame(height: PulseOnboardingMetrics.illustrationHeight, alignment: .bottomLeading)
+            .accessibilityHidden(true)
     }
 }
 
@@ -46,16 +53,19 @@ struct PulseStrapIllustration: View {
     var charging = false
     /// The pod's width; everything else scales from it.
     var podWidth: CGFloat = 120
+    /// The band's length, top to bottom (2.3 pod widths unless a slot sets it).
+    var length: CGFloat?
 
     var body: some View {
         let w = podWidth
+        let h = length ?? w * 2.3
         ZStack {
             // The band, longer than the pod, fading out at both ends into the page.
             RoundedRectangle(cornerRadius: w * 0.16, style: .continuous)
-                .fill(LinearGradient(colors: [Color(hex: "#2A2F35"), Color(hex: "#1B1F23")],
+                .fill(LinearGradient(colors: PulseOnboardingColors.strapBand,
                                      startPoint: .leading, endPoint: .trailing))
                 .overlay(knit(width: w * 0.78))
-                .frame(width: w * 0.78, height: w * 2.3)
+                .frame(width: w * 0.78, height: h)
                 .mask(LinearGradient(stops: [.init(color: .clear, location: 0),
                                              .init(color: .black, location: 0.22),
                                              .init(color: .black, location: 0.78),
@@ -63,7 +73,7 @@ struct PulseStrapIllustration: View {
                                      startPoint: .top, endPoint: .bottom))
             // The pod.
             RoundedRectangle(cornerRadius: w * 0.2, style: .continuous)
-                .fill(LinearGradient(colors: [Color(hex: "#4A5057"), Color(hex: "#25292E"), Color(hex: "#1A1D21")],
+                .fill(LinearGradient(colors: PulseOnboardingColors.strapPod,
                                      startPoint: .top, endPoint: .bottom))
                 .overlay(
                     RoundedRectangle(cornerRadius: w * 0.2, style: .continuous)
@@ -82,7 +92,7 @@ struct PulseStrapIllustration: View {
                 charger(w)
             }
         }
-        .frame(width: w * 1.5, height: w * 2.3)
+        .frame(width: w * 1.5, height: h)
         .accessibilityHidden(true)
     }
 
@@ -110,7 +120,7 @@ struct PulseStrapIllustration: View {
                 .strokeBorder(PulseOnboardingColors.accentBlue, lineWidth: 2)
                 .frame(width: w * 0.42, height: w * 0.42)
             Circle()
-                .fill(Color(hex: "#7CC4FF"))
+                .fill(PulseOnboardingColors.strapLight)
                 .frame(width: w * 0.07, height: w * 0.07)
         }
         .offset(x: w * 0.5, y: -w * 0.06)
@@ -120,7 +130,7 @@ struct PulseStrapIllustration: View {
     private func charger(_ w: CGFloat) -> some View {
         ZStack {
             RoundedRectangle(cornerRadius: w * 0.12, style: .continuous)
-                .fill(LinearGradient(colors: [Color(hex: "#5A6068"), Color(hex: "#30343A")],
+                .fill(LinearGradient(colors: PulseOnboardingColors.charger,
                                      startPoint: .top, endPoint: .bottom))
             Image(systemName: "bolt.fill")
                 .font(.system(size: w * 0.16, weight: .bold))
@@ -198,7 +208,7 @@ struct PulseConnectionArt: View {
         switch state {
         case .connecting:
             Circle()
-                .fill(Color(hex: "#151A1F"))
+                .fill(PulseOnboardingColors.connectingDisc)
                 .overlay(Circle().strokeBorder(tint, lineWidth: 2.5))
                 .overlay(
                     Image(systemName: "antenna.radiowaves.left.and.right")
@@ -225,7 +235,7 @@ struct PulseConnectionArt: View {
                     .frame(width: 92, height: 92)
                     .blur(radius: 12)
                 Circle()
-                    .fill(Color(hex: "#1A1D21"))
+                    .fill(PulseOnboardingColors.failedDisc)
                     .overlay(Circle().strokeBorder(tint, lineWidth: 4))
                     .frame(width: 68, height: 68)
                 Image(systemName: "xmark")
@@ -238,7 +248,7 @@ struct PulseConnectionArt: View {
     /// A black phone with a thin rim and ZENO's monogram, cut by the screen's left edge.
     private var phone: some View {
         RoundedRectangle(cornerRadius: 26, style: .continuous)
-            .fill(LinearGradient(colors: [Color(hex: "#0A0B0D"), Color(hex: "#15171A")],
+            .fill(LinearGradient(colors: PulseOnboardingColors.phone,
                                  startPoint: .top, endPoint: .bottom))
             .overlay(
                 RoundedRectangle(cornerRadius: 26, style: .continuous)
@@ -263,20 +273,23 @@ struct PulseCalibrationWheel: View {
     /// The first-calibration span (nights 1…n) that is highlighted.
     let highlightThrough: Int
 
+    /// The wheel's outer diameter.
+    static let size: CGFloat = 232
+
     var body: some View {
-        let size: CGFloat = 232
+        let size = Self.size
         let track: CGFloat = 30
         let radius = (size - track) / 2
         ZStack {
             Circle()
-                .stroke(Color(hex: "#1E2328"), lineWidth: track)
+                .stroke(PulseOnboardingColors.wheelTrack, lineWidth: track)
                 .frame(width: size - track, height: size - track)
             Circle()
                 .strokeBorder(Color.white.opacity(0.05), lineWidth: 1)
                 .frame(width: size, height: size)
             Circle()
                 .trim(from: 0, to: fraction(highlightThrough))
-                .stroke(LinearGradient(colors: [Color(hex: "#2F86E0"), Color(hex: "#4FC3F2")],
+                .stroke(LinearGradient(colors: PulseOnboardingColors.wheelSpan,
                                        startPoint: .topLeading, endPoint: .bottomTrailing),
                         style: StrokeStyle(lineWidth: track - 6, lineCap: .round))
                 .rotationEffect(.degrees(-90))
@@ -292,6 +305,9 @@ struct PulseCalibrationWheel: View {
                     .foregroundStyle(PulseTheme.textSecondary)
                     .multilineTextAlignment(.center)
                     .frame(maxWidth: 130)
+                    // The wheel cannot grow, so its caption stops growing before it covers the strap
+                    // (VoiceOver reads the wheel as a whole).
+                    .dynamicTypeSize(...DynamicTypeSize.xxLarge)
             }
         }
         .frame(width: size, height: size)
@@ -311,11 +327,11 @@ struct PulseCalibrationWheel: View {
         let lit = milestone.night <= highlightThrough
         return ZStack {
             Circle()
-                .fill(lit ? Color.white : Color(hex: "#2C3238"))
+                .fill(lit ? Color.white : PulseOnboardingColors.milestoneOff)
                 .frame(width: 26, height: 26)
             Image(systemName: milestone.symbol)
                 .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(lit ? Color(hex: "#1C5E9E") : PulseTheme.textSecondary)
+                .foregroundStyle(lit ? PulseOnboardingColors.milestoneGlyph : PulseTheme.textSecondary)
         }
         .offset(x: cos(angle.radians) * radius, y: sin(angle.radians) * radius)
     }

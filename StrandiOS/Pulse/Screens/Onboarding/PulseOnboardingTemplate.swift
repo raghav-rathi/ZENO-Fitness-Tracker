@@ -10,7 +10,8 @@ import StrandDesign
 //     safe-area top, as Pulse's own bar) and an optional "SKIP" at the top-right;
 //   - content anchored to the BOTTOM: a ≈90 pt left-aligned illustration, then the title (25 pt
 //     Semibold), the subtitle (16 pt, #BEC0C2, 14 pt below) and the step's fields, all stacking upward
-//     from the CTA row with ≈39 pt to spare; a long step scrolls;
+//     from the CTA row with ≈39 pt to spare. A step too long for the screen drops its illustration
+//     first, and scrolls only if it still does not fit (the largest text sizes);
 //   - the 78 pt ring CTA at the bottom-right, its label to the left, its arc showing progress through
 //     the flow.
 // Pairing and status screens use `PulseOnboardingStatusPage` instead: a centred caps title and
@@ -21,6 +22,9 @@ enum PulseOnboardingMetrics {
     /// The ring CTA: 78 pt outside, a 36 pt centreline radius and a 5.6 pt stroke.
     static let ringDiameter: CGFloat = 78
     static let ringStroke: CGFloat = 5.6
+    /// Where the arc's gradient stops sit around the ring (`PulseTheme.Onboarding.ringArc`'s colours,
+    /// sampled on 15b and 22d: the light blue fades to the darker one within the first half turn).
+    static let ringArcLocations: [CGFloat] = [0, 0.25, 0.56]
     /// The ring's outer edge sits 29 pt from the screen's right edge.
     static let ringTrailing: CGFloat = 29
     /// The ring's centre sits ≈86 pt above the screen's bottom edge: 52 pt above a 34 pt home-indicator
@@ -32,9 +36,21 @@ enum PulseOnboardingMetrics {
     static let labelGap: CGFloat = 15
     /// From the last content to the top of the CTA row (Welcome 39 pt, Privacy 43 pt).
     static let contentToCTA: CGFloat = 39
-    /// From the illustration's bottom to the title's caps (40–45 pt).
+    /// The scroll content's top inset under the top bar.
+    static let contentTop: CGFloat = 16
+    /// From the illustration's lowest ink to the title's caps (15b: 40.3 pt; 22d: 45.3 pt).
     static let illustrationToTitle: CGFloat = 40
+    /// From the 25 pt title's text frame to its caps: the part of `illustrationToTitle` the title's own
+    /// line box already supplies.
+    static let titleCapInset: CGFloat = 6
     static let illustrationHeight: CGFloat = 90
+    /// The device steps' strap drawing (the 290 pt WHOOP renders push their fields under the CTA).
+    static let deviceArtHeight: CGFloat = 200
+    /// From a large drawing's bottom to the title's text frame.
+    static let largeArtToTitle: CGFloat = 24
+    /// The page gradient's stops (`PulseTheme.Onboarding.page`'s four colours): sampled at x = 12 pt on
+    /// 15b, 20d, 22b and 22d, the page is already #171C20 by 30% of the height and #14171C by 45%.
+    static let pageStopLocations: [CGFloat] = [0, 0.2, 0.45, 1.0]
     /// From the title to the subtitle.
     static let titleToSubtitle: CGFloat = 14
     /// From the subtitle to the step's first field or row.
@@ -49,9 +65,14 @@ enum PulseOnboardingMetrics {
     static let checkbox: CGFloat = 30
     static let checkboxRadius: CGFloat = 8.5
     static let checkboxGap: CGFloat = 18
-    /// Pills on the pairing and status screens: 50 pt, radius 19 (2026).
+    /// Pills on the pairing and status screens: 50 pt, radius 19 (2026), 23 pt from each screen edge
+    /// (13d: RETRY spans x 23.0–378.7 on a 402 pt screen).
     static let pillHeight: CGFloat = 50
     static let pillRadius: CGFloat = 19
+    static let pillSideMargin: CGFloat = 23
+    /// A status page's centred title when it leads the page: 32 pt under the top bar (09b: the HELP
+    /// pill's centre to the title's caps is ≈59.5 pt).
+    static let statusTitleTop: CGFloat = 32
     /// Option rows (country, gender, strap): 52 pt cards.
     static let optionHeight: CGFloat = 52
     /// The top bar's height under the safe-area top (44 pt row + 1.5 pt).
@@ -81,6 +102,33 @@ enum PulseOnboardingColors {
     static let uncheckedText = Color(hex: "#C0C1C4")
     /// An option row's fill (country and gender rows).
     static let optionFill = Color(hex: "#2D3236")
+    /// The filled commit circle ("START PAIRING") and the finish circle's dark ✓ (08c, 29b).
+    static let commitBlue = Color(hex: "#4E9EEA")
+    static let finishGlyph = Color(hex: "#07140F")
+    /// Apple Health's heart on its white tile (Connect To Apple Health).
+    static let healthHeart = Color(hex: "#FF3B5C")
+
+    // ZENO's own drawings (PulseOnboardingArt), never WHOOP's renders.
+
+    /// The strap's knit band, lit from the left.
+    static let strapBand = [Color(hex: "#2A2F35"), Color(hex: "#1B1F23")]
+    /// The strap's pod, lit from the top.
+    static let strapPod = [Color(hex: "#4A5057"), Color(hex: "#25292E"), Color(hex: "#1A1D21")]
+    /// The pod's status light.
+    static let strapLight = Color(hex: "#7CC4FF")
+    /// The charger seated on the pod.
+    static let charger = [Color(hex: "#5A6068"), Color(hex: "#30343A")]
+    /// The phone at the left edge of the connection drawing.
+    static let phone = [Color(hex: "#0A0B0D"), Color(hex: "#15171A")]
+    /// The connection drawing's status disc while connecting, and behind the failure ✕.
+    static let connectingDisc = Color(hex: "#151A1F")
+    static let failedDisc = Color(hex: "#1A1D21")
+    /// The calibration wheel: its track, the first-calibration span, an unlit milestone's disc and a lit
+    /// milestone's glyph.
+    static let wheelTrack = Color(hex: "#1E2328")
+    static let wheelSpan = [Color(hex: "#2F86E0"), Color(hex: "#4FC3F2")]
+    static let milestoneOff = Color(hex: "#2C3238")
+    static let milestoneGlyph = Color(hex: "#1C5E9E")
 }
 
 /// Onboarding's own type sizes (gap-3 §2): the 16 pt Regular subtitle, the 12 pt Bold field label
@@ -167,10 +215,16 @@ extension View {
 
 // MARK: - Page
 
-/// The onboarding page background: #262D33 → #1F2428 → #14171C → #111518, edge to edge.
+/// The onboarding page background: #262D33 → #1F2428 → #14171C → #111518, edge to edge, with the stops
+/// where the captures put them (0 / 0.20 / 0.45 / 1; evenly spaced, the middle of the page read 5–8
+/// levels too light).
 struct PulseOnboardingBackground: View {
+    static let gradient = Gradient(stops: zip(PulseTheme.Onboarding.page.stops.map(\.color),
+                                              PulseOnboardingMetrics.pageStopLocations)
+        .map { Gradient.Stop(color: $0, location: $1) })
+
     var body: some View {
-        LinearGradient(gradient: PulseTheme.Onboarding.page, startPoint: .top, endPoint: .bottom)
+        LinearGradient(gradient: Self.gradient, startPoint: .top, endPoint: .bottom)
             .ignoresSafeArea()
             .accessibilityHidden(true)
     }
@@ -254,11 +308,25 @@ struct PulseOnboardingTopBar: View {
     }
 }
 
-/// A template step: top bar, bottom-anchored content (illustration, title, subtitle, fields) that
-/// scrolls when it is long, and the CTA row pinned at the bottom (it rides above the keyboard).
+/// A phrase in a step's subtitle that opens something (the Privacy step's "Terms of Use"), drawn as
+/// WHOOP draws its "Privacy Policy" and "Terms of Use" links on 22d: white and underlined, inside the
+/// sentence. VoiceOver gets it as a named action on the subtitle.
+struct PulseOnboardingLink {
+    let phrase: String
+    let action: () -> Void
+
+    /// The link's address inside the subtitle; never opened, the step handles it.
+    static let url = URL(string: "zeno-onboarding://subtitle-link")!
+}
+
+/// A template step: top bar, bottom-anchored content (illustration, title, subtitle, fields), and the CTA
+/// row pinned at the bottom (it rides above the keyboard). A step too tall for the screen shrinks, then
+/// drops, its illustration rather than running its fields under the CTA, and scrolls only if it still
+/// does not fit.
 struct PulseOnboardingStepPage<Illustration: View, Content: View, CTA: View>: View {
     let title: String
     var subtitle: String?
+    var subtitleLink: PulseOnboardingLink?
     var showsBack = true
     var trailing: PulseOnboardingTrailing = .none
     /// The illustration slot: ≈90 pt and left-aligned on the account steps, a large centred drawing on
@@ -269,8 +337,13 @@ struct PulseOnboardingStepPage<Illustration: View, Content: View, CTA: View>: Vi
     @ViewBuilder let content: () -> Content
     @ViewBuilder let cta: () -> CTA
 
+    /// The title, subtitle and fields' height, measured without the illustration, so whether the
+    /// illustration fits never depends on itself.
+    @State private var textHeight: CGFloat = 0
+
     init(title: String,
          subtitle: String? = nil,
+         subtitleLink: PulseOnboardingLink? = nil,
          showsBack: Bool = true,
          trailing: PulseOnboardingTrailing = .none,
          art: PulseOnboardingArtSlot = .small,
@@ -280,6 +353,7 @@ struct PulseOnboardingStepPage<Illustration: View, Content: View, CTA: View>: Vi
          @ViewBuilder cta: @escaping () -> CTA) {
         self.title = title
         self.subtitle = subtitle
+        self.subtitleLink = subtitleLink
         self.showsBack = showsBack
         self.trailing = trailing
         self.art = art
@@ -293,33 +367,31 @@ struct PulseOnboardingStepPage<Illustration: View, Content: View, CTA: View>: Vi
         ZStack {
             PulseOnboardingBackground()
             GeometryReader { outer in
+                let room = outer.size.height - PulseOnboardingMetrics.contentTop - PulseOnboardingMetrics.contentToCTA
                 ScrollView(.vertical, showsIndicators: false) {
                     VStack(alignment: .leading, spacing: 0) {
                         Spacer(minLength: 0)
-                        illustration()
-                            .frame(maxWidth: art == .large ? .infinity : nil,
-                                   minHeight: art.height, maxHeight: art.height,
-                                   alignment: art == .large ? .center : .bottomLeading)
-                            .padding(.bottom, art == .large ? 24 : PulseOnboardingMetrics.illustrationToTitle)
-                            .accessibilityHidden(true)
-                        Text(title)
-                            .pulseText(.onboardingTitle)
-                            .foregroundStyle(PulseTheme.textPrimary)
-                            .fixedSize(horizontal: false, vertical: true)
-                            .accessibilityAddTraits(.isHeader)
-                        if let subtitle {
-                            Text(subtitle)
-                                .pulseOnboardingText(.subtitle)
-                                .foregroundStyle(PulseTheme.Onboarding.subtitle)
-                                .lineSpacing(3)
-                                .fixedSize(horizontal: false, vertical: true)
-                                .padding(.top, PulseOnboardingMetrics.titleToSubtitle - 6)
+                        if let shown = art.fittedHeight(textHeight: textHeight, room: room) {
+                            illustration()
+                                .frame(maxWidth: art.isLarge ? .infinity : nil,
+                                       minHeight: art.height, maxHeight: art.height,
+                                       alignment: art.isLarge ? .center : .bottomLeading)
+                                .scaleEffect(shown / art.height, anchor: art.isLarge ? .bottom : .bottomLeading)
+                                .frame(height: shown, alignment: art.isLarge ? .bottom : .bottomLeading)
+                                .padding(.bottom, art.gapToTitle)
+                                .accessibilityHidden(true)
                         }
-                        content()
-                            .padding(.top, PulseOnboardingMetrics.subtitleToContent)
+                        textAndFields
+                            // Only a full-width measurement counts: a presentation lays the page out at
+                            // zero size first, where the text wraps to a column a few words wide.
+                            .onGeometryChange(for: CGSize.self) { $0.size } action: { size in
+                                if size.width >= outer.size.width - 2 * PulseTheme.Layout.pageMargin - 1 {
+                                    textHeight = size.height
+                                }
+                            }
                     }
                     .padding(.horizontal, PulseTheme.Layout.pageMargin)
-                    .padding(.top, 16)
+                    .padding(.top, PulseOnboardingMetrics.contentTop)
                     .padding(.bottom, PulseOnboardingMetrics.contentToCTA)
                     .frame(maxWidth: .infinity, minHeight: outer.size.height, alignment: .bottomLeading)
                 }
@@ -340,11 +412,55 @@ struct PulseOnboardingStepPage<Illustration: View, Content: View, CTA: View>: Vi
             }
         }
     }
+
+    private var textAndFields: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text(title)
+                .pulseText(.onboardingTitle)
+                .foregroundStyle(PulseTheme.textPrimary)
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityAddTraits(.isHeader)
+            if let subtitle {
+                subtitleText(subtitle)
+                    .pulseOnboardingText(.subtitle)
+                    .foregroundStyle(PulseTheme.Onboarding.subtitle)
+                    .tint(PulseTheme.textPrimary)
+                    .lineSpacing(3)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.top, PulseOnboardingMetrics.titleToSubtitle - 6)
+                    .environment(\.openURL, OpenURLAction { url in
+                        guard url == PulseOnboardingLink.url, let subtitleLink else { return .systemAction }
+                        subtitleLink.action()
+                        return .handled
+                    })
+                    .accessibilityActions {
+                        if let subtitleLink {
+                            Button(subtitleLink.phrase, action: subtitleLink.action)
+                        }
+                    }
+            }
+            content()
+                .padding(.top, PulseOnboardingMetrics.subtitleToContent)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// The subtitle, its link phrase (if any) white and underlined.
+    private func subtitleText(_ subtitle: String) -> Text {
+        var text = AttributedString(subtitle)
+        if let subtitleLink, let range = text.range(of: subtitleLink.phrase) {
+            text[range].link = PulseOnboardingLink.url
+            text[range].underlineStyle = .single
+            text[range].foregroundColor = PulseTheme.textPrimary
+        }
+        return Text(text)
+    }
 }
 
 /// Behind the pinned top bar and CTA row, so content scrolling under them fades out instead of running
-/// into the arrow: the page's own gradient, opaque to each edge and fading over 16–24 pt (Pulse's
-/// `PulseTopBackdrop` rule). Over a page at rest it is invisible, being the page itself.
+/// into the arrow: the page's own gradient, opaque from each edge to the bar's bottom and the ring's top,
+/// fading over the 16–24 pt beyond (Pulse's `PulseTopBackdrop` rule). The fades sit inside the 39 pt the
+/// template keeps above the CTA, so over a page at rest they are invisible, being the page itself.
 struct PulseOnboardingEdgeFades: View {
     var body: some View {
         GeometryReader { geo in
@@ -357,7 +473,7 @@ struct PulseOnboardingEdgeFades: View {
                         Spacer(minLength: 0)
                         LinearGradient(colors: [Color.black.opacity(0), Color.black], startPoint: .top, endPoint: .bottom)
                             .frame(height: 24)
-                        Rectangle().frame(height: geo.safeAreaInsets.bottom + PulseOnboardingMetrics.ctaHeight - 12)
+                        Rectangle().frame(height: geo.safeAreaInsets.bottom + PulseOnboardingMetrics.ctaHeight)
                     }
                     .ignoresSafeArea()
                 }
@@ -381,18 +497,57 @@ extension PulseOnboardingStepPage where Content == EmptyView {
 enum PulseOnboardingArtSlot: Equatable {
     /// The ≈90 pt, left-aligned slot of the account steps.
     case small
-    /// A large centred drawing (the device steps).
-    case large
+    /// A large centred drawing of this height (the device steps, the calibration wheel).
+    case large(height: CGFloat)
+
+    /// The device steps' strap drawing.
+    static let device = PulseOnboardingArtSlot.large(height: PulseOnboardingMetrics.deviceArtHeight)
 
     var height: CGFloat {
         switch self {
         case .small: return PulseOnboardingMetrics.illustrationHeight
-        case .large: return 290
+        case .large(let height): return height
         }
+    }
+
+    var isLarge: Bool { self != .small }
+
+    /// From the drawing's bottom edge to the title's text frame. The small slot's glyphs sit on the slot's
+    /// bottom edge, so the title's own cap inset makes up the rest of the 40 pt to its caps.
+    var gapToTitle: CGFloat {
+        switch self {
+        case .small: return PulseOnboardingMetrics.illustrationToTitle - PulseOnboardingMetrics.titleCapInset
+        case .large: return PulseOnboardingMetrics.largeArtToTitle
+        }
+    }
+
+    /// The illustration's height on screen when the step's text and fields take `textHeight` of the
+    /// `room` above the CTA: the slot's own, smaller when the step would otherwise run under the CTA (down
+    /// to 60% of it), or nil to drop the illustration, which is decoration (a 6.1–6.3" phone cannot hold
+    /// the four attestations under a full-size padlock; a Pro Max can).
+    func fittedHeight(textHeight: CGFloat, room: CGFloat) -> CGFloat? {
+        guard textHeight > 0 else { return height }
+        let available = room - textHeight - gapToTitle
+        if available >= height { return height }
+        return available >= height * 0.6 ? available : nil
     }
 }
 
 // MARK: - The ring CTA
+
+private struct PulseOnboardingRingStartKey: EnvironmentKey {
+    static let defaultValue: Double? = nil
+}
+
+extension EnvironmentValues {
+    /// Where a step's ring arc starts as the step appears: the progress of the step being left, so the arc
+    /// moves from there to this step's value instead of sweeping up from zero on every step. Nil (the
+    /// first step shown) draws the step's value at once.
+    var pulseOnboardingRingStart: Double? {
+        get { self[PulseOnboardingRingStartKey.self] }
+        set { self[PulseOnboardingRingStartKey.self] = newValue }
+    }
+}
 
 /// The bottom-right control that advances a step: an UPPERCASE label, then a 78 pt ring whose arc shows
 /// progress through the flow, round-capped, in the light-blue angular gradient, around a white "→".
@@ -404,9 +559,35 @@ struct PulseOnboardingRingButton: View {
     var enabled = true
     let action: () -> Void
 
+    @Environment(\.pulseOnboardingRingStart) private var start
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    /// The arc grows from the previous step's value when a step appears (0.3 s, spec §2.8).
-    @State private var shown: Double = 0
+
+    var body: some View {
+        PulseOnboardingRingButtonBody(title: title, progress: progress,
+                                      start: reduceMotion ? progress : (start ?? progress),
+                                      enabled: enabled, action: action)
+    }
+}
+
+/// The ring button itself; `start` seeds the arc once, when the step appears.
+private struct PulseOnboardingRingButtonBody: View {
+    let title: String
+    let progress: Double
+    let enabled: Bool
+    let action: () -> Void
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// The arc on screen: the previous step's value as the step appears, then this step's (0.3 s, spec
+    /// §2.8), and only ever animated when the value changes.
+    @State private var shown: Double
+
+    init(title: String, progress: Double, start: Double, enabled: Bool, action: @escaping () -> Void) {
+        self.title = title
+        self.progress = progress
+        self.enabled = enabled
+        self.action = action
+        _shown = State(initialValue: start)
+    }
 
     var body: some View {
         Button(action: action) {
@@ -426,14 +607,15 @@ struct PulseOnboardingRingButton: View {
         .frame(maxWidth: .infinity, alignment: .trailing)
         .padding(.horizontal, PulseTheme.Layout.pageMargin)
         .padding(.bottom, PulseOnboardingMetrics.ringBottom)
-        .onAppear { setProgress(progress, animated: true) }
-        .onChange(of: progress) { _, new in setProgress(new, animated: true) }
+        .onAppear { move(to: progress) }
+        .onChange(of: progress) { _, new in move(to: new) }
         .accessibilityLabel(title)
         .accessibilityValue(String(localized: "\(Int((progress * 100).rounded())) percent through setup"))
     }
 
-    private func setProgress(_ value: Double, animated: Bool) {
-        if reduceMotion || !animated {
+    private func move(to value: Double) {
+        guard shown != value else { return }
+        if reduceMotion {
             shown = value
         } else {
             withAnimation(.easeOut(duration: 0.3)) { shown = value }
@@ -446,6 +628,11 @@ struct PulseOnboardingRing: View {
     let progress: Double
     var enabled = true
 
+    /// `PulseTheme.Onboarding.ringArc`'s colours at the sampled stops.
+    private static let arc = Gradient(stops: zip(PulseTheme.Onboarding.ringArc.stops.map(\.color),
+                                                 PulseOnboardingMetrics.ringArcLocations)
+        .map { Gradient.Stop(color: $0, location: $1) })
+
     var body: some View {
         let d = PulseOnboardingMetrics.ringDiameter
         let stroke = PulseOnboardingMetrics.ringStroke
@@ -454,12 +641,8 @@ struct PulseOnboardingRing: View {
                 .stroke(PulseTheme.Onboarding.ringTrack, lineWidth: stroke)
             Circle()
                 .trim(from: 0, to: max(0, min(1, progress)))
-                .stroke(AngularGradient(gradient: Gradient(stops: [
-                            .init(color: Color(hex: "#65BAFD"), location: 0.0),
-                            .init(color: Color(hex: "#58A9EB"), location: 0.25),
-                            .init(color: Color(hex: "#4697D9"), location: 0.56),
-                            .init(color: Color(hex: "#4697D9"), location: 1.0),
-                        ]), center: .center, startAngle: .degrees(0), endAngle: .degrees(360)),
+                .stroke(AngularGradient(gradient: Self.arc, center: .center, startAngle: .degrees(0),
+                                        endAngle: .degrees(360)),
                         style: StrokeStyle(lineWidth: stroke, lineCap: .round))
                 .rotationEffect(.degrees(-90))
                 .opacity(progress > 0.001 ? 1 : 0)
@@ -491,10 +674,10 @@ struct PulseOnboardingFilledButton: View {
                     .lineLimit(1)
                     .minimumScaleFactor(0.8)
                 ZStack {
-                    Circle().fill(kind == .finish ? PulseTheme.Onboarding.commitGreen : Color(hex: "#4E9EEA"))
+                    Circle().fill(kind == .finish ? PulseTheme.Onboarding.commitGreen : PulseOnboardingColors.commitBlue)
                     Image(systemName: kind == .finish ? "checkmark" : "arrow.right")
                         .font(.system(size: 24, weight: kind == .finish ? .semibold : .regular))
-                        .foregroundStyle(kind == .finish ? Color(hex: "#07140F") : Color.white)
+                        .foregroundStyle(kind == .finish ? PulseOnboardingColors.finishGlyph : Color.white)
                 }
                 .frame(width: PulseOnboardingMetrics.filledDiameter, height: PulseOnboardingMetrics.filledDiameter)
                 .frame(width: PulseOnboardingMetrics.ringDiameter, height: PulseOnboardingMetrics.ringDiameter)
@@ -545,7 +728,8 @@ struct PulseOnboardingPillStyle: ButtonStyle {
             shape.fill(PulseOnboardingColors.secondaryFill)
                 .overlay(shape.strokeBorder(PulseOnboardingColors.secondaryBorder, lineWidth: 1))
         case .outlineWhite:
-            shape.strokeBorder(Color.white, lineWidth: 1.5)
+            // A full capsule, as 09b draws "DON'T SEE YOUR DEVICE?" (the filled 2026 pills keep radius 19).
+            Capsule(style: .continuous).strokeBorder(Color.white, lineWidth: 1.5)
         }
     }
 }
@@ -568,7 +752,7 @@ struct PulseOnboardingStatusPage<Art: View, Middle: View, Buttons: View>: View {
     var body: some View {
         VStack(spacing: 0) {
             if titleFirst {
-                titleBlock.padding(.top, 8)
+                titleBlock.padding(.top, PulseOnboardingMetrics.statusTitleTop)
                 art()
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 middle()
@@ -583,7 +767,7 @@ struct PulseOnboardingStatusPage<Art: View, Middle: View, Buttons: View>: View {
             // it does on every other status screen.
             VStack(spacing: 12) { buttons() }
                 .frame(minHeight: 112, alignment: .bottom)
-                .padding(.horizontal, PulseTheme.Layout.pageMargin + 4)
+                .padding(.horizontal, PulseOnboardingMetrics.pillSideMargin)
                 .padding(.bottom, 12)
         }
         .safeAreaInset(edge: .top, spacing: 0) {

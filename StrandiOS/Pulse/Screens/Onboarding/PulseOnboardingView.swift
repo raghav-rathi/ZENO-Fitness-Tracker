@@ -52,6 +52,9 @@ struct PulseOnboardingView: View {
     @State private var includesSetup: Bool
     @State private var step: PulseOnboardingStep
     @State private var forward = true
+    /// The progress of the step being left, where the next step's ring arc starts (nil on the first step
+    /// shown, which draws its value at once).
+    @State private var ringStart: Double?
     /// Landing's choice: pair a strap now, or continue without one.
     @State private var pairsStrap = true
     @State private var family: WhoopModel = .persisted
@@ -117,6 +120,7 @@ struct PulseOnboardingView: View {
         ZStack {
             PulseOnboardingBackground()
             stepView
+                .environment(\.pulseOnboardingRingStart, ringStart)
                 .id(step)
                 .transition(transition)
         }
@@ -192,6 +196,10 @@ struct PulseOnboardingView: View {
 
     private func go(to next: PulseOnboardingStep, forward isForward: Bool = true) {
         forward = isForward
+        // Within one part of the flow the arc moves on from the step being left; into another part (the
+        // device tutorial counts on its own) it simply shows its value.
+        let sameRing = PulseOnboardingStep.deviceSteps.contains(step) == PulseOnboardingStep.deviceSteps.contains(next)
+        ringStart = sameRing ? progress(step) : nil
         withAnimation(reduceMotion ? PulseMotion.crossFade : .easeInOut(duration: 0.35)) { step = next }
     }
 
@@ -285,6 +293,17 @@ extension PulseOnboardingStep {
         let args = CommandLine.arguments
         guard let i = args.firstIndex(of: "--pulse-onboarding-step"), i + 1 < args.count else { return nil }
         return PulseOnboardingStep(rawValue: args[i + 1])
+    }
+
+    /// `--pulse-pairing found`: two straps in the list, so SELECT YOUR DEVICE can be captured without
+    /// straps nearby (picking one connects to nothing).
+    static var debugFoundStraps: [(uuid: String, name: String, rssi: Int)]? {
+        let args = CommandLine.arguments
+        guard let i = args.firstIndex(of: "--pulse-pairing"), i + 1 < args.count, args[i + 1] == "found" else {
+            return nil
+        }
+        return [(uuid: "00000000-0000-4000-8000-0000000000A1", name: "WHOOP 4C0123456", rssi: -52),
+                (uuid: "00000000-0000-4000-8000-0000000000A2", name: "WHOOP 4A0987654", rssi: -74)]
     }
 
     /// `--pulse-pairing connecting|connected|failed|failed-hint`: put the pairing screen in that state.

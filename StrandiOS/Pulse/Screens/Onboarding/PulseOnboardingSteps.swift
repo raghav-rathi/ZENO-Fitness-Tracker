@@ -138,7 +138,9 @@ struct PulseOnboardingPrivacyStep: View {
             onBack: onBack,
             illustration: { PulsePadlockIllustration() },
             content: {
-                VStack(alignment: .leading, spacing: 20) {
+                // 14 pt between the long legal statements, so the four of them and the padlock fit a 6.3"
+                // phone above the CTA (WHOOP's four are one or two lines each).
+                VStack(alignment: .leading, spacing: 14) {
                     ForEach(Array(Terms.attestations.enumerated()), id: \.offset) { index, line in
                         attestationRow(index: index, text: line)
                     }
@@ -176,23 +178,28 @@ struct PulseOnboardingPrivacyStep: View {
     }
 }
 
-/// The padlock with a blue keyhole (the Privacy step's illustration, drawn from SF Symbols).
+/// The padlock with a blue keyhole (the Privacy step's illustration, drawn from SF Symbols): 88 pt tall,
+/// as 22d's padlock, sitting on the bottom of the illustration slot.
 struct PulsePadlockIllustration: View {
+    private static let height: CGFloat = 88
+
     var body: some View {
-        ZStack {
-            Image(systemName: "lock.fill")
-                .font(.system(size: 74, weight: .regular))
-                .foregroundStyle(LinearGradient(colors: [PulseOnboardingColors.illustrationTop,
-                                                         PulseOnboardingColors.illustrationBottom],
-                                                startPoint: .top, endPoint: .bottom))
-            Capsule(style: .continuous)
-                .fill(PulseOnboardingColors.accentBlue)
-                .frame(width: 5.5, height: 17)
-                .offset(y: 15)
-        }
-        .padding(10)
-        .frame(height: PulseOnboardingMetrics.illustrationHeight, alignment: .bottomLeading)
-        .accessibilityHidden(true)
+        Image(systemName: "lock.fill")
+            .resizable()
+            .scaledToFit()
+            .frame(height: Self.height)
+            .foregroundStyle(LinearGradient(colors: [PulseOnboardingColors.illustrationTop,
+                                                     PulseOnboardingColors.illustrationBottom],
+                                            startPoint: .top, endPoint: .bottom))
+            // The keyhole, centred in the lock's body (its lower ≈60%).
+            .overlay {
+                Capsule(style: .continuous)
+                    .fill(PulseOnboardingColors.accentBlue)
+                    .frame(width: Self.height * 0.075, height: Self.height * 0.23)
+                    .offset(y: Self.height * 0.2)
+            }
+            .frame(height: PulseOnboardingMetrics.illustrationHeight, alignment: .bottomLeading)
+            .accessibilityHidden(true)
     }
 }
 
@@ -451,7 +458,7 @@ struct PulseHealthLinkIllustration: View {
                 .frame(width: 58, height: 58)
                 .overlay(Image(systemName: "heart.fill")
                     .font(.system(size: 26, weight: .semibold))
-                    .foregroundStyle(Color(hex: "#FF3B5C")))
+                    .foregroundStyle(PulseOnboardingColors.healthHeart))
             Image(systemName: "arrow.right")
                 .font(.system(size: 18, weight: .bold))
                 .foregroundStyle(PulseOnboardingColors.accentBlue)
@@ -858,7 +865,7 @@ struct PulseOnboardingExpectationsStep: View {
         PulseOnboardingStepPage(
             title: String(localized: "What to Expect Next"),
             subtitle: String(localized: "Wear your strap day and night. ZENO learns your baseline from the nights you wear it, and new scores unlock as it does."),
-            art: .large,
+            art: .large(height: PulseCalibrationWheel.size),
             onBack: onBack,
             illustration: {
                 PulseCalibrationWheel(milestones: Self.wheelMilestones, nights: Baselines.minNightsTrust,
