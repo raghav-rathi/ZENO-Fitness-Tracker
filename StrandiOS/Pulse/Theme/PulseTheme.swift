@@ -111,8 +111,9 @@ enum PulseTheme {
     static let subtitleRowCard = Color(hex: "#282C2C")
     static let subtitleRowIcon = Color(hex: "#999DA0")
     static let subtitleRowText = Color(hex: "#C8C9CB")
-    /// The deep-dive achievement chip.
-    static let achievementChip = Color(hex: "#282D33")
+    /// The deep-dive achievement chip: a capsule darker than the page behind the bar (WHOOP's samples #1A1F23
+    /// on a #262D35 page, deep-dives-2026/17b, /57).
+    static let achievementChip = Color(hex: "#1A1F23")
     /// A pre-added activity's outlined chip: a faint fill and a thin grey border.
     static let preAddedChip = Color.white.opacity(0.04)
     static let preAddedChipBorder = Color.white.opacity(0.30)
