@@ -12,6 +12,8 @@ struct PulseMonitorTiles: View {
     /// Today's graded vitals (Home's own facts): WITHIN RANGE, ELEVATED / LOW, VERY ELEVATED / VERY LOW or
     /// OUT OF RANGE. nil only before they first build; the tile then reads the snapshot's count.
     let grades: PulseMonitorGrades?
+    /// Today's stress (Home's own facts); nil while they build, and the tile reads "Pending".
+    let stress: PulseStressSummary?
     /// When the stress reading was last updated, resolved once for this tile and the dashboard's card.
     let stressUpdated: String?
 
@@ -76,22 +78,27 @@ struct PulseMonitorTiles: View {
                      wordColor: PulseTheme.negative, detail: detail)
     }
 
+    /// The Stress Monitor's level as its gauge prints it, the reading's time under the word, or "Daily
+    /// score" when the figure is the day's score rather than a reading.
     private var stressStatus: PulseMonitorTile.Status {
-        guard let stress = home.stress, let score = stress.score else { return .pending }
-        let level = PulseTheme.Stress.Level(value: score)
-        return .init(badge: .value(PulseFormat.oneDecimal(score)), tint: level.tint, word: PulseHomeStress.word(level),
-                     wordColor: level.color, detail: stressUpdated)
+        guard let shown = stress?.shown else { return .pending }
+        let level = PulseTheme.Stress.Level(value: shown)
+        return .init(badge: .value(PulseFormat.oneDecimal(shown)), tint: level.tint, word: PulseHomeStress.word(level),
+                     wordColor: level.color, detail: stressUpdated ?? String(localized: "Daily score"))
     }
 }
 
 /// The stress reading's words and update time, ONE helper for the STRESS MONITOR tile and the dashboard's
 /// STRESS MONITOR card, so the two can never print different times or words for one reading.
 enum PulseHomeStress {
-    /// When the day's stress was last updated: the end of the last scored hour, or `now` while that hour
-    /// is still running. Home resolves it once per pass, with one `now`, for both readouts.
-    static func updated(_ stress: PulseStressSummary?, now: Date) -> String? {
-        guard let hour = stress?.hours.last(where: { $0.level != nil }) else { return nil }
-        return PulseFormat.clock(min(Date(timeIntervalSince1970: TimeInterval(hour.startTs + 3600)), now))
+    /// When the figure was read, worded as the Stress Monitor's gauge words it: the reading's time, with its
+    /// weekday when it is from the evening before ("Fri 10:30 PM"). nil when the figure is the day's daily
+    /// score rather than a reading, or there is none. Home resolves it once per pass for both readouts.
+    static func updated(_ stress: PulseStressSummary?) -> String? {
+        guard let stress, let at = stress.at else { return nil }
+        if Repository.localDayKey(at) == stress.dayKey { return PulseFormat.clock(at) }
+        let weekday = at.formatted(.dateTime.weekday(.abbreviated).locale(AppLanguage.activeLocale))
+        return "\(weekday) \(PulseFormat.clock(at))"
     }
 
     static func word(_ level: PulseTheme.Stress.Level) -> String {
@@ -137,6 +144,45 @@ struct PulseHomeCoachEntry: View {
         } else if coach.availability != .off {
             PulseAskRow { coach.open(nil) }
         }
+    }
+}
+
+// MARK: - Year in Review (§3.39 [Z])
+
+/// "✦ Your 2026 in Review ›": My Day's seasonal promo, shown from 1 December to 15 January
+/// (`PulseYearInReviewView.isInSeason`) and opening the full-screen story. A pill row like the coach
+/// pill's, on the story's own near-black page lifting into its indigo glow, the mark in the year's blue.
+struct PulseYearInReviewPromo: View {
+    @Environment(\.pulseNavigator) private var navigator
+
+    var body: some View {
+        Button { navigator.open(.yearInReview) } label: {
+            HStack(spacing: 12) {
+                Image(systemName: "sparkles")
+                    .pulseHomeGlyph(.pillMark)
+                    .foregroundStyle(LinearGradient(gradient: PulseTheme.Gradients.yearInReviewYear,
+                                                    startPoint: .leading, endPoint: .trailing))
+                    .frame(width: 22)
+                    .accessibilityHidden(true)
+                Text(PulseYearInReviewView.seasonTitle())
+                    .pulseText(.coachingTitle)
+                    .foregroundStyle(PulseTheme.textPrimary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.85)
+                Spacer(minLength: 8)
+                PulseChevron(color: PulseTheme.textPrimary, size: 14)
+            }
+            .padding(.horizontal, PulseTheme.Layout.cardPadding)
+            .frame(maxWidth: .infinity, minHeight: PulseTheme.Row.pill)
+            .background(RoundedRectangle(cornerRadius: PulseTheme.Radius.card, style: .circular)
+                .fill(LinearGradient(colors: [PulseTheme.Gradients.yearInReviewPage,
+                                              PulseTheme.Gradients.yearInReviewGlowIndigo],
+                                     startPoint: .leading, endPoint: .trailing)))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(PulsePressStyle())
+        .accessibilityHint(String(localized: "Opens your year in review"))
+        .id("pulse.year-in-review")
     }
 }
 
@@ -308,10 +354,11 @@ enum PulseHomeActivity {
 
 // MARK: - Tonight's Sleep (§3.1 item 8c)
 
-/// TONIGHT'S SLEEP ›: the bedtime that meets tonight's need ("Now" once it has passed) and the wake time,
-/// side by side on one baseline (22 pt Bold condensed, no AM / PM), joined by a dashed connector; under
-/// them "RECOMMENDED BEDTIME" and the alarm state (orange "ALARM OFF", or teal "● ALARM ON" over "EXACT
-/// TIME"), both captions at one size; then SET ALARM (EDIT ALARM once set) with the strap-vibrate glyph.
+/// TONIGHT'S SLEEP ›: the Sleep Planner's plan for tonight (`PulseTonight`), its time to get into bed ("Now"
+/// once it has passed) and its wake time, side by side on one baseline (22 pt Bold condensed, no AM / PM),
+/// joined by a dashed connector; under them "RECOMMENDED BEDTIME" and the alarm state (orange "ALARM OFF",
+/// or teal "● ALARM ON" over "EXACT TIME" when the strap alarm will buzz at that wake), both captions at one
+/// size; then SET ALARM (EDIT ALARM once set) with the strap-vibrate glyph.
 /// The title and both times are one link to the Sleep Planner (WHOOP's whole card opens it); SET ALARM is
 /// its own button. Spacing measured on reviews/r41: times centred 41.5 pt under the title's, SET ALARM
 /// 19.6 pt under the captions.
@@ -360,15 +407,15 @@ struct PulseTonightsSleepCard: View {
     }
 
     private func columns(now: Date) -> some View {
-        let passed = now >= tonight.bedtime
+        let passed = now >= tonight.inBed
         return HStack(alignment: .top, spacing: PulseTheme.Space.xs) {
             column(icon: AnyView(sunIcon("sunset")),
-                   time: passed ? String(localized: "Now") : PulseFormat.clockNoMeridiem(tonight.bedtime)) {
+                   time: passed ? String(localized: "Now") : PulseFormat.clockNoMeridiem(tonight.inBed)) {
                 caption(String(localized: "Recommended bedtime"), color: PulseTheme.textSecondary)
             }
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(passed ? String(localized: "Recommended bedtime now")
-                                       : String(localized: "Recommended bedtime \(PulseFormat.clock(tonight.bedtime))"))
+                                       : String(localized: "Recommended bedtime \(PulseFormat.clock(tonight.inBed))"))
             Line()
                 .stroke(PulseTheme.dash, style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
                 .frame(maxWidth: PulseHomeMetrics.tonightConnector)
@@ -521,80 +568,6 @@ struct PulseJournalCard: View {
     /// Journal with the offset, and the classic one reads it from the router until then.
     private func openJournal(_ offset: Int) {
         router.openJournal(day: offset == 0 ? nil : offset)
-    }
-}
-
-// MARK: - My Plan (§3.1 item 9)
-
-/// My Plan. Today it shows the empty state (§3.1 item 9, reviews/r113): "Build Your Best Self" (17 pt
-/// Semibold), one line on what a plan does in a ≈240 pt column so it wraps to two lines, and "EXPLORE PLANS
-/// →", with ZENO's own art (three dashed green rings holding a moon, a heart and a lifter). It opens the
-/// Plan Overview (`.weeklyPlan`).
-///
-/// TODO(plan-card): group "journal-plan" builds the plan store. Once an active plan exists, replace this
-/// empty state with the collapsed card ("CUSTOM PLAN" ⌄, "6 days left", "27% ACCOMPLISHED" over a 4 pt
-/// green progress bar) that expands in place to the goal rows and "VIEW MY PLAN" (§3.1 item 9). Feed it a
-/// plain value (`PulsePlanCard(plan:)`), resolved off the main actor like Home's other snapshots.
-struct PulsePlanCard: View {
-    @Environment(\.pulseNavigator) private var navigator
-
-    var body: some View {
-        Button { navigator.open(PulseRoute.weeklyPlan(editing: false).forExistingEntryPoint) } label: {
-            HStack(alignment: .center, spacing: PulseTheme.Space.xs) {
-                VStack(alignment: .leading, spacing: PulseTheme.Space.xs) {
-                    Text(String(localized: "Build Your Best Self"))
-                        .pulseText(.subsectionTitle)
-                        .foregroundStyle(PulseTheme.textPrimary)
-                    // "long‑term" with a non-breaking hyphen: the line wraps before it, never at it.
-                    Text(String(localized: "Set goals, track progress, and turn small actions into long\u{2011}term wins."))
-                        .pulseText(.body)
-                        .foregroundStyle(PulseTheme.textSecondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                    HStack(spacing: 6) {
-                        Text(String(localized: "Explore plans")).pulseText(.label)
-                        Image(systemName: "arrow.right").pulseText(.label)
-                    }
-                    .foregroundStyle(PulseTheme.Plan.exploreCTA)
-                    .padding(.top, PulseTheme.Space.xxs)
-                }
-                Spacer(minLength: 0)
-                PulsePlanArt()
-            }
-            .padding(.leading, PulseTheme.Layout.cardPadding + PulseTheme.Space.xxs)
-            .padding(.trailing, PulseTheme.Space.s)
-            .padding(.vertical, PulseTheme.Layout.cardPadding + PulseTheme.Space.xs)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .pulseCardBackground(.solid(PulseTheme.Plan.emptyCard))
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(PulsePressStyle())
-        .accessibilityHint(String(localized: "Opens your plan"))
-        .id("pulse.plan-card")
-    }
-}
-
-/// Three dashed green rings holding a moon, a heart and a lifter (SF Symbols; ZENO's own art), in an
-/// 84 × 96 pt slot.
-private struct PulsePlanArt: View {
-    var body: some View {
-        ZStack {
-            ring("moon.stars.fill", size: 48).offset(x: 14, y: -20)
-            ring("heart.fill", size: 32).offset(x: -24, y: -4)
-            ring("figure.strengthtraining.traditional", size: 40).offset(x: 6, y: 24)
-        }
-        .frame(width: PulseHomeMetrics.planArt.width, height: PulseHomeMetrics.planArt.height)
-        .accessibilityHidden(true)
-    }
-
-    private func ring(_ symbol: String, size: CGFloat) -> some View {
-        ZStack {
-            Circle().fill(PulseTheme.card)
-            Circle().strokeBorder(PulseTheme.Plan.progress, style: StrokeStyle(lineWidth: 2, dash: [5, 4]))
-            Image(systemName: symbol)
-                .font(PulseHomeGlyph.art(size * 0.38))
-                .foregroundStyle(PulseTheme.textSecondary)
-        }
-        .frame(width: size, height: size)
     }
 }
 #endif

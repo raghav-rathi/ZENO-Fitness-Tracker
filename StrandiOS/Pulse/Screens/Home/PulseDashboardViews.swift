@@ -40,7 +40,7 @@ enum PulseDashboardViews {
                     ForEach(items) { item in
                         switch item {
                         case .stressMonitor:
-                            StressCard(home: home, updated: stressUpdated)
+                            StressCard(home: home, stress: extras?.stress, updated: stressUpdated, stale: extrasStale)
                                 .id("pulse.stress")
                         case .strainRecovery:
                             StrainRecoveryCard(home: home)
@@ -63,9 +63,16 @@ enum PulseDashboardViews {
 
         /// The Trend View once it is rebuilt, else the row's own detail screen.
         private func route(_ item: PulseDashboardItem, value: PulseDashboardValue) -> PulseRoute {
-            let trend = PulseRoute.trendView(metric: item.trendMetric)
-            return trend.isRebuilt ? trend : value.fallback
+            PulseRoute.trendView(metric: item.trendMetric).isRebuilt
+                ? PulseDashboardViews.trendRoute(metric: item.trendMetric, day: home.day)
+                : value.fallback
         }
+    }
+
+    /// The Trend View for `metric` as of the day Home shows: today's opens on the latest period, a past
+    /// day's on the period ending that day (`PulseTrendDayRoute`), so the page keeps the day's figures.
+    static func trendRoute(metric: String, day: PulseDay) -> PulseRoute {
+        day.isToday ? .trendView(metric: metric) : PulseTrendDayRoute(metric: metric, dayOffset: day.offset).route
     }
 
     /// "Personalization in Progress" (help-center/62, 67): an outlined card while the strap calibrates.
@@ -92,11 +99,17 @@ enum PulseDashboardViews {
         }
     }
 
-    /// STRESS MONITOR ›: "Last updated 10:15 PM" and "MEDIUM 1.1", then the day's stress chart (150 pt).
+    /// STRESS MONITOR ›: "Last updated 10:15 PM" and "MEDIUM 1.1", then the Stress Monitor's own curve over
+    /// the 24 hours it covers (150 pt): ending now today, at a past day's last reading.
     struct StressCard: View {
         let home: HomeSnapshot
+        /// The day's stress from Home's extras (`HomeExtrasSnapshot.stress`).
+        let stress: PulseStressSummary?
         /// When the reading was last updated (`PulseHomeStress.updated`, shared with the tile).
         let updated: String?
+        /// `stress` is still the previous day's while this day's extras build: dimmed like the rows, and
+        /// drawn without this day's sleep and activities.
+        var stale = false
 
         var body: some View {
             PulseLink(PulseRoute.stressMonitor.forExistingEntryPoint) {
@@ -108,36 +121,40 @@ enum PulseDashboardViews {
                                 Text(String(localized: "Last updated \(updated)"))
                                     .pulseText(.secondary)
                                     .foregroundStyle(PulseTheme.textSecondary)
+                            } else if stress?.shown != nil {
+                                // The Stress Monitor's own words for a figure that is not a reading.
+                                Text(String(localized: "Daily score from your vitals"))
+                                    .pulseText(.secondary)
+                                    .foregroundStyle(PulseTheme.textSecondary)
                             }
                             Spacer(minLength: 8)
-                            if let score = home.stress?.score {
-                                let level = PulseTheme.Stress.Level(value: score)
+                            if let shown = stress?.shown {
+                                let level = PulseTheme.Stress.Level(value: shown)
                                 Text(PulseHomeStress.word(level))
                                     .pulseText(.label)
                                     .foregroundStyle(level.color)
-                                Text(PulseFormat.oneDecimal(score))
+                                Text(PulseFormat.oneDecimal(shown))
                                     .pulseText(.rowValue)
                                     .foregroundStyle(PulseTheme.textPrimary)
                             }
                         }
-                        PulseStressChart(points: points, periods: periods, now: home.day.isToday ? Date() : nil,
-                                         currentLevel: home.stress?.score, xLabels: xLabels)
+                        PulseStressChart(points: points, periods: periods, now: stress?.chartEnd,
+                                         currentLevel: stress?.shown, xLabels: xLabels)
                     }
                 }
                 .contentShape(Rectangle())
+                .opacity(stale ? 0.45 : 1)
             }
             .buttonStyle(PulsePressStyle())
+            .disabled(stale)
         }
 
-        private var points: [PulseTimeValue] {
-            (home.stress?.hours ?? []).map { hour in
-                PulseTimeValue(date: Date(timeIntervalSince1970: TimeInterval(hour.startTs + 1800)), value: hour.level)
-            }
-        }
+        private var points: [PulseTimeValue] { stress?.points ?? [] }
 
         private var periods: [PulseChartPeriod] {
             var out: [PulseChartPeriod] = []
-            if let night = home.lastNight, home.day.isToday {
+            guard !stale else { return out }
+            if let night = home.lastNight {
                 out.append(PulseChartPeriod(id: "sleep", start: night.onset, end: night.wake, kind: .sleep,
                                             symbol: "moon.fill"))
             }
@@ -150,12 +167,12 @@ enum PulseDashboardViews {
             return out
         }
 
-        /// The chart's x labels: four times across the span shown, the last one now.
+        /// The chart's x labels: four times across the span it draws (its points, periods and end), the last
+        /// one where the curve ends.
         private var xLabels: [String] {
-            let dates = points.map(\.date) + periods.flatMap { [$0.start, $0.end] }
-            guard let lo = dates.min() else { return [] }
-            let hi = home.day.isToday ? Date() : (dates.max() ?? lo)
-            guard hi > lo else { return [] }
+            let end = stress?.chartEnd.map { [$0] } ?? []
+            let dates = points.map(\.date) + periods.flatMap { [$0.start, $0.end] } + end
+            guard let lo = dates.min(), let hi = dates.max(), hi > lo else { return [] }
             let step = hi.timeIntervalSince(lo) / 3
             return (0...3).map { PulseFormat.clock(lo.addingTimeInterval(step * Double($0))) }
         }
@@ -163,14 +180,21 @@ enum PulseDashboardViews {
     }
 
     /// STRAIN & RECOVERY ⓘ: the seven days ending on the selected one, Strain against Recovery, on a
-    /// ≈191 pt plot (completeness-critic/13). A week with neither says why the grid is bare (§2.7).
+    /// ≈191 pt plot (completeness-critic/13). A week with neither says why the grid is bare (§2.7). It
+    /// opens Recovery's Trend View as of the same day.
     struct StrainRecoveryCard: View {
         let home: HomeSnapshot
 
         private var isEmpty: Bool { home.week.allSatisfy { $0.strain == nil && $0.recovery == nil } }
 
+        private var route: PulseRoute {
+            PulseRoute.trendView(metric: "recovery").isRebuilt
+                ? PulseDashboardViews.trendRoute(metric: "recovery", day: home.day)
+                : PulseRoute.trendView(metric: "recovery").forExistingEntryPoint
+        }
+
         var body: some View {
-            PulseLink(PulseRoute.trendView(metric: "recovery").forExistingEntryPoint) {
+            PulseLink(route) {
                 PulseChartCard(String(localized: "Strain & Recovery"), accessory: .info) {
                     PulseStrainRecoveryChart(days: home.week.map { day in
                         PulseStrainRecoveryChart.Day(id: day.id,

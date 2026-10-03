@@ -9,9 +9,9 @@ import WhoopStore
 extension PulseSnapshotBuilder {
 
     /// Home's own facts for the request's day: the dashboard rows in `items`, the coaching rules' inputs,
-    /// the Daily Outlook's facts, the Health Monitor tile's grades and the Get Started flags. `home` is the
-    /// HomeSnapshot for the same day; every figure the two share is read from it (the dials, the stats,
-    /// tonight's plan), never re-derived.
+    /// the Daily Outlook's facts, the Health Monitor tile's grades, the Get Started flags and the day's
+    /// stress. `home` is the HomeSnapshot for the same day; every figure the two share is read from it (the
+    /// dials, the stats, tonight's plan), never re-derived.
     func homeExtras(_ r: PulseRequest, home: HomeSnapshot, items: [PulseDashboardItem]) async -> HomeExtrasSnapshot? {
         begin(r.seq)
         guard home.day == r.day else { return nil }
@@ -41,9 +41,11 @@ extension PulseSnapshotBuilder {
         let outlook = r.day.isToday ? await outlookFacts(r, home: home, zones: zones) : nil
         let monitor = r.day.isToday ? monitorGrades(r) : nil
         let start = r.day.isToday ? await getStartedFacts(r, home: home, rows: rows) : .pastDay
+        // Today's STRESS MONITOR tile, and the dashboard's card on any day it is on.
+        let stress = r.day.isToday || items.contains(.stressMonitor) ? await stressSummary(r) : nil
         guard isCurrent(r) else { return nil }
         return HomeExtrasSnapshot(seq: r.seq, day: r.day, dashboard: dashboard, coaching: coaching,
-                                  outlook: outlook, monitor: monitor, start: start)
+                                  outlook: outlook, monitor: monitor, start: start, stress: stress)
     }
 
     /// Logged period starts (oldest first) for the Menstrual card's dot strip. Not cached: logging a
@@ -58,20 +60,6 @@ extension PulseSnapshotBuilder {
     /// column), read once per refresh.
     private func homeSeries(_ key: String) async -> [(day: String, value: Double)] {
         await cached("home.series.\(key)") { await repo.exploreSeries(key: key, source: "my-whoop") }
-    }
-
-    /// Active calories per day with the precedence the core Calories stat uses: Apple Health's imported
-    /// figure first, else the on-device HR estimate (#616).
-    // TODO(foundation): expose the core's calorie resolution like `stepsResolution(_:)`, so this mirror
-    // can go.
-    private func calorieSeries(_ r: PulseRequest) async -> [(day: String, value: Double)] {
-        let apple = await appleRows()
-        var imported: [String: Double] = [:]
-        for a in apple { if let k = a.activeKcal { imported[a.day] = max(imported[a.day] ?? 0, k) } }
-        let device = Dictionary(r.days.compactMap { m in m.activeKcalEst.map { (m.day, $0) } },
-                                uniquingKeysWith: { _, last in last })
-        return Set(imported.keys).union(device.keys).sorted()
-            .compactMap { k in (imported[k] ?? device[k]).map { (day: k, value: $0) } }
     }
 
     // MARK: Dashboard
@@ -102,12 +90,11 @@ extension PulseSnapshotBuilder {
             value.isRunningTotal = r.day.isToday && value.value != nil
             return value
         case .calories:
-            let series = await calorieSeries(r)
+            let calories = await caloriesResolution(r)
             let route = home.stats.first { $0.id == "kcal" }.map { PulseRoute.tab($0.route) } ?? item.classicRoute
-            var value = compared(series.last { $0.day == key }?.value, on: key, caption: nil, history: series,
-                                 dayKey: key, text: PulseFormat.grouped, unit: nil,
-                                 baselineText: PulseFormat.grouped, polarity: polarity, fallback: route,
-                                 flatPercent: 5)
+            var value = compared(calories.value, on: key, caption: nil, history: calories.history, dayKey: key,
+                                 text: PulseFormat.grouped, unit: nil, baselineText: PulseFormat.grouped,
+                                 polarity: polarity, fallback: route, flatPercent: 5)
             value.isRunningTotal = r.day.isToday && value.value != nil
             return value
 
@@ -322,6 +309,8 @@ extension PulseSnapshotBuilder {
     /// reader). An activity with neither adds no minutes and is counted as unresolved.
     private func zoneDays(_ r: PulseRequest, rows: [WorkoutRow], daysBack: Int) async -> [String: ZoneDay] {
         guard let first = PulseDisplay.dayKey(r.day.key, offsetBy: -daysBack) else { return [:] }
+        // The bounds the heart rate is binned by: an edit to HR max or the zones re-bins within the refresh.
+        let bounds = r.profile.zoneSet.zones.map { "\($0.lower)-\($0.upper)" }.joined(separator: ",")
         var out: [String: ZoneDay] = [:]
         for w in rows {
             let day = Repository.localDayKey(Date(timeIntervalSince1970: TimeInterval(w.startTs)))
@@ -330,7 +319,7 @@ extension PulseSnapshotBuilder {
             if let pct = WorkoutZones.percents(w.zonesJSON) {
                 let total = (w.durationS ?? Double(w.endTs - w.startTs)) / 60
                 minutes = (0..<5).map { total * pct[$0] / 100 }
-            } else if let binned = await cached("home.zones.\(w.startTs)|\(w.endTs)|\(w.source)", load: {
+            } else if let binned = await cached("home.zones.\(w.startTs)|\(w.endTs)|\(w.source)|\(bounds)", load: {
                 await repo.workoutZoneMinutes(from: w.startTs, to: w.endTs, zoneSet: r.profile.zoneSet, source: w.source)
             }) {
                 // `timeInZone` reports zones 1-5 in order.
@@ -500,10 +489,14 @@ extension PulseSnapshotBuilder {
         // Monday's look back: a week with at least three scored days behind it.
         let weekAgo = PulseDisplay.dayKey(key, offsetBy: -7) ?? key
         let lastWeekScored = history.filter { $0.day >= weekAgo }.count
-        let isMonday = Calendar.current.component(.weekday, from: r.now) == 2
+        var isMonday = Calendar.current.component(.weekday, from: r.now) == 2
+        #if DEBUG
+        // `--pulse-week-review`: any day is Monday for the week-in-review card, for a capture.
+        if CommandLine.arguments.contains("--pulse-week-review") { isMonday = true }
+        #endif
         // A target only from the day's own Recovery, exactly as the dial draws its band and tick.
         let ownTarget = home.target.flatMap { $0.fromCarriedRecovery ? nil : $0 }
-        let alarm = await alarmCheck(r, home: home)
+        let alarm = alarmCheck(r, home: home)
         return HomeCoachingRules.Inputs(
             dayKey: key, recovery: ownRecovery, recoveryHistory: history, calibration: calibration,
             strain: home.strain.value, optimalRange: ownTarget?.range, strainTarget: ownTarget?.targetValue,
@@ -516,18 +509,16 @@ extension PulseSnapshotBuilder {
 
     /// This morning's strap alarm against when last night ended. The alarm comes from
     /// `AppModel.nextSmartAlarmDate`, the function the strap is armed from (per-day overrides included),
-    /// on BehaviorStore's own settings, so the card names the alarm that will really ring. `nowMinute` is
-    /// the request's; the view moves it to the current minute.
-    private func alarmCheck(_ r: PulseRequest, home: HomeSnapshot) async -> HomeCoachingRules.AlarmCheck? {
-        let defaults = UserDefaults.standard
-        guard defaults.bool(forKey: "behavior.smartAlarmEnabled") else { return nil }
-        let minutes = defaults.object(forKey: "behavior.smartAlarmMinutes") as? Int ?? 7 * 60
-        let weekdays = Set(defaults.array(forKey: "behavior.smartAlarmWeekdays") as? [Int] ?? [])
-        let overrides = await MainActor.run { WindDownNudge.perDayWakeOverrides }
+    /// on the settings the request captured for tonight's plan (`PulsePrefs.sleepPlan`), and only when the
+    /// strap will arm it, so the card names the alarm that will really ring. `nowMinute` is the request's;
+    /// the view moves it to the current minute.
+    private func alarmCheck(_ r: PulseRequest, home: HomeSnapshot) -> HomeCoachingRules.AlarmCheck? {
+        let s = r.prefs.sleepPlan
+        guard s.alarmEnabled, s.strapWillArm else { return nil }
         let cal = Calendar.current
         let midnight = cal.startOfDay(for: r.now)
-        guard let fire = AppModel.nextSmartAlarmDate(minutes: minutes, weekdays: weekdays, overrides: overrides,
-                                                     from: midnight, calendar: cal),
+        guard let fire = AppModel.nextSmartAlarmDate(minutes: s.alarmMinutes, weekdays: s.alarmWeekdays,
+                                                     overrides: s.dayTimes, from: midnight, calendar: cal),
               cal.isDate(fire, inSameDayAs: midnight) else { return nil }
         func minuteOfDay(_ date: Date) -> Int {
             let c = cal.dateComponents([.hour, .minute], from: date)
@@ -611,7 +602,7 @@ extension PulseSnapshotBuilder {
             hasWorkout: !rows.isEmpty,
             hasJournal: !journal.isEmpty,
             hasHistoryImport: !r.importedSleep.isEmpty || !apple.isEmpty,
-            sleepScheduled: r.prefs.alarmWakeMinute != nil || r.prefs.strapAlarmMinute != nil)
+            sleepScheduled: r.prefs.sleepPlan.windDownEnabled || r.prefs.sleepPlan.alarmEnabled)
     }
 }
 #endif

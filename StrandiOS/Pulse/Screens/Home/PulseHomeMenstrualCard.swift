@@ -14,6 +14,9 @@ import StrandAnalytics
 /// Reads the cycle estimate off AppModel in its own leaf (AppModel publishes every heart-rate tick), and
 /// the logged period starts off the main actor, again whenever one is logged.
 struct PulseMenstrualCardHost: View {
+    /// The LOG CYCLE sheet is up: Home's root presents it, so tilt mode can wait for it to close.
+    @Binding var logging: Bool
+
     @EnvironmentObject private var app: AppModel
     @EnvironmentObject private var repo: Repository
     @Environment(PulseModel.self) private var model
@@ -23,10 +26,10 @@ struct PulseMenstrualCardHost: View {
     var body: some View {
         Group {
             if let demo = Self.debugResult {
-                PulseMenstrualCard(result: demo.result, periodStarts: demo.periodStarts)
+                PulseMenstrualCard(result: demo.result, periodStarts: demo.periodStarts) { logging = true }
                     .equatable()
             } else if enabled {
-                PulseMenstrualCard(result: app.cyclePhase, periodStarts: periodStarts)
+                PulseMenstrualCard(result: app.cyclePhase, periodStarts: periodStarts) { logging = true }
                     .equatable()
             }
         }
@@ -61,8 +64,8 @@ struct PulseMenstrualCard: View, Equatable {
     let result: CyclePhaseEngine.Result?
     /// Logged period starts (`Repository.periodStarts`), oldest first.
     let periodStarts: [String]
-
-    @State private var logging = false
+    /// "+ LOG CYCLE": opens the sheet Home presents (`PulseMenstrualCardHost.logging`).
+    let onLog: () -> Void
 
     static func == (lhs: PulseMenstrualCard, rhs: PulseMenstrualCard) -> Bool {
         lhs.result == rhs.result && lhs.periodStarts == rhs.periodStarts
@@ -95,7 +98,7 @@ struct PulseMenstrualCard: View, Equatable {
                 .contentShape(Rectangle())
             }
             .buttonStyle(PulsePressStyle())
-            Button { logging = true } label: {
+            Button(action: onLog) {
                 Label(String(localized: "Log cycle"), systemImage: "plus")
             }
             .buttonStyle(.pulseNested(fill: PulseTheme.Menstrual.logButton))
@@ -103,7 +106,6 @@ struct PulseMenstrualCard: View, Equatable {
         .padding(PulseTheme.Layout.cardPadding)
         .frame(maxWidth: .infinity, alignment: .leading)
         .pulseCardBackground(.solid(PulseTheme.Menstrual.homeCard))
-        .sheet(isPresented: $logging) { PulseLogPeriodSheet() }
         .id("pulse.cycle")
     }
 

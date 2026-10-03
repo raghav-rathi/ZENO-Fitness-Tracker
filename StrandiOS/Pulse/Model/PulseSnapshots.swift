@@ -185,36 +185,28 @@ struct PulseNap: Identifiable, Equatable {
     let asleepMin: Double
 }
 
-/// Tonight's plan: need and the bedtime that meets it.
+/// Tonight's plan as the Sleep Planner resolves it (`PulseSleepPlan`) for REACH MY SLEEP NEED at 100%, the
+/// planner's default goal: while that goal is chosen there, Home's TONIGHT'S SLEEP card and the planner it
+/// opens state the same night. With 85%, 70% or IMPROVE MY SLEEP chosen, the planner's bedtime differs from
+/// the card's, as the goal does not reach Home's request yet (see `PulseSnapshotBuilder.tonightPlan`).
 struct PulseTonight: Equatable {
-    enum WakeSource: Equatable {
-        /// The strap's silent wake alarm, armed for tomorrow: "● ALARM ON · EXACT TIME".
-        case strapAlarm
-        /// The wake time set for the wind-down reminder.
-        case alarm
-        /// The median wake time of recent nights.
-        case habit
-        /// No wake time to go on; 07:00.
-        case fallback
-    }
-
-    /// The unified model's baseline need, minutes.
-    let baseNeedMin: Double
-    /// Extra need from the day's Strain above the wearer's typical, minutes (0 when none).
-    let strainMin: Double
-    /// Sleep debt carried into tonight, minutes (0 when none).
-    let debtMin: Double
-    /// Credit for today's naps, minutes (0 when none).
-    let napCreditMin: Double
-    /// Tonight's need: baseline + strain + debt − nap credit (`SleepNeedBreakdown.totalMin`).
+    /// Tonight's need: baseline + strain + debt − nap credit (`SleepNeedBreakdown.totalMin`), minutes.
     let needMin: Double
-    /// When to be asleep to meet it.
-    let bedtime: Date
+    /// When to get into bed, allowing the time it takes to fall asleep: the card's RECOMMENDED BEDTIME and
+    /// the planner's suggested time to bed.
+    let inBed: Date
+    /// When to be asleep by to meet the need.
+    let asleepBy: Date
     let wake: Date
-    let wakeSource: WakeSource
+    /// What named the wake: the strap alarm only when it will actually buzz that morning.
+    let wakeSource: TonightSleepPlan.WakeSource
 
-    /// True while the strap's wake alarm is armed for this wake time.
+    /// The strap alarm buzzes at `wake`: "● ALARM ON · EXACT TIME".
     var alarmOn: Bool { wakeSource == .strapAlarm }
+
+    /// The time to be asleep by, under the name this type used before it carried the in-bed time too.
+    @available(*, deprecated, renamed: "asleepBy")
+    var bedtime: Date { asleepBy }
 }
 
 /// A workout on the selected day.
@@ -298,17 +290,33 @@ struct PulseWeekDay: Identifiable, Equatable {
     let recovery: Double?
 }
 
-/// The day's stress read.
+/// The day's stress as Home's STRESS MONITOR tile and dashboard card show it: the Stress Monitor's own day
+/// (`PulseSnapshotBuilder.stressDay`), so the three can never print different levels or times. Home's
+/// extras carry it (`HomeExtrasSnapshot.stress`), never `HomeSnapshot`: scoring a day's stress reads its
+/// heart rate, R-R and motion, which the dials must not wait for.
 struct PulseStressSummary: Equatable {
-    /// 0-3, or nil.
+    /// The gauge's level, 0-3: the curve's latest reading, else the day's daily score; nil with neither.
+    /// Print it as `shown`, never directly.
     let score: Double?
-    let bandTitle: String?
-    /// Today's hourly curve; empty for a past day (the curve is scored for today only).
+    /// When the reading was taken (the end of its hour, at most the build's now); nil when `score` is the
+    /// daily score rather than a reading.
+    let at: Date?
+    /// The day the stress is for, to tell a reading from the evening before.
+    let dayKey: String
+    /// The Stress Monitor's chart: its points over the 24 hours it covers (nil values are gaps), and where
+    /// they end (now today, the last reading on a past day, nil on a past day without one).
+    let points: [PulseTimeValue]
+    let chartEnd: Date?
+    /// The day's own scored hours.
     let hours: [DaytimeStress.HourPoint]
     let maskedHours: Int
     let isToday: Bool
 
-    var scoreText: String { score.map { PulseFormat.oneDecimal($0) } ?? "–" }
+    /// The level as the Stress Monitor's gauge prints it: cut to one decimal (`HealthStressGauge.printed`),
+    /// so a level word taken from it always matches the figure beside it.
+    @MainActor var shown: Double? { score.map(HealthStressGauge.printed) }
+    @MainActor var scoreText: String { shown.map { PulseFormat.oneDecimal($0) } ?? "–" }
+    @MainActor var bandTitle: String? { shown.map { StressBand(score: $0).title } }
     var hasCurve: Bool { hours.contains { $0.level != nil } }
 }
 
@@ -347,7 +355,6 @@ struct HomeSnapshot: Equatable {
     let tonight: PulseTonight?
     /// The values My Dashboard's rows show (HRV, resting HR, …), each against its 30-day average.
     let stats: [PulseKeyStat]
-    let stress: PulseStressSummary?
     /// The seven days ending on the selected one, while the journal reminder is switched on.
     let journal: PulseJournalStrip?
     /// Today's day streak (consecutive days with a Recovery score); nil on a past day.
@@ -440,94 +447,6 @@ struct StrainSnapshot: Equatable {
     let averageHR: Int?
     let peakHR: Int?
     let workouts: [PulseWorkoutItem]
-}
-
-/// A stage span on the hypnogram, seconds from the night's start.
-struct PulseStageSpan: Equatable {
-    let stage: SleepStage
-    let start: TimeInterval
-    let end: TimeInterval
-}
-
-/// One sleep-performance contributor.
-struct PulseSleepContributor: Identifiable, Equatable {
-    let id: String
-    let title: String
-    /// 0-100, or nil when the night cannot support it.
-    let percent: Double?
-    let detail: String?
-}
-
-/// One stage's share of the night.
-struct PulseStageRow: Identifiable, Equatable {
-    let stage: SleepStage
-    let minutes: Double
-    let share: Double
-    var id: String { stage.rawValue }
-}
-
-/// The Sleep deep dive for one night.
-struct SleepSnapshot: Equatable {
-    let seq: Int
-    /// The wake day the night was looked up from (Home's day, or the night ‹ › stepped to).
-    let anchorKey: String
-    /// Index into the newest-first night list (0 = the most recent night).
-    let nightIndex: Int
-    /// Every banked night's wake day, newest first: ‹ › step through these by KEY, so a night banked
-    /// while the screen is open cannot shift what it shows.
-    let nightKeys: [String]
-    var nightCount: Int { nightKeys.count }
-    /// The wake day the night belongs to (sleep is keyed by the local day it ends on).
-    let wakeDayKey: String?
-    let onset: Date?
-    let wake: Date?
-    let dial: PulseDialData
-    let asleepMin: Double?
-    let inBedMin: Double?
-    let needMin: Double?
-    let contributors: [PulseSleepContributor]
-    let spans: [PulseStageSpan]
-    let stages: [PulseStageRow]
-    let sleepingHR: Int?
-    let lowestHR: Int?
-    let respRate: Double?
-    let naps: [PulseNap]
-    /// True when the night has no decodable stages (the honest stage-less stub).
-    let isStub: Bool
-
-    var hasOlder: Bool { nightIndex + 1 < nightCount }
-    var hasNewer: Bool { nightIndex > 0 }
-}
-
-/// One vital on the Health Monitor.
-struct PulseVital: Identifiable, Equatable {
-    let id: String
-    let title: String
-    let value: String?
-    let unit: String
-    let band: VitalBands.Band
-    /// "Your typical range" / "Typical adult range".
-    let basisText: String
-    let rangeText: String?
-    /// Where the value and the typical range sit on the bar, 0...1.
-    let valueFraction: Double?
-    let typicalFraction: ClosedRange<Double>?
-    /// The day the value is from.
-    let dayLabel: String?
-    let route: TabRoute
-}
-
-/// The Health tab.
-struct HealthSnapshot: Equatable {
-    let seq: Int
-    let vitals: [PulseVital]
-    let stress: PulseStressSummary?
-    let fitnessAge: Double?
-    let bodyAge: Double?
-    let vitality: Double?
-    let vo2max: Double?
-    let stepsToday: Double?
-    let stepsRoute: TabRoute
 }
 
 // MARK: - Formatting

@@ -61,9 +61,4 @@ enum PulseSleepBand {
         return 0
     }
 }
-
-extension PulseSleepContributor {
-    /// The contributor's Poor / Sufficient / Optimal reading.
-    var performanceBand: Int? { PulseSleepBand.index(percent: percent) }
-}
 #endif

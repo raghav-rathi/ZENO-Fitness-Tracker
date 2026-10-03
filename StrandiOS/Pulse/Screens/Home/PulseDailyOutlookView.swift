@@ -115,14 +115,15 @@ enum PulseDailyOutlook {
             }
         }
 
-        // Tonight's bedtime, from the Sleep Planner's need; once it has passed, "now" (as the card says).
+        // Tonight's plan, the Sleep Planner's: the time to be asleep by; once the time to get into bed has
+        // passed, "now" (as the card and the planner say).
         if let tonight = home.tonight {
             let need = duration(tonight.needMin)
             let wake = PulseFormat.clock(tonight.wake)
-            if now >= tonight.bedtime {
+            if now >= tonight.inBed {
                 recommendations.append(String(localized: "To get as close as you can to the **\(need)** of sleep you need tonight, go to sleep now to wake at **\(wake)**."))
             } else {
-                recommendations.append(String(localized: "To get the **\(need)** of sleep you need tonight, be asleep by **\(PulseFormat.clock(tonight.bedtime))** to wake at **\(wake)**."))
+                recommendations.append(String(localized: "To get the **\(need)** of sleep you need tonight, be asleep by **\(PulseFormat.clock(tonight.asleepBy))** to wake at **\(wake)**."))
             }
         }
         return Content(evening: evening, greeting: greeting, insights: insights, recommendations: recommendations)
@@ -151,16 +152,13 @@ struct PulseDailyOutlookView: View {
     @Environment(\.pulseCoach) private var coach
     @ScaledMetric(relativeTo: .body) private var bulletSize: CGFloat = 5
 
-    /// Where the page's three colours sit, sampled at the left edge of reviews/88: slate by 35% of the
-    /// height and flat near-black from ≈47%, not a tan → slate run down the whole page.
-    // TODO(foundation): carry these locations on `Gradients.dailyOutlookPage` itself.
-    private static let pageLocations: [CGFloat] = [0, 0.35, 0.47]
-
+    /// The page: `Gradients.dailyOutlookPage`, or in the evening the Day in Review pill's indigo over the
+    /// page's foot at the same stops.
     private var page: Gradient {
-        let colors = content.evening
-            ? PulseTheme.Gradients.pillEvening.stops.map(\.color) + [PulseTheme.pageBottom]
-            : PulseTheme.Gradients.dailyOutlookPage.stops.map(\.color)
-        return Gradient(stops: zip(colors, Self.pageLocations).map { Gradient.Stop(color: $0, location: $1) })
+        let outlook = PulseTheme.Gradients.dailyOutlookPage
+        guard content.evening else { return outlook }
+        let colors = PulseTheme.Gradients.pillEvening.stops.map(\.color) + [PulseTheme.pageBottom]
+        return Gradient(stops: zip(colors, outlook.stops.map(\.location)).map { Gradient.Stop(color: $0, location: $1) })
     }
 
     var body: some View {

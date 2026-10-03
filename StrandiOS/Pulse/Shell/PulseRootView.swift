@@ -497,18 +497,9 @@ struct PulseAttacher: View {
         p.effortMethod = banisterEffort ? .banister : .edwards
         p.stressPersonalBaseline = stressPersonalBaseline
         p.journalReminder = journalReminder
-        let tomorrow = Calendar.current.date(byAdding: .day, value: 1, to: Date()) ?? Date()
-        let tomorrowWeekday = Calendar.current.component(.weekday, from: tomorrow)
-        if windDownEnabled {
-            p.alarmWakeMinute = WindDownNudge.wakeMinutes(forWeekday: tomorrowWeekday)
-        }
-        if strapAlarmOn {
-            // An empty weekday set means every day (BehaviorStore's backward-compatible default).
-            let weekdays = UserDefaults.standard.array(forKey: "behavior.smartAlarmWeekdays") as? [Int] ?? []
-            if weekdays.isEmpty || weekdays.contains(tomorrowWeekday) {
-                p.strapAlarmMinute = strapAlarmMinutes
-            }
-        }
+        // Tonight's plan reads the Sleep Planner's own settings. A WHOOP 5/MG strap arms its alarm only with
+        // the Protocol probes on (`AppModel.whoop5Detected` is `ble.isWhoop5`), as the planner checks.
+        p.sleepPlan = PulseSleepPlanSettings.stored(strapWillArm: !(ble.isWhoop5 && !PuffinExperiment.isEnabled))
         return p
     }
 

@@ -11,11 +11,11 @@ import WhoopStore
 /// It owns the selected day, captures a `PulseRequest` from the repository in a single main-actor hop,
 /// hands it to the off-main `PulseSnapshotBuilder`, and publishes the snapshot that comes back. It
 /// rebuilds when the repository's `refreshSeq` moves, when the day changes, and when a display
-/// preference changes; nothing else invalidates a snapshot.
+/// preference or the profile it scores with changes; nothing else invalidates a snapshot.
 ///
 /// `@Observable`, so a view re-renders only for the properties it actually reads: the Home dials for
-/// `home`, the day title for `dayOffset`, the Strain dive for `strain`. A published build is dropped if
-/// the refresh or the day moved on while it ran, so a slow build can never overwrite a newer one.
+/// `home`, the day title for `dayOffset`, a screen's reload for `detailKey`. A published build is dropped
+/// if the refresh or the day moved on while it ran, so a slow build can never overwrite a newer one.
 @MainActor
 @Observable
 final class PulseModel {
@@ -29,11 +29,8 @@ final class PulseModel {
     /// How far back Home can go (the earliest banked day).
     private(set) var maxDayOffset = 0
     private(set) var home: HomeSnapshot?
-    private(set) var recovery: RecoverySnapshot?
-    private(set) var strain: StrainSnapshot?
-    private(set) var sleep: SleepSnapshot?
-    private(set) var health: HealthSnapshot?
-    /// Bumped whenever the display preferences change, so detail screens reload.
+    /// Bumped whenever the display preferences or the profile the builds score with (Effort's HR max, sex,
+    /// the heart-rate zones) change, so detail screens reload.
     private(set) var prefsVersion = 0
 
     /// The key a detail screen's `.task(id:)` reloads on.
@@ -48,17 +45,12 @@ final class PulseModel {
     @ObservationIgnored private weak var ble: BLEManager?
     @ObservationIgnored private var builder: PulseSnapshotBuilder?
     @ObservationIgnored private var prefs = PulsePrefs()
+    /// The scoring profile the last profile change was checked against (`profileChanged`).
+    @ObservationIgnored private var scoringProfile: PulseProfile?
     @ObservationIgnored private var cancellables = Set<AnyCancellable>()
     @ObservationIgnored private var homeTask: Task<Void, Never>?
-    @ObservationIgnored private var sleepTask: Task<Void, Never>?
-    /// The night the Sleep dive shows, by wake day, once the wearer steps with ‹ ›; nil means Home's
-    /// night. Set before the step's build starts, so a refresh landing mid-step reloads the night asked
-    /// for rather than the one still on screen.
-    @ObservationIgnored private var sleepNightKey: String?
     /// A day to open on once the history's extent is known (DEBUG `--pulse-day`).
     @ObservationIgnored private var pendingDayOffset: Int?
-    /// A night for the Sleep dive to land on once enough nights are loaded (DEBUG `--pulse-night`).
-    @ObservationIgnored private var pendingNightIndex: Int?
 
     /// Wire the model to the app's repository once. Later calls are ignored.
     func attach(repo: Repository, profile: ProfileStore, ble: BLEManager) {
@@ -66,10 +58,10 @@ final class PulseModel {
         self.repo = repo
         self.profile = profile
         self.ble = ble
-        builder = PulseSnapshotBuilder(repo: repo)
+        scoringProfile = Self.scoringProfile(profile)
+        builder = PulseSnapshotBuilder(repo: repo, strainBands: PulseSnapshotBuilder.optimalStrainBands())
         #if DEBUG
         pendingDayOffset = PulseDebugLaunch.dayOffset
-        pendingNightIndex = PulseDebugLaunch.nightIndex
         #endif
         // `@Published` emits in willSet, before `refreshSeq` itself changes (every cache is already
         // assigned by then, see `Repository.refresh`). Rebuild on the next turn so the request reads a
@@ -80,11 +72,12 @@ final class PulseModel {
                 Task { @MainActor [weak self] in self?.refreshChanged(to: value) }
             }
             .store(in: &cancellables)
-        // A new HR max or sex re-scores Effort; debounced so typing into a profile field is one rebuild.
+        // A new HR max or sex re-scores Effort and new zones re-bin; debounced so typing into a profile
+        // field is one rebuild.
         profile.objectWillChange
             .debounce(for: .milliseconds(500), scheduler: RunLoop.main)
             .sink { [weak self] _ in
-                Task { @MainActor [weak self] in self?.invalidateAll() }
+                Task { @MainActor [weak self] in self?.profileChanged() }
             }
             .store(in: &cancellables)
         refreshChanged(to: repo.refreshSeq)
@@ -112,6 +105,23 @@ final class PulseModel {
     private func invalidateAll() {
         updateMaxOffset()
         rebuildHome()
+    }
+
+    /// The profile changed. When what the builds score with changed (Effort's HR max or sex, the zones),
+    /// rebuild everything as a display preference does, Home's extras and the open screen included; an
+    /// edit that changes none of it (a name, a photo) rebuilds nothing.
+    private func profileChanged() {
+        guard let profile else { return }
+        let scoring = Self.scoringProfile(profile)
+        guard scoring != scoringProfile else { return }
+        scoringProfile = scoring
+        prefsVersion &+= 1
+        invalidateAll()
+    }
+
+    /// The profile values a build scores with, as a request captures them.
+    private static func scoringProfile(_ profile: ProfileStore) -> PulseProfile {
+        PulseProfile(effortHRmax: profile.effortHRmax, sex: profile.sex, zoneSet: profile.hrZoneSet)
     }
 
     /// The app came back to the foreground: the logical day may have rolled and today's live strain has
@@ -194,8 +204,7 @@ final class PulseModel {
             importedSleep: repo.importedSleep,
             vitalRows: repo.vitalMetricRows,
             prefs: prefs,
-            profile: PulseProfile(effortHRmax: profile.effortHRmax, sex: profile.sex,
-                                  zoneSet: profile.hrZoneSet))
+            profile: Self.scoringProfile(profile))
     }
 
     // MARK: Builds
@@ -209,79 +218,6 @@ final class PulseModel {
                   snapshot.seq == self.seq, snapshot.day.offset == self.dayOffset else { return }
             if self.home != snapshot { self.home = snapshot }
         }
-    }
-
-    /// Build the Recovery dive for the selected day. Called from the screen's `.task(id: detailKey)`.
-    func loadRecovery() async {
-        guard let builder, let req = request(dayOffset: dayOffset) else { return }
-        guard let snapshot = await builder.recovery(req), !Task.isCancelled,
-              snapshot.seq == seq, snapshot.day.offset == dayOffset else { return }
-        if recovery != snapshot { recovery = snapshot }
-    }
-
-    /// Build the Strain dive for the selected day.
-    func loadStrain() async {
-        guard let builder, let req = request(dayOffset: dayOffset) else { return }
-        guard let snapshot = await builder.strain(req), !Task.isCancelled,
-              snapshot.seq == seq, snapshot.day.offset == dayOffset else { return }
-        if strain != snapshot { strain = snapshot }
-    }
-
-    /// Build the Health tab (always today).
-    func loadHealth() async {
-        guard let builder, let req = request(dayOffset: 0) else { return }
-        guard let snapshot = await builder.health(req), !Task.isCancelled, snapshot.seq == seq else { return }
-        if health != snapshot { health = snapshot }
-    }
-
-    /// Open the Sleep dive on the newest night that ended on or before Home's selected day.
-    func openSleep() async {
-        sleepNightKey = nil
-        sleepTask?.cancel()
-        // A snapshot left from an earlier visit may be another night: show loading, not the wrong night.
-        if let current = sleep, current.seq != seq || current.anchorKey != request(dayOffset: dayOffset)?.day.key {
-            sleep = nil
-        }
-        await loadSleep(onOrBefore: nil)
-    }
-
-    /// Step the Sleep dive `delta` nights (+1 = one night older).
-    func stepNight(_ delta: Int) {
-        guard let current = sleep else { return }
-        let target = current.nightIndex + delta
-        guard current.nightKeys.indices.contains(target) else { return }
-        let key = current.nightKeys[target]
-        sleepNightKey = key
-        sleepTask?.cancel()
-        sleepTask = Task { [weak self] in await self?.loadSleep(onOrBefore: key) }
-    }
-
-    /// Reload the Sleep dive (a refresh landed) on the night the wearer chose, re-found by wake day, or
-    /// on Home's night when they have not stepped. Replaces any load in flight, including a step, whose
-    /// night `sleepNightKey` already carries.
-    func reloadSleep() {
-        let key = sleepNightKey
-        sleepTask?.cancel()
-        sleepTask = Task { [weak self] in await self?.loadSleep(onOrBefore: key) }
-    }
-
-    private func loadSleep(onOrBefore key: String?) async {
-        guard let builder, let req = request(dayOffset: dayOffset) else { return }
-        guard let snapshot = await builder.sleep(req, onOrBefore: key), !Task.isCancelled,
-              snapshot.seq == seq else { return }
-        #if DEBUG
-        // `--pulse-night N`: once there are enough nights, land on night N one time (the path ‹ takes).
-        if let pending = pendingNightIndex, snapshot.nightKeys.count > pending {
-            pendingNightIndex = nil
-            let target = snapshot.nightKeys[pending]
-            if target != snapshot.wakeDayKey {
-                sleepNightKey = target
-                await loadSleep(onOrBefore: target)
-                return
-            }
-        }
-        #endif
-        if sleep != snapshot { sleep = snapshot }
     }
 
     // MARK: Builds for extension snapshots

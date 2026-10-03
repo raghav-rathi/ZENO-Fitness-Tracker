@@ -32,10 +32,10 @@ struct PulsePrefs: Equatable {
     var sleepOnsetDayCycle = true
     var effortMethod: StrainScorer.Method = .edwards
     var stressPersonalBaseline = false
-    /// Tomorrow's wake time from the wind-down reminder when it is on, minutes after midnight.
-    var alarmWakeMinute: Int?
-    /// The strap's silent wake alarm when it is armed for tomorrow, minutes after midnight.
-    var strapAlarmMinute: Int?
+    /// The strap alarm, the wind-down reminder and My Schedule's per-day times, as the Sleep Planner reads
+    /// them (`PulseSleepPlanSettings.stored`), whether the strap will arm included: what tonight's plan is
+    /// resolved from.
+    var sleepPlan = PulseSleepPlanSettings()
     /// The journal prompt's switch (Settings, shared with the classic Today).
     var journalReminder = true
 }
@@ -68,9 +68,22 @@ struct PulseProfile: Equatable {
 /// returns nil when superseded, so a fast run of swipes does not queue a build per day.
 actor PulseSnapshotBuilder {
     let repo: Repository
+    /// The optimal Strain range for each whole Recovery percent, 0...100 (`optimalStrainBands()`).
+    private let strainBands: [ClosedRange<Double>?]
 
-    init(repo: Repository) {
+    init(repo: Repository, strainBands: [ClosedRange<Double>?]) {
         self.repo = repo
+        self.strainBands = strainBands
+    }
+
+    /// CoupledView's approved recovery-to-strain bands (`CoupledView.optimalStrainRange`) for every whole
+    /// percent a dial can print, read once on the main actor, where that rule is isolated, for the builder
+    /// to look up off it.
+    @MainActor
+    static func optimalStrainBands() -> [ClosedRange<Double>?] {
+        (0...100).map { percent in
+            CoupledView.optimalStrainRange(recovery: Double(percent)).map { Double($0.lowerBound)...Double($0.upperBound) }
+        }
     }
 
     // MARK: Per-refresh cache
@@ -85,17 +98,8 @@ actor PulseSnapshotBuilder {
         var habitual: Int?
         var habitualLoaded = false
         var nights: [[CachedSleepSession]]?
-        var todayStressScore: Double??
-        var weekly: Weekly?
         /// Heart rate for a day window, keyed "dayKey|from". At most a few entries.
         var hr: [String: [HRSample]] = [:]
-    }
-
-    private struct Weekly {
-        let fitnessAge: Double?
-        let bodyAge: Double?
-        let vitality: Double?
-        let vo2max: Double?
     }
 
     private var cacheSeq = Int.min
@@ -122,9 +126,12 @@ actor PulseSnapshotBuilder {
     ///     let plans = await cached("plan.goals") { await repo.planGoals() }
     ///
     /// Keys are namespaced by the caller ("<group>.<what>"). A load begun under an older refresh is
-    /// returned to its caller but not stored, exactly like the built-in readers.
+    /// returned to its caller but not stored, exactly like the built-in readers. An optional `T` works too:
+    /// a stored nil is a hit, a missing key loads.
     func cached<T>(_ key: String, load: () async -> T) async -> T {
-        if let value = extensionCache[key] as? T { return value }
+        // Unwrap the lookup before casting: `nil as? T` succeeds when T is itself optional, which would
+        // turn a missing key into a cached nil and never load.
+        if let hit = extensionCache[key], let value = hit as? T { return value }
         let seq = cacheSeq
         let value = await load()
         if seq == cacheSeq { extensionCache[key] = value }
@@ -204,21 +211,6 @@ actor PulseSnapshotBuilder {
         let groups = SleepModel.navDays(navSessions: all)
         if seq == cacheSeq { cache.nights = groups }
         return groups
-    }
-
-    private func weekly() async -> Weekly {
-        if let v = cache.weekly { return v }
-        let seq = cacheSeq
-        async let fit = repo.exploreSeries(key: "fitness_age", source: "my-whoop")
-        async let body = repo.exploreSeries(key: "body_age", source: "my-whoop")
-        async let vit = repo.exploreSeries(key: "vitality", source: "my-whoop")
-        async let vo2 = repo.resolvedSeries(key: "vo2max_est", source: "my-whoop")
-        let v = Weekly(fitnessAge: (await fit).last?.value,
-                       bodyAge: (await body).last?.value,
-                       vitality: (await vit).last?.value,
-                       vo2max: (await vo2).points.last?.value)
-        if seq == cacheSeq { cache.weekly = v }
-        return v
     }
 
     /// The day window's heart rate, read once per refresh and shared by Home and the Strain dive.
@@ -351,16 +343,23 @@ actor PulseSnapshotBuilder {
         PulseDialData(score: .strain, value: value, state: value == nil ? .noData : .scored)
     }
 
+    /// The optimal Strain range for a Recovery as a dial prints it (a whole percent, 0...100), from
+    /// CoupledView's approved bands as the builder read them at start-up.
+    func optimalStrainRange(percent: Int) -> ClosedRange<Double>? {
+        strainBands.indices.contains(percent) ? strainBands[percent] : nil
+    }
+
     /// The recommended range for the day from the recovery the dial shows, through CoupledView's
     /// approved recovery-to-strain bands. Judged on the whole percent the dial prints.
     func strainTarget(_ display: LiquidTodayView.ChargeDisplay, strain: Double?,
                               isToday: Bool) -> PulseStrainTarget? {
         guard let pct = display.pct else { return nil }
-        let shown = Double(PulseDisplay.displayedPercent(pct))
-        guard let band = CoupledView.optimalStrainRange(recovery: shown) else { return nil }
+        let percent = PulseDisplay.displayedPercent(pct)
+        let shown = Double(percent)
+        guard let band = optimalStrainRange(percent: percent) else { return nil }
         let carried: Bool
         if case .carried = display { carried = true } else { carried = false }
-        return PulseStrainTarget(range: Double(band.lowerBound)...Double(band.upperBound),
+        return PulseStrainTarget(range: band,
                                  intent: PulseDisplay.strainIntent(recoveryPercent: shown),
                                  band: PulseDisplay.recoveryBand(percent: shown),
                                  current: strain, fromCarriedRecovery: carried, isToday: isToday)
@@ -442,9 +441,8 @@ actor PulseSnapshotBuilder {
             }
             napList = naps(in: g, night: night)
         }
-        let tonight = r.day.isToday ? await tonightPlan(r, groups: groups, habitual: habitual) : nil
+        let tonight = r.day.isToday ? await tonightPlan(r) : nil
         let stats = await keyStats(r, row: row)
-        let stress = await stressSummary(r)
         // The journal strip ends on the selected day; it stays on a past day (§2.9).
         let journal = r.prefs.journalReminder ? await journalStrip(endingOn: r.day.date, offset: r.day.offset) : nil
         let monitor = r.day.isToday ? monitorSummary(r) : nil
@@ -468,7 +466,6 @@ actor PulseSnapshotBuilder {
             workouts: workoutItems(rows, window: window),
             tonight: tonight,
             stats: stats,
-            stress: stress,
             journal: journal,
             streak: streak,
             monitor: monitor,
@@ -527,45 +524,21 @@ actor PulseSnapshotBuilder {
         })
     }
 
-    /// Tonight's need and bedtime from the unified sleep-need model (baseline + strain + debt − naps) —
-    /// the same breakdown the scoring pass stores and the wind-down reminder counts back from.
-    func tonightPlan(_ r: PulseRequest, groups: [[CachedSleepSession]], habitual: Int?) async -> PulseTonight? {
-        let breakdown = await repo.sleepNeedTonight(now: r.now)
-        let need = breakdown.totalMin
-        guard need > 0 else { return nil }
-
-        let cal = Calendar.current
-        let wakeMinute: Int
-        let source: PulseTonight.WakeSource
-        if let strapAlarm = r.prefs.strapAlarmMinute {
-            wakeMinute = strapAlarm
-            source = .strapAlarm
-        } else if let alarm = r.prefs.alarmWakeMinute {
-            wakeMinute = alarm
-            source = .alarm
-        } else {
-            let recent = groups.prefix(14).compactMap { g -> Int? in
-                guard let end = SleepView.mainNightGroup(g, habitualMidsleepSec: habitual).last?.endTs else { return nil }
-                let c = cal.dateComponents([.hour, .minute], from: Date(timeIntervalSince1970: TimeInterval(end)))
-                return (c.hour ?? 0) * 60 + (c.minute ?? 0)
-            }
-            if recent.count >= 3, let median = PulseDisplay.medianClockMinute(recent) {
-                wakeMinute = median
-                source = .habit
-            } else {
-                wakeMinute = 7 * 60
-                source = .fallback
-            }
-        }
-        let bedMinute = PulseDisplay.bedtimeMinute(wakeMinute: wakeMinute, needMinutes: need)
-        // Tonight: a bedtime after noon is this evening, one before noon is after midnight.
-        let base = cal.startOfDay(for: r.now)
-        let bedDay = bedMinute >= 12 * 60 ? base : (cal.date(byAdding: .day, value: 1, to: base) ?? base)
-        let bedtime = bedDay.addingTimeInterval(TimeInterval(bedMinute * 60))
-        return PulseTonight(baseNeedMin: breakdown.baselineMin, strainMin: breakdown.strainMin,
-                            debtMin: breakdown.debtMin, napCreditMin: breakdown.napCreditMin,
-                            needMin: need, bedtime: bedtime,
-                            wake: bedtime.addingTimeInterval(need * 60), wakeSource: source)
+    // TODO(sleep): two gaps in the shared resolver, both for the Sleep group so the card and the planner
+    // move together. (1) `tonightSleepPlan` plans REACH MY SLEEP NEED at 100% whatever goal the planner
+    // has (`pulse.sleepPlanner.goal`): give it the goal, brought to the builder in `PulsePrefs` as the
+    // alarm settings are. (2) `PulseSleepPlan.resolve` takes each wake's next occurrence after now, so from
+    // the moment the night ending today is over until this morning's planned wake, both plan this morning
+    // ("Now" to bed); once that night has ended they should plan the coming one.
+    /// Tonight's plan through the Sleep Planner's own resolver (`tonightSleepPlan`, Screens/Sleep, which runs
+    /// `PulseSleepPlan.resolve` over the unified sleep need) on the settings the request captured: the wake
+    /// the strap is really armed for (per-day times included), the bedtime with time to fall asleep. Home's
+    /// TONIGHT'S SLEEP card and the planner it opens therefore print the same night while the planner's goal
+    /// is its default, REACH MY SLEEP NEED at 100%.
+    func tonightPlan(_ r: PulseRequest) async -> PulseTonight? {
+        guard let plan = await tonightSleepPlan(r, settings: r.prefs.sleepPlan) else { return nil }
+        return PulseTonight(needMin: plan.needMin, inBed: plan.bedtime, asleepBy: plan.asleepBy, wake: plan.wake,
+                            wakeSource: plan.wakeSource)
     }
 
     // MARK: Key stats
@@ -653,9 +626,8 @@ actor PulseSnapshotBuilder {
                             route: .metric("spo2"), dayKey: d.key, flatPercent: 1))
         }
 
-        let apple = await appleRows()
         out.append(await stepsStat(r))
-        out.append(caloriesStat(r, apple: apple))
+        out.append(await caloriesStat(r))
         return out
     }
 
@@ -744,8 +716,13 @@ actor PulseSnapshotBuilder {
                     dayKey: r.day.key, flatPercent: 5, runningTotal: r.day.isToday)
     }
 
-    /// Active calories: Apple Health's imported figure first, else the on-device HR estimate (#616).
-    private func caloriesStat(_ r: PulseRequest, apple: [AppleDaily]) -> PulseKeyStat {
+    /// The day's active calories from the ONE precedence every calories surface shares: Apple Health's
+    /// imported figure first, else the on-device HR estimate (#616), with the per-day `history` the 30-day
+    /// comparison and the spark read and the detail route for the source chosen. The Key Stats tile and
+    /// My Dashboard's CALORIES row both read it, as `stepsResolution(_:)` serves steps.
+    func caloriesResolution(_ r: PulseRequest)
+        async -> (value: Double?, history: [(day: String, value: Double)], route: TabRoute) {
+        let apple = await appleRows()
         var importedByDay: [String: Double] = [:]
         for a in apple { if let k = a.activeKcal { importedByDay[a.day] = max(importedByDay[a.day] ?? 0, k) } }
         let deviceByDay = Dictionary(r.days.compactMap { m in m.activeKcalEst.map { (m.day, $0) } },
@@ -753,38 +730,32 @@ actor PulseSnapshotBuilder {
         let keys = Set(importedByDay.keys).union(deviceByDay.keys).sorted()
         let history = keys.compactMap { k in (importedByDay[k] ?? deviceByDay[k]).map { (day: k, value: $0) } }
         let key = r.day.key
-        let value = (importedByDay[key] ?? deviceByDay[key]).map { StatValue(value: $0, day: key) }
         let metric = MetricCatalog.todayCaloriesMetric(hasImportedKcal: importedByDay[key] != nil,
                                                        hasOnDeviceKcal: deviceByDay[key] != nil)
         let route = TabRoute.metricSourced(key: metric?.key ?? "energy_kcal", source: metric?.source ?? "my-whoop")
-        return stat(id: "kcal", title: String(localized: "Calories"), icon: "flame.fill", value: value,
-                    text: PulseFormat.grouped, unit: "kcal", history: history, route: route, dayKey: key,
-                    flatPercent: 5, runningTotal: r.day.isToday)
+        return (importedByDay[key] ?? deviceByDay[key], history, route)
+    }
+
+    private func caloriesStat(_ r: PulseRequest) async -> PulseKeyStat {
+        let calories = await caloriesResolution(r)
+        let key = r.day.key
+        return stat(id: "kcal", title: String(localized: "Calories"), icon: "flame.fill",
+                    value: calories.value.map { StatValue(value: $0, day: key) },
+                    text: PulseFormat.grouped, unit: "kcal", history: calories.history, route: calories.route,
+                    dayKey: key, flatPercent: 5, runningTotal: r.day.isToday)
     }
 
     // MARK: Stress
 
+    /// The day's stress for Home's STRESS MONITOR tile and dashboard card, past days included: the Stress
+    /// Monitor's own day (`stressDay`, Screens/Health, which caches its reads per refresh), so its level, the
+    /// reading's time and the curve are the ones the screen the tile opens shows. Built with Home's extras
+    /// (`homeExtras`), once the dials are out: it scores the day's heart rate, R-R and motion.
     func stressSummary(_ r: PulseRequest) async -> PulseStressSummary? {
-        let stored = await stressStoredSeries()
-        if r.day.isToday {
-            let score: Double?
-            if r.seq == cacheSeq, let cached = cache.todayStressScore {
-                score = cached
-            } else {
-                // StressModel folds the full history for its baseline; it is built here, off the main actor.
-                score = StressModel(days: r.days, stored: stored)?.score
-                if r.seq == cacheSeq { cache.todayStressScore = .some(score) }
-            }
-            let curve = await StressDayCurve.today(repo: repo, now: r.now,
-                                                   personalBaseline: r.prefs.stressPersonalBaseline)
-            return PulseStressSummary(score: score, bandTitle: score.map { StressBand(score: $0).title },
-                                      hours: curve?.result.timeline ?? [],
-                                      maskedHours: curve?.result.activityMaskedHours ?? 0, isToday: true)
-        }
-        guard let v = stored.last(where: { $0.day == r.day.key })?.value else { return nil }
-        let score = min(max(v, 0), 3)
-        return PulseStressSummary(score: score, bandTitle: StressBand(score: score).title, hours: [],
-                                  maskedHours: 0, isToday: false)
+        guard let day = await stressDay(r) else { return nil }
+        return PulseStressSummary(score: day.gaugeLevel?.level, at: day.latest?.at, dayKey: day.dayKey,
+                                  points: day.points, chartEnd: day.chartEnd, hours: day.hours,
+                                  maskedHours: day.maskedHours, isToday: day.isToday)
     }
 
     // MARK: - Recovery
@@ -957,245 +928,18 @@ actor PulseSnapshotBuilder {
         let bpms = hr.map(\.bpm)
         let average = bpms.isEmpty ? nil : Int((Double(bpms.reduce(0, +)) / Double(bpms.count)).rounded())
 
-        let apple = await appleRows()
+        let calories = await caloriesResolution(r)
         let rows = await workoutRows()
         guard isCurrent(r) else { return nil }
-        let imported = apple.filter { $0.day == r.day.key }.compactMap(\.activeKcal).max()
         let start = Date(timeIntervalSince1970: TimeInterval(window.from))
         let end = Date(timeIntervalSince1970: TimeInterval(max(window.to, window.from + 60)))
         return StrainSnapshot(seq: r.seq, day: r.day, dial: strainDial(strain),
                               target: strainTarget(charge, strain: strain, isToday: r.day.isToday),
                               curve: curve, hr: points, window: start...end, zones: zones,
                               zoneMinutes: tiz.seconds.map { $0 / 60 },
-                              calories: imported ?? row?.activeKcalEst,
+                              calories: calories.value,
                               averageHR: average, peakHR: bpms.max(),
                               workouts: workoutItems(rows, window: window))
-    }
-
-    // MARK: - Sleep
-
-    /// The Sleep dive for the newest night that ended on or before `anchorKey` (a wake day key; Home's
-    /// day when nil).
-    ///
-    /// Nights are addressed by wake day, never by position: a newly banked night shifts every index by
-    /// one, so an index kept across a refresh would silently swap the screen to the neighbouring night.
-    func sleep(_ r: PulseRequest, onOrBefore anchorKey: String?) async -> SleepSnapshot? {
-        begin(r.seq)
-        let groups = await nightGroups(r)
-        let habitual = await habitualMidsleep()
-        let rest = await restSeries()
-        guard isCurrent(r) else { return nil }
-        let anchor = anchorKey ?? r.day.key
-        // `navDays` groups sessions by the local day they END on, newest first.
-        let keys = groups.map { g in
-            Repository.localDayKey(Date(timeIntervalSince1970: TimeInterval(g.first?.endTs ?? 0)))
-        }
-        guard !keys.isEmpty else {
-            return SleepSnapshot(seq: r.seq, anchorKey: anchor, nightIndex: 0, nightKeys: [], wakeDayKey: nil,
-                                 onset: nil, wake: nil,
-                                 dial: PulseDialData(score: .sleep, value: nil, state: .noData),
-                                 asleepMin: nil, inBedMin: nil, needMin: nil, contributors: [], spans: [],
-                                 stages: [], sleepingHR: nil, lowestHR: nil, respRate: nil, naps: [],
-                                 isStub: true)
-        }
-        // A day older than every banked night opens on the oldest night, the nearest one there is.
-        let index = keys.firstIndex { $0 <= anchor } ?? keys.count - 1
-        let group = groups[index]
-        let night = SleepModel.mergeDay(group, habitualMidsleepSec: habitual, motionByStart: [:])
-        let endTs = night?.session.endTs ?? group.last?.endTs ?? 0
-        let wakeKey = Repository.localDayKey(Date(timeIntervalSince1970: TimeInterval(endTs)))
-        let row = r.days.last(where: { $0.day == wakeKey })
-
-        // The same resolver as Home's Sleep dial for this wake day.
-        let perf = sleepPerformance(dayKey: wakeKey, rest: rest, days: r.days)
-        let dial = PulseDialData(score: .sleep, value: perf, state: perf == nil ? .noData : .scored)
-
-        // Every duration on this screen is the merged main night the hypnogram draws, so the stage rows
-        // add up to the "asleep" figure and the efficiency matches the classic stage card.
-        let stages = night?.stages
-        let asleep = stages?.asleep
-        let inBed = stages?.total
-        // Need and consistency come from the ONE per-night resolver (the export's figures for an imported
-        // night, else the unified need and WHOOP-style bed + wake consistency the scoring pass stored), so
-        // this screen, the Sleep tab and the stored Rest agree. Hours-vs-needed divides THIS screen's merged
-        // main night by that need, so the percent and its "x of y" caption can never disagree.
-        let resolved = await repo.resolvedNightSleep(day: wakeKey)
-        guard isCurrent(r) else { return nil }
-        let need = resolved.needMin
-        let hoursPct = asleep.flatMap { a in
-            need.flatMap { n in n > 0 && a > 0 ? min(100, a / n * 100) : nil }
-        }
-        let effPct = stages.flatMap { s in s.total > 0 ? s.asleep / s.total * 100 : nil }
-        let restorativePct = stages.flatMap { s in s.asleep > 0 ? (s.deep + s.rem) / s.asleep * 100 : nil }
-        let consistency = resolved.consistencyPct
-
-        let contributors = [
-            PulseSleepContributor(id: "hours", title: String(localized: "Hours vs needed"), percent: hoursPct,
-                                  detail: asleep.map { a in
-                                      guard let n = need else {
-                                          return String(localized: "\(PulseFormat.duration(minutes: a)) asleep")
-                                      }
-                                      return String(localized: "\(PulseFormat.duration(minutes: a)) of \(PulseFormat.duration(minutes: n))")
-                                  }),
-            PulseSleepContributor(id: "efficiency", title: String(localized: "Efficiency"), percent: effPct,
-                                  detail: inBed.map { String(localized: "\(PulseFormat.duration(minutes: $0)) in bed") }),
-            PulseSleepContributor(id: "consistency", title: String(localized: "Consistency"),
-                                  percent: consistency, detail: String(localized: "Bed and wake times")),
-            PulseSleepContributor(id: "restorative", title: String(localized: "Restorative"),
-                                  percent: restorativePct, detail: String(localized: "Deep and REM share")),
-        ]
-
-        let spans = (night?.intervals ?? []).map { PulseStageSpan(stage: $0.stage, start: $0.start, end: $0.end) }
-        var stageRows: [PulseStageRow] = []
-        if let s = stages, s.total > 0 {
-            for (stage, minutes) in [(SleepStage.awake, s.awake), (.light, s.light), (.deep, s.deep), (.rem, s.rem)] {
-                stageRows.append(PulseStageRow(stage: stage, minutes: minutes, share: minutes / s.total))
-            }
-        }
-
-        // Sleeping heart rate over the night's own window (real instants).
-        var sleepingHR: Int?
-        var lowestHR: Int?
-        if let night {
-            let buckets = await repo.hrBuckets(from: night.session.effectiveStartTs, to: night.session.endTs,
-                                               bucketSeconds: 60)
-            guard isCurrent(r) else { return nil }
-            let bpm = buckets.map(\.bpm)
-            if !bpm.isEmpty {
-                sleepingHR = Int((bpm.reduce(0, +) / Double(bpm.count)).rounded())
-                lowestHR = bpm.min().map { Int($0.rounded()) }
-            }
-        }
-
-        return SleepSnapshot(
-            seq: r.seq, anchorKey: anchor, nightIndex: index, nightKeys: keys, wakeDayKey: wakeKey,
-            onset: night?.onsetDate,
-            wake: night.map { Date(timeIntervalSince1970: TimeInterval($0.session.endTs)) },
-            dial: dial, asleepMin: asleep, inBedMin: inBed, needMin: need,
-            contributors: contributors, spans: spans, stages: stageRows,
-            sleepingHR: sleepingHR, lowestHR: lowestHR, respRate: row?.respRateBpm,
-            naps: naps(in: group, night: night), isStub: night == nil)
-    }
-
-    // MARK: - Health
-
-    /// The Health tab. Always built for TODAY whatever day Home is showing: it is the "how am I now"
-    /// surface, so the model hands it a today request.
-    func health(_ r: PulseRequest) async -> HealthSnapshot? {
-        begin(r.seq)
-        let unit: TemperatureUnit = r.prefs.fahrenheit ? .fahrenheit : .celsius
-        // The same resolution and banding the classic Health tile uses.
-        let readings = BodyVitalSigns.readings(sourceRows: r.vitalRows, temperatureUnit: unit, now: r.now,
-                                               skinTempPreferred: r.prefs.skinTempPreferred)
-        let vitals = readings.compactMap { vital(for: $0, r: r) }
-        let stress = await stressSummary(r)
-        let weekly = await weekly()
-        // The Steps entry reads today's total from the shared resolver and opens the Steps screen.
-        let steps = await stepsResolution(r)
-        guard isCurrent(r) else { return nil }
-        return HealthSnapshot(seq: r.seq, vitals: vitals, stress: stress, fitnessAge: weekly.fitnessAge,
-                              bodyAge: weekly.bodyAge, vitality: weekly.vitality, vo2max: weekly.vo2max,
-                              stepsToday: steps.value, stepsRoute: steps.route)
-    }
-
-    /// One Health Monitor row: the classic reading plus the typical range its band was judged against.
-    private func vital(for reading: BodyVitalReading, r: PulseRequest) -> PulseVital? {
-        // The raw PPG counts are not a vital, and SpO₂ only earns a row when a real value exists.
-        guard reading.key != "spo2raw" else { return nil }
-        if reading.key == "spo2" && reading.value == nil { return nil }
-
-        // Titles are Pulse's own names for these metrics, the ones Recovery uses, rather than the classic
-        // monitor's abbreviations ("Resp Rate", "Blood O₂"), so one metric reads the same everywhere.
-        let title: String
-        let route: TabRoute
-        let population: ClosedRange<Double>
-        let cfg: MetricCfg?
-        let extract: (DailyMetric) -> Double?
-        let isAbsoluteSkin = reading.key == "skin" && (reading.value.map(VitalBands.isAbsoluteSkinTemp) ?? false)
-        switch reading.key {
-        case "resp":
-            title = String(localized: "Respiratory rate")
-            route = .metric("resp_rate"); population = 12...20; cfg = Baselines.respCfg
-            extract = { $0.respRateBpm }
-        case "spo2":
-            title = String(localized: "Blood oxygen")
-            route = .metric("spo2"); population = 95...100; cfg = nil
-            extract = { $0.spo2Pct }
-        case "rhr":
-            title = String(localized: "Resting heart rate")
-            route = .metric("rhr"); population = 40...60; cfg = Baselines.restingHRCfg
-            extract = { $0.restingHr.map(Double.init) }
-        case "hrv":
-            title = String(localized: "Heart rate variability")
-            route = .metric("hrv"); population = 40...120; cfg = Baselines.hrvCfg
-            extract = { $0.avgHrv }
-        case "skin":
-            title = String(localized: "Skin temperature")
-            route = .metric("skin_temp")
-            population = isAbsoluteSkin ? 33...36 : (-0.6)...0.6
-            cfg = isAbsoluteSkin ? Baselines.metricCfg["skin_temp"] : VitalBands.skinTempDeviationCfg
-            extract = isAbsoluteSkin
-                ? { $0.skinTempC ?? $0.skinTempDevC.flatMap { VitalBands.isAbsoluteSkinTemp($0) ? $0 : nil } }
-                : { $0.skinTempDevC.flatMap { VitalBands.isAbsoluteSkinTemp($0) ? nil : $0 } }
-        default:
-            return nil
-        }
-
-        // The typical range the band was judged against: the personal baseline ± VitalBands.sigmaK σ once
-        // the baseline is trusted, else the fixed adult range, the same two yardsticks the band itself
-        // uses (`VitalBands.band`). Folded from the same source precedence the reading used.
-        var typical = population
-        var personal = false
-        if reading.banding.basis == .personal, let cfg, let day = reading.day {
-            // Source precedence, highest first: the rule `BodyVitalSigns` resolves readings by
-            // (`DailyMetricSource.vitalPrecedence`, private to VitalSignsSummary.swift). Skin omits Apple
-            // Health, which has no equivalent of the strap's deviation. Keep the two in step.
-            let precedence: [DailyMetricSource] = reading.key == "skin"
-                ? [.whoopImport, .noopComputed, .localCache]
-                : [.whoopImport, .noopComputed, .appleHealth, .localCache]
-            var byDay: [String: Double] = [:]
-            for source in precedence {
-                for row in r.vitalRows where row.source == source && row.metric.day < day {
-                    guard let v = extract(row.metric), byDay[row.metric.day] == nil else { continue }
-                    byDay[row.metric.day] = v
-                }
-            }
-            let history = VitalBands.calendarSeries(byDay.keys.sorted().map { ($0, byDay[$0]) })
-            let state = Baselines.foldHistory(history, cfg: cfg)
-            if state.trusted {
-                let half = VitalBands.sigmaK * Baselines.sigma(state)
-                typical = (state.baseline - half)...(state.baseline + half)
-                personal = true
-            }
-        }
-
-        // Lay the value and the range on one bar with room either side.
-        let v = reading.value
-        let lo = min(typical.lowerBound, v ?? typical.lowerBound)
-        let hi = max(typical.upperBound, v ?? typical.upperBound)
-        let pad = max((hi - lo) * 0.25, 0.001)
-        let barLo = lo - pad, barHi = hi + pad
-        func frac(_ x: Double) -> Double { (x - barLo) / (barHi - barLo) }
-
-        let format = reading.format
-        // A signed range reads badly with a dash between the signs ("-0.7–+0.8"), so it says "to".
-        let rangeText = typical.lowerBound < 0
-            ? String(localized: "\(format(typical.lowerBound)) to \(format(typical.upperBound))")
-            : "\(format(typical.lowerBound))–\(format(typical.upperBound))"
-        return PulseVital(
-            id: reading.key,
-            title: title,
-            value: v.map(format),
-            unit: reading.unit,
-            band: reading.banding.band,
-            basisText: personal
-                ? String(localized: "Your typical range")
-                : String(localized: "Typical adult range"),
-            rangeText: rangeText,
-            valueFraction: v.map(frac),
-            typicalFraction: frac(typical.lowerBound)...frac(typical.upperBound),
-            dayLabel: reading.day.map { BodyVitalReading.dayLabel($0) },
-            route: route)
     }
 }
 

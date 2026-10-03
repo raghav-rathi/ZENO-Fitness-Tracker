@@ -29,9 +29,6 @@ enum PulseHomeMetrics {
     static let journalStripTop: CGFloat = 20
     static let journalButtonTop: CGFloat = 14
 
-    /// My Plan's art slot (reviews/r113), leaving its sentence a ≈240 pt column.
-    static let planArt = CGSize(width: 84, height: 96)
-
     /// The coaching card's least height (profile-community-2026/34) and its art column.
     static let coachingCardMinHeight: CGFloat = 124
     static let coachingArtWidth: CGFloat = 72
@@ -65,6 +62,8 @@ enum PulseHomeGlyph {
     case chartMark
     /// A Get Started card's "✕".
     case dismiss
+    /// The mark leading a My Day pill row (the Year in Review promo), the coach pill's size.
+    case pillMark
 
     private var spec: (size: CGFloat, weight: Font.Weight, relativeTo: Font.TextStyle) {
         switch self {
@@ -75,6 +74,7 @@ enum PulseHomeGlyph {
         case .customizeControl: return (20, .regular, .title3)
         case .chartMark: return (15, .regular, .subheadline)
         case .dismiss: return (12, .bold, .caption)
+        case .pillMark: return (18, .light, .body)
         }
     }
 
