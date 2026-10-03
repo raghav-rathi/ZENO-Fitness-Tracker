@@ -36,10 +36,12 @@ struct PulseWeeklyDigestView: View {
     @AppStorage(UnitPrefs.systemKey) private var unitSystemRaw = UnitSystem.metric.rawValue
     @AppStorage(UnitPrefs.temperatureKey) private var temperatureRaw = ""
 
-    init() {
+    /// Opens `page` weeks back (0 is the week containing today); `PulseWeeklyDigestRoute` passes another.
+    init(page: Int = 0) {
+        _page = State(initialValue: page)
         #if DEBUG
         _mode = State(initialValue: PulseTrendDebugLaunch.digestMode ?? .week)
-        _page = State(initialValue: PulseTrendDebugLaunch.page ?? 0)
+        _page = State(initialValue: PulseTrendDebugLaunch.page ?? page)
         #endif
     }
 
@@ -97,6 +99,14 @@ struct PulseWeeklyDigestView: View {
         .onAppear { JournalPlanDebug.startPlanIfRequested() }
         #endif
     }
+}
+
+/// The Weekly Digest opened `page` weeks back (0 is the week containing today, 1 the Monday-to-Sunday
+/// week before it), for an entry point that names its week: Home's Monday "Your week in review" card
+/// opens last week. Pushed, as `.weeklyDigest` is.
+struct PulseWeeklyDigestRoute: PulseScreenRoute {
+    let page: Int
+    var view: some View { PulseWeeklyDigestView(page: page) }
 }
 
 // MARK: - Content
