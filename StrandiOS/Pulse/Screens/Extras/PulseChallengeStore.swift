@@ -76,8 +76,9 @@ final class PulseChallengeStore {
     }
 
     #if DEBUG
-    /// `--pulse-demo-challenges`: with `--demo-seed`, start one challenge of each kind a few days back, so
-    /// the list, the in-progress and the complete pages can be captured (simctl cannot tap).
+    /// `--pulse-demo-challenges`: with `--demo-seed`, start one challenge of each kind a few days back (the
+    /// steps one long enough ago to be over), so the list, the in-progress and the complete pages can be
+    /// captured (simctl cannot tap).
     func seedDemoIfRequested(today: String) {
         guard CommandLine.arguments.contains("--pulse-demo-challenges"), challenges.isEmpty else { return }
         let start = PulseDisplay.dayKey(today, offsetBy: -3) ?? today
@@ -86,6 +87,8 @@ final class PulseChallengeStore {
             PulseStoredChallenge(id: "demo-activity", definition: ChallengeProgress.suggested(.activityMinutes, startDay: start),
                                  createdAt: Date(), leftOn: nil),
             PulseStoredChallenge(id: "demo-bedtime", definition: ChallengeProgress.suggested(.bedtime, startDay: start),
+                                 createdAt: Date(), leftOn: nil),
+            PulseStoredChallenge(id: "demo-zone", definition: ChallengeProgress.suggested(.zoneMinutes, startDay: start),
                                  createdAt: Date(), leftOn: nil),
             PulseStoredChallenge(id: "demo-steps",
                                  definition: ChallengeProgress.Definition(kind: .steps, target: 40_000, days: 7,

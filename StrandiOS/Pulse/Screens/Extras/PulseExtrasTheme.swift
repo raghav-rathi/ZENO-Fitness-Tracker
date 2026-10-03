@@ -203,30 +203,81 @@ enum PulseExtrasTheme {
 
     /// Challenges (profile-community-2026/13, 42, 76, 84, sampled at full size).
     enum Challenge {
-        /// The tick gauge: 292 pt across, 270° from the lower left to the lower right, 120 radial ticks
-        /// 20 pt long; lit ticks run from the challenge's colour to white at the head, unlit ones are grey.
-        static let gaugeDiameter: CGFloat = 292
-        static let gaugeSweep: Double = 270
-        /// The share of the circle's height the comb reaches down to (its ends sit at 135°): 1/2 + cos 45°/2.
-        static let gaugeVisibleHeight: CGFloat = 0.86
-        static let tickCount = 120
-        static let tickLength: CGFloat = 20
-        static let tickWidth: CGFloat = 2.6
+        /// The tick gauge, measured at 3x on profile-community-2026/13, 76 and 84 (all 402 pt wide): a comb
+        /// 290 pt across sweeping 250°, its ends at ±125° (its lowest tick 229.5 pt below its top), of 110
+        /// radial ticks ≈4.5 pt wide with ≈1 pt gaps.
+        static let gaugeDiameter: CGFloat = 290
+        static let gaugeSweep: Double = 250
+        /// The share of the circle's height the comb reaches down to (its ends at 125°): 1/2 + cos 55°/2.
+        static let gaugeVisibleHeight: CGFloat = 0.787
+        static let tickCount = 110
+        static let tickWidth: CGFloat = 4.5
+        /// Each tick is a bright 10 pt head at the rim over a 30 pt tail that fades out toward the centre (13:
+        /// head 56–65 pt, tail to ≈96 pt along the gauge's centre line); the tail starts at this share of its
+        /// head's opacity.
+        static let tickHead: CGFloat = 10
+        static let tickTail: CGFloat = 30
+        static let tailStart = 0.45
+        /// Lit ticks run from the challenge's colour at the start toward white at the progress head (76, 13).
+        static let litWhiteStart = 0.15
+        static let litWhiteEnd = 0.85
+        /// Ticks not lit yet: white 20%.
         static let unlitTick = Color.white.opacity(0.20)
-        static let unlitTickInner = Color.white.opacity(0.05)
+        /// The join page previews the whole comb in grey (84: heads #818588–#9A9EA2 over its top light,
+        /// luminance ≈130 against the in-progress page's unlit ≈77): white 50% heads, tails from 15%.
+        static let previewTick = Color.white.opacity(0.50)
+        static let previewTail = Color.white.opacity(0.15)
         /// A soft light behind the gauge's centre (#7A7E81 at the top of /76's gauge).
         static let gaugeGlow = Color.white.opacity(0.07)
-        /// The value in the gauge: 66 pt Bold condensed over "/250" at 28.
+        /// The value in the gauge: 66 pt Bold condensed over "/250" at 28; the group sits this far above the
+        /// circle's centre (13: "460" cap top at 223 pt, ≈13 pt above the centre).
         static let valueSize: CGFloat = 66
         static let targetSize: CGFloat = 28
-        /// The page's top light (/76: #929699 at the top centre, tinted by the challenge's colour at the sides).
-        static let topLight = Color.white.opacity(0.32)
+        static let numberLift: CGFloat = 18
+        /// The page's top light (84 and 76: #93979A at the top centre, white ≈46% over the page, flat for
+        /// ≈100 pt then falling to ≈20% by 200 pt and narrower across than down, with the challenge's colour
+        /// at the sides): an ellipse this wide and tall centred this far above the gauge's top (about the
+        /// screen's top edge), solid to `topLightSolid` of its radius.
+        static let topLight = Color.white.opacity(0.46)
+        static let topLightSize = CGSize(width: 340, height: 560)
+        static let topLightSolid = 0.35
+        static let lightCentreAboveGauge: CGFloat = 150
+        /// The challenge's colour at the sides of the top light.
         static let topTint = 0.32
-        /// The day list's card (#282C2F on the page, white ≈8%) with its pointer, and its rows (+10%).
-        static let listCard = Color.white.opacity(0.08)
+        static let topTintRadius: CGFloat = 320
+        static let topTintSize = CGSize(width: 700, height: 420)
+        /// The headline sits this far under the days-left line (13: 438 pt against 370 pt).
+        static let headlineGap: CGFloat = 47
+        /// The day list's card (13, 76: #2A2E31 on the page, white ≈10%) with a 1 pt rim lit along its top
+        /// (#3E4245, white ≈12%) and its pointer.
+        static let listCard = Color.white.opacity(0.10)
+        static let listCardRim = Color.white.opacity(0.12)
         static let pointer = CGSize(width: 18, height: 9)
-        /// The pinned button's line: it shares the floating Coach button's row.
-        static let buttonHeight: CGFloat = 50
+        /// The bottom button (84, 13): a white rounded rectangle, 8 pt corners, 48 pt tall, from 20 pt in to
+        /// 16 pt short of the floating Coach button (or the right margin when Coach is off); its label 11 pt
+        /// Bold caps in black (caps 7.0 pt), with no glyph.
+        static let buttonHeight: CGFloat = 48
+        static let buttonRadius: CGFloat = 8
+        static let buttonLeading: CGFloat = 20
+        static let buttonCoachGap: CGFloat = 16
+        /// Its centre sits this far above the Coach button's (84: 809.9 against 814.5 pt).
+        static let buttonLift: CGFloat = 4.5
+        static let buttonFill = Color.white
+        static let buttonText = Color.black
+        /// The trailing "ooo" (84, 76, 13): three outlined circles, 6 pt across, 4 pt apart, 1.3 pt strokes.
+        static let moreDot: CGFloat = 6
+        static let moreDotGap: CGFloat = 4
+        static let moreDotStroke: CGFloat = 1.3
+        /// The list's small gauge and its kind glyph; a template card's glyph in its tinted circle.
+        static let cardGauge: CGFloat = 72
+        static let cardGlyphSize: CGFloat = 18
+        static let templateGlyphFrame: CGFloat = 40
+        static let templateGlyphTint = 0.16
+        /// The goal stepper's buttons and the check in "✓ Complete".
+        static let stepGlyphSize: CGFloat = 14
+        static let stepButton: CGFloat = 36
+        static let stepValueWidth: CGFloat = 76
+        static let checkSize: CGFloat = 15
     }
 }
 
