@@ -17,8 +17,9 @@ struct PulseAddActivityView: View {
 
 /// What the form does.
 enum PulseActivityFormMode: Equatable {
-    /// A new activity, optionally with the activity already chosen.
-    case add(preset: PulseActivityKind?)
+    /// A new activity, optionally with the activity already chosen and the times it opens on (else 45
+    /// minutes ending now).
+    case add(preset: PulseActivityKind?, window: ClosedRange<Date>? = nil)
     /// Change a manual (or legacy auto-detected) row.
     case edit(WorkoutRow)
     /// A new manual activity copied from an imported row, which itself stays untouched.
@@ -111,11 +112,12 @@ struct PulseActivityForm: View {
         self.onDone = onDone
         let now = Date()
         switch mode {
-        case .add(let preset):
+        case .add(let preset, let window):
             _kind = State(initialValue: preset)
-            // A valid 45-minute activity ending now, as the classic sheet opens (`ManualWorkoutSheet`).
-            _start = State(initialValue: now.addingTimeInterval(-45 * 60))
-            _end = State(initialValue: now)
+            // The times asked for (the Sleep dive's night with nothing recorded), else a valid 45-minute
+            // activity ending now, as the classic sheet opens (`ManualWorkoutSheet`).
+            _start = State(initialValue: window?.lowerBound ?? now.addingTimeInterval(-45 * 60))
+            _end = State(initialValue: window?.upperBound ?? now)
             _location = State(initialValue: .wrist)
         case .edit(let row), .copy(let row):
             _kind = State(initialValue: PulseActivityCatalog.kind(named: WorkoutSource.editableSport(row.sport)))

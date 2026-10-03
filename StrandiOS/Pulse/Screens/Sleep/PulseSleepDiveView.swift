@@ -37,8 +37,10 @@ struct PulseSleepDiveView: View {
     @State private var selectedStage: SleepStage?
     /// The night open in the sleep-time editor (EDIT on Last Night's Sleep).
     @State private var editing: SleepTimeEdit?
-    /// A night with nothing recorded, being added as a Sleep or nap.
+    /// A night with nothing recorded, being added as a Sleep or nap, from the times it opens on
+    /// (`SleepDiveSnapshot.addWindow`, kept from the tap that opened it).
     @State private var addingNight = false
+    @State private var addWindow: ClosedRange<Date>?
     /// The night just deleted, undoable for a few seconds (#65).
     @State private var undo: PulseSleepUndo?
     @State private var undoDismiss: Task<Void, Never>?
@@ -124,16 +126,19 @@ struct PulseSleepDiveView: View {
             .presentationDetents([.medium, .large])
         }
         .sheet(isPresented: $addingNight) {
-            PulseActivityFormSheet(mode: .add(preset: PulseActivityCatalog.sleepKinds.first), onDone: { _ in })
+            PulseActivityFormSheet(mode: .add(preset: PulseActivityCatalog.sleepKinds.first, window: addWindow),
+                                   onDone: { _ in })
         }
     }
 
     /// EDIT: the night's own editor, the classic Sleep screen's (its #940 guards, its delete confirm, an
-    /// undo after a delete); a night with nothing recorded is added instead, as ADD ACTIVITY's Sleep or nap.
+    /// undo after a delete); a night with nothing recorded is added instead, as ADD ACTIVITY's Sleep or nap
+    /// opened on that night's usual times.
     private func edit(_ s: SleepDiveSnapshot) {
         if let edit = s.edit {
             editing = edit
         } else {
+            addWindow = s.addWindow
             addingNight = true
         }
     }

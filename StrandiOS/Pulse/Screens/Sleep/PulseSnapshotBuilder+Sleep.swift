@@ -243,15 +243,45 @@ extension PulseSnapshotBuilder {
                                    SleepStressNight(key: $0.key, onsetTs: $0.onsetTs, wakeTs: $0.wakeTs)
                                })
         }
+        let edit = tonight?.night.editTarget.map(SleepTimeEdit.init(night:))
+        let addWindow = edit == nil ? Self.addNightWindow(endingOn: key, prior: prior, now: r.now) : nil
         guard isCurrent(r) else { return nil }
         return SleepDiveSnapshot(
             seq: r.seq, requestDayKey: r.day.key, todayKey: Repository.localDayKey(r.now), nightKeys: keys,
             wakeDayKey: key, hasNight: tonight != nil, olderKey: keys.first { $0 < key },
             newerKey: keys.last { $0 > key }, dial: dial, contributors: contributors, summary: summary,
-            lastNight: lastNight, edit: tonight?.night.editTarget.map(SleepTimeEdit.init(night:)),
+            lastNight: lastNight, edit: edit, addWindow: addWindow,
             hoursVsNeeded: hoursVsNeeded, consistency: consistency, efficiency: efficiency,
             stress: stress, weekly: weekly, naps: napList, sleepingHR: sleepingHR, lowestHR: lowestHR,
             respRate: tonight == nil ? nil : daysByKey[key]?.respRateBpm, metricPages: metricPages)
+    }
+
+    /// The night ADD ACTIVITY opens on from EDIT when there is nothing to edit, the one that ends on `key`:
+    /// from when the wearer usually falls asleep to when they usually wake, the medians (on `PulseDisplay`'s
+    /// noon clock) of the last `TonightSleepPlan.habitNights` nights before it once there are `minHabitNights`
+    /// of them, else 23:00 to 07:00, cut off at `now`. nil when that is not a sleep the form can save (under
+    /// 10 minutes so far, or over 18 hours), so the form opens on its own default.
+    static func addNightWindow(endingOn key: String, prior: [SleepNightFacts], now: Date,
+                               calendar cal: Calendar = .current) -> ClosedRange<Date>? {
+        let recent = prior.suffix(TonightSleepPlan.habitNights)
+        let habit = recent.count >= TonightSleepPlan.minHabitNights
+        func minute(_ ts: Int) -> Int {
+            let c = cal.dateComponents([.hour, .minute], from: Date(timeIntervalSince1970: TimeInterval(ts)))
+            return (c.hour ?? 0) * 60 + (c.minute ?? 0)
+        }
+        let bedMinute = (habit ? PulseDisplay.medianClockMinute(recent.map { minute($0.onsetTs) }) : nil) ?? 23 * 60
+        let wakeMinute = (habit ? PulseDisplay.medianClockMinute(recent.map { minute($0.wakeTs) }) : nil)
+            ?? TonightSleepPlan.typicalWakeMinute
+        let day = key.split(separator: "-").compactMap { Int($0) }
+        guard day.count == 3,
+              let wake = cal.date(from: DateComponents(year: day[0], month: day[1], day: day[2],
+                                                       hour: wakeMinute / 60, minute: wakeMinute % 60))
+        else { return nil }
+        let bed = TonightSleepPlan.occurrence(ofMinute: Double(bedMinute), before: wake, calendar: cal)
+        let end = min(wake, now)
+        let span = end.timeIntervalSince(bed)
+        guard span >= 10 * 60, span <= 18 * 3600 else { return nil }
+        return bed...end
     }
 
     // MARK: Contributor bands (§3.3 item 3 thresholds)
