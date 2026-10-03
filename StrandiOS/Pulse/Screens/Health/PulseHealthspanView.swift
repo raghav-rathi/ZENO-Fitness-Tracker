@@ -205,10 +205,14 @@ struct PulseHealthspanView: View {
                                  yearsLine: healthYearsLine(summary.week.yearsYounger), hue: summary.week.hue,
                                  largeLabel: true)
             }
+            // DEBUG `--pulse-scroll orbmid` lands here: the orb half gone, for captures of the hand-over.
+            .overlay { Color.clear.frame(width: 1, height: 1).id("pulse.orbmid") }
             .frame(maxWidth: .infinity)
             .background(alignment: .top) { HealthspanTopShade(diameter: Self.orbDiameter) }
             .padding(.top, 43)
-            .pulseScrolledPast($orbPassed, threshold: 200)
+            // The compact header takes over once the orb's foot has passed under where it hangs (its 100 pt
+            // orb ends ≈76 pt below the bar, then the backdrop's fade), so the two orbs never show at once.
+            .pulseScrolledPast($orbPassed, threshold: Self.compactExtra + PulseTheme.Header.barFade)
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(String(localized: "ZENO Age \(PulseFormat.oneDecimal(summary.week.zenoAge)), \(healthYearsLine(summary.week.yearsYounger))"))
             // Drawn under the pager, so the black behind the orb never covers it.
