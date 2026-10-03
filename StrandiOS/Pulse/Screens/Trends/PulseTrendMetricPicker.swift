@@ -47,6 +47,9 @@ struct PulseTrendMetricPicker: View {
                 .onAppear { proxy.scrollTo(selected, anchor: .center) }
             }
             .background(PulseBackground())
+            // The page gradient behind the bar, so a row scrolled under it never reads through the title.
+            // Its 8 pt fade ends where the first section header begins.
+            .overlay(alignment: .top) { PulseTopBackdrop(fade: 8) }
             .pulseNavHeader(String(localized: "Choose a metric"), showsBack: false)
             .environment(\.pulseModalRoot, true)
         }

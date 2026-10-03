@@ -71,8 +71,9 @@ struct PulseTrendView: View {
     var body: some View {
         PulseScreenScaffold(title: String(localized: "Trend View"), coach: .button, coachSeed: coachSeed,
                             spacing: 0, ready: snapshot != nil) {
+            // The 56 pt dropdown at 140 → 196 pt and AVERAGE's caps at 229 pt, as on deep-dives-2026/47.
             dropdown
-                .padding(.top, 17)
+                .padding(.top, 16)
             if resolved == nil {
                 unavailable
                     .padding(.top, 24)

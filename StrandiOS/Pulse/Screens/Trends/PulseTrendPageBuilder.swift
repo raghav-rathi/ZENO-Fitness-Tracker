@@ -342,6 +342,10 @@ enum PulseTrendPageBuilder {
             if range == .week {
                 if h.partialWeek {
                     let known = PulseTrendMath.points(series.points, in: window).count
+                    let unknownCount = window.dayKeys.filter(unknown.contains).count
+                    if format.printed(current) <= 0 {
+                        return String(localized: "The \(known) days with zone data in this period had no time in \(name); the other \(unknownCount) had an activity logged without heart-rate zones.")
+                    }
                     return String(localized: "During this 7-day period, your time in \(name) was at least \(value), from the \(known) days with zone data.")
                 }
                 guard let previous = h.previous, let relation = compare(current, previous)?.relation else {
@@ -844,7 +848,9 @@ enum PulseTrendPageBuilder {
                 items.append(.init(id: "typical", title: String(localized: "Typical range"),
                                    color: PulseTheme.Trends.typicalBand))
             }
-            if chart.mode == .stacked, case .stacked(let parts) = metric.chart {
+            // The parts are named while they are drawn in full; faint under the long ranges' segments they
+            // go unlabelled, as on deep-dives-2026/45.
+            if chart.mode == .stacked, !chart.dimmed, case .stacked(let parts) = metric.chart {
                 let ordered = metric.key == "restorative_min" ? parts.reversed() : parts
                 items += ordered.map { .init(id: $0.id, title: $0.title, color: $0.color) }
             }
