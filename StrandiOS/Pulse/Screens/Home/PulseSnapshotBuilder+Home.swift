@@ -319,7 +319,7 @@ extension PulseSnapshotBuilder {
     /// days before the request's day and the day itself. ONE resolver for the HR ZONES rows and the Daily
     /// Outlook, so the two can never print different weekly totals: an export's own zone split where a row
     /// carries one, else the strap's heart rate binned into the wearer's zones (the Workout detail's
-    /// reader). An activity with neither adds nothing and is not counted.
+    /// reader). An activity with neither adds no minutes and is counted as unresolved.
     private func zoneDays(_ r: PulseRequest, rows: [WorkoutRow], daysBack: Int) async -> [String: ZoneDay] {
         guard let first = PulseDisplay.dayKey(r.day.key, offsetBy: -daysBack) else { return [:] }
         var out: [String: ZoneDay] = [:]
