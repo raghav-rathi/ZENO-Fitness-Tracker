@@ -20,8 +20,7 @@ import StrandDesign
 ///     it, and the app root is the foundation's: `iOSRootView` shows this flow in place of the classic
 ///     wizard and terms gate when `pulseEnabled && PulseOnboardingView.isRebuilt`, with
 ///     `onAcceptTerms` storing `Terms.currentVersion` (after resetting its launch-sheet flag) and
-///     `onFinished` setting `noop.onboarded` and the last-seen changelog, as the classic pair do. Until that
-///     call site lands, a first launch still shows the classic pair.
+///     `onFinished` setting `noop.onboarded` and the last-seen changelog, as the classic pair do.
 ///   - the `.onboarding` route (`init()`), a replay from inside the app: the Privacy step only while the
 ///     terms are not accepted, and finishing simply closes it.
 ///

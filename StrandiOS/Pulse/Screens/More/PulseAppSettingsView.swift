@@ -1,10 +1,11 @@
 #if os(iOS)
 import SwiftUI
 
-/// App Settings (WHOOP_UI_SPEC §3.33), presented as a sheet with "✕": nine single-line row cards with no
-/// sections, in the spec's order (health-more-2026/08b; the labels there are illegible, so the mapping is
-/// the spec's). Every page binds the settings keys the classic Settings screen already writes, so a
-/// change here is the same change there; nothing is stored twice.
+/// App Settings (WHOOP_UI_SPEC §3.33), pushed from More (full height, "‹"; WHOOP presents it with "✕" over
+/// the tab bar, ARCHITECTURE §9): nine single-line row cards with no sections, in the spec's order
+/// (health-more-2026/08b; the labels there are illegible, so the mapping is the spec's). Every page binds
+/// the settings keys the classic Settings screen already writes, so a change here is the same change there;
+/// nothing is stored twice.
 ///
 ///   ACTIVITY SETTINGS   activity detection, keep screen on, heart-rate settings
 ///   AI SETTINGS         the Coach switch, its provider and model, data sharing (a sheet, "✕")
@@ -59,9 +60,8 @@ struct PulseAppSettingsView: View {
                 navigator.open(PulseHideMetricsRoute().route)
             }
         }
-        // AI Settings and Export are modals of their own in WHOOP ("✕", §1.5, §1.6). Inside this sheet the
-        // navigator pushes them (the shell offers no modal over a modal yet); opened from anywhere else,
-        // their routes present them as sheets.
+        // AI Settings and Export are modals of their own in WHOOP ("✕"): their routes ask for a sheet, which
+        // the shell presents over this pushed page.
         .onAppear(perform: openDebugPage)
     }
 
