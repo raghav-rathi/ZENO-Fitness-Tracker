@@ -21,9 +21,12 @@ extension PulseSnapshotBuilder {
     /// Fill `window` with a reading every 10 s: asleep over `night`, raised and arched inside each workout,
     /// an ordinary day otherwise. No-op when the window already holds heart rate.
     func seedDemoTimeline(window: (from: Int, to: Int), night: (start: Int, end: Int)?, workouts: [WorkoutRow],
-                          now: Date) async {
+                          expectedWorkouts: Int, now: Date) async {
         let end = min(window.to, Int(now.timeIntervalSince1970))
-        guard end > window.from else { return }
+        // Wait for the demo seed's night and workouts: on a fresh install the first builds can run before they
+        // are written, and heart rate written then would never be reshaped (the window would no longer be
+        // empty). The day's row says how many workouts the seed gave it.
+        guard end > window.from, night != nil, workouts.count >= expectedWorkouts else { return }
         let existing = await repo.hrSamples(from: window.from, to: end, limit: 10)
         guard existing.isEmpty, let store = await repo.storeHandle() else { return }
 

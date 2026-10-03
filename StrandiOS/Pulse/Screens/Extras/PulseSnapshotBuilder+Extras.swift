@@ -38,8 +38,9 @@ extension PulseSnapshotBuilder {
             let night = group(endingOn: r.day.key, in: groups)
                 .flatMap { SleepModel.mergeDay($0, habitualMidsleepSec: habitual, motionByStart: [:]) }
                 .map { (start: Int($0.onsetDate.timeIntervalSince1970), end: $0.session.endTs) }
-            let rows = await workoutRows().filter { $0.startTs >= window.from && $0.startTs < window.to }
-            await seedDemoTimeline(window: window, night: night, workouts: rows, now: r.now)
+            let rows = await repo.workoutRows().filter { $0.startTs >= window.from && $0.startTs < window.to }
+            await seedDemoTimeline(window: window, night: night, workouts: rows,
+                                   expectedWorkouts: row?.exerciseCount ?? 0, now: r.now)
         }
         #endif
 
