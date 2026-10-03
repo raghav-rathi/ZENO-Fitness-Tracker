@@ -604,7 +604,7 @@ extension PulseSnapshotBuilder {
         // The pill shows two lines: name a poor contributor when there is one, else the hours.
         if let weakest = contributors.first(where: { $0.band == 0 && $0.kind != .stress }),
            let pct = weakest.percent {
-            return String(localized: "Your sleep was \(word) at **\(shown)%**. **\(weakest.title)** was poor at \(PulseDisplay.displayedPercent(pct))%.")
+            return String(localized: "Your sleep was \(word) at **\(shown)%**. **\(weakest.kind.sentenceName)** was poor at \(PulseDisplay.displayedPercent(pct))%.")
         }
         if let need = night.need {
             return String(localized: "Your sleep was \(word) at **\(shown)%**: \(PulseFormat.duration(minutes: night.asleep)) asleep against the \(PulseFormat.duration(minutes: need)) you needed.")
