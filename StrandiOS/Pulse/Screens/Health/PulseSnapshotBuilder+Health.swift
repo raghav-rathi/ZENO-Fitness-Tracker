@@ -16,18 +16,7 @@ import WhoopProtocol
 //   - `healthAgeWeeks` ZENO Age per week, with the whole-year age the engine scored it with;
 //   - `stressDay`      a day's stress level AND curve, from the intraday curve (one source for both).
 
-/// Carries an optional value through the builder's per-refresh cache.
-private struct HealthCacheBox<T> {
-    let value: T?
-}
-
 extension PulseSnapshotBuilder {
-
-    /// `cached(_:load:)` for an optional value. The core slot looks a key up with `as? T`, and when `T` is
-    /// itself optional a missing key casts to a cached `nil`, so the value would never load; boxed, it does.
-    func cachedOptional<T>(_ key: String, load: () async -> T?) async -> T? {
-        await cached(key) { HealthCacheBox(value: await load()) }.value
-    }
 
     // MARK: - Health tab
 
@@ -145,7 +134,7 @@ extension PulseSnapshotBuilder {
     /// What the Lab Book holds, by category (nil when it is empty). Status-free: the Lab Book never judges
     /// a value (LabBookView's promise).
     func healthLabs() async -> HealthLabsSummary? {
-        await cachedOptional("health.labs") { () async -> HealthLabsSummary? in
+        await cached("health.labs") { () async -> HealthLabsSummary? in
             guard let store = await repo.storeHandle() else { return nil }
             let deviceId = await repo.deviceId
             var rows: [(LabMarkerCategory, LabMarkerRow)] = []
@@ -487,7 +476,7 @@ extension PulseSnapshotBuilder {
     func dailyStress(_ r: PulseRequest, dayKey: String, isToday: Bool) async -> Double? {
         let stored = await stressStoredSeries()
         if isToday {
-            return await cachedOptional("health.stress.daily.today") { () async -> Double? in
+            return await cached("health.stress.daily.today") { () async -> Double? in
                 StressModel(days: r.days, stored: stored)?.score
             }
         }
@@ -1055,7 +1044,7 @@ extension PulseSnapshotBuilder {
             if let pct = WorkoutZones.percents(w.zonesJSON) {
                 zones = pct.map { minutes * $0 / 100 }
             } else {
-                zones = await cachedOptional("health.workoutZones.\(w.startTs).\(w.source)") { () async -> [Double]? in
+                zones = await cached("health.workoutZones.\(w.startTs).\(w.source)") { () async -> [Double]? in
                     await repo.workoutZoneMinutes(from: w.startTs, to: w.endTs, zoneSet: r.profile.zoneSet,
                                                   source: w.source)
                 }
