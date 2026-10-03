@@ -89,7 +89,7 @@ struct PulseCoachingStack: View {
                     if let cta = model.cta {
                         HStack(spacing: 6) {
                             Text(cta).pulseText(.label)
-                            Image(systemName: "arrow.right").font(.system(size: 12, weight: .semibold))
+                            Image(systemName: "arrow.right").pulseText(.label)
                         }
                         .foregroundStyle(ctaStyle(model))
                         .padding(.top, PulseTheme.Space.xs)
@@ -98,15 +98,15 @@ struct PulseCoachingStack: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 Image(systemName: model.symbol)
-                    .font(.system(size: 46, weight: .ultraLight))
+                    .font(PulseHomeGlyph.art(46, weight: .ultraLight))
                     .foregroundStyle(PulseTheme.textTertiary)
-                    .frame(width: 72)
+                    .frame(width: PulseHomeMetrics.coachingArtWidth)
                     .accessibilityHidden(true)
             }
             .padding(.leading, PulseTheme.Layout.cardPadding + 4)
             .padding(.trailing, PulseTheme.Layout.cardPadding + 34)
             .padding(.vertical, PulseTheme.Layout.cardPadding + 6)
-            .frame(maxWidth: .infinity, minHeight: 124, alignment: .leading)
+            .frame(maxWidth: .infinity, minHeight: PulseHomeMetrics.coachingCardMinHeight, alignment: .leading)
             .background(surface(model))
             .contentShape(Rectangle())
         }
@@ -124,13 +124,13 @@ struct PulseCoachingStack: View {
         Button { onComplete(model) } label: {
             // 24 × 46 pt, 8 pt in from the card's top-right corner (profile-community-2026/34).
             VStack(spacing: 7) {
-                Image(systemName: "checkmark").font(.system(size: 15, weight: .semibold))
+                Image(systemName: "checkmark").pulseHomeGlyph(.counterCheck)
                 Text(verbatim: "\(cards.count)")
                     .font(PulseType.numeral(14))
                     .foregroundStyle(PulseTheme.textTertiary)
             }
             .foregroundStyle(PulseTheme.textPrimary)
-            .frame(width: 24, height: 46)
+            .frame(width: PulseHomeMetrics.counterChip.width, height: PulseHomeMetrics.counterChip.height)
             .background(RoundedRectangle(cornerRadius: PulseTheme.Radius.toggle, style: .circular)
                 .fill(PulseTheme.tagFill))
             .padding(PulseTheme.Space.xs)
@@ -168,18 +168,21 @@ struct PulseCoachingStack: View {
 // MARK: - Host
 
 /// Places the stack on Home, with the monitor tiles under it (their gap follows whether a card shows):
-/// evaluates the rules from the day's inputs plus the app state they need (the illness heads-up, this
-/// morning's strap alarm, unseen release notes), drops the cards completed today, and opens a card's
-/// destination. Its own leaf because the illness flag lives on `AppModel`, which
+/// evaluates the rules from the day's inputs plus the app state they need (the illness heads-up, unseen
+/// release notes, the current minute for this morning's alarm), drops the cards completed today, and
+/// opens a card's destination. Its own leaf because the illness flag lives on `AppModel`, which
 /// publishes every heart-rate tick: the content below only redraws when its inputs change.
 struct PulseCoachingStackHost: View {
     let base: HomeCoachingRules.Inputs
     let home: HomeSnapshot
+    /// The monitor tiles' inputs (see `PulseMonitorTiles`).
+    let grades: PulseMonitorGrades?
+    let stressUpdated: String?
 
     @EnvironmentObject private var app: AppModel
 
     var body: some View {
-        PulseCoachingStackContent(base: base, home: home,
+        PulseCoachingStackContent(base: base, home: home, grades: grades, stressUpdated: stressUpdated,
                                   illness: app.healthAlert.map { localizedHealthAlertCopy($0) })
             .equatable()
     }
@@ -188,6 +191,8 @@ struct PulseCoachingStackHost: View {
 private struct PulseCoachingStackContent: View, Equatable {
     let base: HomeCoachingRules.Inputs
     let home: HomeSnapshot
+    let grades: PulseMonitorGrades?
+    let stressUpdated: String?
     /// The illness heads-up's copy while it is raised.
     let illness: String?
 
@@ -199,12 +204,10 @@ private struct PulseCoachingStackContent: View, Equatable {
     /// The release the app's own What's New sheet last showed (it pops by itself after an update), so the
     /// card only stands in when that sheet has not been seen.
     @AppStorage("noop.lastSeenChangelogVersion") private var lastSeenChangelog = ""
-    // The strap alarm's own keys (BehaviorStore): this morning's alarm for the "already awake" card.
-    @AppStorage("behavior.smartAlarmEnabled") private var alarmOn = false
-    @AppStorage("behavior.smartAlarmMinutes") private var alarmMinutes = 7 * 60
 
     static func == (lhs: PulseCoachingStackContent, rhs: PulseCoachingStackContent) -> Bool {
-        lhs.base == rhs.base && lhs.home == rhs.home && lhs.illness == rhs.illness
+        lhs.base == rhs.base && lhs.home == rhs.home && lhs.grades == rhs.grades
+            && lhs.stressUpdated == rhs.stressUpdated && lhs.illness == rhs.illness
     }
 
     var body: some View {
@@ -215,7 +218,7 @@ private struct PulseCoachingStackContent: View, Equatable {
                     .padding(.top, PulseHomeSpacing.stackTop)
                     .id("pulse.coaching")
             }
-            PulseMonitorTiles(home: home)
+            PulseMonitorTiles(home: home, grades: grades, stressUpdated: stressUpdated)
                 .padding(.top, cards.isEmpty ? PulseHomeSpacing.tilesTop : PulseHomeSpacing.tilesAfterStack)
                 .id("pulse.monitors")
         }
@@ -229,7 +232,7 @@ private struct PulseCoachingStackContent: View, Equatable {
     private var models: [PulseCoachingCardModel] {
         var inputs = base
         inputs.illness = illness != nil
-        inputs.alarm = alarmCheck
+        inputs.alarm = alarmNow
         let release = AppChangelog.currentVersion
         inputs.whatsNew = !release.isEmpty && whatsNewSeen != release && lastSeenChangelog != release
         let done = completedToday
@@ -238,22 +241,12 @@ private struct PulseCoachingStackContent: View, Equatable {
             .map(model)
     }
 
-    /// This morning's alarm against when last night ended (exact-time alarms: the smart window is retired).
-    private var alarmCheck: HomeCoachingRules.AlarmCheck? {
-        guard alarmOn else { return nil }
-        let now = Date()
-        let cal = Calendar.current
-        let weekday = cal.component(.weekday, from: now)
-        // An empty weekday set means every day (BehaviorStore's default).
-        let weekdays = UserDefaults.standard.array(forKey: "behavior.smartAlarmWeekdays") as? [Int] ?? []
-        guard weekdays.isEmpty || weekdays.contains(weekday) else { return nil }
-        let woke = home.lastNight.flatMap { night -> Int? in
-            guard cal.isDate(night.wake, inSameDayAs: now) else { return nil }
-            let c = cal.dateComponents([.hour, .minute], from: night.wake)
-            return (c.hour ?? 0) * 60 + (c.minute ?? 0)
-        }
-        let n = cal.dateComponents([.hour, .minute], from: now)
-        return HomeCoachingRules.AlarmCheck(alarmMinute: alarmMinutes, wokeMinute: woke,
+    /// This morning's alarm as the builder resolved it (the strap's own arming resolver), checked against
+    /// the current minute, so the card leaves once the alarm's time has come.
+    private var alarmNow: HomeCoachingRules.AlarmCheck? {
+        guard let alarm = base.alarm else { return nil }
+        let n = Calendar.current.dateComponents([.hour, .minute], from: Date())
+        return HomeCoachingRules.AlarmCheck(alarmMinute: alarm.alarmMinute, wokeMinute: alarm.wokeMinute,
                                             nowMinute: (n.hour ?? 0) * 60 + (n.minute ?? 0))
     }
 
@@ -308,6 +301,7 @@ private struct PulseCoachingStackContent: View, Equatable {
             return .init(id: card.id, title: String(localized: "Lowest in a While"), body: body,
                          cta: String(localized: "View trend"), symbol: "chart.line.downtrend.xyaxis", route: trend)
         case .newlyRed(let recovery, let previous):
+            // The rule fires only against yesterday's score, so "the day before" is literal.
             return .init(id: card.id, title: String(localized: "Newly Red"),
                          body: String(localized: "Your Recovery dropped to \(recovery)% after \(previous)% the day before. A lighter day helps it bounce back."),
                          cta: String(localized: "View trend"), symbol: "arrow.down.heart", route: trend)
@@ -316,8 +310,10 @@ private struct PulseCoachingStackContent: View, Equatable {
                          body: String(localized: "A \(recovery)% Recovery means your body is recharged. Lean in and make the most of your energy today."),
                          symbol: "sparkles", route: .recoveryDive)
         case .lowHRV(let hrv, let baseline):
+            // The Recovery engine's baseline, named as such: the HRV dashboard row's baseline is the 30-day
+            // mean, a different figure.
             return .init(id: card.id, title: String(localized: "Low HRV"),
-                         body: String(localized: "Your HRV was \(hrv) ms last night, well under your baseline of \(baseline) ms. Consider keeping today's Strain light."),
+                         body: String(localized: "Your HRV was \(hrv) ms last night, well under your Recovery baseline of \(baseline) ms. Consider keeping today's Strain light."),
                          symbol: "waveform.path.ecg", route: .recoveryDive)
         case .roughSleepStreak(let nights):
             return .init(id: card.id, title: String(localized: "Rough Sleep Streak"),

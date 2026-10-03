@@ -24,6 +24,9 @@ struct PulseHomeView: View {
     @AppStorage(PulseDashboardLayout.storageKey) private var dashboardLayout = ""
     @State private var dialsScrolledOff = false
     @State private var extras: HomeExtrasSnapshot?
+    /// The last extras built for today, kept while another day is on screen: stepping back to today
+    /// shows them until today's next build lands, so the coaching card does not pop in above the tiles.
+    @State private var todayExtras: HomeExtrasSnapshot?
     /// Bumped whenever `model.home` is replaced, so Home's own facts rebuild beside it.
     @State private var homeVersion = 0
 
@@ -34,8 +37,8 @@ struct PulseHomeView: View {
 
     /// The extras for the day on screen, never another day's.
     private var currentExtras: HomeExtrasSnapshot? {
-        guard let extras, let home = model.home, extras.day == home.day else { return nil }
-        return extras
+        guard let home = model.home else { return nil }
+        return PulseHomeSections.extras(for: home, latest: extras, today: todayExtras)
     }
 
     var body: some View {
@@ -55,7 +58,7 @@ struct PulseHomeView: View {
             PulseDialsRow(home: model.home)
                 .padding(.top, PulseTheme.Header.dialsTop)
                 .pulseScrolledPast($dialsScrolledOff, threshold: 8)
-            PulseHomeContent(extras: extras, dashboardItems: dashboardItems)
+            PulseHomeContent(extras: extras, todayExtras: todayExtras, dashboardItems: dashboardItems)
         }
         .overlay(alignment: .top) {
             if dialsScrolledOff, let home = model.home {
@@ -89,6 +92,7 @@ struct PulseHomeView: View {
             await builder.homeExtras(request, home: home, items: items)
         }) {
             extras = built
+            if built.day.isToday { todayExtras = built }
         }
     }
 
@@ -138,6 +142,8 @@ struct PulseDialsRow: View {
 struct PulseHomeContent: View {
     /// The latest extras built, possibly for the previous day while a new day builds.
     let extras: HomeExtrasSnapshot?
+    /// The last extras built for today (see `PulseHomeView.todayExtras`).
+    let todayExtras: HomeExtrasSnapshot?
     let dashboardItems: [PulseDashboardItem]
 
     @Environment(PulseModel.self) private var model
@@ -145,7 +151,7 @@ struct PulseHomeContent: View {
     var body: some View {
         PulseLoadingGate(isLoading: model.home == nil || extras == nil) {
             if let home = model.home {
-                PulseHomeSections(home: home, extras: extras, dashboardItems: dashboardItems)
+                PulseHomeSections(home: home, extras: extras, todayExtras: todayExtras, dashboardItems: dashboardItems)
                     // While a newly selected day builds, the previous day's numbers dim rather than pass for it.
                     .opacity(model.homeIsStale ? 0.45 : 1)
                     .animation(.easeOut(duration: 0.15), value: model.homeIsStale)
@@ -164,11 +170,21 @@ struct PulseHomeSections: View {
     /// only the dashboard rows read them then, dimmed (`extrasStale`); everything day-specific reads
     /// `current`.
     let extras: HomeExtrasSnapshot?
+    /// The last extras built for today: back on today they stand in until today's next build lands.
+    let todayExtras: HomeExtrasSnapshot?
     let dashboardItems: [PulseDashboardItem]
 
     /// The extras for the day on screen, never another day's.
-    private var current: HomeExtrasSnapshot? { extras?.day == home.day ? extras : nil }
+    private var current: HomeExtrasSnapshot? { Self.extras(for: home, latest: extras, today: todayExtras) }
     private var extrasStale: Bool { extras != nil && current == nil }
+
+    /// The newest extras built for `home`'s day: the latest build, else (on today) today's last one.
+    static func extras(for home: HomeSnapshot, latest: HomeExtrasSnapshot?,
+                       today: HomeExtrasSnapshot?) -> HomeExtrasSnapshot? {
+        if let latest, latest.day == home.day { return latest }
+        if let today, today.day == home.day { return today }
+        return nil
+    }
 
     @Environment(\.pulseCoach) private var coach
 
@@ -178,15 +194,18 @@ struct PulseHomeSections: View {
     private var isNewMember: Bool { isToday && home.scoredDays == 0 }
 
     var body: some View {
+        // The stress reading's update time, resolved once with one clock for the tile and the card.
+        let stressUpdated = PulseHomeStress.updated(home.stress, now: Date())
         VStack(alignment: .leading, spacing: 0) {
             // The new member's Home goes straight from the dials to Get Started (onboarding/31a,
             // completeness-critic/24): no coaching card and no monitor tiles yet.
             if isToday && !isNewMember {
                 if let base = current?.coaching {
                     // The stack, when a card is due, then the tiles 22 pt under its peek.
-                    PulseCoachingStackHost(base: base, home: home)
+                    PulseCoachingStackHost(base: base, home: home, grades: current?.monitor,
+                                           stressUpdated: stressUpdated)
                 } else {
-                    PulseMonitorTiles(home: home)
+                    PulseMonitorTiles(home: home, grades: current?.monitor, stressUpdated: stressUpdated)
                         .padding(.top, PulseHomeSpacing.tilesTop)
                         .id("pulse.monitors")
                 }
@@ -221,9 +240,9 @@ struct PulseHomeSections: View {
                     .padding(.top, PulseTheme.Layout.headerGap)
             }
 
-            PulseDashboardViews.Section(home: home, extras: extras, items: dashboardItems,
+            PulseDashboardViews.Section(home: home, extras: current ?? extras, items: dashboardItems,
                                         personalizing: current?.start.personalizing ?? false,
-                                        extrasStale: extrasStale)
+                                        extrasStale: extrasStale, stressUpdated: stressUpdated)
                 .padding(.top, PulseTheme.Layout.sectionGap)
 
             // The footer: a small ZENO mark at white 50%, 40 pt above the bottom inset.
@@ -291,8 +310,8 @@ enum PulseHomeSpacing {
 // MARK: - DEBUG
 
 /// DEBUG `--pulse-dashboard <id,id,…>`: show these dashboard items, for a capture, without touching the
-/// stored layout. `--pulse-home-open outlook`: open the local Daily Outlook once Home has loaded. No-op in
-/// Release.
+/// stored layout. `--pulse-home-open outlook|review`: open the local Daily Outlook or Day in Review once
+/// Home has loaded. No-op in Release.
 enum PulseHomeDebug {
     #if DEBUG
     private static var opened = false

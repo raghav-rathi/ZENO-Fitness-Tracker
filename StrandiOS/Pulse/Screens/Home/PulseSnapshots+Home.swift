@@ -12,13 +12,21 @@ import StrandAnalytics
 
 /// One My Dashboard row, resolved and formatted for a day.
 struct PulseDashboardValue: Equatable {
+    /// What the baseline under a value averages.
+    enum BaselineKind: Equatable {
+        /// The mean of the 30 days before the value's day.
+        case thirtyDays
+        /// A weekly total's mean week over the four weeks before it.
+        case fourWeeks
+    }
+
     /// The figure ("0:28", "51", "10,325"); nil while there is nothing to show (the row reads label + "›").
     var value: String?
-    /// A unit printed small after it ("%", "kg", "Δ°C"); WHOOP prints none for counts and heart rates.
+    /// A unit printed small after it ("%", "Δ°C"); WHOOP prints none for counts, heart rates and weight.
     var unit: String?
-    /// ▲ / ▼ / ● against the 30-day baseline, coloured by good / bad.
+    /// ▲ / ▼ / ● against the baseline, coloured by good / bad.
     var trend: PulseTrend?
-    /// The 30-day baseline printed under the value, or a short note in its place ("So far today").
+    /// The baseline printed under the value, always a figure ("7,466", "46", "42%").
     var baseline: String?
     /// Whose day the value is, when it is not the shown day's own ("From 28 Sep").
     var caption: String?
@@ -27,6 +35,12 @@ struct PulseDashboardValue: Equatable {
     /// A sleep figure carried from an earlier night: that night's wake day. Its caption ("Last night ·
     /// 28 Sep") is worded on the main actor by the Liquid Today's own rule (`captionText(dayKey:)`).
     var carriedNight: String? = nil
+    var baselineKind: BaselineKind = .thirtyDays
+    /// Today's still-growing total (steps, calories, Day Strain): compared like any day, as WHOOP does,
+    /// and said "so far today" to VoiceOver.
+    var isRunningTotal = false
+    /// The unit VoiceOver hears where none is printed ("kg" after a weight).
+    var spokenUnit: String? = nil
 
     /// A row with nothing to show yet.
     static func empty(_ fallback: PulseRoute) -> PulseDashboardValue {
@@ -60,6 +74,11 @@ struct PulseGetStartedFacts: Equatable {
         let done: Int
         let of: Int
     }
+
+    /// A past day: no Get Started, Looking Ahead or personalizing state (they are today's).
+    static let pastDay = PulseGetStartedFacts(isNewMember: false, calibration: nil, personalizing: false,
+                                              hasWorkout: false, hasJournal: false, hasHistoryImport: false,
+                                              sleepScheduled: false)
 }
 
 /// The store-side facts the Daily Outlook / Day in Review template reads beside `HomeSnapshot` (§3.15 [Z]).
@@ -69,10 +88,33 @@ struct PulseOutlookFacts: Equatable {
     /// Consecutive days with a journal entry, ending today (or yesterday while today is not logged).
     let journalStreak: Int
     let journalLoggedToday: Bool
-    /// Minutes in heart-rate zones 1-5, and in zones 4-5, across the last 7 days' activities.
+    /// Minutes in heart-rate zones 1-5, and in zones 4-5, over the 7 days ending today: the same weekly
+    /// totals the HR ZONES (WEEKLY) rows print (one resolver, `zoneDays`).
     let zoneMinutesWeek: Double?
     let highZoneMinutesWeek: Double?
-    let activitiesThisWeek: Int
+    /// The activities those minutes came from (the ones with a zone split or heart rate to bin).
+    let zoneActivitiesWeek: Int
+}
+
+/// The Health Monitor tile for today (§3.1 item 6): the vitals judged, and for each one out of its range,
+/// how far out (`VitalSeverity`).
+struct PulseMonitorGrades: Equatable {
+    struct Flag: Equatable {
+        /// The vital's name ("Skin temperature").
+        let name: String
+        /// Well past its range (VERY ELEVATED / VERY LOW), else just past it (ELEVATED / LOW).
+        let strong: Bool
+        /// Above or below its range; nil when the grade could not say, and the tile reads OUT OF RANGE.
+        let high: Bool?
+    }
+
+    let judged: Int
+    /// The vitals out of range, in the Health tab's order.
+    let out: [Flag]
+
+    var inRange: Int { judged - out.count }
+    /// Nothing judged yet (calibrating, no readings): the tile shows "Pending".
+    var isPending: Bool { judged == 0 }
 }
 
 /// Everything Home's own sections draw for one day, beside `HomeSnapshot`.
@@ -86,6 +128,8 @@ struct HomeExtrasSnapshot: Equatable {
     let coaching: HomeCoachingRules.Inputs?
     /// The local Daily Outlook's facts, today only.
     let outlook: PulseOutlookFacts?
+    /// The Health Monitor tile's grades, today only.
+    let monitor: PulseMonitorGrades?
     let start: PulseGetStartedFacts
 }
 #endif

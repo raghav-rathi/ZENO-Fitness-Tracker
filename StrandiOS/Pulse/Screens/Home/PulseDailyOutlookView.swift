@@ -84,10 +84,14 @@ enum PulseDailyOutlook {
             } else if !facts.journalLoggedToday && evening {
                 insights.append(String(localized: "Today's journal is still open."))
             }
-            // Zone minutes this week.
+            // Zone minutes this week: the HR ZONES (WEEKLY) rows' own totals, over the activities they came from.
             if let zones = facts.zoneMinutesWeek {
-                let high = facts.highZoneMinutesWeek ?? 0
-                insights.append(String(localized: "Over the last 7 days you spent **\(PulseFormat.hoursMinutes(zones))** in heart-rate zones across **\(facts.activitiesThisWeek)** activities, **\(PulseFormat.hoursMinutes(high))** of it in zones 4-5."))
+                let total = PulseFormat.duration(minutes: zones)
+                let high = PulseFormat.duration(minutes: facts.highZoneMinutesWeek ?? 0)
+                let count = facts.zoneActivitiesWeek
+                insights.append(count == 1
+                    ? String(localized: "Over the last 7 days you spent **\(total)** in heart-rate zones in **1** activity, **\(high)** of it in zones 4-5.")
+                    : String(localized: "Over the last 7 days you spent **\(total)** in heart-rate zones across **\(count)** activities, **\(high)** of it in zones 4-5."))
             }
         }
 

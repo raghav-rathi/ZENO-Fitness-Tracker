@@ -30,6 +30,8 @@ enum PulseDashboardItem: String, CaseIterable, Identifiable, Hashable {
     case bloodOxygen = "blood-oxygen"
     case hrZones13 = "hr-zones-1-3"
     case hrZones45 = "hr-zones-4-5"
+    case hrZonesAll = "hr-zones-all"
+    case strengthActivityTime = "strength-activity-time"
     case stressMonitor = "stress-monitor"
     case strainRecovery = "strain-recovery"
 
@@ -62,6 +64,8 @@ enum PulseDashboardItem: String, CaseIterable, Identifiable, Hashable {
         case .bloodOxygen: return String(localized: "Blood oxygen")
         case .hrZones13: return String(localized: "HR zones 1-3 (weekly)")
         case .hrZones45: return String(localized: "HR zones 4-5 (weekly)")
+        case .hrZonesAll: return String(localized: "HR zones all (weekly)")
+        case .strengthActivityTime: return String(localized: "Strength activity time")
         case .stressMonitor: return String(localized: "Stress Monitor")
         case .strainRecovery: return String(localized: "Strain & Recovery")
         }
@@ -91,6 +95,8 @@ enum PulseDashboardItem: String, CaseIterable, Identifiable, Hashable {
         case .bloodOxygen: return "drop"
         case .hrZones13: return "heart.text.square"
         case .hrZones45: return "bolt.heart"
+        case .hrZonesAll: return "heart.square"
+        case .strengthActivityTime: return "figure.strengthtraining.traditional"
         case .stressMonitor: return "gauge.with.dots.needle.33percent"
         case .strainRecovery: return "chart.line.downtrend.xyaxis"
         }
@@ -115,6 +121,8 @@ enum PulseDashboardItem: String, CaseIterable, Identifiable, Hashable {
         case .vo2Max: return .forMetric("vo2max")
         case .hrZones13: return .forMetric("hr_zones_1_3")
         case .hrZones45: return .forMetric("hr_zones_4_5")
+        case .hrZonesAll: return .forMetric("zones")
+        case .strengthActivityTime: return .forMetric("strength_time")
         case .weight, .calories, .averageHeartRate, .leanBodyMass, .skinTemperature, .bloodOxygen,
              .stressMonitor, .strainRecovery:
             return .neutral
@@ -145,6 +153,8 @@ enum PulseDashboardItem: String, CaseIterable, Identifiable, Hashable {
         case .bloodOxygen: return "spo2"
         case .hrZones13: return "hr_zones13_min"
         case .hrZones45: return "hr_zones45_min"
+        case .hrZonesAll: return "hr_zones_all_min"
+        case .strengthActivityTime: return "strength_min"
         case .stressMonitor: return "stress"
         }
     }
@@ -164,12 +174,9 @@ enum PulseDashboardItem: String, CaseIterable, Identifiable, Hashable {
 enum PulseDashboardLayout {
     static let storageKey = "pulse.dashboard.items"
 
-    /// The first-run dashboard: WHOOP's new-member set (HRV, Sleep Performance, Steps, Calories, Stress
-    /// Monitor, §3.1 item 12) plus the rows and chart its 2026 dashboards lead with (Sleep Debt, Resting
-    /// Heart Rate, Strain & Recovery).
-    static let defaultItems: [PulseDashboardItem] = [
-        .sleepDebt, .hrv, .rhr, .sleepPerformance, .steps, .calories, .stressMonitor, .strainRecovery,
-    ]
+    /// The first-run dashboard: WHOOP's new-member set, in its order (§3.1 item 12 [C]). Everything else,
+    /// ZENO's extras included, waits in ADD TO MY DASHBOARD.
+    static let defaultItems: [PulseDashboardItem] = [.hrv, .sleepPerformance, .steps, .calories, .stressMonitor]
 
     /// The stored layout; an empty or unreadable value is the default (a stored layout is never empty).
     static func decode(_ stored: String) -> [PulseDashboardItem] {

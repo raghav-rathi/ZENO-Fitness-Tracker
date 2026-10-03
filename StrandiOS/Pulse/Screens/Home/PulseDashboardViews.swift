@@ -22,6 +22,8 @@ enum PulseDashboardViews {
         /// The rows' values are the previous day's while this day's build: they dim, as Home does while a
         /// day loads, rather than pass for it or flash "no data".
         var extrasStale = false
+        /// The stress reading's update time, resolved once for the STRESS MONITOR tile and card.
+        var stressUpdated: String?
 
         @Environment(\.pulseNavigator) private var navigator
 
@@ -38,7 +40,7 @@ enum PulseDashboardViews {
                     ForEach(items) { item in
                         switch item {
                         case .stressMonitor:
-                            StressCard(home: home)
+                            StressCard(home: home, updated: stressUpdated)
                                 .id("pulse.stress")
                         case .strainRecovery:
                             StrainRecoveryCard(home: home)
@@ -93,6 +95,8 @@ enum PulseDashboardViews {
     /// STRESS MONITOR ›: "Last updated 10:15 PM" and "MEDIUM 1.1", then the day's stress chart (150 pt).
     struct StressCard: View {
         let home: HomeSnapshot
+        /// When the reading was last updated (`PulseHomeStress.updated`, shared with the tile).
+        let updated: String?
 
         var body: some View {
             PulseLink(PulseRoute.stressMonitor.forExistingEntryPoint) {
@@ -108,7 +112,7 @@ enum PulseDashboardViews {
                             Spacer(minLength: 8)
                             if let score = home.stress?.score {
                                 let level = PulseTheme.Stress.Level(value: score)
-                                Text(levelWord(level))
+                                Text(PulseHomeStress.word(level))
                                     .pulseText(.label)
                                     .foregroundStyle(level.color)
                                 Text(PulseFormat.oneDecimal(score))
@@ -146,11 +150,6 @@ enum PulseDashboardViews {
             return out
         }
 
-        private var updated: String? {
-            guard let hour = home.stress?.hours.last(where: { $0.level != nil }) else { return nil }
-            return PulseFormat.clock(min(Date(timeIntervalSince1970: TimeInterval(hour.startTs + 3600)), Date()))
-        }
-
         /// The chart's x labels: four times across the span shown, the last one now.
         private var xLabels: [String] {
             let dates = points.map(\.date) + periods.flatMap { [$0.start, $0.end] }
@@ -161,18 +160,14 @@ enum PulseDashboardViews {
             return (0...3).map { PulseFormat.clock(lo.addingTimeInterval(step * Double($0))) }
         }
 
-        private func levelWord(_ level: PulseTheme.Stress.Level) -> String {
-            switch level {
-            case .low: return String(localized: "Low")
-            case .medium: return String(localized: "Medium")
-            case .high: return String(localized: "High")
-            }
-        }
     }
 
-    /// STRAIN & RECOVERY ⓘ: the seven days ending on the selected one, Strain against Recovery.
+    /// STRAIN & RECOVERY ⓘ: the seven days ending on the selected one, Strain against Recovery, on a
+    /// ≈191 pt plot (completeness-critic/13). A week with neither says why the grid is bare (§2.7).
     struct StrainRecoveryCard: View {
         let home: HomeSnapshot
+
+        private var isEmpty: Bool { home.week.allSatisfy { $0.strain == nil && $0.recovery == nil } }
 
         var body: some View {
             PulseLink(PulseRoute.trendView(metric: "recovery").forExistingEntryPoint) {
@@ -182,7 +177,16 @@ enum PulseDashboardViews {
                                                      label: PulseFormat.dayLabel(day.id, template: "EEE"),
                                                      sublabel: PulseFormat.dayLabel(day.id, template: "d"),
                                                      strain: day.strain, recovery: day.recovery)
-                    }, highlightID: home.day.key)
+                    }, highlightID: home.day.key, height: PulseHomeMetrics.strainRecoveryChart)
+                    .overlay {
+                        if isEmpty {
+                            Text(String(localized: "Strain and Recovery fill in as your days score."))
+                                .pulseText(.body)
+                                .foregroundStyle(PulseTheme.textSecondary)
+                                .multilineTextAlignment(.center)
+                                .padding(.horizontal, PulseTheme.Space.l)
+                        }
+                    }
                 }
                 .contentShape(Rectangle())
             }
@@ -207,13 +211,16 @@ struct PulseDashboardMetricRow: View {
     /// Whose day a carried value is ("Last night · 28 Sep"), shown under the name.
     var caption: String?
 
+    /// The icon column, scaling with the icon so the names stay in one column at every text size.
+    @ScaledMetric(relativeTo: .body) private var iconWidth: CGFloat = 22
+
     var body: some View {
         // The icon 14 pt in, the name at 44 pt (completeness-critic/16).
         HStack(spacing: PulseTheme.Space.xs) {
             Image(systemName: item.symbol)
-                .font(.system(size: 18, weight: .light))
+                .pulseHomeGlyph(.dashboardIcon)
                 .foregroundStyle(PulseTheme.textTertiary)
-                .frame(width: 22)
+                .frame(width: iconWidth)
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
                 PulseWordWrapText(item.title, style: .cardTitle)
@@ -264,10 +271,16 @@ struct PulseDashboardMetricRow: View {
 
     private var spoken: String {
         guard let text = value.value else { return String(localized: "No data yet") }
-        var parts = [[text, value.unit].compactMap { $0 }.joined(separator: " ")]
+        var parts = [[text, value.unit ?? value.spokenUnit].compactMap { $0 }.joined(separator: " ")]
+        if value.isRunningTotal { parts.append(String(localized: "so far today")) }
         if let caption { parts.append(caption) }
         if let trend = value.trend { parts.append(trend.accessibilityDescription) }
-        if let baseline = value.baseline { parts.append(String(localized: "30-day average \(baseline)")) }
+        if let baseline = value.baseline {
+            switch value.baselineKind {
+            case .thirtyDays: parts.append(String(localized: "30-day average \(baseline)"))
+            case .fourWeeks: parts.append(String(localized: "weekly average of the 4 weeks before \(baseline)"))
+            }
+        }
         return parts.joined(separator: ", ")
     }
 }
@@ -280,7 +293,7 @@ struct PulseCalibratingArt: View {
                 .stroke(PulseTheme.textTertiary, style: StrokeStyle(lineWidth: 1.5, lineCap: .round, lineJoin: .round))
                 .frame(width: 40, height: 62)
             Image(systemName: "waveform.path")
-                .font(.system(size: 34, weight: .light))
+                .font(PulseHomeGlyph.art(34, weight: .light))
                 .foregroundStyle(PulseTheme.recoveryBlue)
         }
         .frame(width: 84, height: 66)

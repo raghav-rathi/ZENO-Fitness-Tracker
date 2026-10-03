@@ -9,6 +9,11 @@ import StrandAnalytics
 /// tiers), "Pending" while there is nothing to judge.
 struct PulseMonitorTiles: View {
     let home: HomeSnapshot
+    /// Today's graded vitals (Home's own facts): WITHIN RANGE, ELEVATED / LOW, VERY ELEVATED / VERY LOW or
+    /// OUT OF RANGE. nil only before they first build; the tile then reads the snapshot's count.
+    let grades: PulseMonitorGrades?
+    /// When the stress reading was last updated, resolved once for this tile and the dashboard's card.
+    let stressUpdated: String?
 
     var body: some View {
         HStack(alignment: .top, spacing: PulseTheme.Layout.gridGap) {
@@ -25,6 +30,39 @@ struct PulseMonitorTiles: View {
     }
 
     private var healthStatus: PulseMonitorTile.Status {
+        guard let grades else { return countStatus }
+        guard !grades.isPending else { return .pending }
+        guard let first = grades.out.first else {
+            return .init(badge: .check, tint: .teal, word: String(localized: "Within range"),
+                         wordColor: PulseTheme.positive,
+                         detail: String(localized: "\(grades.inRange)/\(grades.judged) Metrics"))
+        }
+        // One vital out names it with how far out (help-center/91: "VERY ELEVATED · Skin Temperature"); a
+        // vital far out leads even when others are out too; otherwise several read OUT OF RANGE and a count.
+        let lead = grades.out.first { $0.strong } ?? first
+        let others = grades.out.count - 1
+        guard grades.out.count == 1 || lead.strong else {
+            return .init(badge: .alert, tint: .orange, word: String(localized: "Out of range"),
+                         wordColor: PulseTheme.negative,
+                         detail: String(localized: "\(grades.out.count)/\(grades.judged) Metrics"))
+        }
+        let detail = others > 0 ? String(localized: "\(lead.name) +\(others)") : lead.name
+        if lead.strong {
+            return .init(badge: .alert, tint: .red,
+                         word: lead.high == false ? String(localized: "Very low") : String(localized: "Very elevated"),
+                         wordColor: PulseTheme.recoveryLowText, detail: detail)
+        }
+        let word: String
+        switch lead.high {
+        case true?: word = String(localized: "Elevated")
+        case false?: word = String(localized: "Low")
+        case nil: word = String(localized: "Out of range")
+        }
+        return .init(badge: .alert, tint: .orange, word: word, wordColor: PulseTheme.negative, detail: detail)
+    }
+
+    /// Before Home's own facts land: the snapshot's in / out count, without severity.
+    private var countStatus: PulseMonitorTile.Status {
         guard let monitor = home.monitor, !monitor.isPending else { return .pending }
         if monitor.outOfRange.isEmpty {
             return .init(badge: .check, tint: .teal, word: String(localized: "Within range"),
@@ -41,18 +79,27 @@ struct PulseMonitorTiles: View {
     private var stressStatus: PulseMonitorTile.Status {
         guard let stress = home.stress, let score = stress.score else { return .pending }
         let level = PulseTheme.Stress.Level(value: score)
-        let word: String
+        return .init(badge: .value(PulseFormat.oneDecimal(score)), tint: level.tint, word: PulseHomeStress.word(level),
+                     wordColor: level.color, detail: stressUpdated)
+    }
+}
+
+/// The stress reading's words and update time, ONE helper for the STRESS MONITOR tile and the dashboard's
+/// STRESS MONITOR card, so the two can never print different times or words for one reading.
+enum PulseHomeStress {
+    /// When the day's stress was last updated: the end of the last scored hour, or `now` while that hour
+    /// is still running. Home resolves it once per pass, with one `now`, for both readouts.
+    static func updated(_ stress: PulseStressSummary?, now: Date) -> String? {
+        guard let hour = stress?.hours.last(where: { $0.level != nil }) else { return nil }
+        return PulseFormat.clock(min(Date(timeIntervalSince1970: TimeInterval(hour.startTs + 3600)), now))
+    }
+
+    static func word(_ level: PulseTheme.Stress.Level) -> String {
         switch level {
-        case .low: word = String(localized: "Low")
-        case .medium: word = String(localized: "Medium")
-        case .high: word = String(localized: "High")
+        case .low: return String(localized: "Low")
+        case .medium: return String(localized: "Medium")
+        case .high: return String(localized: "High")
         }
-        let updated = stress.hours.last(where: { $0.level != nil }).map { hour -> String in
-            let end = Date(timeIntervalSince1970: TimeInterval(hour.startTs + 3600))
-            return PulseFormat.clock(min(end, Date()))
-        }
-        return .init(badge: .value(PulseFormat.oneDecimal(score)), tint: level.tint, word: word,
-                     wordColor: level.color, detail: updated)
     }
 }
 
@@ -169,7 +216,7 @@ struct PulseTodaysActivitiesCard: View {
                 PulseCardTitle(home.day.isToday ? String(localized: "Today's Activities")
                                                 : String(localized: "Activities"),
                                accessory: .expand)
-                    .contentShape(Rectangle())
+                    .pulseHomeHitArea()
             }
             .buttonStyle(PulsePressStyle())
             .accessibilityHint(String(localized: "Expands the day's heart rate"))
@@ -184,7 +231,7 @@ struct PulseTodaysActivitiesCard: View {
                         .buttonStyle(PulsePressStyle())
                 }
             }
-            .padding(.top, 13)
+            .padding(.top, PulseHomeMetrics.activitiesRowsTop)
 
             PulseButtonRow {
                 Button { navigator.quickAction(.addActivity) } label: {
@@ -198,9 +245,9 @@ struct PulseTodaysActivitiesCard: View {
                     .buttonStyle(.pulseNested)
                 }
             }
-            .padding(.top, 20)
+            .padding(.top, PulseHomeMetrics.activitiesButtonsTop)
         }
-        .padding(.horizontal, 12)
+        .padding(.horizontal, PulseTheme.Space.s)
         .padding(.top, 16)
         .padding(.bottom, 16)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -216,12 +263,7 @@ struct PulseNoSleepRow: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            Image(systemName: "moon.fill")
-                .font(.system(size: 19, weight: .semibold))
-                .foregroundStyle(Color.white)
-                .frame(width: 96, height: 40)
-                .background(RoundedRectangle(cornerRadius: PulseTheme.Radius.well, style: .circular)
-                    .fill(PulseTheme.sleep))
+            PulseActivityChip(kind: .sleep, symbol: "moon.fill", value: nil)
                 .accessibilityHidden(true)
             Text(String(localized: "No sleep"))
                 .pulseText(.cardTitle)
@@ -232,7 +274,7 @@ struct PulseNoSleepRow: View {
                     .pulseText(.buttonLabel)
                     .foregroundStyle(PulseTheme.textPrimary)
                     .padding(.horizontal, PulseTheme.Space.s)
-                    .frame(minHeight: 36)
+                    .frame(minHeight: PulseHomeMetrics.addSleepHeight)
                     .background(RoundedRectangle(cornerRadius: PulseTheme.Radius.well, style: .circular)
                         .strokeBorder(Color.white, lineWidth: 1.5))
                     .contentShape(Rectangle())
@@ -246,12 +288,21 @@ struct PulseNoSleepRow: View {
     }
 }
 
-/// Which activities are recovery activities (scored for recovery, shown with their duration in the
-/// light-blue chip rather than a Strain; activity-flows-2026/e12).
+/// How Home sorts activities by sport.
 enum PulseHomeActivity {
+    /// Recovery activities: scored for recovery, shown with their duration in the light-blue chip rather
+    /// than a Strain (activity-flows-2026/e12).
     static func isRecoveryActivity(_ sport: String) -> Bool {
         let s = sport.lowercased()
         return ["sauna", "meditat", "breath", "ice bath", "cold plunge", "massage"].contains { s.contains($0) }
+    }
+
+    /// Strength activities, for STRENGTH ACTIVITY TIME: the catalogue's Strength, Weightlifting,
+    /// Powerlifting, Bodybuilding and Calisthenics, and an export's own "strength" / "weight" names (the
+    /// rule the WHOOP importer derives its strength minutes with).
+    static func isStrengthActivity(_ sport: String) -> Bool {
+        let s = sport.lowercased()
+        return ["strength", "weight", "powerlifting", "bodybuilding", "calisthenics"].contains { s.contains($0) }
     }
 }
 
