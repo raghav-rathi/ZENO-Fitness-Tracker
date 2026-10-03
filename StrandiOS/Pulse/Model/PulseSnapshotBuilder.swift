@@ -524,17 +524,14 @@ actor PulseSnapshotBuilder {
         })
     }
 
-    // TODO(sleep): two gaps in the shared resolver, both for the Sleep group so the card and the planner
-    // move together. (1) `tonightSleepPlan` plans REACH MY SLEEP NEED at 100% whatever goal the planner
-    // has (`pulse.sleepPlanner.goal`): give it the goal, brought to the builder in `PulsePrefs` as the
-    // alarm settings are. (2) `PulseSleepPlan.resolve` takes each wake's next occurrence after now, so from
-    // the moment the night ending today is over until this morning's planned wake, both plan this morning
-    // ("Now" to bed); once that night has ended they should plan the coming one.
+    // TODO(sleep): `tonightSleepPlan` plans REACH MY SLEEP NEED at 100% whatever goal the planner has
+    // (`pulse.sleepPlanner.goal`): give it the goal, brought to the builder in `PulsePrefs` as the alarm
+    // settings are, so the card and the planner move together.
     /// Tonight's plan through the Sleep Planner's own resolver (`tonightSleepPlan`, Screens/Sleep, which runs
     /// `PulseSleepPlan.resolve` over the unified sleep need) on the settings the request captured: the wake
-    /// the strap is really armed for (per-day times included), the bedtime with time to fall asleep. Home's
-    /// TONIGHT'S SLEEP card and the planner it opens therefore print the same night while the planner's goal
-    /// is its default, REACH MY SLEEP NEED at 100%.
+    /// the strap is really armed for (per-day times included), the bedtime with time to fall asleep, and once
+    /// the night ending today is over, the coming night. Home's TONIGHT'S SLEEP card and the planner it opens
+    /// therefore print the same night while the planner's goal is its default, REACH MY SLEEP NEED at 100%.
     func tonightPlan(_ r: PulseRequest) async -> PulseTonight? {
         guard let plan = await tonightSleepPlan(r, settings: r.prefs.sleepPlan) else { return nil }
         return PulseTonight(needMin: plan.needMin, inBed: plan.bedtime, asleepBy: plan.asleepBy, wake: plan.wake,

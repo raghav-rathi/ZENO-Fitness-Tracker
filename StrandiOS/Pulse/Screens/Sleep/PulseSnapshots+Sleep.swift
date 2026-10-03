@@ -332,9 +332,10 @@ struct SleepDiveSnapshot: Equatable {
 // MARK: - Sleep Planner
 
 /// What tonight's plan needs that the store knows (§3.1 item 8c, §3.11): tonight's need and its parts, the
-/// recent nights' wake minutes (the usual wake), and their timing for the consistency projection and the
-/// OPTIMAL window. Everything about the alarm is read live from its settings by whoever resolves the plan
-/// (`PulseSleepPlan.resolve`), so the panel always shows what the strap is armed with.
+/// recent nights' wake minutes (the usual wake), their timing for the consistency projection and the
+/// OPTIMAL window, and whether the night ending today is over. Everything about the alarm is read live from
+/// its settings by whoever resolves the plan (`PulseSleepPlan.resolve`), so the panel always shows what the
+/// strap is armed with.
 struct SleepPlannerSnapshot: Equatable {
     let seq: Int
     /// Tonight's need from the unified model (`Repository.sleepNeedTonight`), minutes, with its parts.
@@ -343,5 +344,8 @@ struct SleepPlannerSnapshot: Equatable {
     let recentWakeMinutes: [Int]
     /// The recent nights' bed and wake on the local clock (SleepConsistency's inputs).
     let timings: [SleepConsistency.NightTiming]
+    /// When the main night that ended on today's logical day ended (Home's last night, `lastNight.wake`),
+    /// nil until one is recorded: once it has, the plan is for the coming night (`PulseSleepPlan.planStart`).
+    let nightEnded: Date?
 }
 #endif

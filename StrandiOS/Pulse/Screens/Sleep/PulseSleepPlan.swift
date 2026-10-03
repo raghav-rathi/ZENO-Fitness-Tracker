@@ -5,16 +5,17 @@ import StrandAnalytics
 // MARK: - Tonight's plan (WHOOP_UI_SPEC §3.1 item 8c, §3.11)
 //
 // One resolver for everything a screen states about tonight, so the Sleep Planner's times, bar, headline
-// and alarm panel and My Schedule can never describe different nights. Home's TONIGHT'S SLEEP card is to
-// read it too (`PulseSnapshotBuilder.tonightSleepPlan`), but still works tonight out on its own
-// (`PulseSnapshotBuilder.tonightPlan`):
+// and alarm panel and My Schedule can never describe different nights. Home's TONIGHT'S SLEEP card reads it
+// too (`PulseSnapshotBuilder.tonightSleepPlan`), at the planner's default goal:
 //
 //   wake      `TonightSleepPlan.wake`: the strap alarm only when it will buzz that morning (on, armed,
 //             that weekday), else the wind-down reminder's wake while it is on, else the median wake of
 //             the last 14 nights, else 07:00 as a TYPICAL wake. Every candidate is the source's next
 //             occurrence (its My Schedule day time included) through `AppModel.nextSmartAlarmDate`, the
 //             function the strap alarm is armed from, so the plan and the strap cannot name different
-//             mornings.
+//             mornings. Next after now, until the main night ending today is over; from then, after the
+//             start of tomorrow (`planStart`), so the morning after waking plans the coming night instead
+//             of "Now" to bed for this morning's wake.
 //   bedtime   REACH MY SLEEP NEED: the goal's share of tonight's need (`Repository.sleepNeedTonight`)
 //             before the wake, in bed 15 minutes earlier to fall asleep; IMPROVE MY SLEEP: asleep at the
 //             Sleep Consistency target's bed time; REACH MY WEEKLY PLAN GOAL: the running Weekly Plan's
@@ -181,27 +182,30 @@ struct PulseSleepPlan: Equatable {
 
     /// The plan for `goal`, or nil before there is a need to plan for. `recentWakeMinutes` are the wake
     /// minutes of the recent nights, newest first; `timings` the nights SleepConsistency compares with;
-    /// `weeklyPlan` the running Weekly Plan's sleep goals, for REACH MY WEEKLY PLAN GOAL.
+    /// `weeklyPlan` the running Weekly Plan's sleep goals, for REACH MY WEEKLY PLAN GOAL; `nightEnded` the end
+    /// of the main night that ended on today's logical day, if one is recorded (`SleepPlannerSnapshot`).
     static func resolve(now: Date, goal: PulseSleepGoal, needMin: Double, settings s: PulseSleepPlanSettings,
                         recentWakeMinutes: [Int], timings: [SleepConsistency.NightTiming],
-                        weeklyPlan: PulseWeeklyPlanSleepGoals? = nil,
+                        weeklyPlan: PulseWeeklyPlanSleepGoals? = nil, nightEnded: Date? = nil,
                         calendar cal: Calendar = .current) -> PulseSleepPlan? {
+        // The wake is looked for after the plan's start; lateness is still judged against now.
+        let from = planStart(now: now, nightEnded: nightEnded, calendar: cal)
         guard needMin > 0,
               let typical = AppModel.nextSmartAlarmDate(minutes: TonightSleepPlan.typicalWakeMinute, weekdays: [],
-                                                        from: now, calendar: cal) else { return nil }
+                                                        from: from, calendar: cal) else { return nil }
         // Every source's next occurrence, through the function the strap alarm is armed from.
         let alarmNext = AppModel.nextSmartAlarmDate(minutes: s.alarmMinutes, weekdays: [], overrides: s.dayTimes,
-                                                    from: now, calendar: cal)
+                                                    from: from, calendar: cal)
         let alarmBuzzes = alarmNext.map {
             TonightSleepPlan.alarmBuzzes(on: $0, enabled: s.alarmEnabled, armed: s.strapWillArm,
                                          weekdays: s.alarmWeekdays, calendar: cal)
         } ?? false
         let windDown = s.windDownEnabled
             ? AppModel.nextSmartAlarmDate(minutes: s.windDownWakeMinutes, weekdays: [], overrides: s.dayTimes,
-                                          from: now, calendar: cal)
+                                          from: from, calendar: cal)
             : nil
         let habit = TonightSleepPlan.habitualWakeMinute(recentWakeMinutes).flatMap {
-            AppModel.nextSmartAlarmDate(minutes: $0, weekdays: [], from: now, calendar: cal)
+            AppModel.nextSmartAlarmDate(minutes: $0, weekdays: [], from: from, calendar: cal)
         }
         let wake = TonightSleepPlan.wake(strapAlarm: alarmBuzzes ? alarmNext : nil, windDown: windDown,
                                          habit: habit, typical: typical)
@@ -261,6 +265,16 @@ struct PulseSleepPlan: Equatable {
                               needMin: needMin, alarmTime: alarmTime, weekday: weekday, hasDayTime: dayTime != nil,
                               clamped: bed.clamped, isLate: late, sleepIfNowMin: sleepIfNow, optimalBed: optimalBed,
                               optimalWake: optimalWake, consistencyPercent: consistency)
+    }
+
+    /// When tonight's wake is looked for from: now, until the main night that ended on today's logical day
+    /// (`nightEnded`) is over; from then the start of the day after it ended, so a morning after waking,
+    /// even before the usual wake time, plans the coming night instead of this morning's wake. Before
+    /// 04:00 that night is last night's, so the plan still runs from now.
+    static func planStart(now: Date, nightEnded: Date?, calendar cal: Calendar) -> Date {
+        guard let nightEnded,
+              let nextDay = cal.date(byAdding: .day, value: 1, to: cal.startOfDay(for: nightEnded)) else { return now }
+        return max(now, nextDay)
     }
 
     /// Minutes since local midnight, with the seconds.

@@ -52,7 +52,7 @@ struct PulseSleepPlannerView: View {
         let plan = snapshot.flatMap { s in
             PulseSleepPlan.resolve(now: Date(), goal: goal, needMin: s.need.totalMin, settings: settings,
                                    recentWakeMinutes: s.recentWakeMinutes, timings: s.timings,
-                                   weeklyPlan: weeklyPlan)
+                                   weeklyPlan: weeklyPlan, nightEnded: s.nightEnded)
         }
         ScrollView {
             VStack(spacing: 0) {
