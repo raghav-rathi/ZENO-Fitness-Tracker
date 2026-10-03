@@ -166,8 +166,8 @@ extension PulseSnapshotBuilder {
         var series = history
         if let day = await stressDay(r), let level = day.gaugeLevel?.level {
             rows.append((today, HealthStressGauge.printed(level)))
-            series.todayCaption = PulseStressDay.readingTime(day.latest?.at, dayKey: day.dayKey)
-                ?? String(localized: "Daily score")
+            series.todayReading = PulseTrendTodayReading(time: PulseStressDay.readingTime(day.latest?.at,
+                                                                                          dayKey: day.dayKey))
         }
         series.points = Self.points(rows, through: today)
         return series

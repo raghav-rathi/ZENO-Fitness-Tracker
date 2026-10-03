@@ -228,9 +228,9 @@ enum PulseDigestBuilder {
             // Still counting: no arrow against full days, as Home's tiles say "So far today", or what the
             // series says today's value is (Day Stress: the Stress Monitor's reading time).
             return .init(id: m.key, title: m.rowTitle, symbol: m.symbol, value: text(latest.value), unit: unit,
-                         caption: s.todayCaption ?? String(localized: "So far today"), trend: nil,
+                         caption: s.todayReading?.caption ?? String(localized: "So far today"), trend: nil,
                          baseline: baseline, spark: spark, color: color,
-                         accessibility: s.todayCaption.map { "\(m.rowTitle), \(spokenValue(latest.value)), \($0)" }
+                         accessibility: s.todayReading.map { "\(m.rowTitle), \(spokenValue(latest.value)), \($0.caption)" }
                              ?? String(localized: "\(m.rowTitle), \(spokenValue(latest.value)) so far today"))
         }
         let trend = comparison.map { c in

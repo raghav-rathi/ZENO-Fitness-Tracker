@@ -35,12 +35,24 @@ struct PulseTrendSeries: Equatable, Sendable {
     var unknownDays: Set<String> = []
     /// TIME IN BED: each night's bed and wake as minutes from its wake day's local midnight.
     var spans: [String: PulseTrendSpan] = [:]
-    /// What today's still-counting value is, where "So far today" would misname it: Day Stress's today is
-    /// the Stress Monitor's reading, so this is when it was read ("7:30 AM", "Fri 10:30 PM") or "Daily score".
-    var todayCaption: String?
+    /// Today's value where it is a reading rather than a total still counting, which "So far today" would
+    /// misname (Day Stress: the Stress Monitor's gauge); nil for every other metric.
+    var todayReading: PulseTrendTodayReading?
 
     var earliest: String? { points.first?.day }
     var hasData: Bool { !points.isEmpty }
+}
+
+/// Day Stress's today as the Stress Monitor's gauge reads it (`PulseStressDay.gaugeLevel`): a reading, not
+/// a total still counting.
+struct PulseTrendTodayReading: Equatable, Sendable {
+    /// When it was read, as every stress readout words it: "7:30 AM", or "Fri 10:30 PM" for the evening
+    /// before, which the gauge carries until today's first reading. nil when the level is today's daily
+    /// score rather than a reading off the curve.
+    let time: String?
+
+    /// The Trends row's caption: when it was read, else "Daily score".
+    var caption: String { time ?? String(localized: "Daily score") }
 }
 
 /// A night's bed → wake span in minutes from its wake day's local midnight: the evening before is
@@ -69,6 +81,8 @@ struct PulseTrendHeadline: Equatable, Identifiable {
     /// HOURS VS. NEEDED stacks two compact values with the label under each and a mini chip beside it.
     var compact = false
     let accessibility: String
+    /// A line under the value: when a reading was taken ("8:00 AM", "Fri 10:30 PM"), where the value is one.
+    var caption: String?
 }
 
 /// A legend entry above the chart.
@@ -299,7 +313,7 @@ struct TrendsTabSnapshot: Equatable {
         let value: String?
         let unit: String
         /// "Sep 30" for an older reading, "So far today" for a running total (or the series' own
-        /// `todayCaption`, Day Stress's reading time), "Last 7 days".
+        /// `todayReading`, Day Stress's reading time), "Last 7 days".
         let caption: String?
         let trend: PulseTrend?
         let baseline: String?

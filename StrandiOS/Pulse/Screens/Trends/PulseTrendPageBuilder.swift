@@ -118,7 +118,8 @@ enum PulseTrendPageBuilder {
         var excludedDay: String?
         /// The value the M chart's dashed AVG. line sits at.
         var chartAverage: Double?
-        /// The period's only reading is today's, still counting: nothing to average or compare yet.
+        /// The period's only reading is today's, still counting (Day Stress: its latest reading): nothing to
+        /// average or compare yet.
         var todayOnly = false
         /// W of a minute metric holds a day of unknown zone time: its total is a lower bound.
         var partialWeek = false
@@ -185,8 +186,13 @@ enum PulseTrendPageBuilder {
                         : PulseTrendMath.averageWeeklyTotal(series.points, in: window.previous, unknownDays: unknown)
                 }
             }
+            // Today alone, when it is a reading rather than a total still counting (Day Stress: the Stress
+            // Monitor's gauge), is named as that reading, with when it was read under it.
+            let reading = h.todayOnly ? series.todayReading : nil
             let label: String
-            if h.todayOnly {
+            if let reading {
+                label = reading.time == nil ? String(localized: "Daily score") : String(localized: "Latest reading")
+            } else if h.todayOnly {
                 label = String(localized: "Today so far")
             } else if isWeeklyTotal {
                 label = range == .week ? String(localized: "Weekly total") : String(localized: "Avg. weekly total")
@@ -194,11 +200,13 @@ enum PulseTrendPageBuilder {
                 label = String(localized: "Average")
             }
             let valueText = h.current.map(format.text) ?? "--"
+            var spokenHeadline = h.current.map { "\(label), \(format.text($0)) \(unit)" }
+                ?? String(localized: "\(label), no readings")
+            if let time = reading?.time { spokenHeadline += ", \(time)" }
             h.items = [PulseTrendHeadline(
                 id: "main", label: label, value: valueText, unit: h.current == nil ? "" : unit,
                 chip: h.todayOnly ? nil : chip(compare(h.current, h.previous)),
-                accessibility: h.current.map { "\(label), \(format.text($0)) \(unit)" }
-                    ?? String(localized: "\(label), no readings"))]
+                accessibility: spokenHeadline, caption: reading?.time)]
             h.chartAverage = h.todayOnly ? nil : h.current
             return h
         }
@@ -263,6 +271,14 @@ enum PulseTrendPageBuilder {
             }
             let value = spoken(current)
             if h.todayOnly {
+                // A reading (Day Stress's) is not still counting: say what it is and when it was read, the
+                // evening before's included.
+                if let reading = series.todayReading {
+                    if let time = reading.time {
+                        return String(localized: "Today shows your latest \(name) reading, \(value) at \(time). No other day in this period has one.")
+                    }
+                    return String(localized: "Today shows your daily \(name) score from your vitals, \(value). No other day in this period has one.")
+                }
                 return String(localized: "Only today has a \(name) reading in this period so far: \(value), still counting.")
             }
             if case .hoursVsNeed = metric.chart {
@@ -865,6 +881,12 @@ enum PulseTrendPageBuilder {
             var notes: [String] = []
             if let excludedDay {
                 notes.append(String(localized: "Average does not include today (\(PulseFormat.dayLabel(excludedDay, template: "MMMd")))"))
+                // Today's point beside the others, when it is a reading (Day Stress's): which, and when.
+                if let reading = series.todayReading {
+                    let name = metric.sentenceName
+                    notes.append(reading.time.map { String(localized: "Today shows your latest \(name) reading (\($0))") }
+                                 ?? String(localized: "Today shows your daily \(name) score from your vitals"))
+                }
             }
             if let note = metric.note { notes.append(note) }
             if case .zones = metric.source, holdsUnknown(window) {
