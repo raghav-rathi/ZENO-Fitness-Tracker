@@ -16,7 +16,8 @@ import SwiftUI
 //         .buttonStyle(.pulseNested)
 //
 // Labels stay on one line and shrink a little at large sizes; two side by side go in a `PulseButtonRow`,
-// which stacks them when they no longer fit next to each other, so no label is ever cut ("ADD ACTIV…").
+// which keeps them at equal widths and stacks them once a label no longer fits its share, so no label is
+// ever cut ("ADD ACTIV…").
 
 struct PulseButtonStyle: ButtonStyle {
     enum Kind: Equatable {
@@ -106,8 +107,8 @@ struct PulseButtonLabelStyle: LabelStyle {
     }
 }
 
-/// Two (or more) buttons side by side, 12 pt apart, that stack full width once their labels no longer fit
-/// next to each other (large text sizes), rather than truncating a label.
+/// Two (or more) buttons side by side at equal widths, 12 pt apart, that stack full width once a label no
+/// longer fits its equal share (large text sizes), rather than truncating it.
 ///
 ///     PulseButtonRow {
 ///         Button { … } label: { Label("Add activity", systemImage: "plus") }.buttonStyle(.pulseNested)
@@ -124,8 +125,40 @@ struct PulseButtonRow<Content: View>: View {
 
     var body: some View {
         ViewThatFits(in: .horizontal) {
-            HStack(spacing: spacing) { content() }
+            PulseEqualWidthRow(spacing: spacing) { content() }
             VStack(spacing: spacing) { content() }
+        }
+    }
+}
+
+/// Subviews side by side at equal widths. Its ideal width is the widest subview's times their number, plus
+/// the gaps, so `ViewThatFits` keeps the row only while every label fits an equal share (an `HStack`'s ideal
+/// width is the SUM of its subviews', which let a long label into a row that then split evenly and cut it).
+private struct PulseEqualWidthRow: Layout {
+    let spacing: CGFloat
+
+    /// How far a button may narrow and stay in the row. Its label may shrink to 0.8 (Pulse's buttons), but
+    /// not its padding or icon, so the row allows 0.9 of the whole button: that keeps a label whole while
+    /// it is at least as wide as its padding and icon, which it is long before a phone's row is this tight.
+    private static let allowedShrink: CGFloat = 0.9
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let count = CGFloat(max(1, subviews.count))
+        let gaps = spacing * (count - 1)
+        let widest = subviews.map { $0.sizeThatFits(.unspecified).width }.max() ?? 0
+        let width = proposal.width ?? widest * Self.allowedShrink * count + gaps
+        let share = max(0, (width - gaps) / count)
+        let height = subviews.map { $0.sizeThatFits(ProposedViewSize(width: share, height: proposal.height)).height }
+            .max() ?? 0
+        return CGSize(width: width, height: height)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        let count = CGFloat(max(1, subviews.count))
+        let share = max(0, (bounds.width - spacing * (count - 1)) / count)
+        for (index, subview) in subviews.enumerated() {
+            subview.place(at: CGPoint(x: bounds.minX + CGFloat(index) * (share + spacing), y: bounds.midY),
+                          anchor: .leading, proposal: ProposedViewSize(width: share, height: bounds.height))
         }
     }
 }
