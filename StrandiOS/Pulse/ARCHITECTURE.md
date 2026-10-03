@@ -409,7 +409,7 @@ All take plain values, never snapshots. Map a snapshot to them in your group (se
 | `PulseStatusChip` | `(_ text:, kind: .positive \| .negative \| .neutral)` |
 | `PulseTag` | `(_ text:, outlined: Bool = false)` |
 | `PulseMiniSegments` | `(active: Int?)` 0 Poor / 1 Sufficient / 2 Optimal; `PulseSleepBand.index(percent:)`, `.name(_:)` |
-| `PulseAchievementChip` | `(symbol:tint:count:)` |
+| `PulseAchievementChip` | `(symbol:tint:count:)`: the badge glyph fills a 22 pt box |
 | `PulseFilterChip` | `(title:isSelected:action:)` |
 | `PulseStatusBanner` | `(_ kind: .caughtUp(syncedTo:) \| .catchingUp(progress:) \| .offWrist \| .lowBattery(percent:), onDismiss:)` |
 
@@ -632,6 +632,8 @@ Measured on the reference captures, where they disagree with the spec's numbers:
   and dark about half each along the bar), and `hatch` is white 10%. The typical-range box over a bar is
   a white 10% veil (`typicalBox`) with no stripes of its own, so the track's stripes show through it and
   the bar stays unstriped (help-center/82).
+- **Achievement chip badge.** 22 pt, not the spec's ≈18: WHOOP's badges measure 19–22 × 22 pt beside a 15 pt
+  count (deep-dives-2026/17b, /57).
 - **Sleep dive nights.** §1.7 [Z] puts a "‹ LAST NIGHT ›" pager under the bar; it pushed the ring 65 pt
   below WHOOP's, so the nights step in the bar's title ("‹ TODAY ›") instead.
 - **Coach button fill.** The spec's `#171728 → #121A25` reads darker than every capture; Pulse uses the
