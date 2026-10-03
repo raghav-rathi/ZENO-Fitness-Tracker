@@ -1,5 +1,6 @@
 #if os(iOS)
 import SwiftUI
+import Combine
 
 // MARK: - Coach button and coach surfaces (WHOOP_UI_SPEC §1.1, §1.2)
 //
@@ -7,7 +8,8 @@ import SwiftUI
 //   - on a tab root it sits right of the tab capsule (64 × 64 squircle, 12 pt gap, 12 pt from the edge);
 //   - on deep dives, Trend View, monitors, Activity Details and the like it floats alone in EXACTLY the same
 //     spot (12 pt from the right edge, its bottom on the capsule's line, 28 pt above the screen edge), so
-//     it never jumps on push (`PulseScreenScaffold(coach: .button)`, deep-dives-2026/57, reviews/r119);
+//     it never jumps on push (`PulseScreenScaffold(coach: .button)`, deep-dives-2026/57, reviews/r119),
+//     and while the Coach writes a reply it becomes the "◎ Analyzing…" pill (help-center/82);
 //   - on the Sleep / Recovery / Strain dives and Activity Details a summary pill stands in for it
 //     (`coach: .pill(text)`): two lines summarising the page, "⌃" opening the Coach sheet, 12 pt side
 //     margins on the same bottom line (deep-dives-2026/56).
@@ -151,24 +153,84 @@ struct PulseCoachSummaryPill: View {
     }
 }
 
-/// "◎ Analyzing…": the Coach button's pill form while the AI is generating.
+/// "◎ Analyzing…": the floating Coach button's pill form while the AI is generating (help-center/82), at
+/// the button's 64 pt height with its 32 pt ring where the button's sits, growing leftward.
 struct PulseCoachAnalyzingPill: View {
     var body: some View {
-        HStack(spacing: 8) {
-            PulseCoachAvatar(size: 28)
+        HStack(spacing: 10) {
+            PulseCoachAvatar(size: PulseTheme.TabBarMetrics.coachRing)
             Text(String(localized: "Analyzing…"))
                 .pulseText(.pillTitle)
                 .foregroundStyle(PulseTheme.textPrimary)
         }
-        .padding(.leading, 10)
-        .padding(.trailing, 16)
-        .frame(height: 52)
+        .padding(.leading, (PulseTheme.TabBarMetrics.floatingCoachSize - PulseTheme.TabBarMetrics.coachRing) / 2)
+        .padding(.trailing, 20)
+        .frame(height: PulseTheme.TabBarMetrics.floatingCoachSize)
         .background(Capsule(style: .continuous)
             .fill(LinearGradient(gradient: PulseTheme.Coach.buttonFill, startPoint: .topLeading, endPoint: .bottomTrailing)))
         .overlay(Capsule(style: .continuous)
             .strokeBorder(LinearGradient(gradient: PulseTheme.Coach.buttonRim, startPoint: .top, endPoint: .bottom),
                           lineWidth: 1))
         .accessibilityElement(children: .combine)
+    }
+}
+
+/// The Coach button a pushed screen floats, or the "◎ Analyzing…" pill in its place while the Coach writes a
+/// reply. It redraws only when the Coach starts or stops writing (`PulseCoachWriting`), never per streamed
+/// token, and nothing above it follows the engine.
+struct PulseFloatingCoachButton: View {
+    let action: () -> Void
+    @StateObject private var writing = PulseCoachWriting()
+
+    var body: some View {
+        Group {
+            if writing.isWriting {
+                Button(action: action) { PulseCoachAnalyzingPill() }
+                    .buttonStyle(PulsePressStyle())
+                    .accessibilityLabel(String(localized: "Coach, analyzing"))
+                    .accessibilityHint(String(localized: "Opens Coach"))
+            } else {
+                PulseCoachButton(size: PulseTheme.TabBarMetrics.floatingCoachSize, action: action)
+            }
+        }
+        .pulseAnimation(PulseMotion.crossFade, value: writing.isWriting)
+        .background(PulseCoachWritingProbe(writing: writing))
+    }
+}
+
+/// Whether the Coach is writing a reply (`AICoachEngine.sending`), settled: the flag must hold for 250 ms
+/// before it changes, so a request that fails at once never flashes the pill. The one subscription lives
+/// here, not in a view's `onReceive`: a view re-subscribes each time it redraws, an engine mid-reply
+/// redraws its observers on every token, and the debounce would never fire.
+@MainActor
+private final class PulseCoachWriting: ObservableObject {
+    @Published private(set) var isWriting = false
+    private var subscription: AnyCancellable?
+
+    /// Follow `engine`, once.
+    func follow(_ engine: AICoachEngine) {
+        guard subscription == nil else { return }
+        isWriting = engine.sending
+        subscription = engine.$sending
+            .removeDuplicates()
+            .debounce(for: .milliseconds(250), scheduler: RunLoop.main)
+            .sink { [weak self] sending in
+                guard let self, self.isWriting != sending else { return }
+                self.isWriting = sending
+            }
+    }
+}
+
+/// Hands the environment's engine to `PulseCoachWriting`. It observes the engine only because reading an
+/// environment object does, so it is a clear leaf whose per-token redraw costs nothing.
+private struct PulseCoachWritingProbe: View {
+    let writing: PulseCoachWriting
+    @EnvironmentObject private var coach: AICoachEngine
+
+    var body: some View {
+        Color.clear
+            .onAppear { writing.follow(coach) }
+            .accessibilityHidden(true)
     }
 }
 
@@ -194,7 +256,7 @@ struct PulseFloatingCoach: View {
                 case .button:
                     HStack {
                         Spacer(minLength: 0)
-                        PulseCoachButton(size: PulseTheme.TabBarMetrics.floatingCoachSize) { coach.open(seed) }
+                        PulseFloatingCoachButton { coach.open(seed) }
                     }
                     .padding(.trailing, PulseTheme.TabBarMetrics.floatingCoachInset)
                 case .pill(let summary):

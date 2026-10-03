@@ -524,6 +524,17 @@ private struct PulseCoachProbe: View {
                 if now != configured { configured = now }
             }
             .accessibilityHidden(true)
+            #if DEBUG
+            // `--pulse-coach-analyzing`: hold the Coach mid-reply, publishing as a stream does, for captures.
+            .task {
+                guard PulseDebugLaunch.coachAnalyzing else { return }
+                coach.sending = true
+                while !Task.isCancelled {
+                    try? await Task.sleep(nanoseconds: 100_000_000)
+                    coach.objectWillChange.send()
+                }
+            }
+            #endif
     }
 }
 

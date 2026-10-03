@@ -79,6 +79,7 @@ enum PulseDemo {
 ///   `--pulse-route <name>`             open any route (names: `PulseRoute.debugCatalog`)
 ///   `--pulse-present <name>`           present any route modally
 ///   `--pulse-gallery`                  present the component gallery
+///   `--pulse-coach-analyzing`          the Coach mid-reply (the floating button's "Analyzing…" pill)
 ///   `--pulse-sheet actions|coach|menu|session` present the ＋ sheet or the Coach sheet, open Home's
 ///                                      menu, or open a running gym session as its bar does
 ///   `--pulse-scroll <anchor>`          scroll to a section id ("myday", "stats", "stress", "bottom", …)
@@ -137,6 +138,10 @@ enum PulseDebugLaunch {
 
     /// `--pulse-gallery`: present the component gallery (`PulseComponentGallery`).
     static var showsGallery: Bool { CommandLine.arguments.contains("--pulse-gallery") }
+
+    /// `--pulse-coach-analyzing`: keep the Coach writing a reply (a stream of publishes), so the floating
+    /// Coach button's "Analyzing…" pill can be captured.
+    static var coachAnalyzing: Bool { CommandLine.arguments.contains("--pulse-coach-analyzing") }
 
     /// The section id to scroll to, prefixed as the views tag them.
     static var scrollAnchor: String? { value("--pulse-scroll").map { "pulse.\($0)" } }
