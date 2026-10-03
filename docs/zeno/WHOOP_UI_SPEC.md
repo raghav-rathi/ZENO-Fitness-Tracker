@@ -237,7 +237,7 @@ Evidence: `images/appstore/ios69-02..04`, `images/help-center/71,72,74`, `images
   - Right: one of the following.
     - An outlined ⓘ circle, 27.5 pt, white 50%, opening an explainer sheet (ZENO: `ScoringGuideView` content). Some ⓘ sheets are **light-themed** (`deep-dives-2026/49`, "✕ STRENGTH ACTIVITY TIME"); ZENO keeps them dark **[Z]**.
     - **(May–Sep 2026, staged rollout) an achievement chip** [C]:
-      - a capsule ≈30 pt tall, radius 15, fill `#282D33`;
+      - a capsule ≈30 pt tall, radius 15, fill `#1A1F23` (sampled on `17b` and `57`, against a `#262D35` page);
       - it holds the pillar's mini badge (≈18 pt: sleep hexagon, recovery shield, strain diamond) and a count (15 pt Bold).
       - Seen: Sleep "796" (`deep-dives-2026/18`, May 2026), Recovery "38" (`17b`, Sep 2026) and "307" (Green Monster, `profile-community-2026/83`), Strain "6" (`57`, Jul 2026).
       - Which badge the Sleep and Strain chips count is **[U]**. Tap → Achievement Details **[U]**.
@@ -857,7 +857,7 @@ The rule, which matches DR §5:
     - Separate rounded cards: radius 12, h 56 (64 with a sub-line), 10 pt gaps, fill `#2F3438` (2025) / `#2D3035` → `#292D30` (2026).
     - Each row: a 28 pt outline icon (`#6C7074`) at x≈34, an UPPERCASE 12–13 pt Bold tracked label at x≈82, an optional sub-line (13 pt, `#BCBCC0`) and "›".
     - Section headers: UPPERCASE 12 pt Bold `#C4C4C4` tracked with a trailing hairline rule ("ACCOUNT & SETTINGS", "ADD TO MY DASHBOARD", "MY WORKOUTS").
-23. **Achievement chip (NEW):** capsule ≈30 pt, radius 15, `#282D33`, mini badge ≈18 pt + count 15 pt Bold (§1.5).
+23. **Achievement chip (NEW):** capsule ≈30 pt, radius 15, `#1A1F23`, mini badge ≈18 pt + count 15 pt Bold (§1.5).
 24. **Floating coach summary pill (NEW):** §1.2.
 25. **Row card with subtitle (NEW):** card ≈72 pt (`#282C2C`), leading icon (`#999DA0`), cardTitle, subtitle 15 pt Regular `#C8C9CB`, "›" (Behavior Insights compact row, `deep-dives-2026/17c`).
 26. **Notched well (NEW):**
@@ -1416,7 +1416,7 @@ States:
 **ZENO data:**
 - `RecoverySnapshot`.
 - Baselines: switch to the **30-day mean** to match WHOOP's legend. The engine baseline stays inside "What shaped it". This removes ZENO's "▲45% vs ▲44%" double-reference inconsistency.
-- Behaviour chips: `EffectRanker` over yesterday's journal answers and auto-tracked behaviours. Show a chip only for behaviours already unlocked (§3.18).
+- Behaviour chips: Behavior Insights' own analysis (`BehaviorImpact`), read by `RecoveryBehaviorChips.chips(analysis:answers:dayKey:)` for yesterday's behaviours answered YES, auto-tracked behaviours included, so a chip's colour is the page's verdict for that behaviour. Show a chip only for behaviours already unlocked (§3.18).
 
 ### 3.5 Strain deep dive [C]
 **Entry.** The Home STRAIN dial.
