@@ -34,6 +34,9 @@ struct PulseHomeView: View {
     /// Today's profile figures (level, day streak, badges): the ONE snapshot both the unlock modal over
     /// Home and the coaching stack's milestone cards read, so the two can never announce different things.
     @State private var profile: ProfileSnapshot?
+    /// The day-streak milestone the modal last announced, with its day: closing the modal records the
+    /// milestone as shown, and this keeps its card in the stack for the rest of that day.
+    @AppStorage(PulseHomeMilestones.announcedStreakKey) private var announcedStreak = ""
     /// The header's day picker is up: tilt mode waits for it to close.
     @State private var showCalendar = false
 
@@ -41,6 +44,12 @@ struct PulseHomeView: View {
     private static let stickyRowTop = PulseTheme.Header.stickyRowCentre - PulseTheme.Layout.minTapTarget / 2
 
     private var dashboardItems: [PulseDashboardItem] { PulseHomeDebug.dashboard ?? PulseDashboardLayout.decode(dashboardLayout) }
+
+    /// The day-streak milestone the unlock modal announces for `profile`, if any (its own rule).
+    private var streakAnnouncement: String? {
+        PulseHomeMilestones.streakAnnouncement(profile,
+                                               acknowledgedStreak: ProfileUnlockStore.acknowledgedStreakMilestone)
+    }
 
     /// The extras for the day on screen, never another day's.
     private var currentExtras: HomeExtrasSnapshot? {
@@ -98,6 +107,10 @@ struct PulseHomeView: View {
         // snapshot built from the loaded store lands; a shared gate keeps one presenter per unlock.
         .profileSnapshot($profile)
         .pulseAchievementUnlocks(PulseHomeDebug.showsUnlocks ? profile : nil)
+        // Noted while the announcement is pending, in the same update that brings the modal up.
+        .onChange(of: streakAnnouncement, initial: true) { _, announcement in
+            if let announcement { announcedStreak = announcement }
+        }
         #if DEBUG
         .task(id: currentExtras != nil) { PulseHomeDebug.openOnce(home: model.home, extras: currentExtras, navigator: navigator) }
         #endif

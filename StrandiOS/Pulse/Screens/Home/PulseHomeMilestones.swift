@@ -12,8 +12,11 @@ import StrandAnalytics
 //     a cumulative badge's new milestone, an event badge's first occurrence. The ZENO Age badge is left to
 //     the modal: its date is the week's measurement, not the day a year was gained, so a card could not
 //     say it happened today;
-//   - a day-streak milestone is a card on the day it is reached, unless an earlier, longer streak already
-//     passed it (`PulseDayStreak.newMilestone` announces only a new best, and so does the card);
+//   - a day-streak milestone is a card on the day it is reached, when the modal announces it: above the
+//     last milestone the wearer was shown (`PulseDayStreak.newMilestone`), never on the modal's silent
+//     first look, never again for a milestone a broken streak had already reached. Closing the modal
+//     records that milestone as shown, so Home keeps its own note of the day the modal announced it
+//     (`streakAnnouncement`, stored under `announcedStreakKey`) and the card stays for the rest of that day;
 //   - a level is a card on the day the scored Recovery that reached it lands (the modal has no level-up;
 //     the Levels page reads the same `level`).
 // Only today counts: the stack is the day's, and a ✓ puts a card away for the rest of it.
@@ -37,18 +40,38 @@ enum PulseHomeMilestones {
         }
     }
 
+    /// Where Home keeps the day-streak milestone the modal last announced, with the day it did
+    /// (`streakAnnouncement`'s "yyyy-MM-dd:milestone").
+    static let announcedStreakKey = "pulse.home.streakAnnounced"
+
+    /// The day-streak milestone the unlock modal announces for `s`, by its own rule
+    /// (`PulseDayStreak.newMilestone`: nothing on the first look, nothing at or below the last milestone
+    /// shown), as "<today>:<milestone>"; nil when it has nothing to announce. Home stores it while the
+    /// announcement is pending, before the modal can be closed.
+    static func streakAnnouncement(_ s: ProfileSnapshot?, acknowledgedStreak: Int?) -> String? {
+        guard let s, s.storeLoaded,
+              let milestone = PulseDayStreak.newMilestone(days: s.streak.current, acknowledged: acknowledgedStreak)
+        else { return nil }
+        return "\(s.todayKey):\(milestone)"
+    }
+
     /// Today's milestones in the order the modal announces them (the streak, then badges in their order),
     /// the level last. `acknowledgedStreak` is the unlock record's streak milestone
-    /// (`ProfileUnlockStore.acknowledgedStreakMilestone`), read by the caller on the main actor.
-    static func cards(_ s: ProfileSnapshot?, acknowledgedStreak: Int?) -> [Card] {
+    /// (`ProfileUnlockStore.acknowledgedStreakMilestone`), read by the caller on the main actor;
+    /// `announcedStreak` is Home's note of the last announcement (`announcedStreakKey`).
+    static func cards(_ s: ProfileSnapshot?, acknowledgedStreak: Int?, announcedStreak: String) -> [Card] {
         // A build from before the store's first load sees no days at all (the modal waits for it too).
         guard let s, s.storeLoaded else { return [] }
         var out: [Card] = []
         // The streak and the level move only with a Recovery scored today.
         let scoredToday = s.streak.week.first(where: \.isToday)?.state == .kept
         if scoredToday, let milestone = PulseDayStreak.lastMilestone(atOrBelow: s.streak.current),
-           milestone == s.streak.current, milestone >= (acknowledgedStreak ?? 0) {
-            out.append(.streak(milestone: milestone))
+           milestone == s.streak.current {
+            // Announced now (the modal is up or about to be), or announced earlier today and since closed.
+            let today = "\(s.todayKey):\(milestone)"
+            if streakAnnouncement(s, acknowledgedStreak: acknowledgedStreak) == today || announcedStreak == today {
+                out.append(.streak(milestone: milestone))
+            }
         }
         for badge in s.badges where badge.isUnlocked && badge.unlockedDay == s.todayKey {
             switch badge.kind {

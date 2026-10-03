@@ -186,6 +186,8 @@ struct PulseCoachingStackHost: View {
 
     @EnvironmentObject private var app: AppModel
     @Environment(PulseModel.self) private var model
+    /// The day-streak milestone the unlock modal last announced, with its day (`PulseHomeView` stores it).
+    @AppStorage(PulseHomeMilestones.announcedStreakKey) private var announcedStreak = ""
     /// The challenges running today, measured by the builder the Challenges pages use, so a card and the
     /// page it opens state the same progress.
     @State private var challenges: [ChallengeSnapshot] = []
@@ -194,7 +196,8 @@ struct PulseCoachingStackHost: View {
         #if DEBUG
         if let forced = PulseHomeMilestones.debugCards(profile) { return forced }
         #endif
-        return PulseHomeMilestones.cards(profile, acknowledgedStreak: ProfileUnlockStore.acknowledgedStreakMilestone)
+        return PulseHomeMilestones.cards(profile, acknowledgedStreak: ProfileUnlockStore.acknowledgedStreakMilestone,
+                                         announcedStreak: announcedStreak)
     }
 
     var body: some View {
