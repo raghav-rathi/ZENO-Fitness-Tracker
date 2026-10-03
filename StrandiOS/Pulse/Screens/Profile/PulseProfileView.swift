@@ -158,7 +158,7 @@ struct PulseProfileView: View {
         .padding(.horizontal, 12)
         .frame(minHeight: 34)
         .background(RoundedRectangle(cornerRadius: PulseTheme.Radius.well, style: .circular)
-            .fill(ProfileArtPalette.trackingPill.opacity(0.85)))
+            .fill(ProfileArtPalette.trackingPill))
         .accessibilityElement(children: .combine)
     }
 
