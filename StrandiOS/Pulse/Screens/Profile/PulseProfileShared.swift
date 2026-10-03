@@ -584,23 +584,10 @@ struct ProfileFlatPage<Content: View>: View {
                     .foregroundStyle(PulseTheme.textPrimary)
                     .accessibilityAddTraits(.isHeader)
                     .overlay(alignment: .trailing) {
-                        if let onHelp {
-                            Button(action: onHelp) {
-                                Text(verbatim: "?")
-                                    .font(.system(size: 11, weight: .semibold))
-                                    .foregroundStyle(PulseTheme.textTertiary)
-                                    .frame(width: 18, height: 18)
-                                    .overlay(Circle().strokeBorder(PulseTheme.textTertiary, lineWidth: 1.1))
-                                    // A 44 pt touch that does not push the circle away from the title.
-                                    .padding(13)
-                                    .contentShape(Rectangle())
-                                    .padding(-13)
-                            }
-                            .buttonStyle(PulsePressStyle())
-                            .accessibilityLabel(String(localized: "About levels"))
+                        // The guide goes on the whole optional view: SwiftUI ignores one set inside the `if`.
+                        helpButton
                             .fixedSize()
                             .alignmentGuide(.trailing) { d in d[.leading] - 14 }
-                        }
                     }
                 HStack {
                     Button { dismiss() } label: {
@@ -623,6 +610,25 @@ struct ProfileFlatPage<Content: View>: View {
             .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
         } else {
             PulseNavBar(title: title, leading: modalRoot ? .close : .back, trailing: trailing, onLeading: { dismiss() })
+        }
+    }
+
+    /// The Levels "?": an 18 pt grey circle with a 44 pt touch that does not push it away from the title.
+    @ViewBuilder
+    private var helpButton: some View {
+        if let onHelp {
+            Button(action: onHelp) {
+                Text(verbatim: "?")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(PulseTheme.textTertiary)
+                    .frame(width: 18, height: 18)
+                    .overlay(Circle().strokeBorder(PulseTheme.textTertiary, lineWidth: 1.1))
+                    .padding(13)
+                    .contentShape(Rectangle())
+                    .padding(-13)
+            }
+            .buttonStyle(PulsePressStyle())
+            .accessibilityLabel(String(localized: "About levels"))
         }
     }
 }
