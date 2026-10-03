@@ -18,9 +18,11 @@ func healthYearsLine(_ yearsYounger: Double) -> String {
 /// younger"; scrolled, it passes under the pinned title and reads as a half sphere. Tap → Healthspan.
 struct HealthAgeHero: View {
     let summary: HealthAgeSummary
+    /// Whether the card after it (the Pace card, whose top is open) tucks up under the disc.
+    var tucksNextCard = true
 
     /// How far the next card tucks under the hero (the stack's 24 pt gap plus the card's 16 pt padding
-    /// would otherwise leave ≈59 pt between the disc and the PACE OF AGING caps).
+    /// would otherwise leave ≈45 pt between the disc and the PACE OF AGING caps).
     static let pullUp: CGFloat = -17
 
     var body: some View {
@@ -38,7 +40,7 @@ struct HealthAgeHero: View {
         .buttonStyle(PulsePressStyle())
         // The Pace card rides up under the disc: its title caps sit ≈28 pt below it (health-more-2026/02
         // frame 94), the card's open top fading into the glow.
-        .padding(.bottom, HealthAgeHero.pullUp)
+        .padding(.bottom, tucksNextCard ? HealthAgeHero.pullUp : 0)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(String(localized: "ZENO Age \(PulseFormat.oneDecimal(summary.week.zenoAge)), \(healthYearsLine(summary.week.yearsYounger))"))
         .accessibilityHint(String(localized: "Opens Healthspan"))

@@ -152,8 +152,12 @@ private struct PulseHealthTabContent: View {
             case .unlocking(let nights, let needed):
                 HealthUnlockHero(nights: nights, needed: needed)
             case .ready(let summary):
-                HealthAgeHero(summary: summary)
-                if (summary.settling || Self.forcesCalibratingNote) && calibratingDismissedWeek != summary.week.id {
+                let showsNote = (summary.settling || Self.forcesCalibratingNote)
+                    && calibratingDismissedWeek != summary.week.id
+                // The Pace card's open top tucks under the orb; the calibrating note has a fill, so it keeps
+                // its distance.
+                HealthAgeHero(summary: summary, tucksNextCard: !showsNote)
+                if showsNote {
                     HealthCalibratingNote { calibratingDismissedWeek = summary.week.id }
                 }
                 HealthPaceCard(summary: summary)
