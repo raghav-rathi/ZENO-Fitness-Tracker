@@ -166,13 +166,13 @@ enum PulseRoute: Hashable {
         }
     }
 
-    /// How WHOOP presents it (§1.6).
+    /// How WHOOP presents it (§1.6). The Sleep Planner follows the 2026 iOS app, where it is full screen.
     var presentation: PulsePresentation {
         switch self {
         case .customizeDashboard, .startActivity, .deviceSettings, .journal, .onboarding, .strengthTrainer,
-             .yearInReview, .dayTimeline, .guidedSession:
+             .yearInReview, .dayTimeline, .guidedSession, .sleepPlanner:
             return .fullScreen
-        case .sleepPlanner, .addActivity, .appSettings, .coach:
+        case .addActivity, .appSettings, .coach:
             return .sheet
         case .weeklyPlan(let editing):
             return editing ? .sheet : .push
