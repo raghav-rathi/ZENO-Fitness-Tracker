@@ -179,9 +179,14 @@ enum PulseDigestBuilder {
     }
 
     /// One metric's row, or nil for a metric outside the core set that has no reading.
+    ///
+    /// Units follow My Dashboard's rows (`PulseSnapshotBuilder.stat`): only "%" and a degree unit print beside
+    /// the value, a percent's baseline keeps its "%", and a duration, bpm, ms or kcal prints bare ("6:56"
+    /// over "7:14", reviews/r111). VoiceOver still reads the full unit.
     static func row(_ m: PulseTrendMetric, _ s: PulseTrendSeries, today: String) -> TrendsTabSnapshot.Row? {
         let format: PulseTrendValueFormat = s.signed ? .signedOneDecimal : m.format
         let unit = s.unit ?? m.unit
+        let rowUnit = unit == "%" || unit.contains("°") ? unit : ""
         let byDay = Dictionary(s.points.map { ($0.day, $0.value) }, uniquingKeysWith: { _, last in last })
         let spark = PulseDisplay.trailingDayKeys(endingOn: today, count: 7).map { byDay[$0] }
         let color: Color = m.key == "recovery" ? PulseTheme.recoveryBlue : (m.key == "stress" ? PulseTheme.Stress.medium : m.color)
@@ -216,18 +221,18 @@ enum PulseDigestBuilder {
             let trend = partial ? nil : reference.map { ref in
                 PulseTrend(delta: format.text(total) == format.text(ref) ? 0 : total - ref, polarity: m.polarity)
             }
-            return .init(id: m.key, title: m.rowTitle, symbol: m.symbol, value: text(total), unit: unit,
+            return .init(id: m.key, title: m.rowTitle, symbol: m.symbol, value: text(total), unit: rowUnit,
                          caption: String(localized: "Last 7 days"), trend: trend, baseline: reference.map(text),
                          spark: spark, color: color,
                          accessibility: String(localized: "\(m.rowTitle), \(spokenValue(total)) in the last 7 days"))
         }
 
         let comparison = PulseDisplay.compare(value: latest.value, history: history, dayKey: latest.day)
-        let baseline = comparison.map { text($0.reference) }
+        let baseline = comparison.map { text($0.reference) + (unit == "%" ? "%" : "") }
         if m.isRunningTotal && latest.day == today {
             // Still counting: no arrow against full days, as Home's tiles say "So far today", or what the
             // series says today's value is (Day Stress: the Stress Monitor's reading time).
-            return .init(id: m.key, title: m.rowTitle, symbol: m.symbol, value: text(latest.value), unit: unit,
+            return .init(id: m.key, title: m.rowTitle, symbol: m.symbol, value: text(latest.value), unit: rowUnit,
                          caption: s.todayReading?.caption ?? String(localized: "So far today"), trend: nil,
                          baseline: baseline, spark: spark, color: color,
                          accessibility: s.todayReading.map { "\(m.rowTitle), \(spokenValue(latest.value)), \($0.caption)" }
@@ -242,7 +247,7 @@ enum PulseDigestBuilder {
         if let caption { spoken += ", \(caption)" }
         if let trend { spoken += ", \(trend.accessibilityDescription)" }
         if let baseline { spoken += ", " + String(localized: "30-day average \(baseline)") }
-        return .init(id: m.key, title: m.rowTitle, symbol: m.symbol, value: text(latest.value), unit: unit,
+        return .init(id: m.key, title: m.rowTitle, symbol: m.symbol, value: text(latest.value), unit: rowUnit,
                      caption: caption, trend: trend, baseline: baseline, spark: spark, color: color,
                      accessibility: spoken)
     }

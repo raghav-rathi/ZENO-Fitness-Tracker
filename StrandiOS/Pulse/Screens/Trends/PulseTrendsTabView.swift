@@ -270,11 +270,14 @@ struct PulseTrendsMetricRow: View {
                     .accessibilityHidden(true)
                 VStack(alignment: .trailing, spacing: 1) {
                     HStack(alignment: .firstTextBaseline, spacing: 5) {
+                        // My Dashboard's "%" is white beside the value; a degree unit stays grey.
                         PulseValueText(value: row.value ?? "", unit: row.unit.isEmpty ? nil : row.unit,
-                                       style: .tileValue, unitStyle: .tileUnit)
+                                       style: .tileValue, unitStyle: .tileUnit,
+                                       unitColor: row.unit == "%" ? PulseTheme.textPrimary : PulseTheme.textTertiary)
                         if let trend = row.trend {
+                            // Just above the value's baseline, as My Dashboard's rows hang it.
                             PulseTrendGlyph(trend: trend)
-                                .alignmentGuide(.firstTextBaseline) { d in d[.bottom] + 4 }
+                                .alignmentGuide(.firstTextBaseline) { d in d[.bottom] + 1.5 }
                         }
                     }
                     if let baseline = row.baseline {
