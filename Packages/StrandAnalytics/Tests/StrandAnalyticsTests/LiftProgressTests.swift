@@ -150,17 +150,30 @@ final class LiftProgressTests: XCTestCase {
 
     func testTopSetsRankByWeightThenRepsThenTheMoreRecentSession() {
         let sets = [
-            LiftProgress.DatedSet(set: set("Squat", weight: 120, reps: 5), sessionStartTs: 100),
-            LiftProgress.DatedSet(set: set("Squat", weight: 130, reps: 3), sessionStartTs: 200),
-            LiftProgress.DatedSet(set: set("Squat", weight: 120, reps: 6), sessionStartTs: 150),
-            LiftProgress.DatedSet(set: set("Squat", weight: 130, reps: 3), sessionStartTs: 300),
-            LiftProgress.DatedSet(set: set("Bench press", weight: 200, reps: 1), sessionStartTs: 400),
+            LiftProgress.DatedSet(set: set("Squat", weight: 120, reps: 5, session: "a"), sessionStartTs: 100),
+            LiftProgress.DatedSet(set: set("Squat", weight: 130, reps: 3, session: "b"), sessionStartTs: 200),
+            LiftProgress.DatedSet(set: set("Squat", weight: 120, reps: 6, session: "c"), sessionStartTs: 150),
+            LiftProgress.DatedSet(set: set("Squat", weight: 130, reps: 3, session: "d"), sessionStartTs: 300),
+            LiftProgress.DatedSet(set: set("Bench press", weight: 200, reps: 1, session: "e"), sessionStartTs: 400),
         ]
         let top = LiftProgress.topSets(sets, exercise: "Squat", limit: 3)
         XCTAssertEqual(top.map(\.weightKg), [130, 130, 120])
         XCTAssertEqual(top.map(\.sessionStartTs), [300, 200, 150],
                        "an equal set ranks the more recent first; then more reps beat fewer")
         XCTAssertEqual(top[0].estimatedOneRepMaxKg!, 130 * (1 + 3.0 / 30.0), accuracy: 0.001)
+    }
+
+    func testTopSetsKeepOneSetPerSession() {
+        let sets = [
+            LiftProgress.DatedSet(set: set("Squat", weight: 140, reps: 3, session: "heavy"), sessionStartTs: 300),
+            LiftProgress.DatedSet(set: set("Squat", weight: 140, reps: 2, session: "heavy"), sessionStartTs: 300),
+            LiftProgress.DatedSet(set: set("Squat", weight: 135, reps: 3, session: "heavy"), sessionStartTs: 300),
+            LiftProgress.DatedSet(set: set("Squat", weight: 120, reps: 5, session: "light"), sessionStartTs: 100),
+        ]
+        let top = LiftProgress.topSets(sets, exercise: "Squat", limit: 3)
+        XCTAssertEqual(top.map(\.weightKg), [140, 120],
+                       "a session ranks once, by its best set, so the list compares days")
+        XCTAssertEqual(top[0].reps, 3)
     }
 
     func testWarmUpsAndSetsNotPerformedNeverHoldARecord() {

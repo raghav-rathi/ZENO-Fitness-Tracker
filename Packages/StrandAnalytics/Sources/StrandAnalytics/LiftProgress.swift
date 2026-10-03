@@ -198,13 +198,14 @@ public enum LiftProgress {
         sets.contains { ($0.set.weightKg ?? 0) > 0 }
     }
 
-    /// `exercise`'s best sets, best first, at most `limit`. A weighted exercise ranks by weight, then
-    /// reps, then the more recent session; one never logged with a weight ranks by reps. Warm-ups and
-    /// sets that were not performed never rank.
+    /// `exercise`'s best performances, best first, at most `limit`: each session's best set, so the list
+    /// reads as a ranking of days rather than three sets of one workout. A weighted exercise ranks by
+    /// weight, then reps, then the more recent session; one never logged with a weight ranks by reps.
+    /// Warm-ups and sets that were not performed never rank.
     public static func topSets(_ sets: [DatedSet], exercise: String, limit: Int) -> [RecordSet] {
         let pool = countable(sets, exercise: exercise)
         let byWeight = weighted(pool)
-        let ranked = pool.sorted { a, b in
+        func better(_ a: DatedSet, _ b: DatedSet) -> Bool {
             if byWeight {
                 let (wa, wb) = (a.set.weightKg ?? -1, b.set.weightKg ?? -1)
                 if wa != wb { return wa > wb }
@@ -214,6 +215,13 @@ public enum LiftProgress {
             if a.sessionStartTs != b.sessionStartTs { return a.sessionStartTs > b.sessionStartTs }
             return a.set.ord < b.set.ord
         }
+        var bestPerSession: [String: DatedSet] = [:]
+        for dated in pool {
+            let key = dated.set.sessionId
+            if let current = bestPerSession[key], !better(dated, current) { continue }
+            bestPerSession[key] = dated
+        }
+        let ranked = bestPerSession.values.sorted(by: better)
         return ranked.prefix(max(0, limit)).map { dated in
             RecordSet(exercise: exercise, weightKg: dated.set.weightKg, reps: dated.set.reps,
                       sessionStartTs: dated.sessionStartTs,
