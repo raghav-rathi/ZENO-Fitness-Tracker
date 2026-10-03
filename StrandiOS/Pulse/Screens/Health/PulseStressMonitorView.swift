@@ -89,13 +89,30 @@ struct PulseStressMonitorView: View {
         .sheet(isPresented: $showsInfo) {
             HealthInfoSheet(title: String(localized: "How stress is scored"), paragraphs: Self.infoParagraphs)
         }
+        #if DEBUG
+        .task(id: shown != nil) { openDebugBreatheIfAsked() }
+        #endif
     }
 
-    /// The local key of the day `offset` back (the snapshot carries the same key).
+    #if DEBUG
+    @MainActor private static var openedDebugBreathe = false
+
+    /// `--pulse-stress-breathe`: open the Sessions card's Breathe once the day has drawn, for captures.
+    private func openDebugBreatheIfAsked() {
+        guard shown != nil, !Self.openedDebugBreathe,
+              CommandLine.arguments.contains("--pulse-stress-breathe") else { return }
+        Self.openedDebugBreathe = true
+        navigator.open(HealthBreatheSession.destination.route)
+    }
+    #endif
+
+    /// The local key of the day `offset` back from Home's today, the logical day that rolls at 04:00, as
+    /// `PulseModel` dates a request and the builder keys the snapshot (`stressDayStart`), so the pager's
+    /// title and the snapshot name the same day.
     private func dayKey(_ offset: Int) -> String {
-        let cal = Calendar.current
-        let start = cal.date(byAdding: .day, value: -offset, to: cal.startOfDay(for: Date())) ?? Date()
-        return Repository.localDayKey(start)
+        let logical = Repository.logicalDay(Date())
+        let day = Calendar.current.date(byAdding: .day, value: -offset, to: logical) ?? logical
+        return Repository.localDayKey(day)
     }
 
     private var pagerTitle: String {
@@ -141,7 +158,7 @@ struct PulseStressMonitorView: View {
             }
             .padding(.top, 8)
 
-            HealthBreatheSession(onOpen: { navigator.open(.classic(.breathe)) })
+            HealthBreatheSession(onOpen: { navigator.open(HealthBreatheSession.destination.route) })
                 .id("pulse.sessions")
                 .padding(.top, 32)
         }
@@ -149,12 +166,7 @@ struct PulseStressMonitorView: View {
 
     /// The gauge's line: the reading's time, with its day when it is not the day shown, or what the value is.
     private func gaugeCaption(_ s: StressMonitorSnapshot) -> String? {
-        if let latest = s.day.latest {
-            let sameDay = Repository.localDayKey(latest.at) == s.day.dayKey
-            if sameDay { return PulseFormat.clock(latest.at) }
-            let weekday = latest.at.formatted(.dateTime.weekday(.abbreviated).locale(AppLanguage.activeLocale))
-            return "\(weekday) \(PulseFormat.clock(latest.at))"
-        }
+        if let time = PulseStressDay.readingTime(s.day.latest?.at, dayKey: s.day.dayKey) { return time }
         if s.day.daily != nil { return String(localized: "Daily score from your vitals") }
         return nil
     }
@@ -364,11 +376,29 @@ struct HealthTotalDayCard: View {
     }
 }
 
-/// "Sessions" (§3.22 item 8 [Z]): ZENO's Breathe in WHOOP's slot, as one BREATHE › card. Breathe opens on
-/// its own pace picker (`BreathingView` takes no preselected pace yet), so a card per pace would promise a
-/// session it could not start; once it can, this grows into RELAX · COHERENCE · BOX · 4-7-8 · ALERTNESS.
+/// Breathe opened on one pace (a `BreathProtocolCatalog` id) with that pace's recommended length: the
+/// classic `BreathingView` in the wrapper every classic destination is pushed in (`PulseClassicScreen`).
+struct HealthBreatheRoute: PulseScreenRoute {
+    let protocolId: String
+    var view: some View { PulseClassicScreen { BreathingView(preselectedProtocolId: protocolId) } }
+}
+
+/// "Sessions" (§3.22 item 8 [Z]): ZENO's Breathe in WHOOP's slot, as one BREATHE › card that opens Breathe
+/// on Relax 4-6, the long-exhale pace that does what WHOOP's Increase Relaxation session does; Breathe's own
+/// picker holds the other paces. A card per pace (COHERENCE · BOX · 4-7-8 · ALERTNESS) would each open its
+/// own `HealthBreatheRoute`.
 struct HealthBreatheSession: View {
+    /// What the card opens.
+    static let destination = HealthBreatheRoute(protocolId: "relax_4_6")
+
     let onOpen: () -> Void
+
+    /// The pace's name as Breathe titles it: the catalogue's English title through the same string catalog
+    /// entry Breathe's picker localizes it with.
+    private var paceName: String {
+        BreathProtocolCatalog.protocolById(Self.destination.protocolId)
+            .map { String(localized: String.LocalizationValue($0.title)) } ?? String(localized: "Relax 4-6")
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: PulseTheme.Layout.headerGap) {
@@ -382,7 +412,7 @@ struct HealthBreatheSession: View {
                         .accessibilityHidden(true)
                     VStack(alignment: .leading, spacing: 4) {
                         PulseCardTitle(String(localized: "Breathe"), accessory: .chevron)
-                        Text(String(localized: "Guided breathing to calm down or wake up: relaxation, coherence, box, 4-7-8 and more, paced by your strap if you like."))
+                        Text(String(localized: "Opens on \(paceName), a calming pace with a long exhale. Coherence, box, 4-7-8 and more are a tap away, paced by your strap if you like."))
                             .pulseText(.secondary)
                             .foregroundStyle(PulseTheme.textSecondary)
                             .fixedSize(horizontal: false, vertical: true)
@@ -396,7 +426,7 @@ struct HealthBreatheSession: View {
             }
             .buttonStyle(PulsePressStyle())
             .accessibilityLabel(String(localized: "Breathe"))
-            .accessibilityHint(String(localized: "Opens Breathe"))
+            .accessibilityHint(String(localized: "Opens Breathe on \(paceName)"))
         }
     }
 }

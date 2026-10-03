@@ -678,6 +678,11 @@ struct HealthCycleCard: View, Equatable {
 /// faint gridlines, ending at a dashed now-line with a white dot (reviews/r100, health-more-2026/03 frame 121).
 /// ZENO scores stress by the hour, so the time prints in whole hours, not WHOOP's minute-precise h:mm.
 /// Opens the Stress Monitor at today, whatever day Home shows (the Health tab is always now, §1.7).
+///
+/// [Z] Above them, the Stress Monitor's own reading ("Last updated 10:30 PM", "MEDIUM 1.9"), as Home's
+/// STRESS MONITOR card prints it: the gauge's level from the same funnel, cut to one decimal. WHOOP's card
+/// prints no level, but without it the card read "--" early in the morning while the monitor it opens
+/// showed the evening before's reading.
 struct HealthStressCardView: View {
     let card: HealthStressCard?
     let typicalHigh: HealthTypicalHigh?
@@ -688,11 +693,35 @@ struct HealthStressCardView: View {
         return typicalHigh.minutes
     }
 
+    /// The gauge's reading as the Stress Monitor prints it: the level cut to one decimal
+    /// (`HealthStressGauge.printed`), its band, and when it was read, or that it is the daily score.
+    private var reading: (shown: Double, band: PulseTheme.Stress.Level, caption: String)? {
+        guard let card, let level = card.level else { return nil }
+        let shown = HealthStressGauge.printed(level)
+        let caption = PulseStressDay.readingTime(card.readAt, dayKey: card.dayKey)
+            .map { String(localized: "Last updated \($0)") } ?? String(localized: "Daily score from your vitals")
+        return (shown, PulseTheme.Stress.Level(value: shown), caption)
+    }
+
     var body: some View {
         PulseLink(HealthStressMonitorRoute(startOffset: 0).route) {
             PulseCard {
                 VStack(alignment: .leading, spacing: 14) {
                     PulseCardTitle(String(localized: "Stress Monitor"), accessory: .trailingChevron)
+                    if let reading {
+                        HStack(alignment: .firstTextBaseline) {
+                            Text(reading.caption)
+                                .pulseText(.secondary)
+                                .foregroundStyle(PulseTheme.textSecondary)
+                            Spacer(minLength: 8)
+                            Text(HealthStressGauge.word(reading.band))
+                                .pulseText(.label)
+                                .foregroundStyle(reading.band.color)
+                            Text(PulseFormat.oneDecimal(reading.shown))
+                                .pulseText(.rowValue)
+                                .foregroundStyle(PulseTheme.textPrimary)
+                        }
+                    }
                     HStack(alignment: .bottom, spacing: 12) {
                         VStack(alignment: .leading, spacing: 6) {
                             PulseLabel(String(localized: "Today's high stress"))
@@ -727,12 +756,21 @@ struct HealthStressCardView: View {
     }
 
     private var accessibility: String {
-        guard let high = card?.highMinutes else { return String(localized: "No stress readings yet today") }
-        var text = String(localized: "\(HealthFormat.spokenHours(minutes: high)) in high stress today")
-        if let typical = typicalMinutes {
-            text += ", " + String(localized: "typical \(HealthFormat.spokenHours(minutes: typical))")
+        var parts: [String] = []
+        if let reading {
+            parts.append([String(localized: "\(PulseFormat.oneDecimal(reading.shown)) out of 3"),
+                          HealthStressGauge.word(reading.band), reading.caption].joined(separator: ", "))
         }
-        return text
+        if let high = card?.highMinutes {
+            var text = String(localized: "\(HealthFormat.spokenHours(minutes: high)) in high stress today")
+            if let typical = typicalMinutes {
+                text += ", " + String(localized: "typical \(HealthFormat.spokenHours(minutes: typical))")
+            }
+            parts.append(text)
+        } else {
+            parts.append(String(localized: "No stress readings yet today"))
+        }
+        return parts.joined(separator: "; ")
     }
 }
 

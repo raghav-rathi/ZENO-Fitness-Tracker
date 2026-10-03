@@ -31,8 +31,9 @@ struct HealthStressGauge: View {
 
     private var band: PulseTheme.Stress.Level? { shownLevel.map { PulseTheme.Stress.Level(value: $0) } }
 
-    /// One decimal, truncated.
-    static func printed(_ level: Double) -> Double {
+    /// One decimal, truncated: the figure every stress readout prints for a level, so a readout and its word
+    /// never disagree with the gauge. Pure, so a build can print with it off the main actor.
+    nonisolated static func printed(_ level: Double) -> Double {
         (min(3, max(0, level)) * 10).rounded(.down) / 10
     }
 
@@ -77,12 +78,14 @@ struct HealthStressGauge: View {
 
     private var accessibility: String {
         guard let level else { return String(localized: "No reading") }
-        var parts = [String(localized: "\(PulseFormat.oneDecimal(HealthStressGauge.printed(level))) out of 3"), word(band)]
+        var parts = [String(localized: "\(PulseFormat.oneDecimal(HealthStressGauge.printed(level))) out of 3"),
+                     Self.word(band)]
         if let caption { parts.append(caption) }
         return parts.filter { !$0.isEmpty }.joined(separator: ", ")
     }
 
-    private func word(_ band: PulseTheme.Stress.Level?) -> String {
+    /// The level's word as the gauge prints it ("Medium"), shared with the cards that print its reading.
+    static func word(_ band: PulseTheme.Stress.Level?) -> String {
         switch band {
         case .low: return String(localized: "Low")
         case .medium: return String(localized: "Medium")
@@ -98,7 +101,7 @@ struct HealthStressGauge: View {
                 .foregroundStyle(level == nil ? PulseTheme.textDisabled : PulseTheme.textPrimary)
                 .pulseNumericTransition()
             if let band {
-                Text(word(band))
+                Text(Self.word(band))
                     .pulseText(.menuLabel)
                     .foregroundStyle(band.color)
             }

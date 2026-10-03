@@ -360,6 +360,14 @@ private struct PulseTrendPage: View {
                 PulseDeltaChip(text: chip.text, trend: chip.trend)
                     .padding(.top, 10)
             }
+            // When a reading was taken, as the Stress Monitor's gauge words it under its level.
+            if let caption = item.caption {
+                Text(caption)
+                    .pulseText(.secondary)
+                    .foregroundStyle(PulseTheme.textSecondary)
+                    .lineLimit(1)
+                    .padding(.top, 4)
+            }
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(item.accessibility + (item.chip.map { ", \($0.text), \($0.trend.accessibilityDescription)" } ?? ""))

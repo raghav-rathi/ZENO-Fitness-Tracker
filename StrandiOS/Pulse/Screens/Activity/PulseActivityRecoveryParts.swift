@@ -80,12 +80,12 @@ struct PulseActivityStressChart: View {
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(String(localized: "Stress during this activity"))
-        .accessibilityValue(String(localized: "From \(PulseFormat.oneDecimal(summary.start)) \(Self.levelWord(summary.start)) to \(PulseFormat.oneDecimal(summary.end)) \(Self.levelWord(summary.end)), on the 0 to 3 stress scale"))
+        .accessibilityValue(String(localized: "From \(PulseFormat.oneDecimal(summary.shownStart)) \(Self.levelWord(summary.start)) to \(PulseFormat.oneDecimal(summary.shownEnd)) \(Self.levelWord(summary.end)), on the 0 to 3 stress scale"))
     }
 
     /// "0.6 LOW" at the left, "MEDIUM 1.5" at the right (e08).
     private func reading(_ value: Double, valueFirst: Bool) -> some View {
-        let shown = (value * 10).rounded() / 10
+        let shown = HealthStressGauge.printed(value)
         let level = PulseTheme.Stress.Level(value: shown)
         return HStack(alignment: .firstTextBaseline, spacing: 6) {
             if valueFirst {
@@ -100,7 +100,7 @@ struct PulseActivityStressChart: View {
 
     /// LOW / MEDIUM / HIGH as the Stress screen words them, judged on the value printed.
     static func levelWord(_ value: Double) -> String {
-        StressBand(score: (value * 10).rounded() / 10).title
+        StressBand(score: HealthStressGauge.printed(value)).title
     }
 
     /// The activity's start and end under their rules, on the chart's own time scale. The hourly readings

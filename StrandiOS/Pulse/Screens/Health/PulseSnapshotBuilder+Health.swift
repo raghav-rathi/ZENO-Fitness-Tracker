@@ -16,18 +16,7 @@ import WhoopProtocol
 //   - `healthAgeWeeks` ZENO Age per week, with the whole-year age the engine scored it with;
 //   - `stressDay`      a day's stress level AND curve, from the intraday curve (one source for both).
 
-/// Carries an optional value through the builder's per-refresh cache.
-private struct HealthCacheBox<T> {
-    let value: T?
-}
-
 extension PulseSnapshotBuilder {
-
-    /// `cached(_:load:)` for an optional value. The core slot looks a key up with `as? T`, and when `T` is
-    /// itself optional a missing key casts to a cached `nil`, so the value would never load; boxed, it does.
-    func cachedOptional<T>(_ key: String, load: () async -> T?) async -> T? {
-        await cached(key) { HealthCacheBox(value: await load()) }.value
-    }
 
     // MARK: - Health tab
 
@@ -46,8 +35,9 @@ extension PulseSnapshotBuilder {
         let card = stress.map { day -> HealthStressCard in
             let todayHours = day.hours
             let scored = todayHours.contains { $0.level != nil }
-            let start = Calendar.current.startOfDay(for: r.now)
+            let start = Self.stressDayStart(r)
             return HealthStressCard(
+                level: day.gaugeLevel?.level, readAt: day.latest?.at,
                 highMinutes: scored ? StressDayTotals.totals(todayHours).highMinutes : nil,
                 points: day.points.filter { $0.date >= start },
                 span: start...max(r.now, start.addingTimeInterval(60)),
@@ -62,7 +52,7 @@ extension PulseSnapshotBuilder {
     /// nil only when a newer refresh superseded it; "no typical day" is a value (`minutes == nil`).
     func healthTypicalHigh(_ r: PulseRequest) async -> HealthTypicalHigh? {
         begin(r.seq)
-        let dayStart = Calendar.current.startOfDay(for: r.now)
+        let dayStart = Self.stressDayStart(r)
         let typical = await stressTypical(r, dayStart: dayStart, isToday: true)
         guard isCurrent(r) else { return nil }
         return HealthTypicalHigh(dayKey: Repository.localDayKey(dayStart), minutes: typical.totals?.highMinutes)
@@ -145,7 +135,7 @@ extension PulseSnapshotBuilder {
     /// What the Lab Book holds, by category (nil when it is empty). Status-free: the Lab Book never judges
     /// a value (LabBookView's promise).
     func healthLabs() async -> HealthLabsSummary? {
-        await cachedOptional("health.labs") { () async -> HealthLabsSummary? in
+        await cached("health.labs") { () async -> HealthLabsSummary? in
             guard let store = await repo.storeHandle() else { return nil }
             let deviceId = await repo.deviceId
             var rows: [(LabMarkerCategory, LabMarkerRow)] = []
@@ -351,15 +341,21 @@ extension PulseSnapshotBuilder {
 
     // MARK: - Stress
 
-    /// One day's stress for the day `r.day.offset` calendar days before today: the intraday curve for both
-    /// the gauge (its latest reading) and the chart, the daily score only as a labelled fallback. The chart
-    /// covers 24 hours ending at the day's "now": now today, the end of the last reading on a past day
+    /// Local midnight of the request's day (`r.day.date`): the logical day Home and every other screen
+    /// show, which rolls at 04:00, so until then "today" is still the day before, and a past day is the day
+    /// Home shows, never the calendar day after it. Every stress build keys its day here.
+    nonisolated static func stressDayStart(_ r: PulseRequest) -> Date {
+        Calendar.current.startOfDay(for: r.day.date)
+    }
+
+    /// One day's stress for the request's day (`stressDayStart`): the intraday curve for both the gauge (its
+    /// latest reading) and the chart, the daily score only as a labelled fallback. The chart covers 24 hours
+    /// ending at the day's "now": now today, the end of the last reading on a past day
     /// (completeness-critic/14: "11:02 PM … 10:49 PM"), so the evening before is included either way.
     func stressDay(_ r: PulseRequest) async -> PulseStressDay? {
         let cal = Calendar.current
-        let todayStart = cal.startOfDay(for: r.now)
-        guard let dayStart = cal.date(byAdding: .day, value: -r.day.offset, to: todayStart),
-              let nextStart = cal.date(byAdding: .day, value: 1, to: dayStart) else { return nil }
+        let dayStart = Self.stressDayStart(r)
+        guard let nextStart = cal.date(byAdding: .day, value: 1, to: dayStart) else { return nil }
         let isToday = r.day.offset == 0
         let dayKey = Repository.localDayKey(dayStart)
         let result = await stressResult(dayStart: dayStart, isToday: isToday, r: r)
@@ -407,35 +403,81 @@ extension PulseSnapshotBuilder {
                               latest: latest, daily: daily, maskedHours: result.activityMaskedHours)
     }
 
-    /// The intraday stress of the local day starting at `dayStart` (today: up to now), read and scored once
-    /// per refresh (today's once per five minutes), exactly as the Stress screen scores today: the day's heart
-    /// rate, R-R and wrist motion through `DaytimeStress` in the lens the settings pick.
+    /// The intraday stress of the local day starting at `dayStart` (today: up to now), exactly as the Stress
+    /// screen scores a day: its heart rate, R-R and wrist motion through `DaytimeStress`, in the lens the
+    /// settings pick. Every reader shares it (the Stress Monitor, Home's tile and card, the Health tab,
+    /// Activity Details' STRESS CHANGE): once per refresh (today's once per five minutes) under a key that
+    /// carries the lens, since a lens change rebuilds without a new refresh and must not replay the other
+    /// lens's curve. A scored day is also kept across refreshes (`PulseStressDayCache`) behind the heart-rate
+    /// fingerprint gate `StressDayCurve` uses: a finished day is scored again only when beats land in it,
+    /// today only once a new beat has arrived.
     func stressResult(dayStart: Date, isToday: Bool, r: PulseRequest) async -> DaytimeStress.Result {
         let cal = Calendar.current
         let from = Int(dayStart.timeIntervalSince1970)
         let nextStart = cal.date(byAdding: .day, value: 1, to: dayStart) ?? dayStart.addingTimeInterval(86_400)
         let to = isToday ? Int(r.now.timeIntervalSince1970) : Int(nextStart.timeIntervalSince1970) - 1
-        let key = isToday ? "health.stress.\(from).\(to / 300)" : "health.stress.\(from)"
         let personal = r.prefs.stressPersonalBaseline
+        let key = isToday ? "health.stress.\(from).\(to / 300).\(personal)" : "health.stress.\(from).\(personal)"
         return await cached(key) { () async -> DaytimeStress.Result in
-            let hr = await repo.hrSamples(from: from, to: to, limit: 200_000)
-            guard hr.count >= DaytimeStress.minHourHRSamples else { return .empty }
-            let rr = await repo.rrIntervals(from: from, to: to, limit: 200_000)
-            let gravity = await repo.gravitySamplesUnion(from: from, to: to, limit: 200_000)
-            let mode = await DaytimeStressMode.selected(repo: repo, startOfToday: dayStart, calendar: cal,
-                                                        personalBaseline: personal)
             let tz = TimeZone.current.secondsFromGMT(for: dayStart)
-            return DaytimeStress.analyze(hr: hr, rr: rr, gravity: gravity, tzOffsetSeconds: tz, mode: mode,
-                                         includeTimeline: true)
+            let memoKey = await stressMemoKey(from: from, to: to, isToday: isToday, dayStart: dayStart, tz: tz,
+                                              personal: personal)
+            if let memoKey, let kept = await PulseStressDayCache.shared.lookup(memoKey) { return kept }
+            let hr = await repo.hrSamples(from: from, to: to, limit: 200_000)
+            var scored = DaytimeStress.Result.empty
+            if hr.count >= DaytimeStress.minHourHRSamples {
+                let rr = await repo.rrIntervals(from: from, to: to, limit: 200_000)
+                let gravity = await repo.gravitySamplesUnion(from: from, to: to, limit: 200_000)
+                let mode = await DaytimeStressMode.selected(repo: repo, startOfToday: dayStart, calendar: cal,
+                                                            personalBaseline: personal)
+                scored = DaytimeStress.analyze(hr: hr, rr: rr, gravity: gravity, tzOffsetSeconds: tz, mode: mode,
+                                               includeTimeline: true)
+            }
+            // Too little heart rate is a real answer for that fingerprint (`.empty`), kept like a curve.
+            if let memoKey, !Task.isCancelled {
+                if isToday {
+                    await PulseStressDayCache.shared.keepToday(memoKey, scored, lens: personal)
+                } else {
+                    await PulseStressDayCache.shared.keepDay(memoKey, scored)
+                }
+            }
+            return scored
         }
     }
+
+    /// What a day's stress is scored from, as one `PulseStressDayCache` key: its window and zone offset, the
+    /// lens, its heart-rate fingerprint (`Repository.hrFingerprintUnion`, a COUNT and a MAX per strap id),
+    /// and under the personal lens the fingerprint of the days its baseline is folded from
+    /// (`DaytimeStressMode.selected`). New beats in the day, a backfill inside it or under its baseline, or
+    /// another strap each make a new key. nil when the store cannot tell (no fingerprint): nothing is kept.
+    private func stressMemoKey(from: Int, to: Int, isToday: Bool, dayStart: Date, tz: Int,
+                               personal: Bool) async -> String? {
+        let fingerprint = await repo.hrFingerprintUnion(from: from, to: to)
+        guard !fingerprint.isEmpty else { return nil }
+        var key = "\(from)|\(isToday ? "now" : String(to))|\(tz)|\(personal)|\(fingerprint)"
+        if personal {
+            let cal = Calendar.current
+            let spanStart = cal.date(byAdding: .day, value: -Self.stressBaselineDays, to: dayStart)
+                .map { cal.startOfDay(for: $0) } ?? dayStart
+            let spanFrom = Int(spanStart.timeIntervalSince1970)
+            let baseline = await cached("health.stress.baselineSpan.\(spanFrom).\(from)") {
+                await repo.hrFingerprintUnion(from: spanFrom, to: from - 1)
+            }
+            key += "|\(baseline)"
+        }
+        return key
+    }
+
+    /// The days before a day that `DaytimeStressMode.selected` folds its personal stress baseline from (its
+    /// `baselineHistoryDays`), the span `stressMemoKey` fingerprints under that lens.
+    static let stressBaselineDays = 30
 
     /// The day's daily stress score (0–3): today's through `StressModel` (the newest night with signal),
     /// a past day's stored value, else its own derivation against its trailing baseline.
     func dailyStress(_ r: PulseRequest, dayKey: String, isToday: Bool) async -> Double? {
         let stored = await stressStoredSeries()
         if isToday {
-            return await cachedOptional("health.stress.daily.today") { () async -> Double? in
+            return await cached("health.stress.daily.today") { () async -> Double? in
                 StressModel(days: r.days, stored: stored)?.score
             }
         }
@@ -448,7 +490,9 @@ extension PulseSnapshotBuilder {
     }
 
     /// The typical same weekday over the previous six weeks (worn days only). Today it is cut after the
-    /// current hour, the same hours today's own totals count (the hour in progress included, once scored).
+    /// current hour, the same hours today's own totals count (the hour in progress included, once scored);
+    /// between midnight and 04:00, when today is still the day before (`stressDayStart`), that day has run
+    /// its course and is set against whole typical days.
     func stressTypical(_ r: PulseRequest, dayStart: Date,
                        isToday: Bool) async -> (totals: StressDayTotals.Totals?, days: Int) {
         let cal = Calendar.current
@@ -458,7 +502,8 @@ extension PulseSnapshotBuilder {
             let result = await stressResult(dayStart: start, isToday: false, r: r)
             if !result.hours.isEmpty { days.append(result.hours) }
         }
-        let cut = isToday ? cal.component(.hour, from: r.now) + 1 : nil
+        let running = isToday && r.now < (cal.date(byAdding: .day, value: 1, to: dayStart) ?? .distantFuture)
+        let cut = running ? cal.component(.hour, from: r.now) + 1 : nil
         let typical = StressDayTotals.typical(days, beforeHour: cut)
         let worn = days.filter {
             StressDayTotals.totals($0, beforeHour: cut).scoredMinutes
@@ -469,8 +514,8 @@ extension PulseSnapshotBuilder {
 
     static let typicalWeeks = 6
 
-    /// The Stress Monitor for the day `r.day.offset` back, without its typical weekday: that reads six
-    /// earlier days of heart rate, R-R and motion, so it comes in `stressMonitorTypical`, after the day draws.
+    /// The Stress Monitor for the request's day, without its typical weekday: that reads six earlier days of
+    /// heart rate, R-R and motion, so it comes in `stressMonitorTypical`, after the day draws.
     func stressMonitor(_ r: PulseRequest) async -> StressMonitorSnapshot? {
         begin(r.seq)
         guard let day = await stressDay(r) else { return nil }
@@ -512,14 +557,12 @@ extension PulseSnapshotBuilder {
                                      dailyExplanation: explanation)
     }
 
-    /// The Stress Monitor's typical same weekday for the day `r.day.offset` back (TOTAL DAY's typical bar
-    /// and chips, the "typical Friday" sentence), through the same per-day stress reads `stressMonitor`
-    /// cached. nil only when a newer refresh superseded it.
+    /// The Stress Monitor's typical same weekday for the request's day (TOTAL DAY's typical bar and chips,
+    /// the "typical Friday" sentence), through the same per-day stress reads `stressMonitor` cached. nil
+    /// only when a newer refresh superseded it.
     func stressMonitorTypical(_ r: PulseRequest) async -> StressMonitorTypical? {
         begin(r.seq)
-        let cal = Calendar.current
-        let todayStart = cal.startOfDay(for: r.now)
-        guard let dayStart = cal.date(byAdding: .day, value: -r.day.offset, to: todayStart) else { return nil }
+        let dayStart = Self.stressDayStart(r)
         let typical = await stressTypical(r, dayStart: dayStart, isToday: r.day.offset == 0)
         guard isCurrent(r) else { return nil }
         return StressMonitorTypical(dayKey: Repository.localDayKey(dayStart), totals: typical.totals,
@@ -989,6 +1032,8 @@ extension PulseSnapshotBuilder {
         let workouts = await workoutRows()
         guard isCurrent(r) else { return nil }
 
+        // The bounds the heart rate is binned by: an edit to HR max or the zones re-bins within the refresh.
+        let bounds = r.profile.zoneSet.zones.map { "\($0.lower)-\($0.upper)" }.joined(separator: ",")
         // Minutes per local day: zones 1-3, zones 4-5, strength.
         var z13: [String: Double] = [:]
         var z45: [String: Double] = [:]
@@ -1002,7 +1047,8 @@ extension PulseSnapshotBuilder {
             if let pct = WorkoutZones.percents(w.zonesJSON) {
                 zones = pct.map { minutes * $0 / 100 }
             } else {
-                zones = await cachedOptional("health.workoutZones.\(w.startTs).\(w.source)") { () async -> [Double]? in
+                let key = "health.workoutZones.\(w.startTs).\(w.source).\(bounds)"
+                zones = await cached(key) { () async -> [Double]? in
                     await repo.workoutZoneMinutes(from: w.startTs, to: w.endTs, zoneSet: r.profile.zoneSet,
                                                   source: w.source)
                 }
@@ -1070,6 +1116,43 @@ extension PulseSnapshotBuilder {
     static func isStrength(_ sport: String) -> Bool {
         let s = sport.lowercased()
         return s.contains("strength") || s.contains("weight") || s.contains("lift")
+    }
+}
+
+// MARK: - Stress kept across refreshes
+
+/// Days' intraday stress (`DaytimeStress.Result`), kept for the app's life, which the builder's per-refresh
+/// cache is not: scoring one reads up to 200,000 heart-rate, R-R and motion rows, and Home's extras, the
+/// Health tab and the Stress Monitor score today, the day before and six typical weekdays. A key carries
+/// what the result was scored from (`stressMemoKey`), so a stale entry is never served; it is just never
+/// asked for again. Finished days are kept up to `capacity`. Today's key moves with every new beat, so
+/// today keeps one entry per lens, and its churn never pushes the finished days out.
+actor PulseStressDayCache {
+    static let shared = PulseStressDayCache()
+
+    private var days: [String: DaytimeStress.Result] = [:]
+    /// `days`' keys, oldest first.
+    private var order: [String] = []
+    /// Today's latest scoring per lens (personal baseline on or off), with the key it was scored under.
+    private var today: [Bool: (key: String, result: DaytimeStress.Result)] = [:]
+    private let capacity = 120
+
+    /// The result kept under `key`, or nil when that day was never scored from exactly this.
+    func lookup(_ key: String) -> DaytimeStress.Result? {
+        if let kept = days[key] { return kept }
+        return today.values.first { $0.key == key }?.result
+    }
+
+    func keepDay(_ key: String, _ result: DaytimeStress.Result) {
+        if days[key] == nil { order.append(key) }
+        days[key] = result
+        while order.count > capacity {
+            days.removeValue(forKey: order.removeFirst())
+        }
+    }
+
+    func keepToday(_ key: String, _ result: DaytimeStress.Result, lens personal: Bool) {
+        today[personal] = (key, result)
     }
 }
 #endif

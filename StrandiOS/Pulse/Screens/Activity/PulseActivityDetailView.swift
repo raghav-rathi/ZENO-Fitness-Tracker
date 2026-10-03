@@ -360,7 +360,7 @@ struct PulseActivityDetailView: View {
                 let shown = PulseFormat.oneDecimal(change)
                 PulseActivityHeadline(value: shown == "-0.0" ? "0.0" : shown,
                                       label: String(localized: "Stress Change"),
-                                      accessibilityValue: String(localized: "\(shown), from \(PulseFormat.oneDecimal(stress.start)) to \(PulseFormat.oneDecimal(stress.end)) on the 0 to 3 stress scale"))
+                                      accessibilityValue: String(localized: "\(shown), from \(PulseFormat.oneDecimal(stress.shownStart)) to \(PulseFormat.oneDecimal(stress.shownEnd)) on the 0 to 3 stress scale"))
             }
         }
         .opacity(scrub == nil ? 1 : 0)
@@ -567,7 +567,7 @@ struct PulseActivityDetailView: View {
             if high > 0 { parts.append(String(localized: "Zones 4-5 \(Int((high / 60).rounded())) min")) }
         }
         if let stress = s.stress {
-            parts.append(String(localized: "Stress \(PulseFormat.oneDecimal(stress.start)) to \(PulseFormat.oneDecimal(stress.end))"))
+            parts.append(String(localized: "Stress \(PulseFormat.oneDecimal(stress.shownStart)) to \(PulseFormat.oneDecimal(stress.shownEnd))"))
         }
         return parts.joined(separator: ". ")
     }

@@ -240,16 +240,12 @@ extension PulseSnapshotBuilder {
             return YearInReview.Activity(day: key, name: name, minutes: seconds / 60)
         }
 
-        // Strain's optimal range for a Recovery: the band rule the Strain target and the dial use
-        // (`CoupledView.optimalStrainRange`), read once on the main actor for every whole percent.
-        let bands: [ClosedRange<Double>?] = await MainActor.run {
-            (0...100).map { pct in
-                CoupledView.optimalStrainRange(recovery: Double(pct)).map { Double($0.lowerBound)...Double($0.upperBound) }
-            }
-        }
-        guard isCurrent(r) else { return nil }
+        // Strain's optimal range for a Recovery: the band rule the Strain target and the dial use, through
+        // the builder's lookup (`optimalStrainRange(percent:)`, CoupledView's bands read once on the main actor).
         let summary = YearInReview.summarize(year: year, through: through, days: days, activities: activities,
-                                             strainRange: { pct in bands[min(100, max(0, Int(pct.rounded())))] })
+                                             strainRange: { pct in
+                                                 optimalStrainRange(percent: PulseDisplay.displayedPercent(pct))
+                                             })
 
         let behaviors = await yearBehaviors(r, inYear: inYear)
         // ZENO Age: the stored weekly Body Age the Health tab reads, the last one inside the year.
@@ -406,7 +402,9 @@ extension PulseSnapshotBuilder {
     }
 
     /// Minutes in Zone 2 on a local day, from that day's heart rate (`HRZones.timeInZone`, the Strain
-    /// dive's zone scoring). A finished day is read once per refresh.
+    /// dive's zone scoring). Today is read on every build. A finished day is read once per refresh and kept
+    /// across refreshes (`PulseZoneDayCache`) while its heart-rate fingerprint and Zone 2's bounds hold, so
+    /// the running challenges Home's coaching stack measures on every refresh re-read only days that moved.
     private func zone2Minutes(day: String, today: String, zoneSet: HRZoneSet) async -> Double {
         guard let bounds = Self.localDayBounds(day) else { return 0 }
         let read: () async -> Double = { [repo] in
@@ -416,8 +414,18 @@ extension PulseSnapshotBuilder {
         }
         if day >= today { return await read() }
         let z2 = zoneSet.zones.first { $0.number == 2 }
-        let key = "extras.zone2.\(day).\(z2?.lower ?? 0)-\(z2?.upper ?? 0)"
-        return await cached(key) { await read() }
+        let zone = "\(z2?.lower ?? 0)-\(z2?.upper ?? 0)"
+        return await cached("extras.zone2.\(day).\(zone)") { [repo] () async -> Double in
+            // No fingerprint (no store yet) cannot tell a changed day from an unchanged one: nothing is kept.
+            let fingerprint = await repo.hrFingerprintUnion(from: bounds.from, to: bounds.to)
+            let key = "zone2|\(bounds.from)|\(bounds.to)|\(fingerprint)|\(zone)"
+            if !fingerprint.isEmpty, let kept = await PulseZoneDayCache.shared.lookup(key), let seconds = kept?.first {
+                return seconds / 60
+            }
+            let minutes = await read()
+            if !fingerprint.isEmpty { await PulseZoneDayCache.shared.store(key, [minutes * 60]) }
+            return minutes
+        }
     }
 
     /// A local day key's midnight-to-midnight span, epoch seconds.

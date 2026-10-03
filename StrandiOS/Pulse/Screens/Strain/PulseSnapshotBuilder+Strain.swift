@@ -24,7 +24,7 @@ extension PulseSnapshotBuilder {
         let markers = r.prefs.sleepOnsetDayCycle ? await onsetMarkers() : []
         let ownWindow = await dayWindow(r)
         let steps = await stepsResolution(r)
-        let apple = await appleRows()
+        let calories = await caloriesResolution(r)
         guard isCurrent(r) else { return nil }
 
         // The day and the 30 before it: the contributors' averages, and the week inside them.
@@ -93,13 +93,13 @@ extension PulseSnapshotBuilder {
         let strainWeek = self.week(r, liveStrain: base.dial.value)
         let strainByDay = Dictionary(strainWeek.map { ($0.id, $0.strain) }, uniquingKeysWith: { _, last in last })
         let stepsByDay = Dictionary(steps.history.map { ($0.day, $0.value) }, uniquingKeysWith: { _, last in last })
-        // Calories by the rule Home's Calories tile and this dive's stats use: Apple Health's imported
-        // figure first, else the on-device estimate.
-        var importedKcal: [String: Double] = [:]
-        for a in apple { if let k = a.activeKcal { importedKcal[a.day] = max(importedKcal[a.day] ?? 0, k) } }
-        let caloriesMetric = MetricCatalog.todayCaloriesMetric(hasImportedKcal: importedKcal[r.day.key] != nil,
-                                                               hasOnDeviceKcal: byDay[r.day.key]?.activeKcalEst != nil)?.key
-            ?? "energy_kcal"
+        // Calories through the one resolver Home's CALORIES tile and this dive's stats read
+        // (`caloriesResolution`): Apple Health's imported figure first, else the on-device estimate, and the
+        // catalog key of the source it chose for the card's Trend View.
+        let caloriesByDay = Dictionary(calories.history.map { ($0.day, $0.value) },
+                                       uniquingKeysWith: { _, last in last })
+        var caloriesMetric = "energy_kcal"
+        if case .metricSourced(let key, _) = calories.route { caloriesMetric = key }
         let trends = StrainDiveSnapshot.Week(
             strain: PulseDiveWeek.data(weekKeys, value: { strainByDay[$0] ?? nil }, color: { _ in PulseTheme.strain },
                                        label: PulseFormat.oneDecimal),
@@ -111,7 +111,7 @@ extension PulseSnapshotBuilder {
             },
             steps: PulseDiveWeek.data(weekKeys, value: { stepsByDay[$0] }, color: { _ in PulseTheme.strain },
                                       label: PulseFormat.grouped),
-            calories: PulseDiveWeek.data(weekKeys, value: { importedKcal[$0] ?? byDay[$0]?.activeKcalEst },
+            calories: PulseDiveWeek.data(weekKeys, value: { caloriesByDay[$0] },
                                          color: { _ in PulseTheme.strain }, label: PulseFormat.grouped),
             caloriesMetric: caloriesMetric,
             stepsRoute: PulseDiveRoutes.trend("steps", fallback: .tab(steps.route)),
@@ -289,9 +289,11 @@ extension PulseSnapshotBuilder {
 
 // MARK: - Zone-time cache
 
-/// Each day's seconds in zones, kept across refreshes while the day's heart rate is unchanged: the key
-/// carries the day window, the heart-rate fingerprint and the zone set, so new beats, a backfilled night
-/// or a changed maximum heart rate each make a new key. Holds at most `capacity` finished days.
+/// Days' seconds in heart-rate zones, kept across refreshes while a day's heart rate is unchanged: the key
+/// carries the day window, the heart-rate fingerprint and the zone bounds the seconds were binned by, so new
+/// beats, a backfilled night or a changed maximum heart rate each make a new key. The Strain dive keeps
+/// each day's five zones here, the Challenges each finished day's Zone 2 (`zone2Minutes`, keys "zone2|…").
+/// Holds at most `capacity` finished days.
 actor PulseZoneDayCache {
     static let shared = PulseZoneDayCache()
 
