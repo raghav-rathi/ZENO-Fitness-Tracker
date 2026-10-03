@@ -68,6 +68,10 @@ struct PulseRootView: View {
     @State private var bottomSafeArea: CGFloat = 34
     /// The "+" the action menu is open from (its frame in window coordinates), or nil while closed.
     @State private var actionMenuAnchor: CGRect?
+    /// `homeScreenQuickActionsEnabled` kept in state, for the navigator's closures: they reach this view
+    /// through @State's storage (see `navigator`), where a plain property could be read from a copy made
+    /// before the launch gates cleared.
+    @State private var launchGatesCleared = false
     /// Names this shell as the owner of the navigator, coach and menu contexts it hands down, so they
     /// compare equal across re-renders and their readers are not invalidated on every push or sheet.
     @State private var token = PulseIdentityToken()
@@ -210,6 +214,7 @@ struct PulseRootView: View {
         // through the change callback. Both open the same screens as the ＋ menu. A notification's route
         // waits the same way.
         .onAppear {
+            launchGatesCleared = homeScreenQuickActionsEnabled
             presentPendingHomeScreenQuickActionIfPossible()
             applyDebugLaunchState()
             openPendingExternalRouteIfPossible()
@@ -220,7 +225,8 @@ struct PulseRootView: View {
         .onChange(of: externalRoutes.pending) { _, _ in
             openPendingExternalRouteIfPossible()
         }
-        .onChange(of: homeScreenQuickActionsEnabled) { _, _ in
+        .onChange(of: homeScreenQuickActionsEnabled) { _, cleared in
+            launchGatesCleared = cleared
             presentPendingHomeScreenQuickActionIfPossible()
             openPendingExternalRouteIfPossible()
         }
@@ -320,10 +326,11 @@ struct PulseRootView: View {
     }
 
     /// Present `route` in its own stack: full-screen routes in the cover slot, everything else as a sheet.
-    /// Tilt mode's day timeline (§3.7) only opens over the bare tabs: turning the phone with anything up
-    /// over Home leaves it alone.
+    /// Tilt mode's day timeline (§3.7) only opens over the bare tabs: not before the launch gates have cleared
+    /// (`launchGatesCleared`; the first run and the terms gate are drawn over the shell rather than presented,
+    /// so nothing else says they are up), and not with anything up over Home.
     private func present(_ route: PulseRoute) {
-        if route == PulseTiltTimelineRoute().route && somethingIsUp { return }
+        if route == PulseTiltTimelineRoute().route && (!launchGatesCleared || somethingIsUp) { return }
         switch route {
         case .coach(let seed):
             openCoach(seed: seed)
