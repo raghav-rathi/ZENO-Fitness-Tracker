@@ -288,10 +288,15 @@ struct PulseStressChart: View {
         }
     }
 
+    /// The latest level (the headline's, else the last reading) and the peak, printed as the Stress
+    /// Monitor's gauge and Home print a level: cut to one decimal (`HealthStressGauge.printed`), so VoiceOver
+    /// never reads 2.0 where the screen shows 1.9.
     private var summary: String {
         let values = points.compactMap(\.value)
         guard let last = values.last else { return String(localized: "No data") }
-        return String(localized: "Latest \(String(format: "%.1f", last)) of 3, peak \(String(format: "%.1f", values.max() ?? last))")
+        let latest = HealthStressGauge.printed(currentLevel ?? last)
+        let peak = HealthStressGauge.printed(values.max() ?? last)
+        return String(localized: "Latest \(PulseFormat.oneDecimal(latest)) of 3, peak \(PulseFormat.oneDecimal(peak))")
     }
 }
 
