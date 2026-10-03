@@ -63,9 +63,16 @@ enum PulseDashboardViews {
 
         /// The Trend View once it is rebuilt, else the row's own detail screen.
         private func route(_ item: PulseDashboardItem, value: PulseDashboardValue) -> PulseRoute {
-            let trend = PulseRoute.trendView(metric: item.trendMetric)
-            return trend.isRebuilt ? trend : value.fallback
+            PulseRoute.trendView(metric: item.trendMetric).isRebuilt
+                ? PulseDashboardViews.trendRoute(metric: item.trendMetric, day: home.day)
+                : value.fallback
         }
+    }
+
+    /// The Trend View for `metric` as of the day Home shows: today's opens on the latest period, a past
+    /// day's on the period ending that day (`PulseTrendDayRoute`), so the page keeps the day's figures.
+    static func trendRoute(metric: String, day: PulseDay) -> PulseRoute {
+        day.isToday ? .trendView(metric: metric) : PulseTrendDayRoute(metric: metric, dayOffset: day.offset).route
     }
 
     /// "Personalization in Progress" (help-center/62, 67): an outlined card while the strap calibrates.
@@ -165,14 +172,21 @@ enum PulseDashboardViews {
     }
 
     /// STRAIN & RECOVERY ⓘ: the seven days ending on the selected one, Strain against Recovery, on a
-    /// ≈191 pt plot (completeness-critic/13). A week with neither says why the grid is bare (§2.7).
+    /// ≈191 pt plot (completeness-critic/13). A week with neither says why the grid is bare (§2.7). It
+    /// opens Recovery's Trend View as of the same day.
     struct StrainRecoveryCard: View {
         let home: HomeSnapshot
 
         private var isEmpty: Bool { home.week.allSatisfy { $0.strain == nil && $0.recovery == nil } }
 
+        private var route: PulseRoute {
+            PulseRoute.trendView(metric: "recovery").isRebuilt
+                ? PulseDashboardViews.trendRoute(metric: "recovery", day: home.day)
+                : PulseRoute.trendView(metric: "recovery").forExistingEntryPoint
+        }
+
         var body: some View {
-            PulseLink(PulseRoute.trendView(metric: "recovery").forExistingEntryPoint) {
+            PulseLink(route) {
                 PulseChartCard(String(localized: "Strain & Recovery"), accessory: .info) {
                     PulseStrainRecoveryChart(days: home.week.map { day in
                         PulseStrainRecoveryChart.Day(id: day.id,
