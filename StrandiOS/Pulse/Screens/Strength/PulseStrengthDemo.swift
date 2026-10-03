@@ -13,7 +13,8 @@ enum PulseStrengthDemo {
 
     static var requested: Bool { CommandLine.arguments.contains("--demo-lift") }
 
-    @MainActor private static var seeded = false
+    /// The one seeding run; every caller awaits it, so nothing reads the Lift Log half-written.
+    @MainActor private static var seeding: Task<Void, Never>?
 
     private struct Line {
         let exercise: String
@@ -60,11 +61,20 @@ enum PulseStrengthDemo {
         ]),
     ]
 
-    /// Seed once per launch when `--demo-lift` is passed and the Lift Log has no workouts.
+    /// Seed once per launch when `--demo-lift` is passed and the Lift Log has no workouts. A caller that
+    /// arrives while the seed is running waits for it to finish (the root's load and the capture flags
+    /// both ask, and a snapshot built mid-seed showed a workout last done months ago).
     @MainActor
     static func seedIfRequested(repo: Repository) async {
-        guard requested, !seeded else { return }
-        seeded = true
+        guard requested else { return }
+        if seeding == nil {
+            seeding = Task { @MainActor in await seed(repo: repo) }
+        }
+        await seeding?.value
+    }
+
+    @MainActor
+    private static func seed(repo: Repository) async {
         guard let store = await repo.storeHandle() else { return }
         let deviceId = repo.deviceId
         guard ((try? await store.liftPrograms(deviceId: deviceId)) ?? []).isEmpty else { return }
