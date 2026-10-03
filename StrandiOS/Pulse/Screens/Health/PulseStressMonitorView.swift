@@ -91,11 +91,13 @@ struct PulseStressMonitorView: View {
         }
     }
 
-    /// The local key of the day `offset` back (the snapshot carries the same key).
+    /// The local key of the day `offset` back from Home's today, the logical day that rolls at 04:00, as
+    /// `PulseModel` dates a request and the builder keys the snapshot (`stressDayStart`), so the pager's
+    /// title and the snapshot name the same day.
     private func dayKey(_ offset: Int) -> String {
-        let cal = Calendar.current
-        let start = cal.date(byAdding: .day, value: -offset, to: cal.startOfDay(for: Date())) ?? Date()
-        return Repository.localDayKey(start)
+        let logical = Repository.logicalDay(Date())
+        let day = Calendar.current.date(byAdding: .day, value: -offset, to: logical) ?? logical
+        return Repository.localDayKey(day)
     }
 
     private var pagerTitle: String {

@@ -46,7 +46,7 @@ extension PulseSnapshotBuilder {
         let card = stress.map { day -> HealthStressCard in
             let todayHours = day.hours
             let scored = todayHours.contains { $0.level != nil }
-            let start = Calendar.current.startOfDay(for: r.now)
+            let start = Self.stressDayStart(r)
             return HealthStressCard(
                 highMinutes: scored ? StressDayTotals.totals(todayHours).highMinutes : nil,
                 points: day.points.filter { $0.date >= start },
@@ -62,7 +62,7 @@ extension PulseSnapshotBuilder {
     /// nil only when a newer refresh superseded it; "no typical day" is a value (`minutes == nil`).
     func healthTypicalHigh(_ r: PulseRequest) async -> HealthTypicalHigh? {
         begin(r.seq)
-        let dayStart = Calendar.current.startOfDay(for: r.now)
+        let dayStart = Self.stressDayStart(r)
         let typical = await stressTypical(r, dayStart: dayStart, isToday: true)
         guard isCurrent(r) else { return nil }
         return HealthTypicalHigh(dayKey: Repository.localDayKey(dayStart), minutes: typical.totals?.highMinutes)
@@ -351,15 +351,21 @@ extension PulseSnapshotBuilder {
 
     // MARK: - Stress
 
-    /// One day's stress for the day `r.day.offset` calendar days before today: the intraday curve for both
-    /// the gauge (its latest reading) and the chart, the daily score only as a labelled fallback. The chart
-    /// covers 24 hours ending at the day's "now": now today, the end of the last reading on a past day
+    /// Local midnight of the request's day (`r.day.date`): the logical day Home and every other screen
+    /// show, which rolls at 04:00, so until then "today" is still the day before, and a past day is the day
+    /// Home shows, never the calendar day after it. Every stress build keys its day here.
+    nonisolated static func stressDayStart(_ r: PulseRequest) -> Date {
+        Calendar.current.startOfDay(for: r.day.date)
+    }
+
+    /// One day's stress for the request's day (`stressDayStart`): the intraday curve for both the gauge (its
+    /// latest reading) and the chart, the daily score only as a labelled fallback. The chart covers 24 hours
+    /// ending at the day's "now": now today, the end of the last reading on a past day
     /// (completeness-critic/14: "11:02 PM … 10:49 PM"), so the evening before is included either way.
     func stressDay(_ r: PulseRequest) async -> PulseStressDay? {
         let cal = Calendar.current
-        let todayStart = cal.startOfDay(for: r.now)
-        guard let dayStart = cal.date(byAdding: .day, value: -r.day.offset, to: todayStart),
-              let nextStart = cal.date(byAdding: .day, value: 1, to: dayStart) else { return nil }
+        let dayStart = Self.stressDayStart(r)
+        guard let nextStart = cal.date(byAdding: .day, value: 1, to: dayStart) else { return nil }
         let isToday = r.day.offset == 0
         let dayKey = Repository.localDayKey(dayStart)
         let result = await stressResult(dayStart: dayStart, isToday: isToday, r: r)
@@ -448,7 +454,9 @@ extension PulseSnapshotBuilder {
     }
 
     /// The typical same weekday over the previous six weeks (worn days only). Today it is cut after the
-    /// current hour, the same hours today's own totals count (the hour in progress included, once scored).
+    /// current hour, the same hours today's own totals count (the hour in progress included, once scored);
+    /// between midnight and 04:00, when today is still the day before (`stressDayStart`), that day has run
+    /// its course and is set against whole typical days.
     func stressTypical(_ r: PulseRequest, dayStart: Date,
                        isToday: Bool) async -> (totals: StressDayTotals.Totals?, days: Int) {
         let cal = Calendar.current
@@ -458,7 +466,8 @@ extension PulseSnapshotBuilder {
             let result = await stressResult(dayStart: start, isToday: false, r: r)
             if !result.hours.isEmpty { days.append(result.hours) }
         }
-        let cut = isToday ? cal.component(.hour, from: r.now) + 1 : nil
+        let running = isToday && r.now < (cal.date(byAdding: .day, value: 1, to: dayStart) ?? .distantFuture)
+        let cut = running ? cal.component(.hour, from: r.now) + 1 : nil
         let typical = StressDayTotals.typical(days, beforeHour: cut)
         let worn = days.filter {
             StressDayTotals.totals($0, beforeHour: cut).scoredMinutes
@@ -469,8 +478,8 @@ extension PulseSnapshotBuilder {
 
     static let typicalWeeks = 6
 
-    /// The Stress Monitor for the day `r.day.offset` back, without its typical weekday: that reads six
-    /// earlier days of heart rate, R-R and motion, so it comes in `stressMonitorTypical`, after the day draws.
+    /// The Stress Monitor for the request's day, without its typical weekday: that reads six earlier days of
+    /// heart rate, R-R and motion, so it comes in `stressMonitorTypical`, after the day draws.
     func stressMonitor(_ r: PulseRequest) async -> StressMonitorSnapshot? {
         begin(r.seq)
         guard let day = await stressDay(r) else { return nil }
@@ -512,14 +521,12 @@ extension PulseSnapshotBuilder {
                                      dailyExplanation: explanation)
     }
 
-    /// The Stress Monitor's typical same weekday for the day `r.day.offset` back (TOTAL DAY's typical bar
-    /// and chips, the "typical Friday" sentence), through the same per-day stress reads `stressMonitor`
-    /// cached. nil only when a newer refresh superseded it.
+    /// The Stress Monitor's typical same weekday for the request's day (TOTAL DAY's typical bar and chips,
+    /// the "typical Friday" sentence), through the same per-day stress reads `stressMonitor` cached. nil
+    /// only when a newer refresh superseded it.
     func stressMonitorTypical(_ r: PulseRequest) async -> StressMonitorTypical? {
         begin(r.seq)
-        let cal = Calendar.current
-        let todayStart = cal.startOfDay(for: r.now)
-        guard let dayStart = cal.date(byAdding: .day, value: -r.day.offset, to: todayStart) else { return nil }
+        let dayStart = Self.stressDayStart(r)
         let typical = await stressTypical(r, dayStart: dayStart, isToday: r.day.offset == 0)
         guard isCurrent(r) else { return nil }
         return StressMonitorTypical(dayKey: Repository.localDayKey(dayStart), totals: typical.totals,
