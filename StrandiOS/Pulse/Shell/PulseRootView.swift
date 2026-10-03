@@ -479,14 +479,18 @@ struct PulseAttacher: View {
     @AppStorage(PuffinExperiment.banisterEffortKey) private var banisterEffort = false
     @AppStorage(PuffinExperiment.stressPersonalBaselineKey) private var stressPersonalBaseline = false
     @AppStorage(PuffinExperiment.journalReminderKey) private var journalReminder = true
-    // The wind-down reminder's own keys (WindDownNudge). The two wake keys are never read here: they
-    // are declared so that editing a wake time invalidates this view and Tonight is rebuilt.
+    // What tonight's plan is resolved from, none of it read here: `prefs` reads it all at once through
+    // `PulseSleepPlanSettings.stored`. Each key is declared only so that changing it re-renders this view,
+    // `prefs` changes and Tonight's Sleep is re-planned at once: the wind-down reminder's (WindDownNudge),
+    // the strap alarm's (BehaviorStore; ALARM ON / OFF) and the WHOOP 5/MG Protocol probes, without which a
+    // 5/MG strap never arms its alarm (`BLEManager.strapAlarmWillArm`). The alarm's weekdays, a list no
+    // @AppStorage can hold, reach the plan on the next re-render.
     @AppStorage("windDown.enabled") private var windDownEnabled = false
     @AppStorage("windDown.wakeMinutes") private var windDownWake = 7 * 60
     @AppStorage("windDown.perDayWakeMinutes") private var windDownPerDay = Data()
-    // The strap's silent wake alarm (BehaviorStore's keys): Tonight's Sleep says ALARM ON / OFF from them.
     @AppStorage("behavior.smartAlarmEnabled") private var strapAlarmOn = false
     @AppStorage("behavior.smartAlarmMinutes") private var strapAlarmMinutes = 7 * 60
+    @AppStorage(PuffinExperiment.defaultsKey) private var protocolProbes = false
     // The Sleep Planner's goal: Tonight's Sleep is planned for it, so choosing another one re-plans tonight.
     @AppStorage(PulseSleepGoal.storageKey) private var sleepGoalRaw = PulseSleepGoal.default.storageValue
 
