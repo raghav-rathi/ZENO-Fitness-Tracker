@@ -22,7 +22,7 @@ enum PulseCoachOutlook {
     static func page(_ home: HomeSnapshot, evening: Bool, now: Date = Date()) -> String {
         var parts = [evening ? String(localized: "Day in Review") : String(localized: "Daily Outlook")]
         parts.append(greeting(evening: evening, now: now))
-        parts += evening ? review(home) : outlook(home)
+        parts += evening ? review(home, now: now) : outlook(home, now: now)
         return parts.joined(separator: separator)
     }
 
@@ -45,7 +45,7 @@ enum PulseCoachOutlook {
                          : String(localized: "Good afternoon! Happy \(weekday).")
     }
 
-    private static func outlook(_ home: HomeSnapshot) -> [String] {
+    private static func outlook(_ home: HomeSnapshot, now: Date) -> [String] {
         var lines: [String] = []
         if let recovery = recoveryLine(home) { lines.append(recovery) }
         if case .scored = home.sleep.state, let sleep = home.sleep.value {
@@ -64,11 +64,11 @@ enum PulseCoachOutlook {
         } else if let strain = home.strain.value, strain > 0 {
             lines.append(String(localized: "Your Strain so far today is **\(PulseFormat.oneDecimal(strain))**."))
         }
-        if let tonight = home.tonight { lines.append(bedtimeLine(tonight)) }
+        if let tonight = home.tonight { lines.append(bedtimeLine(tonight, now: now)) }
         return lines
     }
 
-    private static func review(_ home: HomeSnapshot) -> [String] {
+    private static func review(_ home: HomeSnapshot, now: Date) -> [String] {
         var lines: [String] = []
         if let strain = home.strain.value {
             var line = String(localized: "You reached a Strain of **\(PulseFormat.oneDecimal(strain))** today")
@@ -87,7 +87,7 @@ enum PulseCoachOutlook {
         if case .scored = home.sleep.state, let sleep = home.sleep.value {
             lines.append(String(localized: "Last night's Sleep Performance was **\(PulseDisplay.displayedPercent(sleep))%**."))
         }
-        if let tonight = home.tonight { lines.append(bedtimeLine(tonight)) }
+        if let tonight = home.tonight { lines.append(bedtimeLine(tonight, now: now)) }
         return lines
     }
 
@@ -115,8 +115,15 @@ enum PulseCoachOutlook {
             : String(localized: "Your Recovery is **\(today)%**, below your average of **\(average)%** over the past week.")
     }
 
-    private static func bedtimeLine(_ tonight: PulseTonight) -> String {
-        String(localized: "Aim to be asleep by **\(PulseFormat.clock(tonight.asleepBy))** to get the **\(PulseFormat.duration(minutes: tonight.needMin))** of sleep you need tonight.")
+    /// Tonight's plan as Home's TONIGHT'S SLEEP card and Daily Outlook page state it: the time to be asleep
+    /// by, and once the time to get into bed has passed, "now" (the card's "Now", the page's sentence).
+    private static func bedtimeLine(_ tonight: PulseTonight, now: Date) -> String {
+        let need = PulseFormat.duration(minutes: tonight.needMin)
+        if now >= tonight.inBed {
+            let wake = PulseFormat.clock(tonight.wake)
+            return String(localized: "To get as close as you can to the **\(need)** of sleep you need tonight, go to sleep now to wake at **\(wake)**.")
+        }
+        return String(localized: "Aim to be asleep by **\(PulseFormat.clock(tonight.asleepBy))** to get the **\(need)** of sleep you need tonight.")
     }
 }
 
