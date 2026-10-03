@@ -6,8 +6,8 @@ import StrandAnalytics
 //
 // What the two rebuilt dives share and no other group draws: the contributor callout with its
 // "Today vs. last 30 days" legend, the Weekly Trends card, the behaviour chips, the points and confidence
-// chips of "What shaped it", the carried-score line under the bar, and the route helper that sends a
-// metric to its Trend View once the trends group has rebuilt it. Everything takes plain values; the
+// chips of "What shaped it", the carried-score line under the bar, and the route helper that links a
+// metric to its Trend View only once the trends group has rebuilt it. Everything takes plain values; the
 // snapshots that feed them live in Screens/Recovery and Screens/Strain.
 
 // MARK: Contributor rows
@@ -114,7 +114,8 @@ struct PulseDiveCarriedLine: View {
 // MARK: Weekly Trends
 
 /// A Weekly Trends card (§2.7): the UPPERCASE title with "›" at the right, an optional series legend
-/// under it at the right, then the chart. The whole card opens the metric's Trend View.
+/// under it at the right, then the chart. With a route the whole card opens the metric's Trend View;
+/// without one it is a plain card and drops the "›".
 ///
 /// Proportions from deep-dives-2026/16 and 16b: the title's caps centred ≈24 pt under the card's top, the
 /// plot's top gridline ≈34 pt under them, a 197 pt plot (`PulseWeeklyChart.height` is the chart frame that
@@ -206,12 +207,18 @@ enum PulseWeekLabels {
 // MARK: Routes
 
 enum PulseDiveRoutes {
-    /// The Trend View for `metric` once its group has rebuilt it; until then `fallback` (a screen that
-    /// shows the metric today), else the Trend View route's own classic fallback.
-    static func trend(_ metric: String, fallback: PulseRoute? = nil) -> PulseRoute {
+    /// Where a contributor row or a Weekly Trends card for `metric` leads: the metric's Trend View once the
+    /// trends group has rebuilt it (`PulseTrendView.isRebuilt`), until then `fallback`, a screen that reads
+    /// the dive's own resolver for the metric (Steps on the day), and otherwise nowhere: the row and the
+    /// card are then plain, with no "›".
+    ///
+    /// Never the Trend View route's classic fallback. Those metric screens resolve their own figures (a
+    /// zone or calorie screen with "no data" right after the dive printed 1:13 and 880 kcal) and speak the
+    /// classic vocabulary (Charge, Rest, Effort on 0-100), which the WHOOP-style path must never show
+    /// (spec §0.3; one resolver per fact).
+    static func trend(_ metric: String, fallback: PulseRoute? = nil) -> PulseRoute? {
         let route = PulseRoute.trendView(metric: metric)
-        if route.isRebuilt { return route }
-        return fallback ?? route.forExistingEntryPoint
+        return route.isRebuilt ? route : fallback
     }
 }
 

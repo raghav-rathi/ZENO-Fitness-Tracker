@@ -57,8 +57,9 @@ struct StrainDiveSnapshot: Equatable {
         let calories: [PulseChartDatum]
         /// The catalog key the calories card's Trend View opens (imported or on-device).
         let caloriesMetric: String
-        /// Where the steps card opens until the Trend View is rebuilt: the Steps screen on the day.
-        let stepsRoute: PulseRoute
+        /// Where the steps card opens: its Trend View once rebuilt, until then the Steps screen on the day,
+        /// which reads the same steps resolver.
+        let stepsRoute: PulseRoute?
         let highlightID: String
     }
 }

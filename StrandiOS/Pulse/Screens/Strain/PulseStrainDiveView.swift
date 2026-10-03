@@ -9,7 +9,8 @@ import StrandAnalytics
 /// the Strain Target tick at its middle, the contributor callout (heart-rate zones 1-3 and 4-5, Strength
 /// Activity Time, steps, each against its 30-day average), the inline insight (the band's meaning, or where
 /// the day stands against its optimal range), Today's Activities, Weekly Trends (Strain, the two zone
-/// groups stacked by zone, steps, calories, each opening its Trend View), then ZENO's day details.
+/// groups stacked by zone, steps, calories, each opening its Trend View once that is rebuilt; steps opens
+/// the Steps screen until then), then ZENO's day details.
 ///
 /// Owned by group "recovery-strain".
 struct PulseStrainDiveView: View {
