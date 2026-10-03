@@ -259,8 +259,7 @@ struct PulseActivityPickerList: View {
                     .foregroundStyle(style == .cards ? PulseTheme.textSecondary : PulseTheme.textPrimary)
                     .frame(width: 30)
                     .accessibilityHidden(true)
-                Text(kind.displayName)
-                    .pulseText(.menuLabel)
+                rowName(kind.displayName)
                     .foregroundStyle(PulseTheme.textPrimary)
                     .lineLimit(2)
                     .multilineTextAlignment(.leading)
@@ -285,3 +284,14 @@ struct PulseActivityPickerList: View {
     }
 }
 #endif
+
+    /// A row's name: the card lists' smaller caps (c03), the pre-start dropdown's menu caps
+    /// (completeness-critic/05).
+    @ViewBuilder
+    private func rowName(_ name: String) -> some View {
+        if style == .cards {
+            Text(name).activityText(.listRow)
+        } else {
+            Text(name).pulseText(.menuLabel)
+        }
+    }

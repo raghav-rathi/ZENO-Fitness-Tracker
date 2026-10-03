@@ -171,6 +171,8 @@ enum PulseActivityTextStyle {
     case trackRoute
     /// The activity search field.
     case searchField
+    /// An activity's name in the card lists (SELECT ACTIVITY, SELECT YOUR ACTIVITY; c03: caps ≈8 pt).
+    case listRow
     /// The amber banner's "!".
     case bannerBang
     /// "ACTIVITY STRAIN" inside the live ring.
@@ -217,6 +219,7 @@ enum PulseActivityTextStyle {
         case .panelHelpGlyph: return Spec(size: 15, weight: .medium, uppercase: false, tracking: 0, relativeTo: nil, maxScale: 1)
         case .trackRoute: return Spec(size: 13, weight: .medium, uppercase: false, tracking: 0.6, relativeTo: .footnote, maxScale: 1.4)
         case .searchField: return Spec(size: 17, weight: .regular, uppercase: false, tracking: 0, relativeTo: .body, maxScale: 1.8)
+        case .listRow: return Spec(size: 11.5, weight: .bold, uppercase: true, tracking: 1.1, relativeTo: .footnote, maxScale: 1.6)
         case .bannerBang: return Spec(size: 17, weight: .heavy, uppercase: false, tracking: 0, relativeTo: .body, maxScale: 2.0)
         case .liveRingLabel: return Spec(size: 15, weight: .bold, uppercase: true, tracking: 1.2, relativeTo: .subheadline, maxScale: 1.25)
         case .liveRingState: return Spec(size: 13, weight: .bold, uppercase: true, tracking: 1.3, relativeTo: .footnote, maxScale: 1.25)
