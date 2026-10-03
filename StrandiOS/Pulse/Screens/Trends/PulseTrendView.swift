@@ -7,8 +7,8 @@ import StrandAnalytics
 /// Top to bottom, as WHOOP lays it out (deep-dives-2026/46, 47, 37, 44, 45, 51, 53): "‹ TREND VIEW", the
 /// metric dropdown (→ the metric picker), the header (AVERAGE, the value and its unit, the delta chip; the
 /// range control and the range pager at the right), the sentence, the legend, the chart, the footnotes,
-/// the breakdown block, then the metric's CTA rows and explainer, and the cycle-overlay note when the
-/// overlay is on. The Coach button floats at the bottom right.
+/// the breakdown block (VO₂ Max: YOUR CARDIO FITNESS LEVEL, reviews/83), then the metric's CTA rows and
+/// explainer, and the cycle-overlay note when the overlay is on. The Coach button floats at the bottom right.
 ///
 /// Every number comes from `TrendViewSnapshot`, built off the main actor from the metric's resolved
 /// series (`PulseSnapshotBuilder.trendView`). The latest window ends today, or `anchorOffset` days earlier
