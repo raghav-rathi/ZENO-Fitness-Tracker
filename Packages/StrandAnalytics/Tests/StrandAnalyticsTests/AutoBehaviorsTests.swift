@@ -31,6 +31,35 @@ final class AutoBehaviorsTests: XCTestCase {
         XCTAssertEqual(a.no, ["2026-10-02", "2026-10-03"])
     }
 
+    func testEarlyWorkoutStartsWithinThreeHoursOfWakingAndLandsOnTheNextDay() {
+        let wake = 1_790_020_000
+        let nights = [
+            AutoBehaviors.Night(day: "2026-10-01", onsetTs: wake - 8 * 3_600, bedMinute: 1380, wakeMinute: 420,
+                                wakeTs: wake),
+            AutoBehaviors.Night(day: "2026-10-02", onsetTs: wake + 16 * 3_600, bedMinute: 1380, wakeMinute: 420,
+                                wakeTs: wake + 86_400),
+            AutoBehaviors.Night(day: "2026-10-03", onsetTs: wake + 40 * 3_600, bedMinute: 1380, wakeMinute: 420,
+                                wakeTs: wake + 2 * 86_400),
+            // No wake time known: the next day is not judged.
+            AutoBehaviors.Night(day: "2026-10-04", onsetTs: wake + 64 * 3_600, bedMinute: 1380, wakeMinute: 420),
+        ]
+        let starts = [wake + 3_600,                         // 1 h after waking on Oct 1: early
+                      wake + 86_400 + 4 * 3_600,            // 4 h after waking on Oct 2: not early
+                      wake + 2 * 86_400 - 600]              // before waking on Oct 3: not after the wake
+        let a = AutoBehaviors.earlyWorkout(nights: nights, workoutStarts: starts)
+        XCTAssertEqual(a.yes, ["2026-10-02"])
+        XCTAssertEqual(a.no, ["2026-10-03", "2026-10-04"])
+        XCTAssertFalse(a.yes.contains("2026-10-05") || a.no.contains("2026-10-05"))
+    }
+
+    func testEarlyWorkoutWithNoWorkoutsIsANo() {
+        let night = AutoBehaviors.Night(day: "2026-10-01", onsetTs: 0, bedMinute: 0, wakeMinute: 420,
+                                        wakeTs: 1_790_020_000)
+        let a = AutoBehaviors.earlyWorkout(nights: [night], workoutStarts: [])
+        XCTAssertEqual(a.no, ["2026-10-02"])
+        XCTAssertTrue(a.yes.isEmpty)
+    }
+
     func testConsistentWakeTimeNeedsEnoughPriorNights() {
         var wake: [String: Double] = [:]
         let keys = PulseDisplay.trailingDayKeys(endingOn: "2026-10-16", count: 16)
