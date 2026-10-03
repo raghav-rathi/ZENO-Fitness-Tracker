@@ -16,12 +16,14 @@ import StrandAnalytics
 // The period START stays the anchor the temperature engine cross-validates against. Logging flow keeps it
 // in step: a period day with no start in the 10 days before it becomes a start, one just before the
 // current start moves the start back, and clearing the flow on a start day moves the start to the next
-// flow day or removes it. So every period-flow day written here has a start at most 9 days before it. The
-// classic tracker's deletes (`SkinTempCardsView`) keep that true on the iPhone: its per-start delete takes
-// the period's flow days with the start (`Repository.deletePeriod(startingOn:)`), and "Delete all period
-// history" calls `deleteAllCycleLogs()`. A period-flow day without a start can still arrive from deletes
-// that removed starts alone: an earlier build's, or the Mac's "Delete all period history" over a restored
-// iPhone backup. Reading ignores such a left-over day, so a period the wearer deleted is never drawn again.
+// period-flow day of its 10 days, or removes it. A period-flow day that a moved start no longer covers (a
+// period logged longer than 10 days) becomes a start itself, as logging it would make it one. So every
+// period-flow day written here has a start at most 9 days before it. The classic tracker's deletes
+// (`SkinTempCardsView`) keep that true on the iPhone: its per-start delete takes the period's flow days
+// with the start (`Repository.deletePeriod(startingOn:)`), and "Delete all period history" calls
+// `deleteAllCycleLogs()`. A period-flow day without a start can still arrive from deletes that removed
+// starts alone: an earlier build's, or the Mac's "Delete all period history" over a restored iPhone backup.
+// Reading ignores such a left-over day, so a period the wearer deleted is never drawn again.
 // Symptoms, spotting and "no flow" days outlive a single start's delete and are always read: they are not
 // period history, and a symptom-only log is legitimate (menopause, or before the first period is logged).
 // Nothing here leaves the device.
@@ -262,7 +264,8 @@ extension Repository {
         await deleteAllPeriodStarts()
     }
 
-    /// Keep the period start (the engine's anchor) consistent with the flow just logged on `day`.
+    /// Keep the period start (the engine's anchor) consistent with the flow just logged on `day`, so every
+    /// period-flow day keeps a start in the `periodRunMaxDays` before it (the window `parse` reads with).
     private func reconcilePeriodStart(around day: String, flow: MenstrualCycleModel.Flow?) async {
         let starts = await periodStarts()
         let maxRun = MenstrualCycleModel.periodRunMaxDays
@@ -271,22 +274,41 @@ extension Repository {
             if starts.contains(where: { s in
                 s <= day && (MenstrualCycleModel.days(from: s, to: day) ?? Int.max) < maxRun
             }) { return }
-            // A start just after this day belongs to the same period: move it back to here.
+            // A start just after this day belongs to the same period: move it back to here. A flow day of
+            // that period `maxRun` days or more from here then needs a start of its own.
             if let later = starts.first(where: { s in
                 s > day && (MenstrualCycleModel.days(from: day, to: s) ?? Int.max) < maxRun
             }) {
+                let logs = await cycleLogs()
                 await deletePeriodStart(day: later)
+                await logPeriodStart(day: day)
+                await restartPeriod(after: later, starts: starts.filter { $0 != later } + [day],
+                                    flow: logs.flow)
+            } else {
+                await logPeriodStart(day: day)
             }
-            await logPeriodStart(day: day)
         } else if flow == nil || flow == .noFlow, starts.contains(day) {
-            // The start day no longer bleeds: move the start to the next flow day of the run, or drop it.
+            // The start day no longer bleeds: move the start to the next period-flow day, or drop it.
             let logs = await cycleLogs()
-            let next = (1...(MenstrualCycleModel.periodRunGapTolerance + 1)).lazy
-                .compactMap { MenstrualCycleModel.shift(day, by: $0) }
-                .first { logs.flow[$0]?.isPeriod == true }
             await deletePeriodStart(day: day)
-            if let next { await logPeriodStart(day: next) }
+            await restartPeriod(after: day, starts: starts.filter { $0 != day }, flow: logs.flow)
         }
+    }
+
+    /// Once the start on `removed` is deleted, the first period-flow day of the `periodRunMaxDays` it covered
+    /// that none of the remaining `starts` covers becomes a start, as logging that day would make it one.
+    /// The later days `removed` covered fall inside the new start's period, so each of them keeps a start.
+    private func restartPeriod(after removed: String, starts: [String],
+                               flow: [String: MenstrualCycleModel.Flow]) async {
+        let maxRun = MenstrualCycleModel.periodRunMaxDays
+        let next = (1..<maxRun).lazy
+            .compactMap { MenstrualCycleModel.shift(removed, by: $0) }
+            .first { d in
+                flow[d]?.isPeriod == true && !starts.contains { s in
+                    s <= d && (MenstrualCycleModel.days(from: s, to: d) ?? Int.max) < maxRun
+                }
+            }
+        if let next { await logPeriodStart(day: next) }
     }
 }
 #endif
