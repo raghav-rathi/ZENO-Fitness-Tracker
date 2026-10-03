@@ -188,8 +188,10 @@ struct PulseActivityZoneRow: View {
     let row: ActivityZoneRow
     var showsShare = true
 
-    @ScaledMetric(relativeTo: .body) private var timeSize: CGFloat = 19
-    @ScaledMetric(relativeTo: .footnote) private var secondsSize: CGFloat = 13
+    /// The time's h:mm and its smaller ":ss": caps ≈1.45× the zone label's and ≈0.72 of each other, as h01,
+    /// f09 and hc82 measure them.
+    @ScaledMetric(relativeTo: .body) private var timeSize: CGFloat = 16
+    @ScaledMetric(relativeTo: .footnote) private var secondsSize: CGFloat = 12
 
     private var color: Color { PulseTheme.Zone.color(row.zone) }
 
@@ -241,10 +243,11 @@ struct PulseActivityZoneRow: View {
         }
         // Zero zones dim their content to 40% (§2.6.18); the card keeps its fill (hc82).
         .opacity(row.seconds > 0 ? 1 : 0.4)
-        // 66 pt with its bar and 44 pt without, as the 2026 captures measure (h01, 82).
+        // ≈65 pt with its bar (h01 66, f09 65.5, g16 64) and ≈43 pt without (hc82's empty card is 0.64 of
+        // its full one), the time's digits ≈13 pt under the card's top edge, as the 2026 captures draw them.
         .padding(.horizontal, 14)
-        .padding(.top, 9)
-        .padding(.bottom, 12)
+        .padding(.top, 10.5)
+        .padding(.bottom, 16)
         .frame(maxWidth: .infinity, alignment: .leading)
         .pulseCardBackground()
         .accessibilityElement(children: .ignore)
@@ -258,7 +261,7 @@ struct PulseActivityZoneRow: View {
         let clock = ActivityFormat.clock(seconds: row.seconds)
         let head = String(clock.dropLast(3))
         let tail = String(clock.suffix(3))
-        let big = min(timeSize, 19 * 1.5), small = min(secondsSize, 13 * 1.5)
+        let big = min(timeSize, 16 * 1.5), small = min(secondsSize, 12 * 1.5)
         return (Text(head).font(PulseType.numeral(big)).foregroundColor(PulseTheme.textPrimary)
                 + Text(tail).font(PulseType.numeral(small)).foregroundColor(PulseTheme.textSecondary))
     }
