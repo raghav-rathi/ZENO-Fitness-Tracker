@@ -10,12 +10,15 @@ import MarkdownUI
 // was asked from, the memories it used), as WHOOP's action receipts do.
 
 extension Theme {
-    /// Coach replies on the sheet, at `size` (the 17 pt style, scaled with Dynamic Type).
-    static func pulseCoach(size: CGFloat) -> Theme {
+    /// Coach replies on the sheet: the 17 pt `trendInsight` size as the BASE size. `Markdown` scales its base
+    /// with Dynamic Type itself (`@ScaledMetric(relativeTo: .body)`), so the theme hands it the unscaled size
+    /// and sizes everything else in `em` of it; a pre-scaled size would be scaled twice (29 pt instead of 23
+    /// at xxxLarge, one word a line at the accessibility sizes).
+    static var pulseCoach: Theme {
         Theme()
             .text {
                 ForegroundColor(PulseTheme.textPrimary.opacity(0.88))
-                FontSize(size)
+                FontSize(PulseTextStyle.trendInsight.spec.size)
             }
             .strong {
                 FontWeight(.semibold)
@@ -31,24 +34,26 @@ extension Theme {
                 FontFamilyVariant(.monospaced)
                 FontSize(.em(0.88))
             }
+            // Headings one point over the body (18 on 17), relative so they scale with it.
             .heading1 { configuration in
                 configuration.label
                     .markdownMargin(top: 14, bottom: 8)
-                    .markdownTextStyle { FontWeight(.semibold); FontSize(size + 1) }
+                    .markdownTextStyle { FontWeight(.semibold); FontSize(.em(18.0 / 17.0)) }
             }
             .heading2 { configuration in
                 configuration.label
                     .markdownMargin(top: 14, bottom: 8)
-                    .markdownTextStyle { FontWeight(.semibold); FontSize(size + 1) }
+                    .markdownTextStyle { FontWeight(.semibold); FontSize(.em(18.0 / 17.0)) }
             }
             .heading3 { configuration in
                 configuration.label
                     .markdownMargin(top: 12, bottom: 6)
-                    .markdownTextStyle { FontWeight(.semibold); FontSize(size) }
+                    .markdownTextStyle { FontWeight(.semibold) }
             }
+            // ≈29 pt from line to line at 17 pt, WHOOP's reply pitch (profile-community-2026/66).
             .paragraph { configuration in
                 configuration.label
-                    .relativeLineSpacing(.em(0.3))
+                    .relativeLineSpacing(.em(0.5))
                     .markdownMargin(top: 0, bottom: 14)
             }
             .listItem { configuration in
@@ -79,17 +84,16 @@ struct PulseCoachAssistantMessage: View {
     let isStreaming: Bool
     var onSaveToJournal: (() -> Void)?
 
-    @ScaledMetric(relativeTo: .body) private var size: CGFloat = PulseTextStyle.trendInsight.spec.size
     @State private var copied = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             Markdown(text)
-                .markdownTheme(.pulseCoach(size: size))
+                .markdownTheme(.pulseCoach)
                 .textSelection(.enabled)
                 .fixedSize(horizontal: false, vertical: true)
             if !isStreaming {
-                HStack(spacing: 22) {
+                HStack(spacing: 4) {
                     action(copied ? "checkmark" : "doc.on.clipboard", label: String(localized: "Copy")) {
                         UIPasteboard.general.string = text
                         copied = true
@@ -115,11 +119,13 @@ struct PulseCoachAssistantMessage: View {
             .accessibilityLabel(label)
     }
 
+    /// A 44 pt square hit area with the glyph at its leading edge, so the first icon lines up with the text.
     private func icon(_ symbol: String) -> some View {
         Image(systemName: symbol)
             .font(.system(size: 17, weight: .regular))
             .foregroundStyle(PulseTheme.textTertiary)
-            .frame(minWidth: 30, minHeight: PulseTheme.Layout.minTapTarget)
+            .frame(minWidth: PulseTheme.Layout.minTapTarget, minHeight: PulseTheme.Layout.minTapTarget,
+                   alignment: .leading)
             .contentShape(Rectangle())
     }
 }
@@ -144,7 +150,7 @@ struct PulseCoachUserMessage: View {
                     .textSelection(.enabled)
                     .padding(.horizontal, 15)
                     .padding(.vertical, 11)
-                    .background(RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .background(RoundedRectangle(cornerRadius: PulseCoachRadius.field, style: .continuous)
                         .fill(PulseTheme.Gradients.coachUserBubble))
                     .contextMenu {
                         Button {

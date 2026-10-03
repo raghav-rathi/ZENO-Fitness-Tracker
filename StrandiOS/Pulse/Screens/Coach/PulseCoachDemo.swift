@@ -18,14 +18,31 @@ enum PulseCoachDemo {
     static var opensLarge: Bool { args.contains("--coach-large") }
 
     /// `--coach-seed outlook`: open as if from Home's Daily Outlook pill, with the seed Home builds from the
-    /// demo store's own day (so a capture shows real numbers, never invented ones).
+    /// demo store's own day (so a capture shows real numbers, never invented ones). `--coach-seed cycle`: as
+    /// if from Menstrual Cycle Insights, with the header the page builds from the logs already in the store
+    /// (capture the cycle page with `--cycle-demo` first).
     @MainActor
     static func seedOverride(model: PulseModel) async -> String? {
-        guard let i = args.firstIndex(of: "--coach-seed"), i + 1 < args.count, args[i + 1] == "outlook" else { return nil }
-        for _ in 0..<40 where model.home == nil {
-            try? await Task.sleep(nanoseconds: 150_000_000)
+        guard let i = args.firstIndex(of: "--coach-seed"), i + 1 < args.count else { return nil }
+        switch args[i + 1] {
+        case "outlook":
+            for _ in 0..<40 where model.home == nil {
+                try? await Task.sleep(nanoseconds: 150_000_000)
+            }
+            return model.home.map { PulseHomeOutlook.seed($0, evening: false) }
+        case "cycle":
+            let today = Repository.localDayKey(Date())
+            let snapshot = await model.build(dayOffset: 0) { builder, request -> CycleInsightsSnapshot? in
+                var logs = PulseCycleLog.Logs()
+                if let store = await builder.repo.storeHandle() { logs = await PulseCycleLog.read(store) }
+                guard !logs.starts.isEmpty else { return nil }
+                return await builder.cycleInsights(request, inputs: PulseCycleInputs(
+                    today: today, logs: logs, engine: nil, mode: .menstruating, contraception: .none))
+            }
+            return snapshot?.header.accessibility
+        default:
+            return nil
         }
-        return model.home.map { PulseHomeOutlook.seed($0, evening: false) }
     }
 
     static var openTarget: String? {
@@ -53,7 +70,7 @@ enum PulseCoachDemo {
                        now: now.addingTimeInterval(-3_600))
         }
         let threads = PulseCoachThreadStore.shared
-        threads.loadIfNeeded()
+        await threads.loadIfNeeded()
         if threads.threads.isEmpty {
             let earlier = [
                 ChatMessage(role: .user, text: PulseCoachEnvelope.wrap("How should I taper before race day?", page: nil,

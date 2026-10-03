@@ -83,10 +83,9 @@ struct PulseMemoryDetailView: View {
     private func activeCard(_ item: PulseMemoryItem) -> some View {
         let active = Binding(get: { store.item(id)?.isActive ?? false }, set: { store.setActive(id, $0) })
         return HStack(alignment: .top, spacing: 14) {
-            Image(systemName: "lightbulb.max")
-                .font(.system(size: 22, weight: .regular))
+            // The bulb with a sparkle, the glyph on the sheet's Memory button (profile-community-2026/72).
+            PulseCoachMemoryGlyph(size: 22)
                 .foregroundStyle(item.isActive ? AnyShapeStyle(aiText) : AnyShapeStyle(PulseTheme.textTertiary))
-                .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 4) {
                 Text(item.isActive ? String(localized: "Active") : String(localized: "Inactive"))
                     .pulseText(.subsectionTitle)
@@ -103,7 +102,7 @@ struct PulseMemoryDetailView: View {
                 .tint(PulseTheme.Gradients.aiRing.stops.first?.color ?? PulseTheme.recoveryBlue)
         }
         .padding(18)
-        .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(PulseTheme.Gradients.pillRead))
+        .background(RoundedRectangle(cornerRadius: PulseCoachRadius.field, style: .continuous).fill(PulseTheme.Gradients.pillRead))
         .accessibilityElement(children: .combine)
     }
 
@@ -137,7 +136,7 @@ struct PulseMemoryDetailView: View {
                 }
             }
         }
-        .onAppear { PulseCoachThreadStore.shared.loadIfNeeded() }
+        .task { await PulseCoachThreadStore.shared.loadIfNeeded() }
     }
 }
 

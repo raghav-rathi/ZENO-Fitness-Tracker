@@ -55,7 +55,7 @@ struct PulseCoachHistoryView: View {
         .environment(\.colorScheme, .dark)
         .presentationDetents([.large])
         .presentationDragIndicator(.visible)
-        .onAppear { store.loadIfNeeded() }
+        .task { await store.loadIfNeeded() }
     }
 
     /// "HISTORY ✕", Pulse's sheet header.
@@ -125,13 +125,15 @@ struct PulseCoachHistoryView: View {
     }
 }
 
-/// The Coach sheet's ground: near-black with an indigo glow at the top (§2.1 "Coach sheet").
+/// The Coach sheet's ground: near-black with an indigo glow at the top (§2.1 "Coach sheet"). The glow keeps
+/// to the top-left corner (reviews/r123, profile-community-2026/66 put #282B4E there and a dark slate at the
+/// top centre).
 struct PulseCoachBackground: View {
     var body: some View {
         ZStack {
             LinearGradient(gradient: PulseTheme.Gradients.coachSheet, startPoint: .top, endPoint: .bottom)
-            RadialGradient(colors: [PulseTheme.Coach.halo.opacity(1.6), Color.clear], center: .topLeading,
-                           startRadius: 0, endRadius: 360)
+            RadialGradient(colors: [PulseTheme.Coach.halo, Color.clear], center: .topLeading,
+                           startRadius: 0, endRadius: 200)
         }
         .ignoresSafeArea()
         .accessibilityHidden(true)

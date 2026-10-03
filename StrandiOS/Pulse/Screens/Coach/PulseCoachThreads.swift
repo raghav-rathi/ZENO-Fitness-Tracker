@@ -14,7 +14,9 @@ import StrandAnalytics
 //     last turn while it streams, never forks or loses a thread;
 //   - the archive is synced when a reply completes and when the sheet closes, never per streamed token;
 //   - it lives in Application Support (complete-until-first-unlock protection) as one JSON file, on this
-//     iPhone only, and is deleted per thread (swipe) or all at once (AI Settings).
+//     iPhone only, and is deleted per thread (swipe) or all at once (AI Settings);
+//   - the file is read and decoded off the main actor, once; a change asked for before that read finishes
+//     waits for it, so a write never replaces the file with a partial archive.
 
 /// One archived conversation.
 struct PulseCoachThread: Codable, Identifiable, Equatable {
@@ -64,7 +66,9 @@ final class PulseCoachThreadStore {
 
     /// Newest first.
     private(set) var threads: [PulseCoachThread] = []
-    @ObservationIgnored private var loaded = false
+    /// The archive file has been read (an empty `threads` before that means "not read yet", not "none").
+    private(set) var isLoaded = false
+    @ObservationIgnored private var loadTask: Task<Void, Never>?
     /// The previous write, so writes land in order.
     @ObservationIgnored private var saveTask: Task<Void, Never>?
 
@@ -77,12 +81,36 @@ final class PulseCoachThreadStore {
         return base.appendingPathComponent("Pulse", isDirectory: true).appendingPathComponent("coach-threads.json")
     }
 
-    func loadIfNeeded() {
-        guard !loaded else { return }
-        loaded = true
-        guard let url = Self.fileURL, let data = try? Data(contentsOf: url),
-              let decoded = try? JSONDecoder().decode([PulseCoachThread].self, from: data) else { return }
-        threads = decoded.sorted { $0.updatedAt > $1.updatedAt }
+    /// Read the archive once, decoding it off the main actor.
+    func loadIfNeeded() async {
+        if isLoaded { return }
+        if let loadTask { return await loadTask.value }
+        let url = Self.fileURL
+        let task = Task { @MainActor in
+            let decoded = await Task.detached(priority: .userInitiated) { () -> [PulseCoachThread] in
+                guard let url, let data = try? Data(contentsOf: url),
+                      let threads = try? JSONDecoder().decode([PulseCoachThread].self, from: data) else { return [] }
+                return threads.sorted { $0.updatedAt > $1.updatedAt }
+            }.value
+            if !self.isLoaded {
+                self.threads = decoded
+                self.isLoaded = true
+            }
+        }
+        loadTask = task
+        await task.value
+    }
+
+    /// Run `change` once the archive has been read.
+    private func whenLoaded(_ change: @escaping @MainActor () -> Void) {
+        if isLoaded {
+            change()
+        } else {
+            Task { @MainActor in
+                await self.loadIfNeeded()
+                change()
+            }
+        }
     }
 
     /// The archived thread that holds any of `messages`.
@@ -97,11 +125,16 @@ final class PulseCoachThreadStore {
 
     /// File the live conversation: merged into the thread it continues, or a new thread.
     func sync(_ live: [ChatMessage], now: Date = Date()) {
-        loadIfNeeded()
         let usable = live.filter { !$0.text.isEmpty }
         guard !usable.isEmpty else { return }
         let incoming = usable.map { PulseCoachThread.Message(id: $0.id, role: $0.role.rawValue, text: $0.text) }
-        if let index = threads.firstIndex(where: { CoachConversationMerge.merge(archived: $0.messages, live: incoming) != nil }) {
+        whenLoaded { self.file(incoming, now: now) }
+    }
+
+    private func file(_ incoming: [PulseCoachThread.Message], now: Date) {
+        // The thread that shares a turn with the live conversation, found by id before anything is merged.
+        let ids = Set(incoming.map(\.id))
+        if let index = threads.firstIndex(where: { t in t.messages.contains { ids.contains($0.id) } }) {
             // Keeps what the engine has already dropped (its 40-turn cap), then takes the live turns.
             var thread = threads[index]
             guard let merged = CoachConversationMerge.merge(archived: thread.messages, live: incoming),
@@ -117,12 +150,16 @@ final class PulseCoachThreadStore {
     }
 
     func delete(_ id: UUID) {
-        threads.removeAll { $0.id == id }
-        save()
+        whenLoaded {
+            self.threads.removeAll { $0.id == id }
+            self.save()
+        }
     }
 
+    /// Delete every conversation. Needs nothing from the file, so it wins over a read still in flight.
     func deleteAll() {
         threads = []
+        isLoaded = true
         save()
     }
 

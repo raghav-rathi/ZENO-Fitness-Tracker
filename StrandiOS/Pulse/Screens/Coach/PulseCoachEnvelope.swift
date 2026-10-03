@@ -16,8 +16,15 @@ import StrandAnalytics
 // They ride the FIRST user message of a conversation in a fenced block, because that is the turn the engine
 // keeps at the head of every request it sends for the conversation (its sliding window always retains it).
 // The sheet never shows the block as text: it shows the question in the bubble and a "✧ Shared your Sleep
-// summary · Used 2 memories" receipt above it, so what was sent is still stated. Once the engine accepts
-// extra system context, `wrap` is the one place to retire (see the integration notes).
+// summary · Used 2 memories" receipt above it, so what was sent is still stated.
+//
+// The page summary carries the wearer's numbers (a cycle day and phase, a night's sleep), so it goes only
+// while AI Settings › USE MY DATA is on, the same consent the engine asks before it sends its own data
+// summary; with it off the block carries the words and any memories only, and the sheet says the page was
+// not shared. The receipt is read back from the stored block, so it names only what was attached.
+//
+// `AICoachEngine` has no hook for extra system context today. When it gains one, this block should move
+// there and `wrap` is the one place to change.
 
 enum PulseCoachEnvelope {
     /// How the engine's data names map onto the names the wearer sees (the block's "Words" line).
@@ -57,7 +64,8 @@ enum PulseCoachEnvelope {
 
     private static let memorySeparator = " | "
 
-    /// "✧ Shared your Sleep summary · Used 2 memories", or nil when nothing but the words went along.
+    /// "✧ Shared your Sleep summary · Used 2 memories", or nil when nothing but the words went along. Read
+    /// from the stored block, so it names only what was attached.
     static func receipt(_ parsed: Parsed) -> String? {
         var parts: [String] = []
         if let page = parsed.page { parts.append(String(localized: "Shared \(pageLabel(page))")) }

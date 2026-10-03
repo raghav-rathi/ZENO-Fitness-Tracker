@@ -3,8 +3,9 @@ import SwiftUI
 
 // MARK: - Composer (WHOOP_UI_SPEC §3.16 "Composer"; profile-community-2026/66, 29, reviews/r123)
 //
-// A 44 pt "+" square (a new conversation) and the field: 48 pt, radius 14, the 1.5 pt AI input gradient
-// border, "Ask ZENO anything", and inside it at the right the mic, or ↑ once there is something to send.
+// A 44 pt "+" square (a new conversation), 16 pt from the field: 48 pt, radius 14, the 1.5 pt AI input
+// gradient border, "Ask ZENO anything", and inside it at the right the mic, or ↑ once there is something to
+// send (profile-community-2026/66: "+" at x = 24, the field from x ≈ 84 to 20 pt from the right edge).
 // Dictation reuses the classic Coach's on-device `CoachVoiceInput` (no audio leaves the iPhone; permission is
 // asked on the first tap, never on open). While it listens, the field turns into WHOOP's "✕ ······ ✓" bar:
 // ✕ drops what was heard, ✓ keeps it in the draft.
@@ -25,14 +26,15 @@ struct PulseCoachComposer: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            HStack(alignment: .bottom, spacing: 12) {
+            HStack(alignment: .bottom, spacing: 16) {
                 if !listening {
                     Button(action: onNewChat) {
                         Image(systemName: "plus")
                             .font(.system(size: 20, weight: .regular))
                             .foregroundStyle(PulseTheme.textPrimary)
-                            .frame(width: 48, height: 48)
-                            .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(PulseTheme.nested))
+                            .frame(width: PulseTheme.Layout.minTapTarget, height: PulseTheme.Layout.minTapTarget)
+                            .background(RoundedRectangle(cornerRadius: PulseCoachRadius.field, style: .continuous).fill(PulseTheme.nested))
+                            .padding(.bottom, 2)
                     }
                     .buttonStyle(PulsePressStyle())
                     .accessibilityLabel(String(localized: "New conversation"))
@@ -52,7 +54,7 @@ struct PulseCoachComposer: View {
     }
 
     private var field: some View {
-        let shape = RoundedRectangle(cornerRadius: 14, style: .continuous)
+        let shape = RoundedRectangle(cornerRadius: PulseCoachRadius.field, style: .continuous)
         return HStack(alignment: .bottom, spacing: 8) {
             TextField(String(localized: "Ask ZENO anything"), text: $draft, axis: .vertical)
                 .pulseText(.subtitle)
@@ -68,7 +70,7 @@ struct PulseCoachComposer: View {
                     Image(systemName: "mic")
                         .font(.system(size: 19, weight: .regular))
                         .foregroundStyle(PulseTheme.Coach.composerMic)
-                        .frame(width: 36, height: 46)
+                        .frame(width: PulseTheme.Layout.minTapTarget, height: 46)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(PulsePressStyle())
@@ -82,7 +84,7 @@ struct PulseCoachComposer: View {
                         .foregroundStyle(Color.black)
                         .frame(width: 32, height: 32)
                         .background(Circle().fill(isSending ? PulseTheme.textDisabled : Color.white))
-                        .frame(width: 36, height: 46)
+                        .frame(width: PulseTheme.Layout.minTapTarget, height: 46)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(PulsePressStyle())
@@ -91,7 +93,7 @@ struct PulseCoachComposer: View {
             }
         }
         .padding(.leading, 16)
-        .padding(.trailing, 6)
+        .padding(.trailing, 2)
         .frame(minHeight: 48)
         .background(shape.fill(PulseTheme.Coach.composerFill))
         .overlay(shape.strokeBorder(LinearGradient(gradient: PulseTheme.Gradients.aiInputBorder,
@@ -103,7 +105,7 @@ struct PulseCoachComposer: View {
 
     /// "✕ ········· ✓" while dictating, with what has been heard so far.
     private var listeningBar: some View {
-        let shape = RoundedRectangle(cornerRadius: 14, style: .continuous)
+        let shape = RoundedRectangle(cornerRadius: PulseCoachRadius.field, style: .continuous)
         return HStack(spacing: 10) {
             Button(action: cancelListening) {
                 Image(systemName: "xmark")
@@ -208,7 +210,8 @@ struct PulseCoachDottedRule: View {
     }
 }
 
-// MARK: - Suggestion chips (§3.16: white capsules, h 36, black 15 pt text, scrolling sideways)
+// MARK: - Suggestion chips (§3.16: white capsules scrolling sideways; reviews/r123 and
+// profile-community-2026/66 measure 30-32 pt tall with 11-13 pt text, so 32 pt and 13 pt Medium)
 
 struct PulseCoachChips: View {
     let prompts: [String]
@@ -221,12 +224,15 @@ struct PulseCoachChips: View {
                 ForEach(prompts, id: \.self) { prompt in
                     Button { onPick(prompt) } label: {
                         Text(prompt)
-                            .pulseText(.subtitle)
+                            .fontWeight(.medium)
+                            .pulseText(.rowSubline)
                             .foregroundStyle(Color.black)
                             .lineLimit(1)
-                            .padding(.horizontal, 16)
-                            .frame(minHeight: 38)
+                            .padding(.horizontal, 14)
+                            .frame(minHeight: 32)
                             .background(Capsule(style: .continuous).fill(Color.white))
+                            .padding(.vertical, 6)
+                            .contentShape(Rectangle())
                     }
                     .buttonStyle(PulsePressStyle())
                     .disabled(disabled)

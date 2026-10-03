@@ -19,6 +19,12 @@ enum PulseCoachDestination: Hashable {
 /// and the composer ("+" for a new conversation, "Ask ZENO anything", dictation). With no provider set up it
 /// shows the setup form instead.
 ///
+/// Opened from a page, the page's summary leads in a card above the first question. It goes to the provider
+/// with that question only while AI Settings › USE MY DATA is on; with it off the card says it was not
+/// shared and the question goes alone. From Home's Daily Outlook pill the card is the §3.15 outlook
+/// (`PulseCoachOutlook`), or, once the scheduled morning brief exists for today, that brief as the first
+/// assistant turn.
+///
 /// It drives the EXISTING `AICoachEngine` (its providers, keys, data summary, persistence, day boundary and
 /// scheduled brief); everything Pulse adds sits beside it: the conversation archive behind the history list
 /// (`PulseCoachThreadStore`), My Memory (`PulseMemoryStore`) and the first message's context block that
@@ -31,14 +37,12 @@ struct PulseCoachSheet: View {
 
     @EnvironmentObject private var coach: AICoachEngine
     @EnvironmentObject private var repo: Repository
-    #if DEBUG
-    /// Captures only (`--coach-seed outlook`); Release never reads the model here.
+    /// Home's snapshot, for the Daily Outlook card (the same figures Home shows).
     @Environment(PulseModel.self) private var model
-    #endif
     @Environment(\.dismiss) private var dismiss
-    /// The shell's debounced answer to "is a provider set up?", for the first frame.
+    /// The shell's Coach availability: its debounced "is a provider set up?" for the first frame, and `.off`
+    /// when the Coach is switched off (the sheet closes).
     @Environment(\.pulseCoach) private var coachContext
-    @AppStorage("noop.coachEnabled") private var coachEnabled = true
 
     @State private var path: [PulseCoachDestination] = []
     /// The detent the wearer dragged to; nil until then (medium for the chat, large for setup).
@@ -51,8 +55,13 @@ struct PulseCoachSheet: View {
     /// Opened from a page and nothing sent yet: the page's summary leads, and the first question starts a
     /// conversation of its own.
     @State private var seedPending = false
-    /// `seed`, or in DEBUG captures the `--coach-seed` stand-in.
+    /// `seed` (Home's outlook rebuilt as `PulseCoachOutlook`), or in DEBUG captures the `--coach-seed` stand-in.
     @State private var seedText: String?
+    /// A page summary the first question was asked from but NOT sent (Use my data was off), kept on screen
+    /// above the conversation it started, marked as not shared.
+    @State private var unsharedSeed: String?
+    /// The first turn of the conversation `unsharedSeed` belongs to, once the engine has it.
+    @State private var unsharedSeedAnchor: UUID?
     @State private var showsHistory = false
     @State private var remember: PulseCoachRemember?
     @State private var atBottom = true
@@ -90,10 +99,12 @@ struct PulseCoachSheet: View {
         .presentationDetents(configured ? [.medium, .large] : [.large], selection: detent)
         .presentationDragIndicator(.visible)
         .presentationBackground { PulseCoachBackground() }
-        .presentationCornerRadius(24)
+        .presentationCornerRadius(PulseCoachRadius.sheet)
         .environment(\.colorScheme, .dark)
         .onChange(of: path) { _, newPath in if !newPath.isEmpty { detentChoice = .large } }
-        .onChange(of: coachEnabled) { _, on in if !on { dismiss() } }
+        .onChange(of: coachContext.availability) { _, availability in
+            if availability == .off { dismiss() }
+        }
         .onChange(of: draft) { _, value in UserDefaults.standard.set(value, forKey: Self.draftKey) }
         .task { await open() }
         .task(id: coach.pendingPrompt) { await sendPendingPrompt() }
@@ -122,11 +133,15 @@ struct PulseCoachSheet: View {
                 transcript
                 chips
                 // r123: the chips sit ≈61 pt above the composer, whose bottom edge dips ≈8 pt into the
-                // home-indicator inset (its centre 50 pt above the screen edge).
+                // home-indicator inset (its centre 50 pt above the screen edge); pc66: "+" from x = 24, the
+                // field to 20 pt from the right edge.
                 PulseCoachComposer(draft: $draft, isSending: coach.sending, onSend: { send(draft) },
                                    onNewChat: newConversation)
-                    .padding(.horizontal, PulseTheme.Layout.pageMargin)
-                    .padding(.top, 17)
+                    .padding(.leading, 24)
+                    .padding(.trailing, 20)
+                    // The chips' 44 pt hit area ends 6 pt under each 32 pt chip: 14 + 22 puts the chip's centre
+                    // 36 pt above the field, 60 pt above its centre.
+                    .padding(.top, 14)
                     .padding(.bottom, keyboardShown ? 8 : -8)
             } else {
                 setup
@@ -154,20 +169,22 @@ struct PulseCoachSheet: View {
         }
     }
 
-    /// The version pill (avatar + the model answering), the history clock and "Memory 💡".
+    /// The version pill (avatar + the model answering), the history clock and "Memory 💡". The labels are
+    /// 13 pt Semibold (the 13 pt sub-line style, set Semibold), capped at accessibility2 so the row still fits.
     private var topBar: some View {
         HStack(spacing: 6) {
             Button { path.append(.settings) } label: {
                 HStack(spacing: 8) {
                     PulseCoachAvatar(size: 24)
                     Text(configured ? Self.shortModel(coach.model) : String(localized: "Set up"))
-                        .font(.system(size: 13, weight: .semibold))
+                        .fontWeight(.semibold)
+                        .pulseText(.rowSubline)
                         .foregroundStyle(PulseTheme.textSecondary)
                         .lineLimit(1)
                 }
                 .padding(.leading, 4)
                 .padding(.trailing, 12)
-                .frame(height: 32)
+                .frame(minHeight: 32)
                 .background(Capsule(style: .continuous).fill(PulseTheme.card))
                 .frame(minHeight: PulseTheme.Layout.minTapTarget)
                 .contentShape(Rectangle())
@@ -180,7 +197,7 @@ struct PulseCoachSheet: View {
                 Image(systemName: "clock.arrow.circlepath")
                     .font(.system(size: 18, weight: .regular))
                     .foregroundStyle(PulseTheme.textPrimary)
-                    .frame(width: 40, height: PulseTheme.Layout.minTapTarget)
+                    .frame(width: PulseTheme.Layout.minTapTarget, height: PulseTheme.Layout.minTapTarget)
                     .contentShape(Rectangle())
             }
             .buttonStyle(PulsePressStyle())
@@ -188,15 +205,9 @@ struct PulseCoachSheet: View {
             Button { path.append(.memory) } label: {
                 HStack(spacing: 8) {
                     Text(String(localized: "Memory"))
-                        .font(.system(size: 14, weight: .semibold))
-                    // A bulb with a sparkle at its shoulder (WHOOP's glyph, drawn from SF Symbols).
-                    Image(systemName: "lightbulb")
-                        .font(.system(size: 19, weight: .light))
-                        .overlay(alignment: .topTrailing) {
-                            Image(systemName: "sparkle")
-                                .font(.system(size: 9, weight: .bold))
-                                .offset(x: 6, y: -3)
-                        }
+                        .fontWeight(.semibold)
+                        .pulseText(.rowSubline)
+                    PulseCoachMemoryGlyph()
                         .padding(.trailing, 4)
                 }
                 .foregroundStyle(PulseTheme.textPrimary)
@@ -206,14 +217,15 @@ struct PulseCoachSheet: View {
             .buttonStyle(PulsePressStyle())
             .accessibilityLabel(String(localized: "My Memory"))
         }
+        .dynamicTypeSize(...DynamicTypeSize.accessibility2)
     }
 
     private var transcript: some View {
         ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 24) {
-                    if let page = leadingPage {
-                        seedCard(page)
+                    if let lead = leadingPage {
+                        seedCard(lead)
                     } else if coach.messages.isEmpty {
                         emptyState
                     }
@@ -237,7 +249,8 @@ struct PulseCoachSheet: View {
                         .onAppear { atBottom = true }
                         .onDisappear { atBottom = false }
                 }
-                .padding(.horizontal, 20)
+                // Replies start 16 pt from the edge (profile-community-2026/66).
+                .padding(.horizontal, PulseTheme.Layout.pageMargin)
                 .padding(.top, 18)
                 .padding(.bottom, 8)
             }
@@ -300,16 +313,27 @@ struct PulseCoachSheet: View {
         .padding(.top, 8)
     }
 
-    /// The page the conversation was opened from, in the coach's voice, above its first question.
-    private func seedCard(_ page: String) -> some View {
+    /// The page the conversation was opened from, in the coach's voice, above its first question, with a
+    /// line saying whether it goes (or went) to the provider.
+    private func seedCard(_ lead: LeadingPage) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 8) {
                 PulseCoachAvatar(size: 22)
-                Text(String(localized: "From \(PulseCoachEnvelope.pageLabel(page))"))
+                Text(String(localized: "From \(PulseCoachEnvelope.pageLabel(lead.text))"))
                     .pulseText(.rowSubline)
                     .foregroundStyle(PulseTheme.textTertiary)
             }
-            PulseCoachAssistantMessage(text: page, isStreaming: true)
+            PulseCoachAssistantMessage(text: PulseCoachOutlook.markdown(lead.text) ?? lead.text, isStreaming: true)
+            switch lead.sharing {
+            case .pending where coach.dataConsent:
+                PulseCoachSeedNote(symbol: "sparkle", text: String(localized: "Goes with your first question"),
+                                   highlighted: true)
+            case .pending, .notShared:
+                PulseCoachSeedNote(symbol: "eye.slash", text: String(localized: "Not shared: Use my data is off"),
+                                   highlighted: false)
+            case .shared:
+                EmptyView()
+            }
         }
         .accessibilityElement(children: .combine)
     }
@@ -371,12 +395,25 @@ struct PulseCoachSheet: View {
 
     // MARK: State
 
-    /// The page summary leading the conversation: the one handed over and not yet asked about, or the one the
-    /// current conversation was started from.
-    private var leadingPage: String? {
-        if seedPending, let seedText, !seedText.isEmpty { return seedText }
-        guard let first = coach.messages.first(where: { $0.role == .user }) else { return nil }
-        return PulseCoachEnvelope.parse(first.text).page
+    /// A page summary leading the conversation, and whether it went to the provider.
+    struct LeadingPage {
+        enum Sharing { case pending, shared, notShared }
+        let text: String
+        let sharing: Sharing
+    }
+
+    /// The page summary leading the conversation: the one handed over and not yet asked about, the one the
+    /// current conversation's first question carried, or the one it was asked from without it.
+    private var leadingPage: LeadingPage? {
+        if seedPending, let seedText, !seedText.isEmpty { return LeadingPage(text: seedText, sharing: .pending) }
+        if let first = coach.messages.first(where: { $0.role == .user }),
+           let page = PulseCoachEnvelope.parse(first.text).page {
+            return LeadingPage(text: page, sharing: .shared)
+        }
+        if let unsharedSeed, unsharedSeedAnchor == nil || coach.messages.first?.id == unsharedSeedAnchor {
+            return LeadingPage(text: unsharedSeed, sharing: .notShared)
+        }
+        return nil
     }
 
     private var showsThinking: Bool {
@@ -405,24 +442,38 @@ struct PulseCoachSheet: View {
 
     /// What the classic screen does on open, minus asking for a brief: restore today's conversation, retire
     /// one from an earlier day, surface a brief the scheduled notification already generated, keep the
-    /// schedule armed, and file the conversation in the history.
+    /// schedule armed, and file the conversation in the history. From the Daily Outlook pill, an unread brief
+    /// starts a conversation of its own (the one on screen goes to the history) and leads it; with no brief
+    /// the outlook card leads.
     private func open() async {
         guard !opened else { return }
         opened = true
-        threads.loadIfNeeded()
+        await threads.loadIfNeeded()
         PulseMemoryStore.shared.loadIfNeeded()
         await coach.loadPersistedMessagesIfNeeded()
         coach.retireStaleConversationIfNeeded()
+        var page = seed
+        #if DEBUG
+        if let stand = await PulseCoachDemo.seedOverride(model: model) { page = stand }
+        #endif
+        let kind = page.map(PulseCoachEnvelope.PageKind.init)
+        let daySummary = kind?.isDaySummary == true
+        if daySummary, configured, !coach.messages.isEmpty, !hasBrief, CoachBriefScheduler.hasUnconsumedBrief {
+            threads.sync(coach.messages)
+            coach.clearConversation()
+        }
         if coach.messages.isEmpty, let stored = CoachBriefScheduler.consumeStoredBrief() {
             coach.surfaceScheduledBrief(stored)
         }
         CoachBriefScheduler.activateIfEnabled { await coach.generateBrief() }
         threads.sync(coach.messages)
-        seedText = seed
-        #if DEBUG
-        if let stand = await PulseCoachDemo.seedOverride(model: model) { seedText = stand }
-        #endif
-        seedPending = !(seedText ?? "").isEmpty
+        if daySummary, let home = model.home, home.day.isToday {
+            // Home's outlook, laid out as §3.15 from the same snapshot Home draws.
+            page = PulseCoachOutlook.page(home, evening: kind == .review)
+        }
+        seedText = page
+        // Today's brief IS the outlook: it leads the conversation in place of the template.
+        seedPending = !(seedText ?? "").isEmpty && !(daySummary && configured && hasBrief)
         #if DEBUG
         if PulseCoachDemo.requested {
             await PulseCoachDemo.prepareIfRequested(coach: coach, repo: repo)
@@ -439,13 +490,27 @@ struct PulseCoachSheet: View {
         #endif
     }
 
+    /// A brief the engine wrote (it opens with "Today's brief") is in the conversation.
+    private var hasBrief: Bool {
+        coach.messages.contains { $0.role == .assistant && $0.text.hasPrefix("Today's brief") }
+    }
+
     private func send(_ text: String) {
         let question = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !question.isEmpty, !coach.sending, configured else { return }
         var page: String?
+        var keptLocal = false
         if seedPending {
             // A question asked from a page starts its own conversation; the one on screen stays in history.
-            page = seedText
+            // The page's summary holds the wearer's numbers, so it goes only with Use my data on (the consent
+            // the engine asks before its own data summary); otherwise it stays on screen, marked not shared.
+            if coach.dataConsent {
+                page = seedText
+            } else {
+                unsharedSeed = seedText
+                unsharedSeedAnchor = nil
+                keptLocal = true
+            }
             seedPending = false
             threads.sync(coach.messages)
             if !coach.messages.isEmpty { coach.clearConversation() }
@@ -459,6 +524,7 @@ struct PulseCoachSheet: View {
         draft = ""
         Task {
             await coach.send(payload)
+            if keptLocal, unsharedSeed != nil { unsharedSeedAnchor = coach.messages.first?.id }
             threads.sync(coach.messages)
         }
     }
@@ -476,6 +542,7 @@ struct PulseCoachSheet: View {
         threads.sync(coach.messages)
         coach.clearConversation()
         seedPending = false
+        unsharedSeed = nil
         draft = ""
     }
 
@@ -494,12 +561,16 @@ struct PulseCoachSheet: View {
         }
         coach.messages = turns
         seedPending = false
+        unsharedSeed = nil
     }
 
     /// After the history sheet: if the conversation on screen was deleted there, end it here too.
     private func dropDeletedConversation() {
-        guard !coach.messages.isEmpty, threads.thread(containing: coach.messages) == nil else { return }
+        guard threads.isLoaded, !coach.messages.isEmpty, threads.thread(containing: coach.messages) == nil else {
+            return
+        }
         coach.clearConversation()
+        unsharedSeed = nil
     }
 
     /// The classic "Save to Journal": the reply as today's note under "Coach advice".
@@ -513,11 +584,56 @@ struct PulseCoachSheet: View {
 
     private func flash(_ text: String) {
         withAnimation(PulseMotion.crossFade) { toast = text }
+        AccessibilityNotification.Announcement(text).post()
         Task {
             try? await Task.sleep(nanoseconds: 2_200_000_000)
             withAnimation(PulseMotion.crossFade) { toast = nil }
         }
     }
+}
+
+/// The line under a page summary's card: "✧ Goes with your first question" or "Not shared: Use my data is off".
+struct PulseCoachSeedNote: View {
+    let symbol: String
+    let text: String
+    let highlighted: Bool
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Image(systemName: symbol)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(highlighted ? AnyShapeStyle(PulseTheme.Gradients.aiArrow)
+                                             : AnyShapeStyle(PulseTheme.textTertiary))
+                .accessibilityHidden(true)
+            Text(text)
+                .pulseText(.rowSubline)
+                .foregroundStyle(highlighted ? PulseTheme.textSecondary : PulseTheme.textTertiary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+}
+
+/// WHOOP's Memory glyph, drawn from SF Symbols: a bulb with a sparkle at its shoulder.
+struct PulseCoachMemoryGlyph: View {
+    var size: CGFloat = 19
+
+    var body: some View {
+        Image(systemName: "lightbulb")
+            .font(.system(size: size, weight: .light))
+            .overlay(alignment: .topTrailing) {
+                Image(systemName: "sparkle")
+                    .font(.system(size: size * 0.47, weight: .bold))
+                    .offset(x: size * 0.32, y: -size * 0.16)
+            }
+            .accessibilityHidden(true)
+    }
+}
+
+/// The Coach surfaces' two radii, kept in one place until the theme carries them (§3.16: the sheet's top
+/// corners 24; the composer field, "+" square, the wearer's bubble and Memory Detail's Active card 14).
+enum PulseCoachRadius {
+    static let sheet: CGFloat = 24
+    static let field: CGFloat = 14
 }
 
 /// "Add to My Memory" on one of the wearer's messages.
