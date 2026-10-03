@@ -12,6 +12,8 @@ struct PulseMonitorTiles: View {
     /// Today's graded vitals (Home's own facts): WITHIN RANGE, ELEVATED / LOW, VERY ELEVATED / VERY LOW or
     /// OUT OF RANGE. nil only before they first build; the tile then reads the snapshot's count.
     let grades: PulseMonitorGrades?
+    /// Today's stress (Home's own facts); nil while they build, and the tile reads "Pending".
+    let stress: PulseStressSummary?
     /// When the stress reading was last updated, resolved once for this tile and the dashboard's card.
     let stressUpdated: String?
 
@@ -79,7 +81,7 @@ struct PulseMonitorTiles: View {
     /// The Stress Monitor's level as its gauge prints it, the reading's time under the word, or "Daily
     /// score" when the figure is the day's score rather than a reading.
     private var stressStatus: PulseMonitorTile.Status {
-        guard let shown = home.stress?.shown else { return .pending }
+        guard let shown = stress?.shown else { return .pending }
         let level = PulseTheme.Stress.Level(value: shown)
         return .init(badge: .value(PulseFormat.oneDecimal(shown)), tint: level.tint, word: PulseHomeStress.word(level),
                      wordColor: level.color, detail: stressUpdated ?? String(localized: "Daily score"))

@@ -117,9 +117,12 @@ struct PulseHomeView: View {
     }
 
     /// Build Home's own facts for the snapshot on screen (off the main actor), keeping the last ones when
-    /// a newer refresh or another day superseded the build.
+    /// a newer refresh or another day superseded the build. A refresh starts here before its own
+    /// HomeSnapshot lands; that pass waits for it (`homeVersion` brings it back), so the extras, the day's
+    /// stress scoring included, never compete with the dials' build or describe the previous refresh's
+    /// figures.
     private func loadExtras() async {
-        guard let home = model.home, home.day.offset == model.dayOffset else { return }
+        guard let home = model.home, home.day.offset == model.dayOffset, home.seq == model.seq else { return }
         let items = dashboardItems
         if let built = await model.build(dayOffset: home.day.offset, { builder, request in
             await builder.homeExtras(request, home: home, items: items)
@@ -203,8 +206,8 @@ struct PulseHomeContent: View {
 struct PulseHomeSections: View {
     let home: HomeSnapshot
     /// Home's own facts. While a newly selected day's are still building these are the previous day's:
-    /// only the dashboard rows read them then, dimmed (`extrasStale`); everything day-specific reads
-    /// `current`.
+    /// only My Dashboard reads them then (its rows and the STRESS MONITOR card), dimmed (`extrasStale`);
+    /// everything day-specific reads `current`.
     let extras: HomeExtrasSnapshot?
     /// The last extras built for today: back on today they stand in until today's next build lands.
     let todayExtras: HomeExtrasSnapshot?
@@ -232,8 +235,10 @@ struct PulseHomeSections: View {
     private var isNewMember: Bool { isToday && home.scoredDays == 0 }
 
     var body: some View {
-        // The stress reading's time, resolved once for the tile and the card.
-        let stressUpdated = PulseHomeStress.updated(home.stress)
+        // The day's stress comes with Home's extras. While a newly shown day's extras build, the dashboard
+        // card keeps the last day's, dimmed as the rows are, and the tile waits. The reading's time is
+        // resolved once for the tile and the card.
+        let stressUpdated = PulseHomeStress.updated((current ?? extras)?.stress)
         VStack(alignment: .leading, spacing: 0) {
             // The new member's Home goes straight from the dials to Get Started (onboarding/31a,
             // completeness-critic/24): no coaching card and no monitor tiles yet.
@@ -241,10 +246,10 @@ struct PulseHomeSections: View {
                 if let base = current?.coaching {
                     // The stack, when a card is due, then the tiles 22 pt under its peek.
                     PulseCoachingStackHost(base: base, home: home, grades: PulseHomeDebug.monitor ?? current?.monitor,
-                                           stressUpdated: stressUpdated, profile: profile)
+                                           stress: current?.stress, stressUpdated: stressUpdated, profile: profile)
                 } else {
                     PulseMonitorTiles(home: home, grades: PulseHomeDebug.monitor ?? current?.monitor,
-                                      stressUpdated: stressUpdated)
+                                      stress: current?.stress, stressUpdated: stressUpdated)
                         .padding(.top, PulseHomeSpacing.tilesTop)
                         .id("pulse.monitors")
                 }

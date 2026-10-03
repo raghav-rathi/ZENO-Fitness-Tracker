@@ -40,7 +40,7 @@ enum PulseDashboardViews {
                     ForEach(items) { item in
                         switch item {
                         case .stressMonitor:
-                            StressCard(home: home, updated: stressUpdated)
+                            StressCard(home: home, stress: extras?.stress, updated: stressUpdated, stale: extrasStale)
                                 .id("pulse.stress")
                         case .strainRecovery:
                             StrainRecoveryCard(home: home)
@@ -103,8 +103,13 @@ enum PulseDashboardViews {
     /// the 24 hours it covers (150 pt): ending now today, at a past day's last reading.
     struct StressCard: View {
         let home: HomeSnapshot
+        /// The day's stress from Home's extras (`HomeExtrasSnapshot.stress`).
+        let stress: PulseStressSummary?
         /// When the reading was last updated (`PulseHomeStress.updated`, shared with the tile).
         let updated: String?
+        /// `stress` is still the previous day's while this day's extras build: dimmed like the rows, and
+        /// drawn without this day's sleep and activities.
+        var stale = false
 
         var body: some View {
             PulseLink(PulseRoute.stressMonitor.forExistingEntryPoint) {
@@ -116,14 +121,14 @@ enum PulseDashboardViews {
                                 Text(String(localized: "Last updated \(updated)"))
                                     .pulseText(.secondary)
                                     .foregroundStyle(PulseTheme.textSecondary)
-                            } else if home.stress?.shown != nil {
+                            } else if stress?.shown != nil {
                                 // The Stress Monitor's own words for a figure that is not a reading.
                                 Text(String(localized: "Daily score from your vitals"))
                                     .pulseText(.secondary)
                                     .foregroundStyle(PulseTheme.textSecondary)
                             }
                             Spacer(minLength: 8)
-                            if let shown = home.stress?.shown {
+                            if let shown = stress?.shown {
                                 let level = PulseTheme.Stress.Level(value: shown)
                                 Text(PulseHomeStress.word(level))
                                     .pulseText(.label)
@@ -133,19 +138,22 @@ enum PulseDashboardViews {
                                     .foregroundStyle(PulseTheme.textPrimary)
                             }
                         }
-                        PulseStressChart(points: points, periods: periods, now: home.stress?.chartEnd,
-                                         currentLevel: home.stress?.shown, xLabels: xLabels)
+                        PulseStressChart(points: points, periods: periods, now: stress?.chartEnd,
+                                         currentLevel: stress?.shown, xLabels: xLabels)
                     }
                 }
                 .contentShape(Rectangle())
+                .opacity(stale ? 0.45 : 1)
             }
             .buttonStyle(PulsePressStyle())
+            .disabled(stale)
         }
 
-        private var points: [PulseTimeValue] { home.stress?.points ?? [] }
+        private var points: [PulseTimeValue] { stress?.points ?? [] }
 
         private var periods: [PulseChartPeriod] {
             var out: [PulseChartPeriod] = []
+            guard !stale else { return out }
             if let night = home.lastNight {
                 out.append(PulseChartPeriod(id: "sleep", start: night.onset, end: night.wake, kind: .sleep,
                                             symbol: "moon.fill"))
@@ -162,7 +170,7 @@ enum PulseDashboardViews {
         /// The chart's x labels: four times across the span it draws (its points, periods and end), the last
         /// one where the curve ends.
         private var xLabels: [String] {
-            let end = home.stress?.chartEnd.map { [$0] } ?? []
+            let end = stress?.chartEnd.map { [$0] } ?? []
             let dates = points.map(\.date) + periods.flatMap { [$0.start, $0.end] } + end
             guard let lo = dates.min(), let hi = dates.max(), hi > lo else { return [] }
             let step = hi.timeIntervalSince(lo) / 3

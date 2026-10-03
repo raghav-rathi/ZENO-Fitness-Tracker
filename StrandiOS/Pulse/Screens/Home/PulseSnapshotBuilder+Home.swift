@@ -9,9 +9,9 @@ import WhoopStore
 extension PulseSnapshotBuilder {
 
     /// Home's own facts for the request's day: the dashboard rows in `items`, the coaching rules' inputs,
-    /// the Daily Outlook's facts, the Health Monitor tile's grades and the Get Started flags. `home` is the
-    /// HomeSnapshot for the same day; every figure the two share is read from it (the dials, the stats,
-    /// tonight's plan), never re-derived.
+    /// the Daily Outlook's facts, the Health Monitor tile's grades, the Get Started flags and the day's
+    /// stress. `home` is the HomeSnapshot for the same day; every figure the two share is read from it (the
+    /// dials, the stats, tonight's plan), never re-derived.
     func homeExtras(_ r: PulseRequest, home: HomeSnapshot, items: [PulseDashboardItem]) async -> HomeExtrasSnapshot? {
         begin(r.seq)
         guard home.day == r.day else { return nil }
@@ -41,9 +41,11 @@ extension PulseSnapshotBuilder {
         let outlook = r.day.isToday ? await outlookFacts(r, home: home, zones: zones) : nil
         let monitor = r.day.isToday ? monitorGrades(r) : nil
         let start = r.day.isToday ? await getStartedFacts(r, home: home, rows: rows) : .pastDay
+        // Today's STRESS MONITOR tile, and the dashboard's card on any day it is on.
+        let stress = r.day.isToday || items.contains(.stressMonitor) ? await stressSummary(r) : nil
         guard isCurrent(r) else { return nil }
         return HomeExtrasSnapshot(seq: r.seq, day: r.day, dashboard: dashboard, coaching: coaching,
-                                  outlook: outlook, monitor: monitor, start: start)
+                                  outlook: outlook, monitor: monitor, start: start, stress: stress)
     }
 
     /// Logged period starts (oldest first) for the Menstrual card's dot strip. Not cached: logging a

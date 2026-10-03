@@ -179,6 +179,7 @@ struct PulseCoachingStackHost: View {
     let home: HomeSnapshot
     /// The monitor tiles' inputs (see `PulseMonitorTiles`).
     let grades: PulseMonitorGrades?
+    let stress: PulseStressSummary?
     let stressUpdated: String?
     /// Today's profile figures: the snapshot Home's unlock modal is evaluated with, so a milestone card
     /// and the modal read one source.
@@ -201,7 +202,7 @@ struct PulseCoachingStackHost: View {
     }
 
     var body: some View {
-        PulseCoachingStackContent(base: base, home: home, grades: grades, stressUpdated: stressUpdated,
+        PulseCoachingStackContent(base: base, home: home, grades: grades, stress: stress, stressUpdated: stressUpdated,
                                   illness: app.healthAlert.map { localizedHealthAlertCopy($0) },
                                   milestones: milestones, challenges: challenges)
             .equatable()
@@ -219,6 +220,7 @@ private struct PulseCoachingStackContent: View, Equatable {
     let base: HomeCoachingRules.Inputs
     let home: HomeSnapshot
     let grades: PulseMonitorGrades?
+    let stress: PulseStressSummary?
     let stressUpdated: String?
     /// The illness heads-up's copy while it is raised.
     let illness: String?
@@ -237,7 +239,7 @@ private struct PulseCoachingStackContent: View, Equatable {
     @AppStorage("noop.lastSeenChangelogVersion") private var lastSeenChangelog = ""
 
     static func == (lhs: PulseCoachingStackContent, rhs: PulseCoachingStackContent) -> Bool {
-        lhs.base == rhs.base && lhs.home == rhs.home && lhs.grades == rhs.grades
+        lhs.base == rhs.base && lhs.home == rhs.home && lhs.grades == rhs.grades && lhs.stress == rhs.stress
             && lhs.stressUpdated == rhs.stressUpdated && lhs.illness == rhs.illness
             && lhs.milestones == rhs.milestones && lhs.challenges == rhs.challenges
     }
@@ -250,7 +252,7 @@ private struct PulseCoachingStackContent: View, Equatable {
                     .padding(.top, PulseHomeSpacing.stackTop)
                     .id("pulse.coaching")
             }
-            PulseMonitorTiles(home: home, grades: grades, stressUpdated: stressUpdated)
+            PulseMonitorTiles(home: home, grades: grades, stress: stress, stressUpdated: stressUpdated)
                 .padding(.top, cards.isEmpty ? PulseHomeSpacing.tilesTop : PulseHomeSpacing.tilesAfterStack)
                 .id("pulse.monitors")
         }

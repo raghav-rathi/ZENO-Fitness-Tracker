@@ -289,7 +289,9 @@ struct PulseWeekDay: Identifiable, Equatable {
 }
 
 /// The day's stress as Home's STRESS MONITOR tile and dashboard card show it: the Stress Monitor's own day
-/// (`PulseSnapshotBuilder.stressDay`), so the three can never print different levels or times.
+/// (`PulseSnapshotBuilder.stressDay`), so the three can never print different levels or times. Home's
+/// extras carry it (`HomeExtrasSnapshot.stress`), never `HomeSnapshot`: scoring a day's stress reads its
+/// heart rate, R-R and motion, which the dials must not wait for.
 struct PulseStressSummary: Equatable {
     /// The gauge's level, 0-3: the curve's latest reading, else the day's daily score; nil with neither.
     /// Print it as `shown`, never directly.
@@ -351,7 +353,6 @@ struct HomeSnapshot: Equatable {
     let tonight: PulseTonight?
     /// The values My Dashboard's rows show (HRV, resting HR, …), each against its 30-day average.
     let stats: [PulseKeyStat]
-    let stress: PulseStressSummary?
     /// The seven days ending on the selected one, while the journal reminder is switched on.
     let journal: PulseJournalStrip?
     /// Today's day streak (consecutive days with a Recovery score); nil on a past day.

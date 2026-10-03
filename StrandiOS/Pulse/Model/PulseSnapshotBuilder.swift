@@ -443,7 +443,6 @@ actor PulseSnapshotBuilder {
         }
         let tonight = r.day.isToday ? await tonightPlan(r) : nil
         let stats = await keyStats(r, row: row)
-        let stress = await stressSummary(r)
         // The journal strip ends on the selected day; it stays on a past day (§2.9).
         let journal = r.prefs.journalReminder ? await journalStrip(endingOn: r.day.date, offset: r.day.offset) : nil
         let monitor = r.day.isToday ? monitorSummary(r) : nil
@@ -467,7 +466,6 @@ actor PulseSnapshotBuilder {
             workouts: workoutItems(rows, window: window),
             tonight: tonight,
             stats: stats,
-            stress: stress,
             journal: journal,
             streak: streak,
             monitor: monitor,
@@ -744,7 +742,8 @@ actor PulseSnapshotBuilder {
 
     /// The day's stress for Home's STRESS MONITOR tile and dashboard card, past days included: the Stress
     /// Monitor's own day (`stressDay`, Screens/Health, which caches its reads per refresh), so its level, the
-    /// reading's time and the curve are the ones the screen the tile opens shows.
+    /// reading's time and the curve are the ones the screen the tile opens shows. Built with Home's extras
+    /// (`homeExtras`), once the dials are out: it scores the day's heart rate, R-R and motion.
     func stressSummary(_ r: PulseRequest) async -> PulseStressSummary? {
         guard let day = await stressDay(r) else { return nil }
         return PulseStressSummary(score: day.gaugeLevel?.level, at: day.latest?.at, dayKey: day.dayKey,

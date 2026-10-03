@@ -131,5 +131,8 @@ struct HomeExtrasSnapshot: Equatable {
     /// The Health Monitor tile's grades, today only.
     let monitor: PulseMonitorGrades?
     let start: PulseGetStartedFacts
+    /// The day's stress, for the STRESS MONITOR tile (today) and the dashboard's STRESS MONITOR card, when
+    /// either shows (`PulseSnapshotBuilder.stressSummary`, the Stress Monitor's own day).
+    let stress: PulseStressSummary?
 }
 #endif
