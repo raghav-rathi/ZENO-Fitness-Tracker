@@ -35,7 +35,8 @@ struct PulseDiveContributor: Identifiable, Equatable {
 /// captures measure them (deep-dives-2026/17b, same 402 pt screen): the first row's centre 52 pt under the
 /// pointer's tip, a 66 pt pitch with the inset dividers drawn over the row boundary rather than between
 /// rows, values and arrows ending 24 pt inside the callout's edge, and the legend 58 pt under the last
-/// row. A row with a route opens its Trend View.
+/// row. The legend only when some row has an average to compare with (calibrating, or the oldest days,
+/// show values alone). A row with a route opens its Trend View.
 struct PulseDiveCallout: View {
     let rows: [PulseDiveContributor]
     /// The night the values are from: "Today", the day itself on a past day ("Wed, Aug 19"), or a carried
@@ -54,10 +55,12 @@ struct PulseDiveCallout: View {
                         }
                     }
             }
-            PulseLegendWell {
-                PulseDiveLegend(dayLabel: dayLabel)
+            if rows.contains(where: { $0.trend != nil }) {
+                PulseLegendWell {
+                    PulseDiveLegend(dayLabel: dayLabel)
+                }
+                .padding(.top, -4)
             }
-            .padding(.top, -4)
         }
     }
 
@@ -77,12 +80,13 @@ struct PulseDiveCallout: View {
 }
 
 /// "▲▼ Today vs. last 30 days": ▲ teal, ▼ orange, the day white Semibold, the rest 70%. A past day names
-/// itself in place of "Today" (deep-dives-2026/17c: "Wed, Aug 19 vs. last 30 days").
+/// itself in place of "Today" (deep-dives-2026/17c: "Wed, Aug 19 vs. last 30 days"). The text starts
+/// 10 pt after the triangles, as on deep-dives-2026/17b.
 struct PulseDiveLegend: View {
     let dayLabel: String
 
     var body: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: 10) {
             HStack(spacing: 2) {
                 PulseTriangle(pointsUp: true).fill(PulseTheme.positive).frame(width: 7, height: 6)
                 PulseTriangle(pointsUp: false).fill(PulseTheme.negative).frame(width: 7, height: 6)

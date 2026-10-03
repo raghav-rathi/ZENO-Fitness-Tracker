@@ -36,12 +36,17 @@ extension PulseSnapshotBuilder {
         // day's own row, so a calibrating night still shows what it measured.
         let sourceKey = base.sourceDayKey ?? (byDay[r.day.key] == nil ? nil : r.day.key)
         let source = sourceKey.flatMap { byDay[$0] }
+        // While the baseline calibrates the rows show their values alone (§3.4 States): no 30-day
+        // average and no arrow, as after a recalibration with weeks of nights still on file.
+        var calibrating = false
+        if case .calibrating = base.dial.state { calibrating = true }
         func series(_ f: (DailyMetric) -> Double?) -> [(day: String, value: Double)] {
-            days.compactMap { m in f(m).map { (day: m.day, value: $0) } }
+            guard !calibrating else { return [] }
+            return days.compactMap { m in f(m).map { (day: m.day, value: $0) } }
         }
         // Sleep performance per day through the dial's resolver: the stored point, else the Rest composite.
         let restByDay = Dictionary(rest.map { ($0.day, $0.value) }, uniquingKeysWith: { _, last in last })
-        let sleepKeys = Set(restByDay.keys).union(byDay.keys)
+        let sleepKeys = calibrating ? [] : Set(restByDay.keys).union(byDay.keys)
         let sleepHistory: [(day: String, value: Double)] = sleepKeys.compactMap { key in
             let value = restByDay[key] ?? byDay[key].flatMap { AnalyticsEngine.Rest.composite(daily: $0) }
             return value.map { (day: key, value: $0) }
@@ -109,10 +114,15 @@ extension PulseSnapshotBuilder {
         if case .carried(let caption) = base.dial.state { carried = caption }
         let text = Self.recoverySentences(dial: base.dial, carried: carried, contributors: contributors,
                                           day: r.day)
+        // Why the countdown restarted, read here rather than in the card's body (a defaults read and a
+        // date formatter on every pass).
+        let restart = calibrating ? ChargeBreakdownFormat.currentCalibrationRestartCause() : nil
         guard isCurrent(r) else { return nil }
         return RecoveryDiveSnapshot(seq: r.seq, day: r.day, dial: base.dial, carriedCaption: carried,
                                     sourceDayKey: sourceKey, contributors: contributors, behaviors: behaviors,
-                                    week: week, shaped: shaped, summary: text.summary, coachSeed: text.seed)
+                                    week: week, shaped: shaped, summary: text.summary,
+                                    insight: calibrating ? nil : text.insight, calibrationRestart: restart,
+                                    coachSeed: text.seed)
     }
 
     // MARK: Behaviour outcomes
@@ -250,11 +260,12 @@ extension PulseSnapshotBuilder {
 
     // MARK: Sentences
 
-    /// The coach summary pill's sentence (until the Coach writes one, §1.2 [Z]) and the plain page context
-    /// handed to the Coach. Every figure is a row already on the screen.
+    /// The coach summary pill's sentence (until the Coach writes one, §1.2 [Z]), the same sentence in
+    /// plain text for the inline card shown when the Coach is off (§3.4 item 4 [Z]), and the plain page
+    /// context handed to the Coach. Every figure is a row already on the screen.
     static func recoverySentences(dial: PulseDialData, carried: String?,
-                                              contributors: [PulseDiveContributor],
-                                              day: PulseDay) -> (summary: String, seed: String) {
+                                  contributors: [PulseDiveContributor],
+                                  day: PulseDay) -> (summary: String, insight: String, seed: String) {
         let hrv = contributors.first { $0.id == "hrv" }
         var summary: String
         switch dial.state {
@@ -282,7 +293,7 @@ extension PulseSnapshotBuilder {
             seed += " " + (row.baseline.map { String(localized: "\(row.title) \(row.value) (30-day average \($0)).") }
                            ?? "\(row.title) \(row.value).")
         }
-        return (summary, seed)
+        return (summary, summary.replacingOccurrences(of: "**", with: ""), seed)
     }
 }
 

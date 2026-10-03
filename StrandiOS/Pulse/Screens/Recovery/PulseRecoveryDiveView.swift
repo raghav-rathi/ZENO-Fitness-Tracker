@@ -8,8 +8,9 @@ import StrandAnalytics
 /// the band colour, the contributor callout (heart rate variability, resting heart rate, respiratory rate
 /// and sleep performance against their 30-day averages), BEHAVIOR INSIGHTS (the day's behaviour chips, or
 /// the compact row), Weekly Trends (Recovery, HRV, resting heart rate, respiratory rate, each opening its
-/// Trend View), then ZENO's "What shaped it". The inline insight card WHOOP dropped by Sep 2026 is gone;
-/// the floating coach summary pill carries the summary.
+/// Trend View once that is rebuilt), then ZENO's "What shaped it". The inline insight card WHOOP dropped
+/// by Sep 2026 is gone while the floating coach summary pill carries the summary; with the Coach off, the
+/// same sentence sits in a plain card under the callout (§3.4 item 4 [Z]).
 ///
 /// Owned by group "recovery-strain".
 struct PulseRecoveryDiveView: View {
@@ -53,6 +54,8 @@ struct PulseRecoveryDiveView: View {
 private struct PulseRecoveryDiveContent: View {
     let snapshot: RecoveryDiveSnapshot
 
+    @Environment(\.pulseCoach) private var coach
+
     private var s: RecoveryDiveSnapshot { snapshot }
 
     /// The dial with its state line: "CALIBRATING" inside the ring; a carried night is named under the bar
@@ -84,8 +87,16 @@ private struct PulseRecoveryDiveContent: View {
                 .padding(.top, 22)
                 .id("pulse.contributors")
 
+            // With the Coach off there is no summary pill, so its sentence sits here as a plain card, 16 pt
+            // under the legend (the callout's own bottom inset).
+            if coach.availability == .off, let insight = s.insight {
+                PulseDiveInsight(text: insight, cta: String(localized: "Explore your recovery insights"),
+                                 seed: s.coachSeed)
+                    .id("pulse.insight")
+            }
+
             if case .calibrating(let nights, let of) = s.dial.state {
-                PulseRecoveryCalibrationCard(nights: nights, of: of)
+                PulseRecoveryCalibrationCard(nights: nights, of: of, restart: s.calibrationRestart)
                     .padding(.top, PulseTheme.Layout.stackGap)
             }
 
@@ -108,10 +119,12 @@ private struct PulseRecoveryDiveContent: View {
 
 // MARK: - Calibrating
 
-/// While the baseline learns (fewer than four nights): how far along it is, in Recovery's own words.
+/// While the baseline learns (fewer than four nights): how far along it is, in Recovery's own words, and
+/// why it restarted when the user recalibrated.
 private struct PulseRecoveryCalibrationCard: View {
     let nights: Int
     let of: Int
+    let restart: String?
 
     var body: some View {
         PulseCard {
@@ -128,7 +141,7 @@ private struct PulseRecoveryCalibrationCard: View {
                 }
                 .frame(height: 6)
                 .accessibilityHidden(true)
-                if let restart = ChargeBreakdownFormat.currentCalibrationRestartCause() {
+                if let restart {
                     Text(restart)
                         .pulseText(.secondary)
                         .foregroundStyle(PulseTheme.textTertiary)

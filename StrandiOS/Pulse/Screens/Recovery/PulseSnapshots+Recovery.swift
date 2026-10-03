@@ -28,6 +28,12 @@ struct RecoveryDiveSnapshot: Equatable {
     let shaped: Shaped?
     /// The coach summary pill's local sentence (**bold** markdown, rendered).
     let summary: String
+    /// The same sentence in plain text, for the inline card shown when the Coach is off; nil while the
+    /// baseline calibrates (the calibration card says it).
+    let insight: String?
+    /// Why the calibration countdown restarted ("Restarted when you recalibrated on 19 Jul …"), while
+    /// calibrating after the user recalibrated.
+    let calibrationRestart: String?
     /// The page in plain words, handed to the Coach when it opens from here.
     let coachSeed: String
 
