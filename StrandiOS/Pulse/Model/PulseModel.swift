@@ -29,7 +29,6 @@ final class PulseModel {
     /// How far back Home can go (the earliest banked day).
     private(set) var maxDayOffset = 0
     private(set) var home: HomeSnapshot?
-    private(set) var health: HealthSnapshot?
     /// Bumped whenever the display preferences change, so detail screens reload.
     private(set) var prefsVersion = 0
 
@@ -198,13 +197,6 @@ final class PulseModel {
                   snapshot.seq == self.seq, snapshot.day.offset == self.dayOffset else { return }
             if self.home != snapshot { self.home = snapshot }
         }
-    }
-
-    /// Build the Health tab (always today).
-    func loadHealth() async {
-        guard let builder, let req = request(dayOffset: 0) else { return }
-        guard let snapshot = await builder.health(req), !Task.isCancelled, snapshot.seq == seq else { return }
-        if health != snapshot { health = snapshot }
     }
 
     // MARK: Builds for extension snapshots

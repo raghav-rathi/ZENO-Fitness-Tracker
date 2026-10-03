@@ -446,37 +446,6 @@ struct StrainSnapshot: Equatable {
     let workouts: [PulseWorkoutItem]
 }
 
-/// One vital on the Health Monitor.
-struct PulseVital: Identifiable, Equatable {
-    let id: String
-    let title: String
-    let value: String?
-    let unit: String
-    let band: VitalBands.Band
-    /// "Your typical range" / "Typical adult range".
-    let basisText: String
-    let rangeText: String?
-    /// Where the value and the typical range sit on the bar, 0...1.
-    let valueFraction: Double?
-    let typicalFraction: ClosedRange<Double>?
-    /// The day the value is from.
-    let dayLabel: String?
-    let route: TabRoute
-}
-
-/// The Health tab.
-struct HealthSnapshot: Equatable {
-    let seq: Int
-    let vitals: [PulseVital]
-    let stress: PulseStressSummary?
-    let fitnessAge: Double?
-    let bodyAge: Double?
-    let vitality: Double?
-    let vo2max: Double?
-    let stepsToday: Double?
-    let stepsRoute: TabRoute
-}
-
 // MARK: - Formatting
 
 enum PulseFormat {

@@ -98,16 +98,8 @@ actor PulseSnapshotBuilder {
         var habitual: Int?
         var habitualLoaded = false
         var nights: [[CachedSleepSession]]?
-        var weekly: Weekly?
         /// Heart rate for a day window, keyed "dayKey|from". At most a few entries.
         var hr: [String: [HRSample]] = [:]
-    }
-
-    private struct Weekly {
-        let fitnessAge: Double?
-        let bodyAge: Double?
-        let vitality: Double?
-        let vo2max: Double?
     }
 
     private var cacheSeq = Int.min
@@ -219,21 +211,6 @@ actor PulseSnapshotBuilder {
         let groups = SleepModel.navDays(navSessions: all)
         if seq == cacheSeq { cache.nights = groups }
         return groups
-    }
-
-    private func weekly() async -> Weekly {
-        if let v = cache.weekly { return v }
-        let seq = cacheSeq
-        async let fit = repo.exploreSeries(key: "fitness_age", source: "my-whoop")
-        async let body = repo.exploreSeries(key: "body_age", source: "my-whoop")
-        async let vit = repo.exploreSeries(key: "vitality", source: "my-whoop")
-        async let vo2 = repo.resolvedSeries(key: "vo2max_est", source: "my-whoop")
-        let v = Weekly(fitnessAge: (await fit).last?.value,
-                       bodyAge: (await body).last?.value,
-                       vitality: (await vit).last?.value,
-                       vo2max: (await vo2).points.last?.value)
-        if seq == cacheSeq { cache.weekly = v }
-        return v
     }
 
     /// The day window's heart rate, read once per refresh and shared by Home and the Strain dive.
@@ -957,127 +934,6 @@ actor PulseSnapshotBuilder {
                               calories: calories.value,
                               averageHR: average, peakHR: bpms.max(),
                               workouts: workoutItems(rows, window: window))
-    }
-
-    // MARK: - Health
-
-    /// The Health tab. Always built for TODAY whatever day Home is showing: it is the "how am I now"
-    /// surface, so the model hands it a today request.
-    func health(_ r: PulseRequest) async -> HealthSnapshot? {
-        begin(r.seq)
-        let unit: TemperatureUnit = r.prefs.fahrenheit ? .fahrenheit : .celsius
-        // The same resolution and banding the classic Health tile uses.
-        let readings = BodyVitalSigns.readings(sourceRows: r.vitalRows, temperatureUnit: unit, now: r.now,
-                                               skinTempPreferred: r.prefs.skinTempPreferred)
-        let vitals = readings.compactMap { vital(for: $0, r: r) }
-        let stress = await stressSummary(r)
-        let weekly = await weekly()
-        // The Steps entry reads today's total from the shared resolver and opens the Steps screen.
-        let steps = await stepsResolution(r)
-        guard isCurrent(r) else { return nil }
-        return HealthSnapshot(seq: r.seq, vitals: vitals, stress: stress, fitnessAge: weekly.fitnessAge,
-                              bodyAge: weekly.bodyAge, vitality: weekly.vitality, vo2max: weekly.vo2max,
-                              stepsToday: steps.value, stepsRoute: steps.route)
-    }
-
-    /// One Health Monitor row: the classic reading plus the typical range its band was judged against.
-    private func vital(for reading: BodyVitalReading, r: PulseRequest) -> PulseVital? {
-        // The raw PPG counts are not a vital, and SpO₂ only earns a row when a real value exists.
-        guard reading.key != "spo2raw" else { return nil }
-        if reading.key == "spo2" && reading.value == nil { return nil }
-
-        // Titles are Pulse's own names for these metrics, the ones Recovery uses, rather than the classic
-        // monitor's abbreviations ("Resp Rate", "Blood O₂"), so one metric reads the same everywhere.
-        let title: String
-        let route: TabRoute
-        let population: ClosedRange<Double>
-        let cfg: MetricCfg?
-        let extract: (DailyMetric) -> Double?
-        let isAbsoluteSkin = reading.key == "skin" && (reading.value.map(VitalBands.isAbsoluteSkinTemp) ?? false)
-        switch reading.key {
-        case "resp":
-            title = String(localized: "Respiratory rate")
-            route = .metric("resp_rate"); population = 12...20; cfg = Baselines.respCfg
-            extract = { $0.respRateBpm }
-        case "spo2":
-            title = String(localized: "Blood oxygen")
-            route = .metric("spo2"); population = 95...100; cfg = nil
-            extract = { $0.spo2Pct }
-        case "rhr":
-            title = String(localized: "Resting heart rate")
-            route = .metric("rhr"); population = 40...60; cfg = Baselines.restingHRCfg
-            extract = { $0.restingHr.map(Double.init) }
-        case "hrv":
-            title = String(localized: "Heart rate variability")
-            route = .metric("hrv"); population = 40...120; cfg = Baselines.hrvCfg
-            extract = { $0.avgHrv }
-        case "skin":
-            title = String(localized: "Skin temperature")
-            route = .metric("skin_temp")
-            population = isAbsoluteSkin ? 33...36 : (-0.6)...0.6
-            cfg = isAbsoluteSkin ? Baselines.metricCfg["skin_temp"] : VitalBands.skinTempDeviationCfg
-            extract = isAbsoluteSkin
-                ? { $0.skinTempC ?? $0.skinTempDevC.flatMap { VitalBands.isAbsoluteSkinTemp($0) ? $0 : nil } }
-                : { $0.skinTempDevC.flatMap { VitalBands.isAbsoluteSkinTemp($0) ? nil : $0 } }
-        default:
-            return nil
-        }
-
-        // The typical range the band was judged against: the personal baseline ± VitalBands.sigmaK σ once
-        // the baseline is trusted, else the fixed adult range, the same two yardsticks the band itself
-        // uses (`VitalBands.band`). Folded from the same source precedence the reading used.
-        var typical = population
-        var personal = false
-        if reading.banding.basis == .personal, let cfg, let day = reading.day {
-            // Source precedence, highest first: the rule `BodyVitalSigns` resolves readings by
-            // (`DailyMetricSource.vitalPrecedence`, private to VitalSignsSummary.swift). Skin omits Apple
-            // Health, which has no equivalent of the strap's deviation. Keep the two in step.
-            let precedence: [DailyMetricSource] = reading.key == "skin"
-                ? [.whoopImport, .noopComputed, .localCache]
-                : [.whoopImport, .noopComputed, .appleHealth, .localCache]
-            var byDay: [String: Double] = [:]
-            for source in precedence {
-                for row in r.vitalRows where row.source == source && row.metric.day < day {
-                    guard let v = extract(row.metric), byDay[row.metric.day] == nil else { continue }
-                    byDay[row.metric.day] = v
-                }
-            }
-            let history = VitalBands.calendarSeries(byDay.keys.sorted().map { ($0, byDay[$0]) })
-            let state = Baselines.foldHistory(history, cfg: cfg)
-            if state.trusted {
-                let half = VitalBands.sigmaK * Baselines.sigma(state)
-                typical = (state.baseline - half)...(state.baseline + half)
-                personal = true
-            }
-        }
-
-        // Lay the value and the range on one bar with room either side.
-        let v = reading.value
-        let lo = min(typical.lowerBound, v ?? typical.lowerBound)
-        let hi = max(typical.upperBound, v ?? typical.upperBound)
-        let pad = max((hi - lo) * 0.25, 0.001)
-        let barLo = lo - pad, barHi = hi + pad
-        func frac(_ x: Double) -> Double { (x - barLo) / (barHi - barLo) }
-
-        let format = reading.format
-        // A signed range reads badly with a dash between the signs ("-0.7–+0.8"), so it says "to".
-        let rangeText = typical.lowerBound < 0
-            ? String(localized: "\(format(typical.lowerBound)) to \(format(typical.upperBound))")
-            : "\(format(typical.lowerBound))–\(format(typical.upperBound))"
-        return PulseVital(
-            id: reading.key,
-            title: title,
-            value: v.map(format),
-            unit: reading.unit,
-            band: reading.banding.band,
-            basisText: personal
-                ? String(localized: "Your typical range")
-                : String(localized: "Typical adult range"),
-            rangeText: rangeText,
-            valueFraction: v.map(frac),
-            typicalFraction: frac(typical.lowerBound)...frac(typical.upperBound),
-            dayLabel: reading.day.map { BodyVitalReading.dayLabel($0) },
-            route: route)
     }
 }
 
