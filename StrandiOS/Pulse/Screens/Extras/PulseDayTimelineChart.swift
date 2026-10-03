@@ -450,6 +450,11 @@ struct DayTimelineChart: View {
             .pulseText(.body)
             .foregroundStyle(PulseTheme.textSecondary)
             .multilineTextAlignment(.center)
+            .fixedSize(horizontal: false, vertical: true)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            // On the strip's colour, so a marker's dashed rule never runs through the words.
+            .background(RoundedRectangle(cornerRadius: PulseTheme.Radius.well, style: .circular).fill(T.strip))
             .frame(width: min(plot.width - 32, 320))
             .position(x: plot.midX, y: plot.midY)
             .accessibilityHidden(true)
