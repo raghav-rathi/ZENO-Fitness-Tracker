@@ -43,6 +43,10 @@ enum PulseActivityStyle {
     static let panelHatchFill = PulseTheme.strain.opacity(0.17)
     static let panelHatchStripe = PulseTheme.strain.opacity(0.55)
 
+    /// SAVE's white capsule and its black label (§2.6 item 16c), and ink on the green active time pill.
+    static let capsuleFill = Color.white
+    static let capsuleInk = Color.black
+
     // MARK: Dark surfaces
 
     /// The current activity's row in the pre-start list (completeness-critic/05: white ≈8%).

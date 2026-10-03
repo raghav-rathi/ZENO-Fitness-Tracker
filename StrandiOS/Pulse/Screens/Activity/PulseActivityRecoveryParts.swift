@@ -49,13 +49,23 @@ struct PulseActivityStressChart: View {
             .chartYScale(domain: 0...3)
             .chartXAxis(.hidden)
             .chartYAxis {
-                AxisMarks(position: .leading, values: [0.0, 1.0, 2.0, 3.0]) { value in
+                AxisMarks(values: [0.0, 1.0, 2.0, 3.0]) { _ in
                     AxisGridLine(stroke: StrokeStyle(lineWidth: 1)).foregroundStyle(PulseTheme.gridOnPage)
-                    AxisValueLabel {
-                        if let v = value.as(Double.self) {
-                            Text(String(format: "%.1f", v))
-                                .font(PulseType.font(.axis))
-                                .foregroundStyle(PulseTheme.textTertiary)
+                }
+            }
+            // The scale's labels inside the plot at the left, as the heart-rate chart draws its own, so the
+            // plot spans the full width and the times under it line up with their rules.
+            .chartOverlay { proxy in
+                GeometryReader { geo in
+                    if let anchor = proxy.plotFrame {
+                        let plot = geo[anchor]
+                        ForEach([1.0, 2.0, 3.0], id: \.self) { tick in
+                            if let y = proxy.position(forY: tick) {
+                                Text(String(format: "%.1f", tick))
+                                    .font(PulseType.font(.axis))
+                                    .foregroundStyle(PulseTheme.textTertiary)
+                                    .position(x: plot.minX + 14, y: plot.minY + y + 8)
+                            }
                         }
                     }
                 }
@@ -93,25 +103,37 @@ struct PulseActivityStressChart: View {
         StressBand(score: (value * 10).rounded() / 10).title
     }
 
-    /// The activity's start and end under their rules, placed on the chart's own time scale.
+    /// The activity's start and end under their rules, on the chart's own time scale. The hourly readings
+    /// make the chart span wider than the activity, so the two times sit OUTSIDE their rules (the start to
+    /// the left of its rule, the end to the right of its) wherever there is room, and can never run into
+    /// each other however short the session.
     private var edgeLabels: some View {
         GeometryReader { geo in
+            let width = geo.size.width
             let total = summary.span.upperBound.timeIntervalSince(summary.span.lowerBound)
-            let startX = total > 0 ? geo.size.width * window.lowerBound.timeIntervalSince(summary.span.lowerBound) / total : 0
-            let endX = total > 0 ? geo.size.width * window.upperBound.timeIntervalSince(summary.span.lowerBound) / total
-                : geo.size.width
+            let startX = total > 0 ? width * window.lowerBound.timeIntervalSince(summary.span.lowerBound) / total : 0
+            let endX = total > 0 ? width * window.upperBound.timeIntervalSince(summary.span.lowerBound) / total : width
             ZStack(alignment: .topLeading) {
+                // Anchors the stack's origin at the chart's left edge, so the guides below are chart x.
+                Color.clear.frame(width: width, height: 1)
                 Text(PulseFormat.clock(window.lowerBound))
                     .activityNumeral(12, relativeTo: .caption, maxScale: 1.4)
                     .foregroundStyle(PulseTheme.textPrimary)
                     .fixedSize()
-                    .offset(x: max(0, startX - 2))
+                    .alignmentGuide(.leading) { d in
+                        // Trailing edge 4 pt left of the rule, else just right of it.
+                        startX - 4 >= d.width ? d.width - (startX - 4) : -(startX + 3)
+                    }
                 Text(PulseFormat.clock(window.upperBound))
                     .activityNumeral(12, relativeTo: .caption, maxScale: 1.4)
                     .foregroundStyle(PulseTheme.textPrimary)
                     .fixedSize()
-                    .frame(width: max(0, endX + 2), alignment: .trailing)
+                    .alignmentGuide(.leading) { d in
+                        // Leading edge 4 pt right of the rule, else just left of it.
+                        endX + 4 + d.width <= width ? -(endX + 4) : d.width - (endX - 3)
+                    }
             }
+            .frame(width: width, alignment: .topLeading)
         }
         .frame(height: 20)
     }

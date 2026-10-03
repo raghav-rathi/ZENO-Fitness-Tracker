@@ -440,7 +440,7 @@ struct PulseLiveStrainRing: View {
             }
             if let targetFraction {
                 PulseRingTick(fraction: targetFraction, thickness: stroke)
-                    .stroke(Color.white, style: StrokeStyle(lineWidth: 2))
+                    .stroke(PulseTheme.textPrimary, style: StrokeStyle(lineWidth: 2))
                 PulseAvatar(imageData: avatar, name: nil, size: 22)
                     .overlay(Circle().strokeBorder(PulseTheme.textPrimary, lineWidth: 1.5))
                     .offset(knobOffset(targetFraction))
@@ -516,7 +516,7 @@ struct PulseLiveZoneBar: View {
                             if active {
                                 GeometryReader { geo in
                                     Circle()
-                                        .fill(Color.white)
+                                        .fill(PulseTheme.textPrimary)
                                         .frame(width: 12, height: 12)
                                         .position(x: geo.size.width * position, y: geo.size.height / 2)
                                 }

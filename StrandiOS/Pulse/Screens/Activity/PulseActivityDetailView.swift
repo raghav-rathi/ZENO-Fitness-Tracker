@@ -41,8 +41,10 @@ struct PulseActivityDetailView: View {
     @State private var editTarget: PulseActivityEditTarget?
     @State private var strengthTab: StrengthTab = .exercises
     @State private var recoveryTab: RecoveryTab = .stress
-    /// The window's height, for the Edit sheet's detent (WHOOP's starts ≈119 pt down, d04).
+    /// The window's height and its bottom safe area, for the Edit sheet's detent (WHOOP's starts ≈119 pt
+    /// down, d04).
     @State private var windowHeight: CGFloat = 0
+    @State private var bottomInset: CGFloat = 0
 
     enum StrengthTab: Hashable { case exercises, zones }
     enum RecoveryTab: Hashable { case stress, heartRate }
@@ -82,10 +84,15 @@ struct PulseActivityDetailView: View {
         .safeAreaInset(edge: .top, spacing: 0) { header }
         .background(PulseSwipeBackEnabler())
         .background(GeometryReader { geo in
-            let height = geo.size.height + geo.safeAreaInsets.top + geo.safeAreaInsets.bottom
             Color.clear
-                .onAppear { windowHeight = height }
-                .onChange(of: height) { _, new in windowHeight = new }
+                .onAppear {
+                    windowHeight = geo.size.height + geo.safeAreaInsets.top + geo.safeAreaInsets.bottom
+                    bottomInset = geo.safeAreaInsets.bottom
+                }
+                .onChange(of: geo.size.height) { _, new in
+                    windowHeight = new + geo.safeAreaInsets.top + geo.safeAreaInsets.bottom
+                    bottomInset = geo.safeAreaInsets.bottom
+                }
         })
         .task(id: loadKey) { await load() }
         .confirmationDialog(snapshot?.title ?? "", isPresented: $showsMenu, titleVisibility: .hidden) {
@@ -109,7 +116,8 @@ struct PulseActivityDetailView: View {
                 .presentationBackground(.clear)
         }
         .sheet(item: $editTarget) { target in
-            PulseActivityFormSheet(mode: target.mode, windowHeight: windowHeight > 0 ? windowHeight : nil) { saved in
+            PulseActivityFormSheet(mode: target.mode,
+                                   detentHeight: windowHeight > 0 ? PulseActivityFormSheet.detent(window: windowHeight, bottomInset: bottomInset) : nil) { saved in
                 if let saved { row = saved }
             }
         }
@@ -383,28 +391,41 @@ struct PulseActivityDetailView: View {
     // MARK: Heart rate (§3.6 item 6)
 
     private func hrChart(_ s: ActivityDetailSnapshot, color: Color) -> some View {
-        PulseActivityHRChart(points: s.hr, window: s.start...s.end, span: s.chartSpan, color: color, scrub: $scrub)
-            .padding(.horizontal, -PulseTheme.Layout.pageMargin)
-            .overlay {
-                if let message = hrMessage(s) {
-                    Text(message)
-                        .pulseText(.body)
-                        .foregroundStyle(PulseTheme.textSecondary)
-                        .multilineTextAlignment(.center)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .padding(.horizontal, 32)
-                        .padding(.bottom, 20)
+        VStack(alignment: .leading, spacing: 8) {
+            PulseActivityHRChart(points: s.hr, window: s.start...s.end, span: s.chartSpan, color: color, scrub: $scrub)
+                .padding(.horizontal, -PulseTheme.Layout.pageMargin)
+                .overlay {
+                    // Over an empty chart, in its middle.
+                    if !s.hasHeartRate, let message = hrMessage(s) {
+                        Text(message)
+                            .pulseText(.body)
+                            .foregroundStyle(PulseTheme.textSecondary)
+                            .multilineTextAlignment(.center)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .padding(.horizontal, 32)
+                            .padding(.bottom, 20)
+                    }
                 }
+            // Under a chart that holds part of the activity, so it never sits on the line.
+            if s.hasHeartRate, let message = hrMessage(s) {
+                Text(message)
+                    .pulseText(.secondary)
+                    .foregroundStyle(PulseTheme.textTertiary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
-            .id("pulse.activity-hr")
+        }
+        .id("pulse.activity-hr")
     }
 
-    /// The line over an empty chart. Without a Strain the headline already says why there is none; a live or
-    /// manual row WITH a Strain was scored from heart rate, so it never reads "no heart rate was recorded".
+    /// The line about the chart's heart rate. Without a Strain the headline already says why there is none; a
+    /// live or manual row WITH a Strain was scored from heart rate, so it never reads "no heart rate was
+    /// recorded".
     private func hrMessage(_ s: ActivityDetailSnapshot) -> String? {
         switch s.heartRate {
         case .pending:
-            return String(localized: "Heart rate appears once your strap syncs this session.")
+            return s.hasHeartRate
+                ? String(localized: "The rest of this session's heart rate appears once your strap syncs it.")
+                : String(localized: "Heart rate appears once your strap syncs this session.")
         case .none:
             guard s.strain != nil else { return nil }
             let origin = WorkoutSource.classify(s.row.source)

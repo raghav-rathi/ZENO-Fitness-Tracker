@@ -48,22 +48,26 @@ struct PulseActivityEditTarget: Identifiable {
 /// place, dimmed, rather than shrinking into the card stack the large detent makes.
 struct PulseActivityFormSheet: View {
     let mode: PulseActivityFormMode
-    /// The presenting screen's full height, or nil for the large detent.
-    var windowHeight: CGFloat?
+    /// The sheet's detent height (see `detent`), or nil for the large detent.
+    var detentHeight: CGFloat?
     let onDone: (WorkoutRow?) -> Void
 
-    /// d04 / c03: the edit sheet's top edge 119–121 pt down.
-    static let editSheetTop: CGFloat = 119
-    static let reclassifySheetTop: CGFloat = 121
+    /// d04 / c03: the sheets' top edge 119–121 pt down. SELECT YOUR ACTIVITY takes the same height as Edit,
+    /// so it covers the sheet it opens over rather than leaving that sheet's edge showing above it.
+    static let sheetTop: CGFloat = 119
+
+    /// The `.height` detent that puts a sheet's top edge `sheetTop` below the window's: a height detent
+    /// leaves out the bottom safe area, which the sheet then extends into.
+    static func detent(window: CGFloat, bottomInset: CGFloat) -> CGFloat {
+        max(200, window - sheetTop - bottomInset)
+    }
 
     var body: some View {
         NavigationStack {
-            PulseActivityForm(mode: mode,
-                              reclassifyHeight: windowHeight.map { $0 - Self.reclassifySheetTop },
-                              onDone: onDone)
+            PulseActivityForm(mode: mode, reclassifyHeight: detentHeight, onDone: onDone)
                 .environment(\.pulseModalRoot, true)
         }
-        .presentationDetents(windowHeight.map { [.height($0 - Self.editSheetTop)] } ?? [.large])
+        .presentationDetents(detentHeight.map { [.height($0)] } ?? [.large])
     }
 }
 
@@ -77,7 +81,7 @@ struct PulseActivityFormSheet: View {
 /// OVERLAPPING ACTIVITIES dialog.
 struct PulseActivityForm: View {
     let mode: PulseActivityFormMode
-    /// SELECT YOUR ACTIVITY's height over Edit (c03: its edge 121 pt down); nil for the large detent.
+    /// SELECT YOUR ACTIVITY's detent over Edit (c03: its edge ≈121 pt down); nil for the large detent.
     var reclassifyHeight: CGFloat?
     let onDone: (WorkoutRow?) -> Void
 
@@ -324,7 +328,7 @@ struct PulseActivityForm: View {
             } label: {
                 Text(Self.pillText(date))
                     .font(PulseType.numeral(min(pillSize, 22)))
-                    .foregroundStyle(editing == field ? Color.black : PulseTheme.textPrimary)
+                    .foregroundStyle(editing == field ? PulseTheme.onAccent : PulseTheme.textPrimary)
                     .padding(.horizontal, 10)
                     .frame(minHeight: 36)
                     .background(RoundedRectangle(cornerRadius: PulseTheme.Radius.toggle, style: .circular)
@@ -426,9 +430,9 @@ struct PulseActivityForm: View {
         return Button { Task { await save() } } label: {
             Text(String(localized: "Save"))
                 .pulseText(.capsuleLabel)
-                .foregroundStyle(enabled ? Color.black : PulseTheme.textDisabled)
+                .foregroundStyle(enabled ? PulseActivityStyle.capsuleInk : PulseTheme.textDisabled)
                 .frame(maxWidth: .infinity, minHeight: 49)
-                .background(Capsule(style: .circular).fill(enabled ? Color.white : PulseTheme.Activity.saveDisabled))
+                .background(Capsule(style: .circular).fill(enabled ? PulseActivityStyle.capsuleFill : PulseTheme.Activity.saveDisabled))
                 .contentShape(Capsule())
         }
         .buttonStyle(PulsePressStyle())
@@ -549,6 +553,7 @@ struct PulseActivityForm: View {
         var message = AttributedString(String(localized: "You added an activity from "))
         message += PulseActivityDialogCard.emphasised(String(localized: "\(clock(row.startTs)) to \(clock(row.endTs))"))
         message += AttributedString(String(localized: ". ZENO already has these activities during this time:"))
+        message += AttributedString("\n")
         for hit in hits.prefix(3) {
             message += AttributedString("\n")
             message += PulseActivityDialogCard.emphasised("\(hit.0) - \(clock(hit.1)) - \(clock(hit.2))")
