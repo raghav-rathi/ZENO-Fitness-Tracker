@@ -84,11 +84,11 @@ struct PulseWeeklyPlanSleepGoals: Equatable {
     /// The week's average Sleep Performance the plan asks for (%), when it has that goal.
     var performance: Double?
 
-    /// Read from the plan as it stands, with the targets `PulsePlanGoal.title` prints for a goal saved
-    /// without one.
+    /// Read from the plan as it stands (`store`, else the app's plan store), with the targets
+    /// `PulsePlanGoal.title` prints for a goal saved without one.
     @MainActor
-    static func current(_ store: PulsePlanStore = .shared) -> PulseWeeklyPlanSleepGoals? {
-        guard let goals = store.plan?.goals else { return nil }
+    static func current(_ store: PulsePlanStore? = nil) -> PulseWeeklyPlanSleepGoals? {
+        guard let goals = (store ?? .shared).plan?.goals else { return nil }
         let consistency = goals.first { $0.kind == .sleepConsistency }.map { $0.value ?? 80 }
         let performance = goals.first { $0.kind == .sleepPerformance }.map { $0.value ?? 85 }
         guard consistency != nil || performance != nil else { return nil }
