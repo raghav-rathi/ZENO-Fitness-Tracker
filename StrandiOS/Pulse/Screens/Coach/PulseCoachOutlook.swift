@@ -91,8 +91,8 @@ enum PulseCoachOutlook {
         return lines
     }
 
-    /// Today's Recovery against the six days before it (Home's Strain & Recovery week), when at least three
-    /// of them were scored.
+    /// Today's Recovery against its 7-day average, the figure Home's Daily Outlook prints
+    /// (`HomeSnapshot.recoveryAverage7`: the 7 days before today, when at least three of them were scored).
     private static func recoveryLine(_ home: HomeSnapshot) -> String? {
         guard let value = home.recovery.value else {
             if case .calibrating(let nights, let of) = home.recovery.state {
@@ -104,9 +104,7 @@ enum PulseCoachOutlook {
         if case .carried(let caption) = home.recovery.state {
             return String(localized: "Your latest Recovery is **\(today)%** (\(caption)).")
         }
-        let prior = home.week.dropLast().compactMap(\.recovery)
-        guard prior.count >= 3 else { return String(localized: "Your Recovery is **\(today)%**.") }
-        let average = PulseDisplay.displayedPercent(prior.reduce(0, +) / Double(prior.count))
+        guard let average = home.recoveryAverage7 else { return String(localized: "Your Recovery is **\(today)%**.") }
         if abs(today - average) < 5 {
             return String(localized: "Your Recovery is **\(today)%**, in line with your average of **\(average)%** over the past week.")
         }
@@ -115,15 +113,20 @@ enum PulseCoachOutlook {
             : String(localized: "Your Recovery is **\(today)%**, below your average of **\(average)%** over the past week.")
     }
 
-    /// Tonight's plan as Home's TONIGHT'S SLEEP card and Daily Outlook page state it: the time to be asleep
-    /// by, and once the time to get into bed has passed, "now" (the card's "Now", the page's sentence).
+    /// Tonight's plan as Home's TONIGHT'S SLEEP card and Daily Outlook page state it, for the Sleep Planner's
+    /// goal: the time to be asleep by, with the share of the need it allows for when that is short of all of it
+    /// (a goal under 100%, a bedtime held at the earliest), and once the time to get into bed has passed, "now"
+    /// (the card's "Now", the page's sentence).
     private static func bedtimeLine(_ tonight: PulseTonight, now: Date) -> String {
         let need = PulseFormat.duration(minutes: tonight.needMin)
         if now >= tonight.inBed {
             let wake = PulseFormat.clock(tonight.wake)
             return String(localized: "To get as close as you can to the **\(need)** of sleep you need tonight, go to sleep now to wake at **\(wake)**.")
         }
-        return String(localized: "Aim to be asleep by **\(PulseFormat.clock(tonight.asleepBy))** to get the **\(need)** of sleep you need tonight.")
+        let asleepBy = PulseFormat.clock(tonight.asleepBy)
+        return tonight.coveragePercent >= 100
+            ? String(localized: "Aim to be asleep by **\(asleepBy)** to get the **\(need)** of sleep you need tonight.")
+            : String(localized: "Aim to be asleep by **\(asleepBy)** to get **\(tonight.coveragePercent)%** of the **\(need)** of sleep you need tonight.")
     }
 }
 
