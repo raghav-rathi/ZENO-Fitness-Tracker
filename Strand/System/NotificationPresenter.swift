@@ -23,6 +23,10 @@ final class NotificationPresenter: NSObject, UNUserNotificationCenterDelegate {
     /// root has wired it.
     var onCoachBriefTapped: (() -> Void)?
 
+    /// Further taps the app root routes, by category identifier: on iOS the Weekly Plan's Friday check-in
+    /// opens Plan Overview. A category with no entry just opens the app.
+    var routes: [String: () -> Void] = [:]
+
     func userNotificationCenter(
         _ center: UNUserNotificationCenter,
         willPresent notification: UNNotification,
@@ -31,16 +35,19 @@ final class NotificationPresenter: NSObject, UNUserNotificationCenterDelegate {
         completionHandler([.banner, .sound, .list])
     }
 
-    /// Handle a tap on a delivered notification. Only the scheduled morning-brief category (K5) routes
-    /// anywhere; every other notification (wind-down, smart-alarm, battery/illness) just opens the app
-    /// to wherever it was, matching the pre-K5 behaviour.
+    /// Handle a tap on a delivered notification. The scheduled morning brief (K5) routes to the Coach, and a
+    /// category in `routes` to its screen; every other notification (wind-down, smart-alarm,
+    /// battery/illness) just opens the app to wherever it was, matching the pre-K5 behaviour.
     func userNotificationCenter(
         _ center: UNUserNotificationCenter,
         didReceive response: UNNotificationResponse,
         withCompletionHandler completionHandler: @escaping () -> Void
     ) {
-        if response.notification.request.content.categoryIdentifier == CoachBriefScheduler.notificationCategoryId {
+        let category = response.notification.request.content.categoryIdentifier
+        if category == CoachBriefScheduler.notificationCategoryId {
             onCoachBriefTapped?()
+        } else {
+            routes[category]?()
         }
         completionHandler()
     }

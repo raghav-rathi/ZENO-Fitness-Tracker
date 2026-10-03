@@ -190,4 +190,15 @@ struct PulseModal: Identifiable {
     let route: PulseRoute
     var id: String { String(describing: route) }
 }
+
+/// A Pulse route asked for from outside the app's screens: a tapped notification, wired by the app root
+/// (`NotificationPresenter.routes`; the Weekly Plan's Friday check-in). Like a Home Screen quick action it
+/// waits until the shell may open it (the launch gates cleared), and the shell clears it once handled.
+/// It is not a `NavRouter` destination: those are shared with the classic tabs and the macOS sidebar,
+/// which have no Weekly Plan to open.
+@MainActor
+final class PulseExternalRoutes: ObservableObject {
+    /// The route to open, or nil.
+    @Published var pending: PulseRoute?
+}
 #endif

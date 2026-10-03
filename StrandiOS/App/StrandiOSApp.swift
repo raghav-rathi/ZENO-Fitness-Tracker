@@ -24,6 +24,9 @@ struct StrandiOSApp: App {
     /// Shared cross-screen navigation hook (e.g. Live → Devices). The iOS shell (`RootTabView`)
     /// observes it and presents the Devices manager.
     @StateObject private var router: NavRouter
+    /// Pulse routes a tapped notification asks for (the Weekly Plan's Friday check-in). The Pulse shell
+    /// opens them; NavRouter's destinations are shared with shells that have no such screens.
+    @StateObject private var pulseRoutes: PulseExternalRoutes
     /// NOOP's live heart rate banner. Built in `init` and fed from there (`LiveActivityController.follow`), not from
     /// a view: a process iOS starts in the background need not build one.
     @State private var liveActivity: LiveActivityController
@@ -91,6 +94,18 @@ struct StrandiOSApp: App {
         let router = NavRouter()
         _router = StateObject(wrappedValue: router)
         NotificationPresenter.shared.onCoachBriefTapped = { [weak router] in router?.openCoach() }
+        // The Weekly Plan's Friday check-in opens Plan Overview. The plan is a Pulse screen, so the tap opens
+        // the app where it was while the classic tabs are on.
+        let pulseRoutes = PulseExternalRoutes()
+        _pulseRoutes = StateObject(wrappedValue: pulseRoutes)
+        NotificationPresenter.shared.routes[PulsePlanReminders.category] = { [weak pulseRoutes] in
+            guard UserDefaults.standard.object(forKey: "pulse.enabled") as? Bool ?? true else { return }
+            pulseRoutes?.pending = .weeklyPlan(editing: false)
+        }
+        #if DEBUG
+        // `--pulse-notification-tap <category>`: route a tap on that category at launch, as the delegate would.
+        if let category = PulseDebugLaunch.notificationTap { NotificationPresenter.shared.routes[category]?() }
+        #endif
         let model = AppModel()
         _model = StateObject(wrappedValue: model)
         CoachBriefScheduler.register(generateBrief: { [weak coach = model.coach] in
@@ -236,6 +251,7 @@ struct StrandiOSApp: App {
                 .environmentObject(model.coach)
                 .environmentObject(health)
                 .environmentObject(router)
+                .environmentObject(pulseRoutes)
                 .environmentObject(UpdateStore.shared)
                 .environmentObject(liftSession)
                 // v5 L3: the shared stress check-in nudge surface, so the Breathe screen's passive
