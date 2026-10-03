@@ -10,8 +10,8 @@ import StrandDesign
 //     the button; it drops down below the button, or opens upward (rows mirrored, START ACTIVITY still
 //     nearest the button) when the button sits low on the screen;
 //   - rows on a 52 pt pitch, no dividers: a 28 pt line icon at white 70% and an UPPERCASE Bold 13 pt label
-//     tracked 10%; START ACTIVITY · ADD ACTIVITY · STRENGTH TRAINER · COMPLETE YOUR JOURNAL, a hairline,
-//     then ZENO's two extras BREATHE · MARK MOMENT (CREATE ZENO LIVE stays hidden until it is built);
+//     tracked 10%; START ACTIVITY · ADD ACTIVITY · STRENGTH TRAINER · COMPLETE YOUR JOURNAL · CREATE ZENO
+//     LIVE, a hairline, then ZENO's two extras BREATHE · MARK MOMENT;
 //   - the page behind dims slightly (#14171C at 55%); a tap outside or on "✕" closes it;
 //   - it scales and fades from its anchor over 0.2 s (a cross-fade under Reduce Motion).
 //
@@ -20,12 +20,12 @@ import StrandDesign
 
 /// One row of the action menu.
 enum PulseActionMenuItem: String, CaseIterable, Identifiable {
-    case startActivity, addActivity, strengthTrainer, journal, breathe, markMoment
+    case startActivity, addActivity, strengthTrainer, journal, zenoLive, breathe, markMoment
 
     var id: String { rawValue }
 
     /// The spec's rows, then ZENO's extras after the hairline.
-    static let primary: [PulseActionMenuItem] = [.startActivity, .addActivity, .strengthTrainer, .journal]
+    static let primary: [PulseActionMenuItem] = [.startActivity, .addActivity, .strengthTrainer, .journal, .zenoLive]
     static let extras: [PulseActionMenuItem] = [.breathe, .markMoment]
 
     var title: String {
@@ -34,6 +34,7 @@ enum PulseActionMenuItem: String, CaseIterable, Identifiable {
         case .addActivity: return String(localized: "Add activity")
         case .strengthTrainer: return String(localized: "Strength Trainer")
         case .journal: return String(localized: "Complete your journal")
+        case .zenoLive: return String(localized: "Create ZENO Live")
         case .breathe: return String(localized: "Breathe")
         case .markMoment: return String(localized: "Mark moment")
         }
@@ -45,6 +46,7 @@ enum PulseActionMenuItem: String, CaseIterable, Identifiable {
         case .addActivity: return "plus.circle"
         case .strengthTrainer: return "dumbbell"
         case .journal: return "square.and.pencil"
+        case .zenoLive: return "camera"
         case .breathe: return "wind"
         case .markMoment: return "mappin.and.ellipse"
         }
@@ -57,6 +59,7 @@ enum PulseActionMenuItem: String, CaseIterable, Identifiable {
         case .addActivity: return .addActivity
         case .strengthTrainer: return .liftLog
         case .journal: return .journal
+        case .zenoLive: return .zenoLive
         case .breathe: return .breathe
         case .markMoment: return nil
         }
@@ -130,7 +133,7 @@ struct PulseActionMenuHost: View {
     @State private var shown = false
 
     /// Rows plus the hairline, padded: what the card needs below (or above) the button.
-    private static let estimatedHeight: CGFloat = 6 * 52 + 17 + 16
+    private static let estimatedHeight = CGFloat(PulseActionMenuItem.allCases.count) * 52 + 17 + 16
 
     var body: some View {
         GeometryReader { geo in

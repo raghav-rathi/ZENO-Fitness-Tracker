@@ -123,7 +123,7 @@ enum PulseDebugLaunch {
     /// activity-picker, healthspan, health-monitor, stress-monitor, app-settings, device-settings,
     /// profile, levels, achievements, day-streak, journal, behavior-insights, weekly-plan, edit-plan,
     /// cycle-insights, coach, memory, onboarding, strength-trainer, year-in-review, challenges,
-    /// day-timeline, guided-session, classic-<screen> (classic-trends, classic-settings, …) and
+    /// day-timeline, guided-session, zeno-live, classic-<screen> (classic-trends, classic-settings, …) and
     /// tab-<route> (tab-steps, tab-metric:<key>, …).
     static var route: PulseRoute? {
         value("--pulse-route").flatMap(PulseRoute.debugNamed)

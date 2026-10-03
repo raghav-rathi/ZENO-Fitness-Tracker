@@ -485,6 +485,7 @@ extension PulseRoute {
             ("year-in-review", .yearInReview), ("challenges", .challenges), ("day-timeline", .dayTimeline),
             ("privacy-data", .privacyData), ("report-problem", .reportProblem), ("first-week", .firstWeek),
             ("training-load", .trainingLoad), ("guided-session", .guidedSession),
+            ("zeno-live", PulseZenoLiveRoute().route),
             ("screen-sample", PulseSampleScreenRoute(name: "Sample").route),
         ]
         let classic: [(String, PulseClassicDestination)] = [

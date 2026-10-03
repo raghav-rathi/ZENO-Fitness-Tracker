@@ -5,8 +5,8 @@ import StrandDesign
 /// The ＋ menu as a sheet, for the entry points with no "+" on screen to anchor the popover to: a NavRouter
 /// quick-actions request, and the "+" inside a modal. Same rows, same order and same look as the anchored
 /// menu (`PulseActionMenuHost`, WHOOP_UI_SPEC §1.3): START ACTIVITY · ADD ACTIVITY · STRENGTH TRAINER ·
-/// COMPLETE YOUR JOURNAL, a hairline, then BREATHE · MARK MOMENT. Intervals and Live HR live in More ›
-/// TOOLS and the guided session with them, as the spec moves them out of this menu.
+/// COMPLETE YOUR JOURNAL · CREATE ZENO LIVE, a hairline, then BREATHE · MARK MOMENT. Intervals and Live HR
+/// live in More › TOOLS and the guided session with them, as the spec moves them out of this menu.
 struct PulseActionSheet: View {
     let onPick: (PulseQuickAction) -> Void
     let onClose: () -> Void

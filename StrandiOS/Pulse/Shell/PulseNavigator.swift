@@ -75,7 +75,7 @@ struct PulseLink<Label: View>: View {
 
 /// The ＋ actions and the screens they open.
 enum PulseQuickAction: String, Identifiable {
-    case menu, live, workout, addActivity, liftLog, intervals, breathe, journal
+    case menu, live, workout, addActivity, liftLog, intervals, breathe, journal, zenoLive
     var id: String { rawValue }
 
     /// The route an action opens, honouring the rebuild flags (the menu itself has none).
@@ -89,6 +89,7 @@ enum PulseQuickAction: String, Identifiable {
         case .intervals: return .classic(.intervals)
         case .breathe: return .classic(.breathe)
         case .journal: return PulseRoute.journal(dayOffset: nil).forExistingEntryPoint
+        case .zenoLive: return PulseZenoLiveRoute().route
         }
     }
 }
