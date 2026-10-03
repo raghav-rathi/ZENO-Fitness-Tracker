@@ -352,6 +352,11 @@ extension PulseSnapshotBuilder {
     /// latest reading) and the chart, the daily score only as a labelled fallback. The chart covers 24 hours
     /// ending at the day's "now": now today, the end of the last reading on a past day
     /// (completeness-critic/14: "11:02 PM … 10:49 PM"), so the evening before is included either way.
+    ///
+    /// The curve is the waking hours (`DaytimeStress`, 6 AM–10 PM) with each night in the window scored as
+    /// the Sleep dive scores it (`stressNights`) in place of the hours it overlaps, so it runs through the
+    /// sleep band as WHOOP's does (§3.22 [Z]: "DaytimeStress, extended to 24 h with sleep windows"). The
+    /// gauge, the hours and the totals stay waking-only.
     func stressDay(_ r: PulseRequest) async -> PulseStressDay? {
         let cal = Calendar.current
         let dayStart = Self.stressDayStart(r)
@@ -382,17 +387,23 @@ extension PulseSnapshotBuilder {
             timeline = previous.timeline.filter { $0.startTs + 1800 >= startTs } + timeline
         }
 
-        // Points at each window's centre, with a gap wherever the curve skips more than an hour (the night).
+        // Points at each window's centre: the waking hours, and each night's five-minute windows in place of
+        // the hours under its span; a gap wherever the curve skips more than an hour (between 10 PM and a
+        // later bedtime, or a night that could not be scored).
+        let nights = await stressNights(r, window: window)
+        var merged: [PulseTimeValue] = timeline.compactMap { p in
+            let centre = p.startTs + 1800
+            guard !nights.contains(where: { $0.span.contains(centre) }) else { return nil }
+            return PulseTimeValue(date: Date(timeIntervalSince1970: TimeInterval(centre)), value: p.level)
+        }
+        merged += nights.flatMap(\.points)
+        merged.sort { $0.date < $1.date }
         var points: [PulseTimeValue] = []
-        var lastTs: Int?
-        for p in timeline.sorted(by: { $0.startTs < $1.startTs }) {
-            if let lastTs, p.startTs - lastTs > 3600 {
-                points.append(PulseTimeValue(date: Date(timeIntervalSince1970: TimeInterval(lastTs + 1800 + 1)),
-                                             value: nil))
+        for p in merged {
+            if let last = points.last, p.date.timeIntervalSince(last.date) > 3600 {
+                points.append(PulseTimeValue(date: last.date.addingTimeInterval(1), value: nil))
             }
-            points.append(PulseTimeValue(date: Date(timeIntervalSince1970: TimeInterval(p.startTs + 1800)),
-                                         value: p.level))
-            lastTs = p.startTs
+            points.append(p)
         }
 
         let latest = isToday
@@ -401,6 +412,66 @@ extension PulseSnapshotBuilder {
         let daily = await dailyStress(r, dayKey: dayKey, isToday: isToday)
         return PulseStressDay(dayKey: dayKey, isToday: isToday, points: points, hours: result.hours, window: window,
                               latest: latest, daily: daily, maskedHours: result.activityMaskedHours)
+    }
+
+    /// One night on a day's stress chart: the span its curve covers and the curve.
+    struct StressNight {
+        /// From `stressNightLeadIn` before sleep onset to wake, Unix seconds: the waking hours whose centre
+        /// falls inside give way to the night.
+        let span: Range<Int>
+        /// The night's five-minute windows inside the chart's window, each at its centre; nil values are
+        /// windows with too little heart rate.
+        let points: [PulseTimeValue]
+    }
+
+    /// How far before sleep onset a night's curve starts: the Sleep dive's own lead-in, so the two charts
+    /// draw the same windows.
+    static let stressNightLeadIn = 45 * 60
+
+    /// Every night in `window`, merged as the Sleep dive merges it (`SleepModel.mergeDay`) and scored as the
+    /// Sleep dive scores it (`nightStress`: five-minute windows against the waking hours before it, on the
+    /// same 0–3 scale and bands), from `stressNightLeadIn` before onset to wake. Within the sleep the windows
+    /// are the dive's own, so the Stress Monitor and SLEEP STRESS draw the same curve. A night with no
+    /// waking reference or too little heart rate stays a gap.
+    func stressNights(_ r: PulseRequest, window: ClosedRange<Date>) async -> [StressNight] {
+        let lo = Int(window.lowerBound.timeIntervalSince1970)
+        let hi = Int(window.upperBound.timeIntervalSince1970)
+        let groups = await nightGroups(r)
+        let habitual = await habitualMidsleep()
+        var out: [StressNight] = []
+        for g in groups {
+            guard let first = g.map(\.effectiveStartTs).min(), let last = g.map(\.endTs).max(), last > lo, first < hi,
+                  let night = SleepModel.mergeDay(g, habitualMidsleepSec: habitual, motionByStart: [:]) else { continue }
+            let onset = night.session.effectiveStartTs
+            let wake = night.session.endTs
+            guard wake > onset, wake > lo, onset < hi else { continue }
+            let from = onset - Self.stressNightLeadIn
+            guard let points = await stressNightPoints(r, onset: onset, wake: wake, from: from) else { continue }
+            out.append(StressNight(span: from..<wake, points: points.filter { window.contains($0.date) }))
+        }
+        return out
+    }
+
+    /// A night's curve from `from` to wake, kept across refreshes (`PulseStressNightCache`) under the
+    /// heart-rate fingerprint of what it is scored from: the 18 hours before onset `nightStress` takes its
+    /// reference from, and the night. nil only when a newer refresh superseded the reads.
+    private func stressNightPoints(_ r: PulseRequest, onset: Int, wake: Int, from: Int) async -> [PulseTimeValue]? {
+        let fingerprint = await repo.hrFingerprintUnion(from: onset - 18 * 3_600, to: wake)
+        let key = "\(onset)|\(wake)|\(from)|\(fingerprint)"
+        if !fingerprint.isEmpty, let kept = await PulseStressNightCache.shared.lookup(key) { return kept }
+        guard let scored = await nightStress(r, onset: onset, wake: wake, chartFrom: from, chartTo: wake) else {
+            return nil
+        }
+        var points: [PulseTimeValue] = []
+        if case .scored(let res) = scored {
+            points = res.windows.map { w in
+                PulseTimeValue(date: Date(timeIntervalSince1970: TimeInterval(w.startTs) + TimeInterval(w.seconds) / 2),
+                               value: w.level)
+            }
+        }
+        // No reference or too little heart rate is a real answer for that fingerprint, kept like a curve.
+        if !fingerprint.isEmpty, !Task.isCancelled { await PulseStressNightCache.shared.keep(key, points) }
+        return points
     }
 
     /// The intraday stress of the local day starting at `dayStart` (today: up to now), exactly as the Stress
@@ -1130,6 +1201,29 @@ extension PulseSnapshotBuilder {
 }
 
 // MARK: - Stress kept across refreshes
+
+/// Nights' stress curves for the day charts (`stressNightPoints`), kept for the app's life like the days'
+/// below: Home's card, the Health tab and the Stress Monitor draw last night on every refresh, and scoring
+/// it reads about 26 hours of heart rate and R-R. A key carries the night's span and the heart-rate
+/// fingerprint it was scored from, so a stale curve is never served; it is just never asked for again.
+actor PulseStressNightCache {
+    static let shared = PulseStressNightCache()
+
+    private var nights: [String: [PulseTimeValue]] = [:]
+    /// `nights`' keys, oldest first.
+    private var order: [String] = []
+    private let capacity = 60
+
+    func lookup(_ key: String) -> [PulseTimeValue]? { nights[key] }
+
+    func keep(_ key: String, _ points: [PulseTimeValue]) {
+        if nights[key] == nil { order.append(key) }
+        nights[key] = points
+        while order.count > capacity {
+            nights.removeValue(forKey: order.removeFirst())
+        }
+    }
+}
 
 /// Days' intraday stress (`DaytimeStress.Result`), kept for the app's life, which the builder's per-refresh
 /// cache is not: scoring one reads up to 200,000 heart-rate, R-R and motion rows, and Home's extras, the

@@ -129,10 +129,10 @@ struct PulseStressDay: Equatable {
     /// The day's local key and whether it is today.
     let dayKey: String
     let isToday: Bool
-    /// The display timeline in the chart's window (half-hour steps of hour windows), oldest first; nil
-    /// values are gaps.
+    /// The display timeline in the chart's window, oldest first: the waking hours (half-hour steps of hour
+    /// windows) and each night's five-minute windows as the Sleep dive scores them; nil values are gaps.
     let points: [PulseTimeValue]
-    /// The day's own scored hours (non-overlapping), for the totals and the high-stress run.
+    /// The day's own scored hours (non-overlapping), for the totals and the high-stress run. Waking only.
     let hours: [DaytimeStress.HourPoint]
     /// The chart's window, 24 h ending at its "now": today the last 24 h, a past day the 24 h ending on its
     /// last reading (completeness-critic/14), a past day without readings its calendar day.
