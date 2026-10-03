@@ -40,6 +40,11 @@ struct DayTimelineSnapshot: Equatable {
     let highest: Int?
 
     var hasHeartRate: Bool { !overview.isEmpty }
+
+    /// The instant the axis names at the chart's end. A finished day's window ends one second before the
+    /// next day begins, so it reads "12:00 AM" (the next midnight), never "11:59 PM"; today ends at its
+    /// newest reading.
+    var endLabelDate: Date { day.isToday ? end : end.addingTimeInterval(1) }
 }
 
 /// One heart-rate bucket.

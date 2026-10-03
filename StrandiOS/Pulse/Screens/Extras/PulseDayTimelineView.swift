@@ -12,6 +12,11 @@ import StrandAnalytics
 /// day's low / average / high under the plot and a nudge to turn the phone. The data is the existing
 /// full-day heart-rate read (the classic Deep Timeline's), over the window Home scores the day's Strain on.
 ///
+/// The portrait page is a deliberate [Z] deviation: WHOOP held upright letterboxes the landscape chart on
+/// black with only "‹ TODAY ›" and scrolls it sideways (help-center/106). ZENO keeps a "✕ HEART RATE" bar
+/// (the screen is a modal and needs a way out without turning the phone), the sync line, a plot that fits
+/// the width, the turn hint and the day's low / average / high, so the page is useful without rotating.
+///
 /// Owned by group "extras".
 struct PulseDayTimelineView: View {
     /// Rebuilt: Home's ⤢ opens this instead of the classic full-day chart.
@@ -194,7 +199,10 @@ struct PulseDayTimelineView: View {
                           width: max(100, size.width - side - T.plotTrailing - plotX),
                           height: max(80, size.height - bottom - T.xLabelCentre - T.xLabelGap - plotTop))
         let strip = CGRect(x: 0, y: stripTop, width: size.width, height: T.stripHeight)
+        let labels = (side + T.labelInset)...max(side + T.labelInset, size.width - side - T.labelInset)
         let zoomY = DayTimelineGeometry(plot: plot, start: Date(), end: Date()).y(120)
+        // The bar's row centres 15.5 pt below its top, as WHOOP's does (r132, e04), not at its middle.
+        let row = 2 * T.barContentCentre
         return ZStack(alignment: .topLeading) {
             LinearGradient(stops: PulseTheme.pageStops, startPoint: .top, endPoint: .bottom)
             LinearGradient(colors: [T.barTop, T.barBottom], startPoint: .top, endPoint: .bottom)
@@ -203,27 +211,29 @@ struct PulseDayTimelineView: View {
             stripBackground(width: size.width).offset(y: stripTop)
             hairline(width: size.width).offset(y: stripTop + T.stripHeight)
 
-            chart(plot: plot, strip: strip, size: size)
+            chart(plot: plot, strip: strip, labels: labels, size: size)
 
             barCloseButton
-                .position(x: side + T.closeCentre, y: T.barHeight / 2)
+                .position(x: side + T.closeCentre, y: T.barContentCentre)
+            // "HEART RATE" in the nav title's 12 pt caps, the pager's "TODAY" a size smaller (r132: caps 8.4
+            // and 8.0 pt).
             Text(String(localized: "Heart rate"))
-                .pulseText(.menuLabel)
+                .pulseText(.navTitle)
                 .foregroundStyle(PulseTheme.textPrimary)
                 .lineLimit(1)
                 .fixedSize()
-                .frame(height: T.barHeight)
+                .frame(height: row)
                 .offset(x: side + T.closeCentre + T.titleGap)
                 .accessibilityAddTraits(.isHeader)
-            pager(label: .menuLabel, chevron: T.barChevronSize)
-                .position(x: size.width / 2, y: T.barHeight / 2)
+            pager(label: .label, chevron: T.barChevronSize)
+                .position(x: size.width / 2, y: T.barContentCentre)
             if let syncText {
                 Text(syncText)
                     .pulseText(.secondary)
                     .foregroundStyle(PulseTheme.textTertiary)
                     .lineLimit(1)
                     .fixedSize()
-                    .frame(width: max(0, size.width / 2 - 110 - side - T.syncTrailing), height: T.barHeight,
+                    .frame(width: max(0, size.width / 2 - 110 - side - T.syncTrailing), height: row,
                            alignment: .trailing)
                     .offset(x: size.width / 2 + 110)
             }
@@ -250,6 +260,7 @@ struct PulseDayTimelineView: View {
         let plotHeight = min(400, max(240, size.height - insets.bottom - footer - plotTop))
         let plot = CGRect(x: plotX, y: plotTop, width: size.width - plotX - margin, height: plotHeight)
         let strip = CGRect(x: 0, y: stripTop, width: size.width, height: T.stripHeight)
+        let labels = T.labelInset...max(T.labelInset, size.width - T.labelInset)
         return ZStack(alignment: .topLeading) {
             LinearGradient(stops: PulseTheme.pageStops, startPoint: .top, endPoint: .bottom)
             LinearGradient(colors: [T.barTop, T.barBottom], startPoint: .top, endPoint: .bottom)
@@ -258,7 +269,7 @@ struct PulseDayTimelineView: View {
             stripBackground(width: size.width).offset(y: stripTop)
             hairline(width: size.width).offset(y: stripTop + T.stripHeight)
 
-            chart(plot: plot, strip: strip, size: size)
+            chart(plot: plot, strip: strip, labels: labels, size: size)
 
             // The bar: "✕" at the left, the centred title, then the day pager and the sync line.
             ZStack {
@@ -276,7 +287,7 @@ struct PulseDayTimelineView: View {
             .frame(width: size.width, height: PulseTheme.Header.navBar)
             .offset(y: navTop)
             VStack(spacing: 2) {
-                pager(label: .navTitle, chevron: 14).frame(height: 36)
+                pager(label: .navTitle, chevron: T.portraitChevronSize).frame(height: 36)
                 Text(syncText ?? " ")
                     .pulseText(.secondary)
                     .foregroundStyle(PulseTheme.textTertiary)
@@ -298,7 +309,7 @@ struct PulseDayTimelineView: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 8) {
                 Image(systemName: "rotate.right")
-                    .font(.system(size: 15, weight: .regular))
+                    .font(.system(size: T.hintGlyphSize, weight: .regular))
                     .foregroundStyle(PulseTheme.textTertiary)
                     .accessibilityHidden(true)
                 Text(String(localized: "Turn your phone sideways for the wide view."))
@@ -341,11 +352,11 @@ struct PulseDayTimelineView: View {
     // MARK: Pieces
 
     @ViewBuilder
-    private func chart(plot: CGRect, strip: CGRect, size: CGSize) -> some View {
+    private func chart(plot: CGRect, strip: CGRect, labels: ClosedRange<CGFloat>, size: CGSize) -> some View {
         PulseLoadingGate(isLoading: snapshot == nil) {
             if let snapshot {
-                DayTimelineChart(snapshot: snapshot, plot: plot, strip: strip, zoom: zoom(for: snapshot),
-                                 scrollFraction: $scrollFraction, cursor: $cursor)
+                DayTimelineChart(snapshot: snapshot, plot: plot, strip: strip, labelBounds: labels,
+                                 zoom: zoom(for: snapshot), scrollFraction: $scrollFraction, cursor: $cursor)
                     .frame(width: size.width, height: size.height, alignment: .topLeading)
             }
         } skeleton: {
@@ -371,8 +382,9 @@ struct PulseDayTimelineView: View {
         .accessibilityHidden(true)
     }
 
-    /// "‹ TODAY ›": steps the day this timeline shows. The landscape bar sets it as WHOOP's does, 13 pt caps
-    /// between heavier chevrons (reviews/r132); the portrait stack in the nav bar's 12 pt.
+    /// "‹ TODAY ›": steps the day this timeline shows. The landscape bar sets it as WHOOP's does, 11 pt caps
+    /// between heavier chevrons, a size under the title (reviews/r132); the portrait stack in the nav bar's
+    /// 12 pt.
     private func pager(label: PulseTextStyle, chevron: CGFloat) -> some View {
         HStack(spacing: 0) {
             pagerChevron("chevron.left", size: chevron, enabled: canGoBack,
@@ -382,7 +394,7 @@ struct PulseDayTimelineView: View {
                 .foregroundStyle(PulseTheme.textPrimary)
                 .lineLimit(1)
                 .fixedSize()
-                .padding(.horizontal, 6)
+                .padding(.horizontal, T.pagerLabelPadding)
                 .accessibilityAddTraits(.isHeader)
             pagerChevron("chevron.right", size: chevron, enabled: canGoForward,
                          label: String(localized: "Next day")) { step(-1) }
@@ -407,8 +419,8 @@ struct PulseDayTimelineView: View {
         Button(action: action) {
             Image(systemName: symbol)
                 .font(.system(size: size, weight: .bold))
-                .foregroundStyle(enabled ? PulseTheme.textPrimary : PulseTheme.textDisabled)
-                .frame(width: 36, height: PulseTheme.Layout.minTapTarget)
+                .foregroundStyle(enabled ? PulseTheme.textPrimary : T.pagerDisabled)
+                .frame(width: T.pagerChevronWidth, height: PulseTheme.Layout.minTapTarget)
                 .contentShape(Rectangle())
         }
         .buttonStyle(PulsePressStyle())
@@ -421,7 +433,7 @@ struct PulseDayTimelineView: View {
         if let snapshot, snapshot.hasHeartRate, zoomFactor(snapshot) != nil {
             Button { toggleZoom() } label: {
                 Image(systemName: zoomed ? "minus.magnifyingglass" : "plus.magnifyingglass")
-                    .font(.system(size: 21, weight: .regular))
+                    .font(.system(size: T.zoomGlyphSize, weight: .regular))
                     .foregroundStyle(PulseTheme.textPrimary)
                     .frame(width: PulseTheme.Layout.minTapTarget, height: PulseTheme.Layout.minTapTarget)
                     .contentShape(Rectangle())

@@ -73,6 +73,9 @@ struct DayTimelineChart: View {
     /// The plot and the strip above it, in this view's coordinates.
     let plot: CGRect
     let strip: CGRect
+    /// The horizontal span every label (strip, readout, time axis) stays inside: the screen less its side
+    /// safe-area insets and `labelInset`, so the edge never cuts a label.
+    let labelBounds: ClosedRange<CGFloat>
     let zoom: CGFloat
     @Binding var scrollFraction: CGFloat
     @Binding var cursor: Date?
@@ -148,8 +151,8 @@ struct DayTimelineChart: View {
             Text(PulseFormat.whole(value))
                 .font(PulseType.font(.axis))
                 .foregroundStyle(PulseTheme.textTertiary)
-                .frame(width: 40, alignment: .trailing)
-                .position(x: plot.minX - 4 - 20, y: g.y(value))
+                .frame(width: T.yLabelWidth, alignment: .trailing)
+                .position(x: plot.minX - T.yLabelGap - T.yLabelWidth / 2, y: g.y(value))
         }
         .accessibilityHidden(true)
     }
@@ -157,19 +160,32 @@ struct DayTimelineChart: View {
     private struct XLabel: Identifiable {
         let id: String
         let x: CGFloat
+        let width: CGFloat
         let text: String
     }
 
-    /// The day's start and end (when in view) and whole hours between, at least `xLabelSpacing` apart.
+    /// A time label centred on `x`, moved inward when it would cross `labelBounds` (the day's last label
+    /// sits at the plot's end, which in portrait is 16 pt from the screen's edge).
+    private func xLabel(_ id: String, at x: CGFloat, text: String) -> XLabel {
+        let width = PulseTextMetrics.width(text, style: .axis)
+        let half = width / 2
+        let centre = labelBounds.upperBound - labelBounds.lowerBound >= width
+            ? min(max(x, labelBounds.lowerBound + half), labelBounds.upperBound - half)
+            : (labelBounds.lowerBound + labelBounds.upperBound) / 2
+        return XLabel(id: id, x: centre, width: width, text: text)
+    }
+
+    /// The day's start and end (when in view) and whole hours between, at least `xLabelSpacing` apart and
+    /// never touching the start and end labels.
     private func xLabelItems(_ g: DayTimelineGeometry) -> [XLabel] {
         var out: [XLabel] = []
         let lo = plot.minX - 1, hi = plot.maxX + 1
         let startX = g.x(snapshot.start), endX = g.x(snapshot.end)
         if startX >= lo && startX <= hi {
-            out.append(XLabel(id: "start", x: startX, text: PulseFormat.clock(snapshot.start)))
+            out.append(xLabel("start", at: startX, text: PulseFormat.clock(snapshot.start)))
         }
         if endX >= lo && endX <= hi {
-            out.append(XLabel(id: "end", x: endX, text: PulseFormat.clock(snapshot.end)))
+            out.append(xLabel("end", at: endX, text: PulseFormat.clock(snapshot.endLabelDate)))
         }
         let pointsPerHour = g.dataWidth / CGFloat(g.span / 3_600)
         let step = [1, 2, 3, 4, 6, 8, 12].first { CGFloat($0) * pointsPerHour >= T.xLabelSpacing } ?? 12
@@ -177,12 +193,15 @@ struct DayTimelineChart: View {
         guard var t = cal.nextDate(after: g.visibleStart.addingTimeInterval(-1),
                                    matching: DateComponents(minute: 0, second: 0),
                                    matchingPolicy: .nextTime) else { return out }
-        let edges = out.map(\.x)
+        let edges = out
         while t <= g.visibleEnd {
             let hour = cal.component(.hour, from: t)
             let x = g.x(t)
-            if hour % step == 0, x >= lo, x <= hi, edges.allSatisfy({ abs($0 - x) >= 44 }) {
-                out.append(XLabel(id: "h\(Int(t.timeIntervalSince1970))", x: x, text: Self.hourLabel(t)))
+            if hour % step == 0, x >= lo, x <= hi {
+                let label = xLabel("h\(Int(t.timeIntervalSince1970))", at: x, text: Self.hourLabel(t))
+                if edges.allSatisfy({ abs($0.x - label.x) >= ($0.width + label.width) / 2 + T.xLabelMinimumGap }) {
+                    out.append(label)
+                }
             }
             t = t.addingTimeInterval(3_600)
         }
@@ -226,18 +245,34 @@ struct DayTimelineChart: View {
         let width: CGFloat
         /// Markers outrank the night, which outranks activities, when labels collide.
         let priority: Int
+        /// A period's band as drawn on screen: its label may slide along it to clear a marker.
+        var span: ClosedRange<CGFloat>?
         let content: Content
     }
+
+    private static let markerPriority = 2
+    private static let sleepPriority = 1
+    private static let activityPriority = 0
+
+    /// The strip's fonts: values 15 pt Bold condensed, the period glyphs 17 pt.
+    private static let valueFont = PulseType.numeral(T.stripValueSize)
 
     private func stripItems(_ g: DayTimelineGeometry) -> [StripItem] {
         var items: [StripItem] = []
         let lo = plot.minX, hi = plot.maxX
         for period in snapshot.periods {
-            let x0 = max(g.x(period.start), lo), x1 = min(g.x(period.end), hi)
+            let start = g.x(period.start), end = g.x(period.end)
+            let x0 = max(start, lo), x1 = min(end, hi)
             guard x1 > x0 else { continue }
-            let valueWidth = period.value.map { PulseTextMetrics.width($0, style: .rowValue) } ?? 0
-            items.append(StripItem(id: period.id, x: (x0 + x1) / 2, width: max(18, valueWidth),
-                                   priority: period.kind.isSleep ? 1 : 0,
+            let valueWidth = period.value.map { PulseTextMetrics.width($0, style: .rowValue, size: T.stripValueSize) } ?? 0
+            let width = max(T.stripGlyphSize, valueWidth)
+            // Centred on the whole band and held inside the part on screen, so a night that began before the
+            // view starts keeps its label at the view's left edge (help-center/106's "8:30").
+            let centre = (start + end) / 2
+            let x = x1 - x0 >= width ? min(max(centre, x0 + width / 2), x1 - width / 2) : (x0 + x1) / 2
+            items.append(StripItem(id: period.id, x: x, width: width,
+                                   priority: period.kind.isSleep ? Self.sleepPriority : Self.activityPriority,
+                                   span: x0...x1,
                                    content: .period(symbol: period.symbol, value: period.value)))
         }
         if let marker = snapshot.recovery, let band = marker.band {
@@ -246,8 +281,9 @@ struct DayTimelineChart: View {
                 let title = PulseScore.recovery.displayName
                 items.append(StripItem(id: "recovery", x: x,
                                        width: max(PulseTextMetrics.width(title, style: .label),
-                                                  PulseTextMetrics.width(marker.value, style: .rowValue)),
-                                       priority: 2,
+                                                  PulseTextMetrics.width(marker.value, style: .rowValue,
+                                                                         size: T.stripValueSize)),
+                                       priority: Self.markerPriority,
                                        content: .marker(title: title, value: marker.value,
                                                         color: PulseTheme.recoveryText(band))))
             }
@@ -258,34 +294,80 @@ struct DayTimelineChart: View {
                 let title = PulseScore.strain.displayName
                 items.append(StripItem(id: "strain", x: x,
                                        width: max(PulseTextMetrics.width(title, style: .label),
-                                                  PulseTextMetrics.width(marker.value, style: .rowValue)),
-                                       priority: 2,
+                                                  PulseTextMetrics.width(marker.value, style: .rowValue,
+                                                                         size: T.stripValueSize)),
+                                       priority: Self.markerPriority,
                                        content: .marker(title: title, value: marker.value, color: PulseTheme.strain)))
             }
         }
-        return Self.resolveCollisions(items, within: strip.minX...strip.maxX)
+        return Self.resolveCollisions(items, within: labelBounds)
     }
 
-    /// Keeps labels apart: two markers that crowd each other move apart evenly; anything else that would
-    /// overlap a label of higher priority is dropped. Labels stay inside `bounds`.
+    /// Keeps the strip's labels apart and inside `bounds`:
+    ///   - two markers that crowd each other move apart evenly about their midpoint, then shift together
+    ///     until both are inside the bounds (RECOVERY at wake beside STRAIN at the newest reading, a few
+    ///     points apart in portrait);
+    ///   - a night's or nap's label that would overlap a marker slides along its own band, as little as it
+    ///     needs to, before it is dropped (WHOOP keeps "8:30" beside "RECOVERY 82%", help-center/106);
+    ///   - an activity's label that would overlap anything of higher priority is dropped.
     private static func resolveCollisions(_ items: [StripItem], within bounds: ClosedRange<CGFloat>) -> [StripItem] {
-        let gap: CGFloat = 10
+        let gap = T.stripLabelGap
         var placed: [StripItem] = []
+
+        /// `x` held so that a label `width` wide stays inside `range` (its middle when it cannot fit).
+        func clamp(_ x: CGFloat, width: CGFloat, to range: ClosedRange<CGFloat>) -> CGFloat {
+            guard range.upperBound - range.lowerBound >= width else { return (range.lowerBound + range.upperBound) / 2 }
+            return min(max(x, range.lowerBound + width / 2), range.upperBound - width / 2)
+        }
+        func clash(at x: CGFloat, width: CGFloat) -> Int? {
+            placed.indices.first { abs(placed[$0].x - x) < (placed[$0].width + width) / 2 + gap }
+        }
+
         for item in items.sorted(by: { ($0.priority, -$0.x) > ($1.priority, -$1.x) }) {
             var candidate = item
-            let half = candidate.width / 2
-            candidate.x = min(max(candidate.x, bounds.lowerBound + half), bounds.upperBound - half)
-            if let clash = placed.firstIndex(where: { abs($0.x - candidate.x) < ($0.width + candidate.width) / 2 + gap }) {
-                guard placed[clash].priority == candidate.priority, candidate.priority == 2 else { continue }
-                // Two markers: spread them about their midpoint.
-                let other = placed[clash]
+            candidate.x = clamp(item.x, width: item.width, to: bounds)
+            guard let hit = clash(at: candidate.x, width: candidate.width) else {
+                placed.append(candidate)
+                continue
+            }
+            if candidate.priority == markerPriority && placed[hit].priority == markerPriority {
+                var other = placed[hit]
                 let need = (other.width + candidate.width) / 2 + gap
                 let mid = (other.x + candidate.x) / 2
                 let leftFirst = other.x <= candidate.x
-                placed[clash].x = mid + (leftFirst ? -need / 2 : need / 2)
+                other.x = mid + (leftFirst ? -need / 2 : need / 2)
                 candidate.x = mid + (leftFirst ? need / 2 : -need / 2)
+                // Spread about their midpoint, a pair can cross an edge: bring both back inside together.
+                let left = min(other.x - other.width / 2, candidate.x - candidate.width / 2)
+                let right = max(other.x + other.width / 2, candidate.x + candidate.width / 2)
+                var shift: CGFloat = 0
+                if left < bounds.lowerBound { shift = bounds.lowerBound - left }
+                if right + shift > bounds.upperBound { shift = bounds.upperBound - right }
+                other.x += shift
+                candidate.x += shift
+                placed[hit] = other
+                placed.append(candidate)
+                continue
             }
-            placed.append(candidate)
+            guard candidate.priority == sleepPriority, let span = item.span else { continue }
+            // Slide along the band (the part of it inside the bounds), away from whatever it hit: try the
+            // band's two ends and the spots just clear of each placed label, nearest first.
+            let laneStart = max(span.lowerBound, bounds.lowerBound)
+            let lane = laneStart...max(laneStart, min(span.upperBound, bounds.upperBound))
+            var spots = [lane.lowerBound + candidate.width / 2, lane.upperBound - candidate.width / 2]
+            for other in placed {
+                let need = (other.width + candidate.width) / 2 + gap
+                spots.append(other.x - need)
+                spots.append(other.x + need)
+            }
+            let fits = spots
+                .map { clamp($0, width: candidate.width, to: lane) }
+                .filter { clash(at: $0, width: candidate.width) == nil }
+                .min { abs($0 - item.x) < abs($1 - item.x) }
+            if let x = fits {
+                candidate.x = x
+                placed.append(candidate)
+            }
         }
         return placed
     }
@@ -297,52 +379,57 @@ struct DayTimelineChart: View {
         } else {
             ForEach(stripItems(g)) { item in
                 stripLabel(item)
-                    .position(x: item.x, y: strip.minY + (T.stripRow1 + T.stripRow2) / 2)
             }
             .accessibilityHidden(true)
         }
     }
 
+    /// A period's glyph (its foot on the markers' caption baseline) over its value, or a marker's caption
+    /// over its value, each row at its own height in the strip.
+    @ViewBuilder
     private func stripLabel(_ item: StripItem) -> some View {
-        VStack(spacing: 0) {
-            switch item.content {
-            case .period(let symbol, let value):
-                Image(systemName: symbol)
-                    .font(.system(size: 15, weight: .regular))
-                    .foregroundStyle(PulseTheme.textTertiary)
-                    .frame(height: T.stripRow2 - T.stripRow1)
-                Text(value ?? " ")
-                    .font(PulseType.font(.rowValue))
-                    .foregroundStyle(PulseTheme.textPrimary)
-                    .frame(height: T.stripRow2 - T.stripRow1)
-            case .marker(let title, let value, let color):
-                Text(title)
-                    .font(PulseType.font(.label))
-                    .tracking(PulseTextStyle.label.spec.tracking)
-                    .textCase(.uppercase)
-                    .foregroundStyle(color)
-                    .frame(height: T.stripRow2 - T.stripRow1)
+        switch item.content {
+        case .period(let symbol, let value):
+            Image(systemName: symbol)
+                .font(.system(size: T.stripGlyphSize, weight: .regular))
+                .foregroundStyle(PulseTheme.textTertiary)
+                .fixedSize()
+                .position(x: item.x, y: strip.minY + T.stripGlyphCentre)
+            if let value {
                 Text(value)
-                    .font(PulseType.font(.rowValue))
-                    .foregroundStyle(color)
-                    .frame(height: T.stripRow2 - T.stripRow1)
+                    .font(Self.valueFont)
+                    .foregroundStyle(PulseTheme.textPrimary)
+                    .fixedSize()
+                    .position(x: item.x, y: strip.minY + T.stripRow2)
             }
+        case .marker(let title, let value, let color):
+            Text(title)
+                .font(PulseType.font(.label))
+                .tracking(PulseTextStyle.label.spec.tracking)
+                .textCase(.uppercase)
+                .foregroundStyle(color)
+                .fixedSize()
+                .position(x: item.x, y: strip.minY + T.stripRow1)
+            Text(value)
+                .font(Self.valueFont)
+                .foregroundStyle(color)
+                .fixedSize()
+                .position(x: item.x, y: strip.minY + T.stripRow2)
         }
-        .fixedSize()
     }
 
-    /// The scrub readout: "115 bpm" over the time, centred on the cursor.
+    /// The scrub readout: "115 bpm" over the time, centred on the cursor and kept inside `labelBounds`.
     private func readout(at date: Date, _ g: DayTimelineGeometry) -> some View {
         let bpm = DayTimelineDrawing.value(at: date, in: points)
-        let width: CGFloat = 90
-        let x = min(max(g.x(date), strip.minX + width / 2), strip.maxX - width / 2)
+        let half = T.readoutWidth / 2
+        let x = min(max(g.x(date), labelBounds.lowerBound + half), labelBounds.upperBound - half)
         return VStack(spacing: 0) {
             HStack(alignment: .firstTextBaseline, spacing: 3) {
                 Text(bpm.map { PulseFormat.whole($0) } ?? "--")
                     .font(PulseType.font(.rowValue))
                     .foregroundStyle(PulseTheme.textPrimary)
                 Text(String(localized: "bpm"))
-                    .font(.system(size: 12, weight: .bold))
+                    .font(.system(size: T.readoutUnitSize, weight: .bold))
                     .foregroundStyle(PulseTheme.textButton)
             }
             .frame(height: T.stripRow2 - T.stripRow1)
@@ -415,7 +502,7 @@ struct DayTimelineChart: View {
     // MARK: Accessibility
 
     private var accessibilityTitle: String {
-        String(localized: "Heart rate, \(PulseFormat.clock(snapshot.start)) to \(PulseFormat.clock(snapshot.end))")
+        String(localized: "Heart rate, \(PulseFormat.clock(snapshot.start)) to \(PulseFormat.clock(snapshot.endLabelDate))")
     }
 
     private var accessibilityValue: String {

@@ -25,8 +25,9 @@ enum PulseExtrasTheme {
         static let stripFade: CGFloat = 60
         /// Horizontal gridlines at 40 / 80 / 120 / 160 / 200 (#292D36 on #1D212A: white ≈6%).
         static let grid = Color.white.opacity(0.06)
-        /// Heart rate while awake (≈#64676B–#8E9295 on the page).
-        static let awakeLine = Color.white.opacity(0.45)
+        /// Heart rate while awake: the brightest pixel per column of the line measures #63676A on r132 and
+        /// #606367 on e04, white ≈30% on the plot (the spec's text says 50%, which renders #7D8081).
+        static let awakeLine = Color.white.opacity(0.30)
         /// Heart rate during sleep: a lighter sleep blue (#98AFC3).
         static let sleepLine = Color(hex: "#98AFC3")
         /// The sleep band's 2 pt top cap (#86A0B6).
@@ -54,32 +55,64 @@ enum PulseExtrasTheme {
 
         /// The top bar's height, then a 1 pt hairline.
         static let barHeight: CGFloat = 42
+        /// The bar's content (✕, HEART RATE, ‹ TODAY ›, the sync line) centres this far below its top, not at
+        /// its middle: HEART RATE's caps sit at 11.3–19.7 pt on r132 and e04.
+        static let barContentCentre: CGFloat = 15.5
         /// The label strip's height (43 → 97), then a 1 pt hairline.
         static let stripHeight: CGFloat = 54
         /// The bar's "✕" and pager chevrons, heavier than a nav bar's (r132: ✕ ≈15 pt across, ‹ ≈16 pt tall).
         static let barCloseSize: CGFloat = 19
         static let barChevronSize: CGFloat = 17
+        /// The pager's label sits this far from each chevron's 36 pt frame (r132: 19.4 pt from ‹ to TODAY).
+        static let pagerLabelPadding: CGFloat = 3.5
+        static let pagerChevronWidth: CGFloat = 36
+        /// A pager chevron with nowhere to go (r132's "›" on today: #505559 on the bar, white ≈20%).
+        static let pagerDisabled = Color.white.opacity(0.20)
+        /// The portrait stack's pager chevrons, the nav bar's weight.
+        static let portraitChevronSize: CGFloat = 14
         /// "✕" centres this far inside the side safe-area edge; the title starts 32 pt after it.
         static let closeCentre: CGFloat = 48
         static let titleGap: CGFloat = 32
         /// "Data synced to …" ends this far inside the trailing safe-area edge.
         static let syncTrailing: CGFloat = 33
-        /// The y labels end this far inside the leading safe-area edge; the gridlines start 4 pt later.
-        static let yLabelTrailing: CGFloat = 18
+        /// The y labels end this far before the plot (18 pt inside the leading safe-area edge in landscape),
+        /// right-aligned in a frame this wide.
+        static let yLabelGap: CGFloat = 4
+        static let yLabelWidth: CGFloat = 40
         static let plotLeading: CGFloat = 22
         /// The day's first instant sits this far into the plot, so its time label clears the y labels.
         static let dataInset: CGFloat = 20
         /// The plot ends this far inside the trailing safe-area edge; the zoom button centres 13 pt in.
         static let plotTrailing: CGFloat = 56
         static let zoomCentre: CGFloat = 13
+        /// ⊕ / ⊖ (e04: ≈21 pt across).
+        static let zoomGlyphSize: CGFloat = 21
         /// The x labels centre this far above the bottom safe-area edge; the plot ends 18 pt above them.
         static let xLabelCentre: CGFloat = 12
         static let xLabelGap: CGFloat = 18
-        /// The two label rows in the strip, from its top: title / glyph, then value.
+        /// Text in the strip and under the plot keeps this far inside the screen's side safe-area edges, so no
+        /// label is ever cut by the edge (DR §9).
+        static let labelInset: CGFloat = 16
+        /// The two label rows in the strip, from its top: a marker's caption, then the values.
         static let stripRow1: CGFloat = 21
         static let stripRow2: CGFloat = 39
+        /// A period's glyph sits higher than a marker's caption, its foot on the caption's baseline (r132: the
+        /// moon is 15 pt tall at 50.3–65.3 pt, 15 pt below the strip's top).
+        static let stripGlyphCentre: CGFloat = 15
+        static let stripGlyphSize: CGFloat = 17
+        /// The strip's values: 15 pt Bold condensed (r132: "7:29", "65%", "4.2" caps 10.3 pt tall).
+        static let stripValueSize: CGFloat = 15
+        /// Two strip labels keep at least this far apart.
+        static let stripLabelGap: CGFloat = 10
+        /// The scrub readout's frame width, and its "bpm" (e04: "115 bpm" with a smaller unit).
+        static let readoutWidth: CGFloat = 90
+        static let readoutUnitSize: CGFloat = 12
         /// Hour labels keep at least this far apart; the day's start and end labels win a collision.
         static let xLabelSpacing: CGFloat = 100
+        /// Any two time labels keep at least this far apart, edge to edge.
+        static let xLabelMinimumGap: CGFloat = 12
+        /// The portrait page's nudge to turn the phone: its glyph.
+        static let hintGlyphSize: CGFloat = 15
         /// How far ⊕ zooms in: the visible span shrinks to a third (at least two hours stay in view).
         static let zoomFactor: CGFloat = 3
         static let minimumZoomedSpan: TimeInterval = 2 * 3_600
