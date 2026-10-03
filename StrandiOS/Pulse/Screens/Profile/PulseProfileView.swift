@@ -49,18 +49,34 @@ struct PulseProfileView: View {
         return trimmed.isEmpty ? nil : trimmed
     }
 
-    /// The avatar's colour: its initials disc, or teal (WHOOP's sampled glow) for a photo or none.
-    private var glowColor: Color {
-        if profile.avatarImageData == nil, let name {
-            let initials = name.split(separator: " ").prefix(2).compactMap { $0.first.map { String($0).uppercased() } }.joined()
-            if !initials.isEmpty { return PulseAvatar.discColor(for: initials) }
-        }
-        return Color(hex: "#3C8C8D")
+    /// The avatar's initials disc colour, when the avatar is an initials disc; a photo or no name takes the
+    /// foundation's sampled teal glow (`Gradients.profileGlowTeal`).
+    private var discColor: Color? {
+        guard profile.avatarImageData == nil, let name else { return nil }
+        let initials = name.split(separator: " ").prefix(2).compactMap { $0.first.map { String($0).uppercased() } }.joined()
+        return initials.isEmpty ? nil : PulseAvatar.discColor(for: initials)
     }
 
+    /// The glow behind the header, rising under the bar and fading into the page.
+    @ViewBuilder
+    private var headerGlow: some View {
+        let fade = LinearGradient(stops: [.init(color: Color.white.opacity(0.8), location: 0),
+                                          .init(color: Color.white.opacity(0.45), location: 0.4),
+                                          .init(color: Color.white.opacity(0.12), location: 0.75),
+                                          .init(color: Color.clear, location: 1)],
+                                  startPoint: .top, endPoint: .bottom)
+        if let discColor {
+            discColor.mask(fade)
+        } else {
+            LinearGradient(gradient: PulseTheme.Gradients.profileGlowTeal, startPoint: .top, endPoint: .bottom)
+                .mask(fade)
+        }
+    }
+
+    /// profile-community-2026/21: the avatar (≈96 pt), name and EDIT sit on the 16 pt page margin.
     private var header: some View {
         VStack(alignment: .leading, spacing: 14) {
-            PulseAvatar(imageData: profile.avatarImageData, name: name, size: 92)
+            PulseAvatar(imageData: profile.avatarImageData, name: name, size: 96)
                 .accessibilityHidden(true)
             HStack(alignment: .top, spacing: 12) {
                 VStack(alignment: .leading, spacing: 4) {
@@ -90,15 +106,9 @@ struct PulseProfileView: View {
                 .accessibilityLabel(String(localized: "Edit profile"))
             }
         }
-        .padding(.horizontal, 4)
         .padding(.top, 10)
         .background(alignment: .top) {
-            // The glow behind the header, in the avatar's colour, rising under the bar.
-            LinearGradient(stops: [.init(color: glowColor.opacity(0.8), location: 0),
-                                   .init(color: glowColor.opacity(0.45), location: 0.4),
-                                   .init(color: glowColor.opacity(0.12), location: 0.75),
-                                   .init(color: Color.clear, location: 1)],
-                           startPoint: .top, endPoint: .bottom)
+            headerGlow
                 .frame(height: 520)
                 .padding(.horizontal, -PulseTheme.Layout.pageMargin)
                 .offset(y: -170)
@@ -147,7 +157,8 @@ struct PulseProfileView: View {
         }
         .padding(.horizontal, 12)
         .frame(minHeight: 34)
-        .background(RoundedRectangle(cornerRadius: PulseTheme.Radius.well, style: .circular).fill(Color(hex: "#292E32").opacity(0.85)))
+        .background(RoundedRectangle(cornerRadius: PulseTheme.Radius.well, style: .circular)
+            .fill(ProfileArtPalette.trackingPill.opacity(0.85)))
         .accessibilityElement(children: .combine)
     }
 
@@ -166,7 +177,9 @@ struct PulseProfileView: View {
             PulseLink(.dayStreak) { streakRow(s.streak.current) }
                 .buttonStyle(PulsePressStyle())
                 .padding(.top, 12)
-            if coach.availability != .off {
+            // MY MEMORY opens the Coach's memory page, which has no working screen (or classic fallback)
+            // until the cycle-coach group rebuilds it: the row appears with the page.
+            if coach.availability != .off && PulseMemoryView.isRebuilt {
                 PulseLink(.memory) { memoryRow }
                     .buttonStyle(PulsePressStyle())
                     .padding(.top, 12)
@@ -216,6 +229,7 @@ struct PulseProfileView: View {
             Image(systemName: "flame.fill")
                 .font(.system(size: 18, weight: .regular))
                 .foregroundStyle(PulseTheme.Streak.flame(days: days))
+                .opacity(days == 0 ? 0.35 : 1)
             Text(ProfileFormat.days(days))
                 .pulseText(.coachingTitle)
                 .foregroundStyle(PulseTheme.textPrimary)
@@ -262,11 +276,13 @@ struct PulseProfileView: View {
                 }
             }
             ScrollView(.horizontal, showsIndicators: false) {
-                HStack(alignment: .top, spacing: 14) {
+                // A 110 pt pitch (WHOOP's 111–113), so a fourth badge peeks at the right edge as the
+                // scroll cue (profile-community-2026/21, 10).
+                HStack(alignment: .top, spacing: 10) {
                     ForEach(shown) { badge in
                         Button { navigator.open(PulseAchievementDetailsRoute(badgeID: badge.id).route) } label: {
-                            ProfileBadgeCell(badge: badge, artSize: 76, showsDate: false)
-                                .frame(width: 112)
+                            ProfileBadgeCell(badge: badge, artSize: 72, showsDate: false)
+                                .frame(width: 100)
                         }
                         .buttonStyle(PulsePressStyle())
                     }
@@ -288,7 +304,7 @@ struct PulseProfileView: View {
     private func highlights(_ s: ProfileSnapshot) -> some View {
         let h = s.highlights[highlightWindow]
         return VStack(alignment: .leading, spacing: 18) {
-            PulseSectionHeader(String(localized: "Data Highlights"), style: .pageTitle)
+            PulseSectionHeader(String(localized: "Data Highlights"))
             VStack(alignment: .leading, spacing: 22) {
                 PulseSegmentedControl(options: ProfileWindow.allCases, selection: $highlightWindow) { $0.title }
                 if let h, !h.isEmpty {
@@ -327,7 +343,8 @@ struct PulseProfileView: View {
                 }
             }
             .padding(16)
-            .background(RoundedRectangle(cornerRadius: 16, style: .circular).fill(PulseTheme.card))
+            .background(RoundedRectangle(cornerRadius: MoreLayout.profileCardRadius, style: .circular)
+                .fill(PulseTheme.card))
         }
     }
 
@@ -350,12 +367,14 @@ struct PulseProfileView: View {
         let shown = showsAllSports ? summary.sports : Array(summary.sports.prefix(3))
         let top = summary.sports.first?.count ?? 1
         return VStack(alignment: .leading, spacing: 18) {
-            PulseSectionHeader(String(localized: "Activity Summary"), style: .pageTitle)
+            PulseSectionHeader(String(localized: "Activity Summary"))
             VStack(alignment: .leading, spacing: 20) {
                 PulseSegmentedControl(options: ProfileWindow.allCases, selection: $activityWindow) { $0.title }
                 VStack(alignment: .leading, spacing: 2) {
+                    // A condensed numeral: "1010x" measures 16.8 pt tall on profile-community-2026/23 (DR keeps
+                    // standard width for the hero score alone).
                     Text(verbatim: "\(PulseFormat.grouped(Double(summary.total)))x")
-                        .font(PulseType.numeral(34, hero: true))
+                        .font(PulseType.numeral(24))
                         .foregroundStyle(PulseTheme.textPrimary)
                     Text(String(localized: "Total activities"))
                         .pulseText(.label)
@@ -376,8 +395,9 @@ struct PulseProfileView: View {
                     .foregroundStyle(PulseTheme.textSecondary)
                     VStack(spacing: 0) {
                         ForEach(Array(shown.enumerated()), id: \.element.id) { i, sport in
-                            if i > 0 { PulseDivider().padding(.vertical, 2) }
-                            ProfileSportRow(sport: sport, fraction: Double(sport.count) / Double(max(1, top)))
+                            if i > 0 { PulseDivider() }
+                            ProfileSportRow(sport: sport, fraction: Double(sport.count) / Double(max(1, top)),
+                                            isFirst: i == 0)
                         }
                     }
                     if summary.sports.count > 3 {
@@ -399,7 +419,8 @@ struct PulseProfileView: View {
                 }
             }
             .padding(16)
-            .background(RoundedRectangle(cornerRadius: 16, style: .circular).fill(PulseTheme.card))
+            .background(RoundedRectangle(cornerRadius: MoreLayout.profileCardRadius, style: .circular)
+                .fill(PulseTheme.card))
         }
     }
 
@@ -414,9 +435,10 @@ struct PulseProfileView: View {
 
 // MARK: - Pieces
 
-/// A 24 pt section title with its grey count and an accessory at the right ("Achievements (34) VIEW ALL
-/// →"). The title is one word that must never break inside itself (DR §2), so at large text sizes the
-/// accessory moves under the title instead of squeezing it.
+/// A 20 pt Semibold section title with its grey count and an accessory at the right ("Achievements (34)
+/// VIEW ALL →"; 20 pt, not the spec's 24: "Data Highlights" measures 138 × 17.4 pt on
+/// profile-community-2026/21, 22, 10). The title is one word that must never break inside itself (DR §2),
+/// so at large text sizes the accessory moves under the title instead of squeezing it.
 private struct ProfileSectionTitle<Accessory: View>: View {
     let title: String
     var count: Int?
@@ -440,11 +462,11 @@ private struct ProfileSectionTitle<Accessory: View>: View {
     private var titleText: some View {
         HStack(alignment: .firstTextBaseline, spacing: 6) {
             Text(title)
-                .pulseText(.pageTitle)
+                .pulseText(.sectionTitle)
                 .foregroundStyle(PulseTheme.textPrimary)
             if let count {
                 Text(verbatim: "(\(count))")
-                    .pulseText(.pageTitle)
+                    .pulseText(.sectionTitle)
                     .foregroundStyle(PulseTheme.textTertiary)
             }
         }
@@ -465,7 +487,7 @@ private struct ProfileHalfCard<Art: View>: View {
         VStack(spacing: 10) {
             art()
                 .frame(height: 78)
-                .padding(.top, 20)
+                .padding(.top, 14)
             VStack(spacing: 4) {
                 Text(title())
                     .modifier(MoreLabelText(tracking: 1.4))
@@ -478,9 +500,9 @@ private struct ProfileHalfCard<Art: View>: View {
                     .lineLimit(1)
                     .minimumScaleFactor(0.8)
             }
-            .padding(.bottom, 18)
+            .padding(.bottom, 14)
         }
-        .frame(maxWidth: .infinity, minHeight: 160)
+        .frame(maxWidth: .infinity, minHeight: 146)
         .background(RoundedRectangle(cornerRadius: PulseTheme.Radius.card, style: .circular).fill(PulseTheme.card))
         .overlay(alignment: .topTrailing) {
             PulseChevron(color: PulseTheme.textTertiary, size: 15)
@@ -516,20 +538,26 @@ struct ProfileZenoOrb: View {
     }
 }
 
-/// A highlight ring: an 88 pt dial (6 pt stroke) with its 24 pt value and a 14 pt Semibold label under
-/// it ("Best Sleep", spec §2.5 "Profile highlight rings").
+/// A highlight ring: a 71 pt ring with a 3 pt stroke, its value in 20 pt Bold condensed (digits ≈14 pt
+/// tall) and a 14 pt Semibold label under it ("Best Sleep"), as reviews/r73 (71.3 pt, 3.0–3.3 pt) and
+/// profile-community-2026/22 (69.7 pt, 3 pt) measure. The value is a fixed numeral inside its ring.
 private struct ProfileHighlightRing: View {
     let content: PulseDialContent
+
+    private static let diameter: CGFloat = 71
 
     var body: some View {
         VStack(spacing: 10) {
             ZStack {
-                PulseRing(fraction: content.fraction, color: content.color, diameter: 82, thickness: 6)
-                PulseValueText(value: content.valueText, unit: content.unitText, style: .mediumValue,
-                               unitStyle: .mediumValue, color: content.isPlaceholder ? PulseTheme.textDisabled : PulseTheme.textPrimary,
-                               unitColor: PulseTheme.textPrimary)
+                PulseRing(fraction: content.fraction, color: content.color, diameter: Self.diameter, thickness: 3)
+                Text(verbatim: content.valueText + (content.unitText ?? ""))
+                    .font(PulseType.numeral(20))
+                    .foregroundStyle(content.isPlaceholder ? PulseTheme.textDisabled : PulseTheme.textPrimary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+                    .padding(.horizontal, 6)
             }
-            .frame(width: 82, height: 82)
+            .frame(width: Self.diameter, height: Self.diameter)
             ProfileWordWrapText(content.label, size: 14, weight: .semibold, relativeTo: .subheadline)
                 .foregroundStyle(PulseTheme.textPrimary)
         }
@@ -582,7 +610,7 @@ private struct ProfileStreakColumn: View {
             .frame(width: 40, height: 40)
             .accessibilityHidden(true)
             Text(ProfileFormat.days(days))
-                .profileFont(17, weight: .semibold, relativeTo: .headline)
+                .profileFont(15, weight: .semibold, relativeTo: .subheadline)
                 .foregroundStyle(PulseTheme.textPrimary)
             // Two centred lines at large text sizes rather than "Green Recov…".
             Text(caption)
@@ -599,7 +627,8 @@ private struct ProfileStreakColumn: View {
     }
 }
 
-/// A NOTABLE STATS row: a gold scalloped icon, the stat's name, the value with its small grey unit.
+/// A NOTABLE STATS row: a gold scalloped icon, the stat's name, the value (21 pt condensed, digits 15 pt
+/// tall) with its small grey unit, on a 68 pt pitch (profile-community-2026/22, reviews/r73).
 private struct ProfileNotableRow: View {
     let symbol: String
     let title: String
@@ -610,10 +639,10 @@ private struct ProfileNotableRow: View {
         HStack(spacing: 14) {
             ZStack {
                 ProfileBadgeShape(family: .activities)
-                    .stroke(Color(hex: "#C9A15A").opacity(0.85), lineWidth: 1.2)
+                    .stroke(ProfileArtPalette.notableRim.opacity(0.85), lineWidth: 1.2)
                 Image(systemName: symbol)
                     .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(Color(hex: "#E8C27A"))
+                    .foregroundStyle(ProfileArtPalette.notableGlyph)
             }
             .frame(width: 32, height: 32)
             .accessibilityHidden(true)
@@ -622,23 +651,26 @@ private struct ProfileNotableRow: View {
                 .foregroundStyle(PulseTheme.textPrimary)
             Spacer(minLength: 8)
             HStack(alignment: .firstTextBaseline, spacing: 4) {
-                Text(value).pulseText(.rowValue).foregroundStyle(PulseTheme.textPrimary)
+                Text(value).pulseText(.calloutValue).foregroundStyle(PulseTheme.textPrimary)
                 Text(unit).pulseText(.legend).foregroundStyle(PulseTheme.textTertiary)
             }
         }
-        .padding(.vertical, 12)
+        .padding(.vertical, 18)
         .accessibilityElement(children: .combine)
     }
 }
 
 /// An Activity Summary row: the sport's glyph and caps name with its average Strain, the count in strain
-/// blue at the right, and a full-width blue bar over the hatched track.
+/// blue at the right, and a full-width 8 pt blue bar over the hatched track, on a ≈90 pt pitch
+/// (profile-community-2026/23, completeness-critic/03: label, 27 pt to the bar, 38 pt to the next rule).
 private struct ProfileSportRow: View {
     let sport: ProfileActivitySummary.Sport
     let fraction: Double
+    /// The first row sits close under the ACTIVITY | AVG. STRAIN header, with no rule above it.
+    var isFirst = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 18) {
             HStack(spacing: 12) {
                 Image(systemName: sport.symbol)
                     .font(.system(size: 17, weight: .regular))
@@ -651,24 +683,25 @@ private struct ProfileSportRow: View {
                     .lineLimit(1)
                 if let strain = sport.averageStrain {
                     Text(PulseFormat.oneDecimal(strain))
-                        .font(PulseType.numeral(14))
+                        .profileFont(14, weight: .bold, relativeTo: .subheadline, condensed: true)
                         .foregroundStyle(PulseTheme.textSecondary)
                 }
                 Spacer(minLength: 8)
                 Text(verbatim: "\(PulseFormat.grouped(Double(sport.count)))x")
-                    .font(PulseType.numeral(17))
+                    .pulseText(.rowValue)
                     .foregroundStyle(PulseTheme.strain)
             }
             GeometryReader { geo in
                 ZStack(alignment: .leading) {
-                    PulseHatchedTrack(cornerRadius: 3)
-                    Capsule().fill(PulseTheme.strain)
-                        .frame(width: max(6, geo.size.width * CGFloat(min(1, max(0, fraction)))))
+                    PulseHatchedTrack(cornerRadius: 4)
+                    RoundedRectangle(cornerRadius: 4, style: .circular).fill(PulseTheme.strain)
+                        .frame(width: max(8, geo.size.width * CGFloat(min(1, max(0, fraction)))))
                 }
             }
-            .frame(height: 6)
+            .frame(height: 8)
         }
-        .padding(.vertical, 12)
+        .padding(.top, isFirst ? 6 : 18)
+        .padding(.bottom, 30)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(sport.name)
         .accessibilityValue(sport.averageStrain.map {
