@@ -15,7 +15,7 @@ struct PulseActionSheet: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
                 Spacer()
-                PulseCloseButton(action: onClose)
+                PulseCloseButton(compact: true, action: onClose)
             }
             .padding(.trailing, 8)
             .padding(.top, 8)

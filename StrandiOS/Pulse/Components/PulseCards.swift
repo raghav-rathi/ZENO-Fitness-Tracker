@@ -513,7 +513,7 @@ struct PulseDialogCard: View {
             VStack(spacing: 16) {
                 HStack {
                     Spacer()
-                    PulseCloseButton(action: onClose)
+                    PulseCloseButton(compact: true, action: onClose)
                 }
                 .padding(.bottom, -12)
                 Text(title)
