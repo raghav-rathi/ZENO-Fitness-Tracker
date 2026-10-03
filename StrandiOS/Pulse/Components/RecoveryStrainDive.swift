@@ -229,18 +229,21 @@ enum PulseDiveRoutes {
 
 // MARK: Achievement chip
 
-/// The pillar's achievement chip in a dive's bar (§1.5 [Z]; deep-dives-2026/17b, 57, profile-community-2026/83):
-/// the running count of the pillar's cumulative badge, Green Light's green Recoveries on Recovery and Big
-/// Days' days of 14+ Strain on Strain, read from the snapshot the Achievements pages read
-/// (`ProfileSnapshot.badges`), so the chip and Achievement Details' "Total so far" are one number. It opens
-/// that badge's Achievement Details. The explainer it displaces moves to HOW IT'S CALCULATED at the foot of
-/// the page (`PulseDiveExplainerRow`); before the badge counts anything the bar keeps ⓘ.
+/// The pillar's achievement chip in a dive's bar (§1.5 [Z]; deep-dives-2026/17b, 18, 57,
+/// profile-community-2026/83): the running count of the pillar's cumulative badge, Restful Nights' nights of
+/// 85%+ Sleep Performance on Sleep (which badge WHOOP's Sleep chip counts is unconfirmed, §1.5), Green
+/// Light's green Recoveries on Recovery and Big Days' days of 14+ Strain on Strain, read from the snapshot
+/// the Achievements pages read (`ProfileSnapshot.badges`), so the chip and Achievement Details' "Total so
+/// far" are one number. It opens that badge's Achievement Details. The explainer it displaces moves to HOW
+/// IT'S CALCULATED at the foot of the page (`PulseDiveExplainerRow`); before the badge counts anything the
+/// bar keeps ⓘ.
 enum PulseDiveAchievement {
-    case recovery, strain
+    case sleep, recovery, strain
 
     /// The badge the chip counts.
     var rule: PulseAchievements.Rule {
         switch self {
+        case .sleep: return .restfulNights
         case .recovery: return .greenLight
         case .strain: return .bigDays
         }
@@ -249,6 +252,7 @@ enum PulseDiveAchievement {
     /// The family's mini badge, as `PulseAchievementChip` draws the families.
     private var symbol: String {
         switch self {
+        case .sleep: return "hexagon.fill"
         case .recovery: return "shield.fill"
         case .strain: return "diamond.fill"
         }

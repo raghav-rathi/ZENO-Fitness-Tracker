@@ -6,13 +6,14 @@ import StrandAnalytics
 /// The Sleep deep dive (WHOOP_UI_SPEC §3.3), pushed from the Sleep dial, the sleep rows and the sticky
 /// header's mini ring.
 ///
-/// Top to bottom: "‹ TODAY ›" with ⓘ (the nights step in the bar's title, ARCHITECTURE §9); the 260 / 15
-/// Sleep Performance ring with its Poor / Sufficient / Optimal dashes; the notched callout with HOURS VS.
-/// NEEDED, SLEEP CONSISTENCY, SLEEP EFFICIENCY and HIGH SLEEP STRESS, each on its own thresholds, and the
-/// legend well; "Last Night's Sleep" with EDIT and "Today vs. prior 30 days"; HOURS OF SLEEP (heart rate,
-/// stages, restorative, latency); the four detail cards; the seven Weekly Trends cards; then ZENO's naps and
-/// sleeping heart rate. The coach summary pill floats at the bottom with a local sentence until the Coach
-/// writes one (§1.2 [Z]).
+/// Top to bottom: "‹ TODAY ›" with the Restful Nights achievement chip (§1.5 [Z], `PulseDiveAchievement`;
+/// the nights step in the bar's title, ARCHITECTURE §9); the 260 / 15 Sleep Performance ring with its Poor /
+/// Sufficient / Optimal dashes; the notched callout with HOURS VS. NEEDED, SLEEP CONSISTENCY, SLEEP
+/// EFFICIENCY and HIGH SLEEP STRESS, each on its own thresholds, and the legend well; "Last Night's Sleep"
+/// with EDIT and "Today vs. prior 30 days"; HOURS OF SLEEP (heart rate, stages, restorative, latency); the
+/// four detail cards; the seven Weekly Trends cards; ZENO's naps and sleeping heart rate; then HOW IT'S
+/// CALCULATED. The coach summary pill floats at the bottom with a local sentence until the Coach writes one
+/// (§1.2 [Z]).
 ///
 /// It opens on Home's day: a day with no recorded night is that day's empty night (the ring "--%", the
 /// rows "--", every card its dash, the trends still up), never an older night under the day's title. ‹ ›
@@ -41,6 +42,8 @@ struct PulseSleepDiveView: View {
     /// The night just deleted, undoable for a few seconds (#65).
     @State private var undo: PulseSleepUndo?
     @State private var undoDismiss: Task<Void, Never>?
+    /// The badges, for the bar's achievement chip.
+    @State private var profile: ProfileSnapshot?
     #if DEBUG
     @State private var debugApplied = false
     #endif
@@ -94,7 +97,7 @@ struct PulseSleepDiveView: View {
 
     var body: some View {
         PulseScreenScaffold(title: snapshot.map(title) ?? homeTitle, titlePager: pager,
-                            trailing: .info { navigator.open(.classic(.scoringGuide)) },
+                            trailing: PulseDiveAchievement.sleep.trailing(profile, open: navigator.open),
                             coach: coachAccessory, coachSeed: snapshot?.summary, ready: isReady) {
             PulseLoadingGate(isLoading: snapshot == nil) {
                 if let snapshot {
@@ -112,6 +115,7 @@ struct PulseSleepDiveView: View {
         .task(id: snapshot?.stress) {
             await loadStress()
         }
+        .profileSnapshot($profile)
         .sheet(item: $editing) { edit in
             SleepTimeEditor(edit: edit, onSave: { bed, wake in
                 await SleepEditActions.save(edit, bedTs: bed, wakeTs: wake, repo: repo, intelligence: intelligence)
@@ -304,6 +308,10 @@ struct PulseSleepDiveView: View {
         }
 
         extras(s)
+
+        // A card's gap under the last card (the page's own spacing), as on the Recovery and Strain dives.
+        PulseDiveExplainerRow()
+            .id("pulse.explainer")
     }
 
     /// The four contributors, the stress row filled from the night's stress once it lands.
