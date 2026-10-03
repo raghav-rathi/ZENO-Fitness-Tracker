@@ -299,8 +299,9 @@ struct JournalAIEntryCard: View {
 // MARK: Day capsule (§3.17 item 4)
 
 /// One day of the Journal's strip: a tall white-12% capsule holding the weekday ("Mon", 13 pt at 70%), the
-/// date (20 pt Bold condensed) and, under a logged day, a green ✓ disc. The selected day is lighter (white
-/// 20%) and ringed 2 pt white.
+/// date (20 pt Bold condensed) and a status mark: a green ✓ disc under a logged day, an empty grey ring
+/// under one not logged (help-center/05; journal-plan-2026/05). The selected day is lighter (white 20%)
+/// and ringed 2 pt white.
 struct JournalDayCapsule: View {
     let weekday: String
     let date: String
@@ -323,6 +324,9 @@ struct JournalDayCapsule: View {
                     Image(systemName: "checkmark")
                         .font(PulseTheme.JournalPlan.smallGlyph)
                         .foregroundStyle(Color.black)
+                } else {
+                    // Home's MY JOURNAL row draws "not logged" the same way (`PulseDayCircle`, §2.6.37).
+                    Circle().strokeBorder(PulseTheme.Journal.notLogged, lineWidth: 1.5)
                 }
             }
             .frame(width: 18, height: 18)
