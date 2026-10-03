@@ -11,8 +11,8 @@ import StrandAnalytics
 // card for the day and the next one rises; tapping the card opens its destination. Feature cards (the
 // week in review, release notes) swap the fill for a gradient border.
 //
-// The cards come from `HomeCoachingRules` (StrandAnalytics), fed by the day's own data: no server feed, so
-// there is no "Couldn't load" state.
+// The cards come from `HomeCoachingRules` (StrandAnalytics), fed by the day's own data, then the wearer's own
+// milestones (`PulseHomeMilestones`, §3.30): no server feed, so there is no "Couldn't load" state.
 
 /// One card, with its copy and destination resolved.
 struct PulseCoachingCardModel: Identifiable, Equatable {
@@ -169,21 +169,33 @@ struct PulseCoachingStack: View {
 
 /// Places the stack on Home, with the monitor tiles under it (their gap follows whether a card shows):
 /// evaluates the rules from the day's inputs plus the app state they need (the illness heads-up, unseen
-/// release notes, the current minute for this morning's alarm), drops the cards completed today, and
-/// opens a card's destination. Its own leaf because the illness flag lives on `AppModel`, which
-/// publishes every heart-rate tick: the content below only redraws when its inputs change.
+/// release notes, the current minute for this morning's alarm), adds today's milestones, drops the cards
+/// completed today, and opens a card's destination. Its own leaf because the illness flag lives on
+/// `AppModel`, which publishes every heart-rate tick: the content below only redraws when its inputs
+/// change.
 struct PulseCoachingStackHost: View {
     let base: HomeCoachingRules.Inputs
     let home: HomeSnapshot
     /// The monitor tiles' inputs (see `PulseMonitorTiles`).
     let grades: PulseMonitorGrades?
     let stressUpdated: String?
+    /// Today's profile figures: the snapshot Home's unlock modal is evaluated with, so a milestone card
+    /// and the modal read one source.
+    let profile: ProfileSnapshot?
 
     @EnvironmentObject private var app: AppModel
 
+    private var milestones: [PulseHomeMilestones.Card] {
+        #if DEBUG
+        if let forced = PulseHomeMilestones.debugCards(profile) { return forced }
+        #endif
+        return PulseHomeMilestones.cards(profile, acknowledgedStreak: ProfileUnlockStore.acknowledgedStreakMilestone)
+    }
+
     var body: some View {
         PulseCoachingStackContent(base: base, home: home, grades: grades, stressUpdated: stressUpdated,
-                                  illness: app.healthAlert.map { localizedHealthAlertCopy($0) })
+                                  illness: app.healthAlert.map { localizedHealthAlertCopy($0) },
+                                  milestones: milestones)
             .equatable()
     }
 }
@@ -195,6 +207,8 @@ private struct PulseCoachingStackContent: View, Equatable {
     let stressUpdated: String?
     /// The illness heads-up's copy while it is raised.
     let illness: String?
+    /// Today's achievements, day-streak milestone and level-up (§3.30).
+    let milestones: [PulseHomeMilestones.Card]
 
     @Environment(\.pulseNavigator) private var navigator
     /// Cards completed with ✓, as "yyyy-MM-dd:id" (only today's are kept).
@@ -208,6 +222,7 @@ private struct PulseCoachingStackContent: View, Equatable {
     static func == (lhs: PulseCoachingStackContent, rhs: PulseCoachingStackContent) -> Bool {
         lhs.base == rhs.base && lhs.home == rhs.home && lhs.grades == rhs.grades
             && lhs.stressUpdated == rhs.stressUpdated && lhs.illness == rhs.illness
+            && lhs.milestones == rhs.milestones
     }
 
     var body: some View {
@@ -225,20 +240,31 @@ private struct PulseCoachingStackContent: View, Equatable {
         .pulseAnimation(PulseMotion.chrome, value: cards.map(\.id))
     }
 
-    // TODO(achievement-card): group "more-profile" adds "Achievement unlocked" / "Level up" (§3.30) once
-    // achievements exist; feed them in here as cards like the rest (they are app state, not store data).
     // TODO(auto-workout-card): the opt-in auto-detected workout (Save / Dismiss, §3.14 [Z]) needs
     // `Repository.autoDetectCandidate()` split so its detection can run off the main actor first.
+    /// The heads-ups that cannot wait (the illness heads-up, an alarm still to come), today's milestones,
+    /// the rest of the rules' cards for the day, then the announcements (the week in review, release
+    /// notes), less the ones completed today.
     private var models: [PulseCoachingCardModel] {
         var inputs = base
         inputs.illness = illness != nil
         inputs.alarm = alarmNow
         let release = AppChangelog.currentVersion
         inputs.whatsNew = !release.isEmpty && whatsNewSeen != release && lastSeenChangelog != release
+        let rules = HomeCoachingRules.cards(inputs)
+        let urgent = rules.filter(Self.isUrgent).map(model)
+        let rest = rules.filter { !Self.isUrgent($0) }.map(model)
+        let day = rest.filter { $0.style != .feature }
+        let announcements = rest.filter { $0.style == .feature }
         let done = completedToday
-        return HomeCoachingRules.cards(inputs)
-            .filter { !done.contains($0.id) }
-            .map(model)
+        return (urgent + milestones.map(model) + day + announcements).filter { !done.contains($0.id) }
+    }
+
+    private static func isUrgent(_ card: HomeCoachingRules.Card) -> Bool {
+        switch card {
+        case .illness, .alarmWhileAwake: return true
+        default: return false
+        }
     }
 
     /// This morning's alarm as the builder resolved it (the strap's own arming resolver), checked against
@@ -353,6 +379,46 @@ private struct PulseCoachingStackContent: View, Equatable {
                          body: String(localized: "See what changed in this version of ZENO."),
                          cta: String(localized: "Learn more"), symbol: "sparkles.rectangle.stack", style: .feature,
                          route: .classic(.whatsNew))
+        }
+    }
+
+    /// A milestone in the unlock modal's own words (`PulseUnlockModal`): the badge's name and rule, the
+    /// streak's milestone, and the level with the Levels page's own count to the next.
+    private func model(_ milestone: PulseHomeMilestones.Card) -> PulseCoachingCardModel {
+        switch milestone {
+        case .streak(let days):
+            let run = String(AttributedString(localized: "^[\(days) day](inflect: true)").characters)
+            return .init(id: milestone.id, title: String(localized: "New Day Streak Unlocked"),
+                         body: String(localized: "Your day streak reached \(run), a scored Recovery every day. Keep wearing your strap day and night."),
+                         cta: String(localized: "View streak"), symbol: "flame", route: .dayStreak)
+        case .badge(let badge):
+            let info = ProfileBadgeInfo(badge)
+            let body: String
+            switch badge.kind {
+            case .cumulative:
+                body = String(localized: "\(info.criterion): \(PulseFormat.grouped(Double(badge.count))) so far.")
+            case .event:
+                body = badge.shown == 1 ? String(localized: "\(info.criterion), for the first time.")
+                                        : String(localized: "\(info.criterion): \(badge.shown) times so far.")
+            case .value:
+                body = String(localized: "Your ZENO Age is now \(badge.shown) years younger than your age.")
+            }
+            return .init(id: milestone.id, title: String(localized: "Achievement Unlocked: \(info.name)"),
+                         body: body, cta: String(localized: "View achievement"), symbol: info.symbol,
+                         route: PulseAchievementDetailsRoute(badgeID: badge.id).route)
+        case .level(let progress):
+            let level = progress.level
+            let count = ProfileFormat.recoveries(progress.recoveries)
+            let body: String
+            if let next = progress.nextLevel, let remaining = progress.remaining {
+                body = remaining == 1
+                    ? String(localized: "You reached Level \(level) with \(count). 1 more Recovery to Level \(next).")
+                    : String(localized: "You reached Level \(level) with \(count). \(remaining) more Recoveries to Level \(next).")
+            } else {
+                body = String(localized: "You reached Level \(level) with \(count), the highest level.")
+            }
+            return .init(id: milestone.id, title: String(localized: "Level Up"), body: body,
+                         cta: String(localized: "View levels"), symbol: "medal", route: .levels)
         }
     }
 

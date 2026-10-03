@@ -17,7 +17,8 @@ import StrandAnalytics
 /// Owned by group "home". The dials, activities and vitals render `model.home`, built off the main actor;
 /// Home's own facts (dashboard rows, coaching inputs, the outlook) come from `homeExtras`, built beside it
 /// for the same day. Swiping sideways changes the day, as do the header's pager and calendar. Once the
-/// dials scroll off, the mini-ring row pins under the status bar.
+/// dials scroll off, the mini-ring row pins under the status bar. A new achievement or day-streak
+/// milestone opens its unlock modal over Home (§3.30).
 struct PulseHomeView: View {
     @Environment(PulseModel.self) private var model
     @Environment(\.pulseNavigator) private var navigator
@@ -29,6 +30,9 @@ struct PulseHomeView: View {
     @State private var todayExtras: HomeExtrasSnapshot?
     /// Bumped whenever `model.home` is replaced, so Home's own facts rebuild beside it.
     @State private var homeVersion = 0
+    /// Today's profile figures (level, day streak, badges): the ONE snapshot both the unlock modal over
+    /// Home and the coaching stack's milestone cards read, so the two can never announce different things.
+    @State private var profile: ProfileSnapshot?
 
     /// The sticky row's 44 pt hit area, centred 19.5 pt under the safe-area top.
     private static let stickyRowTop = PulseTheme.Header.stickyRowCentre - PulseTheme.Layout.minTapTarget / 2
@@ -58,7 +62,8 @@ struct PulseHomeView: View {
             PulseDialsRow(home: model.home)
                 .padding(.top, PulseTheme.Header.dialsTop)
                 .pulseScrolledPast($dialsScrolledOff, threshold: 8)
-            PulseHomeContent(extras: extras, todayExtras: todayExtras, dashboardItems: dashboardItems)
+            PulseHomeContent(extras: extras, todayExtras: todayExtras, dashboardItems: dashboardItems,
+                             profile: profile)
         }
         .overlay(alignment: .top) {
             if dialsScrolledOff, let home = model.home {
@@ -78,6 +83,10 @@ struct PulseHomeView: View {
         .task(id: "\(model.detailKey)|\(homeVersion)|\(dashboardItems.map(\.rawValue).joined(separator: ","))") {
             await loadExtras()
         }
+        // A new achievement or day-streak milestone pops its modal over Home (§3.30), checked once a
+        // snapshot built from the loaded store lands; a shared gate keeps one presenter per unlock.
+        .profileSnapshot($profile)
+        .pulseAchievementUnlocks(PulseHomeDebug.showsUnlocks ? profile : nil)
         #if DEBUG
         .task(id: currentExtras != nil) { PulseHomeDebug.openOnce(home: model.home, extras: currentExtras, navigator: navigator) }
         #endif
@@ -145,13 +154,16 @@ struct PulseHomeContent: View {
     /// The last extras built for today (see `PulseHomeView.todayExtras`).
     let todayExtras: HomeExtrasSnapshot?
     let dashboardItems: [PulseDashboardItem]
+    /// Today's profile figures (see `PulseHomeView.profile`).
+    let profile: ProfileSnapshot?
 
     @Environment(PulseModel.self) private var model
 
     var body: some View {
         PulseLoadingGate(isLoading: model.home == nil || extras == nil) {
             if let home = model.home {
-                PulseHomeSections(home: home, extras: extras, todayExtras: todayExtras, dashboardItems: dashboardItems)
+                PulseHomeSections(home: home, extras: extras, todayExtras: todayExtras, dashboardItems: dashboardItems,
+                                  profile: profile)
                     // While a newly selected day builds, the previous day's numbers dim rather than pass for it.
                     .opacity(model.homeIsStale ? 0.45 : 1)
                     .animation(.easeOut(duration: 0.15), value: model.homeIsStale)
@@ -173,6 +185,8 @@ struct PulseHomeSections: View {
     /// The last extras built for today: back on today they stand in until today's next build lands.
     let todayExtras: HomeExtrasSnapshot?
     let dashboardItems: [PulseDashboardItem]
+    /// Today's profile figures, for the coaching stack's milestone cards.
+    let profile: ProfileSnapshot?
 
     /// The extras for the day on screen, never another day's.
     private var current: HomeExtrasSnapshot? { Self.extras(for: home, latest: extras, today: todayExtras) }
@@ -203,7 +217,7 @@ struct PulseHomeSections: View {
                 if let base = current?.coaching {
                     // The stack, when a card is due, then the tiles 22 pt under its peek.
                     PulseCoachingStackHost(base: base, home: home, grades: PulseHomeDebug.monitor ?? current?.monitor,
-                                           stressUpdated: stressUpdated)
+                                           stressUpdated: stressUpdated, profile: profile)
                 } else {
                     PulseMonitorTiles(home: home, grades: PulseHomeDebug.monitor ?? current?.monitor,
                                       stressUpdated: stressUpdated)
@@ -316,8 +330,22 @@ enum PulseHomeSpacing {
 /// DEBUG `--pulse-dashboard <id,id,…>`: show these dashboard items, for a capture, without touching the
 /// stored layout. `--pulse-home-open outlook|review`: open the local Daily Outlook or Day in Review once
 /// Home has loaded. `--pulse-monitor elevated|low|very-elevated|out`: the Health Monitor tile with that
-/// grade, for a capture (the demo seed's vitals are all in range). No-op in Release.
+/// grade, for a capture (the demo seed's vitals are all in range). `--pulse-home-milestones`: one
+/// milestone card of each kind in the coaching stack (`PulseHomeMilestones.debugCards`). Under
+/// `--demo-seed` the unlock modal stays off Home unless `--more-unlock` asks for it. No-op in Release.
 enum PulseHomeDebug {
+    /// Whether Home presents the unlock modal. A `--demo-seed` store fills in after the modal's silent
+    /// first look, so its whole history would be announced over Home, again on every launch, as simctl
+    /// cannot close the modal; Profile's `--more-unlock` still shows one.
+    static var showsUnlocks: Bool {
+        #if DEBUG
+        let args = CommandLine.arguments
+        return !args.contains("--demo-seed") || args.contains("--more-unlock")
+        #else
+        return true
+        #endif
+    }
+
     #if DEBUG
     private static var opened = false
 
