@@ -446,22 +446,31 @@ struct PulseStackedBarChart: View {
 
 // MARK: - Hatched track (§2.6 item 17)
 
-/// 45° lines, 1 pt, every 4 pt, white 7%: the empty part of zone, stage, stress-level and impact bars.
+/// WHOOP's hatch, a bold 45° zebra: stripes about as wide as the gaps between them, white 10% over the
+/// card. The empty part of zone, stage, stress-level and impact bars and the efficiency tracks. Measured on
+/// deep-dives-2026/14 and /15 (stripes 12.5–13 px every 25.5–26 px at 3x) and the impact tracks of /39;
+/// the spec's "1 pt every 4 pt, white 7%" reads as a faint pinstripe beside them (ARCHITECTURE.md §9).
 struct PulseHatchedTrack: View {
     var color: Color = PulseTheme.hatch
-    var spacing: CGFloat = 4
+    /// The stripes' period along the bar.
+    var spacing: CGFloat = 8.5
+    /// The stroke across a stripe. By default 0.35 × `spacing`: a 45° stripe covers √2 × its stroke along
+    /// the bar, so light and dark take about half each at any spacing.
+    var lineWidth: CGFloat? = nil
     var cornerRadius: CGFloat = PulseTheme.Radius.badge
 
     var body: some View {
+        let stroke = lineWidth ?? spacing * 0.35
         Canvas { context, size in
             var path = Path()
-            var x: CGFloat = -size.height
-            while x < size.width {
-                path.move(to: CGPoint(x: x, y: size.height))
-                path.addLine(to: CGPoint(x: x + size.height, y: 0))
+            // Each stripe runs a stroke past both edges, so its square ends stay outside the track.
+            var x: CGFloat = -size.height - spacing
+            while x < size.width + spacing {
+                path.move(to: CGPoint(x: x - stroke, y: size.height + stroke))
+                path.addLine(to: CGPoint(x: x + size.height + stroke, y: -stroke))
                 x += spacing
             }
-            context.stroke(path, with: .color(color), lineWidth: 1)
+            context.stroke(path, with: .color(color), lineWidth: stroke)
         }
         .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .circular))
         .accessibilityHidden(true)

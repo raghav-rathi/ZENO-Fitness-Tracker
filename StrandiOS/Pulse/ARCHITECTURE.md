@@ -441,7 +441,7 @@ All take plain values, never snapshots. Map a snapshot to them in your group (se
 | `PulseStressChart` | `(points:periods: [PulseChartPeriod], now:, currentLevel:, xLabels:, height:)`: value-coloured 24 h stress; a past day (`now: nil`) with no readings draws only "No stress curve for this day" |
 | `PulseStrainRecoveryChart` | `(days: [Day(id:label:sublabel:strain:recovery:)], highlightID:, height:)`: the dual-axis week |
 | `PulseChartAxis` | `gridValues(_:count:)`, `zeroBased(_:)`, `dynamic(_:)` |
-| `PulseHatchedTrack` | `(color:spacing:cornerRadius:)` |
+| `PulseHatchedTrack` | `(color:spacing:lineWidth:cornerRadius:)`: 8.5 pt period, stroke 0.35 × the period unless given (§9) |
 
 ### Shell pieces screens may use
 
@@ -466,8 +466,8 @@ All take plain values, never snapshots. Map a snapshot to them in your group (se
   `divider`, `coachingCard`, `coachingPeek`, `bannerWell`, `rowCardTop/Bottom`, `rowIcon`, `rowSubline`,
   `listSectionHeader`, `achievementChip`, `filterChip`, `dialogTop/Bottom`, `chartHighlight`,
   `pagerCapsule` (5%) / `pagerPill` (+10%), `streakPill`, `avatarFallback`, `skeleton`, `strapOutline`,
-  `batteryText`, `preAddedChip`, `tagFill`, `segmentOff`, `typicalBand`, `hatch`, `averageLine`,
-  `calloutGlow` / `calloutRim`, `menuTop/Bottom`, `menuDim`, …
+  `batteryText`, `preAddedChip`, `tagFill`, `segmentOff`, `typicalBand`, `typicalBox`, `hatch`,
+  `averageLine`, `calloutGlow` / `calloutRim`, `menuTop/Bottom`, `menuDim`, …
 - Text: `textPrimary`, `textButton` (85%), `textSecondary` (70%), `textTertiary` (50%), `textDisabled` (40%).
 - Data: `recoveryHigh/Mid/Low`, `recoveryLowText`, `strain`, `sleep`, `recoveryBlue`, `recoveryActivity`,
   `positive`, `negative`, `neutral`, `sufficient`, `baselineDot`; `recovery(_ band)`, `recoveryText(_ band)`,
@@ -625,6 +625,13 @@ Measured on the reference captures, where they disagree with the spec's numbers:
   without AM/PM (the spec's 24 pt measures 15 pt digits, ≈21–22). `.label` stays at DR's 11 pt floor.
 - **Contributor pitch.** 66 pt (every 2026 capture), not DR's 53 (the 2025 App Store mock).
 - **Bottom scrim.** Clear → black 60%, not 95%: WHOOP's content is still 35–60% bright at the capsule.
+- **Hatched track.** The spec's and DR's "45° lines, 1 pt, every 4 pt, white 7%" reads as a faint pinstripe
+  beside every 2026 capture. WHOOP draws a bold zebra, its stripes 12.5–13 px every 25.5–26 px at 3x, #35393B
+  on a #1E2326 card (deep-dives-2026/14, /15; the impact tracks of /39 and the zone bars of help-center/82
+  match). `PulseHatchedTrack` defaults to an 8.5 pt period with a stroke of 0.35 × the period (≈3 pt, light
+  and dark about half each along the bar), and `hatch` is white 10%. The typical-range box over a bar is
+  a white 10% veil (`typicalBox`) with no stripes of its own, so the track's stripes show through it and
+  the bar stays unstriped (help-center/82).
 - **Sleep dive nights.** §1.7 [Z] puts a "‹ LAST NIGHT ›" pager under the bar; it pushed the ring 65 pt
   below WHOOP's, so the nights step in the bar's title ("‹ TODAY ›") instead.
 - **Coach button fill.** The spec's `#171728 → #121A25` reads darker than every capture; Pulse uses the

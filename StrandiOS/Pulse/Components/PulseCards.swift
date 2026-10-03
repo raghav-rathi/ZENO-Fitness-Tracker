@@ -241,11 +241,13 @@ struct PulseZoneRowCard: View {
     }
 }
 
-/// The typical-range box over a bar: two dashed 1 pt verticals (white 50%) with a lighter hatch between.
+/// The typical-range box over a bar: two dashed 1 pt verticals (white 50%) with a white 10% veil between.
+/// It draws no hatch of its own: the track's stripes show through it lighter and the bar shows through it
+/// lighter and unstriped, as WHOOP's box and its legend swatch do (help-center/82, deep-dives-2026/15).
 struct PulseTypicalRangeBox: View {
     var body: some View {
         ZStack {
-            PulseHatchedTrack(color: PulseTheme.dash.opacity(0.4))
+            Rectangle().fill(PulseTheme.typicalBox)
             HStack {
                 PulseDashedVertical()
                 Spacer(minLength: 0)
