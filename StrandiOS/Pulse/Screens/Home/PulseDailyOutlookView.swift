@@ -70,7 +70,7 @@ enum PulseDailyOutlook {
 
         // Last night's sleep, as a duration ("6h 47m"; "6:47" reads as a clock time in prose).
         if let night = home.lastNight {
-            let slept = PulseFormat.duration(minutes: night.asleepMin)
+            let slept = duration(night.asleepMin)
             if let performance = night.performance {
                 insights.append(String(localized: "You slept **\(slept)** last night, a Sleep Performance of **\(PulseDisplay.displayedPercent(performance))%**."))
             } else {
@@ -87,8 +87,8 @@ enum PulseDailyOutlook {
             }
             // Zone minutes this week: the HR ZONES (WEEKLY) rows' own totals, over the activities they came from.
             if let zones = facts.zoneMinutesWeek {
-                let total = PulseFormat.duration(minutes: zones)
-                let high = PulseFormat.duration(minutes: facts.highZoneMinutesWeek ?? 0)
+                let total = duration(zones)
+                let high = duration(facts.highZoneMinutesWeek ?? 0)
                 let count = facts.zoneActivitiesWeek
                 insights.append(count == 1
                     ? String(localized: "Over the last 7 days you spent **\(total)** in heart-rate zones in **1** activity, **\(high)** of it in zones 4-5.")
@@ -117,7 +117,7 @@ enum PulseDailyOutlook {
 
         // Tonight's bedtime, from the Sleep Planner's need; once it has passed, "now" (as the card says).
         if let tonight = home.tonight {
-            let need = PulseFormat.duration(minutes: tonight.needMin)
+            let need = duration(tonight.needMin)
             let wake = PulseFormat.clock(tonight.wake)
             if now >= tonight.bedtime {
                 recommendations.append(String(localized: "To get as close as you can to the **\(need)** of sleep you need tonight, go to sleep now to wake at **\(wake)**."))
@@ -126,6 +126,11 @@ enum PulseDailyOutlook {
             }
         }
         return Content(evening: evening, greeting: greeting, insights: insights, recommendations: recommendations)
+    }
+
+    /// A duration for prose, "9h 26m", held on one line (a no-break space), so it never reads "9h" / "26m".
+    private static func duration(_ minutes: Double) -> String {
+        PulseFormat.duration(minutes: minutes).replacingOccurrences(of: " ", with: "\u{00A0}")
     }
 }
 
