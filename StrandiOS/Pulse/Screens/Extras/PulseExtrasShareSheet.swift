@@ -2,9 +2,9 @@
 import SwiftUI
 import UIKit
 
-/// Presents the share sheet for a rendered image from the top-most controller. Saving to Photos is
-/// excluded: the app does not declare NSPhotoLibraryAddUsageDescription, and "Save Image" would end the
-/// app without it (Files, AirDrop and Messages still take the PNG).
+/// Presents the share sheet for a rendered image from the top-most controller. "Save Image" is offered
+/// with the rest: the app declares NSPhotoLibraryAddUsageDescription, so iOS asks for add-only access to
+/// Photos the first time it is chosen.
 enum PulseExtrasShareSheet {
     @MainActor
     static func present(_ url: URL) {
@@ -14,7 +14,6 @@ enum PulseExtrasShareSheet {
                 ?? scene.windows.first?.rootViewController else { return }
         while let next = presenter.presentedViewController, !next.isBeingDismissed { presenter = next }
         let sheet = UIActivityViewController(activityItems: [url], applicationActivities: nil)
-        sheet.excludedActivityTypes = [.saveToCameraRoll]
         sheet.completionWithItemsHandler = { _, _, _, _ in
             try? FileManager.default.removeItem(at: url)
         }

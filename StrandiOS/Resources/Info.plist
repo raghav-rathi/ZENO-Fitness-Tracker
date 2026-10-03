@@ -73,6 +73,8 @@
 	<string>ZENO uses the microphone to let you ask the coach a question by voice. The audio is transcribed on-device and never leaves your iPhone.</string>
 	<key>NSMotionUsageDescription</key>
 	<string>ZENO reads your iPhone's step count, distance and floors climbed to track your daily steps, and to show steps in a walking or running workout's summary. It stays on your device. Nothing leaves it.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>ZENO saves images you choose to share to your photo library.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
 	<string>ZENO transcribes your question on-device so you can ask the coach out loud instead of typing. Audio never leaves your iPhone.</string>
 	<key>NSSupportsLiveActivities</key>

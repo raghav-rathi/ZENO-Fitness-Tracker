@@ -88,6 +88,12 @@ struct PulseZenoLiveView: View {
                 template = t
             }
         }
+        .task {
+            // `--pulse-zeno-live-share` (with the sample photo): open the share sheet, as SHARE does.
+            guard CommandLine.arguments.contains("--pulse-zeno-live-share") else { return }
+            try? await Task.sleep(nanoseconds: 1_500_000_000)
+            share()
+        }
         #endif
     }
 
