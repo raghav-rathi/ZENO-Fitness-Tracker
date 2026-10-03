@@ -66,57 +66,24 @@ struct PulseOnboardingLanding: View {
 
 // MARK: Legal
 
-/// The points the first-run gate has always presented (`Terms.points`, the summary of TERMS.md), before
-/// the checkbox screen asks the wearer to confirm the attestations.
-struct PulseOnboardingTermsStep: View {
-    let progress: Double
-    let showsBack: Bool
-    let onBack: () -> Void
-    let onNext: () -> Void
-
-    var body: some View {
-        PulseOnboardingStepPage(
-            title: String(localized: "Before You Use ZENO"),
-            subtitle: String(localized: "ZENO is built on NOOP, an independent open-source project, and these points come from its terms. The next screen asks you to confirm them."),
-            showsBack: showsBack,
-            onBack: onBack,
-            illustration: { PulseOnboardingIllustration(symbol: "list.bullet.clipboard.fill", accent: "info.circle.fill") },
-            content: {
-                VStack(alignment: .leading, spacing: 18) {
-                    ForEach(Terms.points, id: \.0) { point in
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(point.0)
-                                .pulseText(.coachingTitle)
-                                .foregroundStyle(PulseTheme.textPrimary)
-                            Text(point.1)
-                                .pulseText(.body)
-                                .foregroundStyle(PulseTheme.textSecondary)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
-                        .accessibilityElement(children: .combine)
-                    }
-                    Text(String(localized: "The full terms are in TERMS.md, shipped with ZENO. This is not legal advice."))
-                        .pulseText(.secondary)
-                        .foregroundStyle(PulseTheme.textTertiary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            },
-            cta: { PulseOnboardingRingButton(title: String(localized: "Next"), progress: progress, action: onNext) })
-    }
-}
-
-/// "Privacy and Terms of Use": one un-ticked box per attestation (`Terms.attestations`). NEXT stays grey
-/// until every box is ticked, one by one: they are separate, conspicuous consents by design
-/// (`Terms.attestations`), so WHOOP's "SELECT AND AGREE TO ALL" row is deliberately not offered.
+/// "Privacy and Terms of Use", the one checkbox screen that replaces `TermsGateView` (§3.38 [Z] step 2):
+/// one un-ticked box per attestation (`Terms.attestations`), and NEXT stays grey until every box is
+/// ticked, one by one: they are separate, conspicuous consents by design (`Terms.attestations`), so
+/// WHOOP's "SELECT AND AGREE TO ALL" row is deliberately not offered. The underlined "Terms of Use" in the
+/// subtitle opens the points the gate has always presented (`Terms.points`), as WHOOP links its "Privacy
+/// Policy" and "Terms of Use" on 22d.
 struct PulseOnboardingPrivacyStep: View {
     let progress: Double
+    let showsBack: Bool
     let onBack: () -> Void
     let onAccept: () -> Void
 
     @State private var checks: [Bool]
+    @State private var showsTerms = false
 
-    init(progress: Double, onBack: @escaping () -> Void, onAccept: @escaping () -> Void) {
+    init(progress: Double, showsBack: Bool, onBack: @escaping () -> Void, onAccept: @escaping () -> Void) {
         self.progress = progress
+        self.showsBack = showsBack
         self.onBack = onBack
         self.onAccept = onAccept
         var initial = Array(repeating: false, count: Terms.attestations.count)
@@ -127,6 +94,9 @@ struct PulseOnboardingPrivacyStep: View {
         }
         #endif
         _checks = State(initialValue: initial)
+        #if DEBUG
+        _showsTerms = State(initialValue: CommandLine.arguments.contains("--pulse-onboarding-terms"))
+        #endif
     }
 
     private var allChecked: Bool { checks.allSatisfy { $0 } }
@@ -134,7 +104,9 @@ struct PulseOnboardingPrivacyStep: View {
     var body: some View {
         PulseOnboardingStepPage(
             title: String(localized: "Privacy and Terms of Use"),
-            subtitle: String(localized: "Confirm each statement to use ZENO. Your data stays on this iPhone unless you export it."),
+            subtitle: String(localized: "Confirm each statement from the Terms of Use. Your data stays on this iPhone."),
+            subtitleLink: PulseOnboardingLink(phrase: String(localized: "Terms of Use"), action: { showsTerms = true }),
+            showsBack: showsBack,
             onBack: onBack,
             illustration: { PulsePadlockIllustration() },
             content: {
@@ -150,6 +122,7 @@ struct PulseOnboardingPrivacyStep: View {
                 PulseOnboardingRingButton(title: String(localized: "Next"), progress: progress, enabled: allChecked,
                                           action: onAccept)
             })
+            .sheet(isPresented: $showsTerms) { PulseOnboardingTermsSheet() }
     }
 
     private func attestationRow(index: Int, text: String) -> some View {
@@ -203,78 +176,45 @@ struct PulsePadlockIllustration: View {
     }
 }
 
-// MARK: Profile
-
-/// Where onboarding keeps the wearer's first name: one UserDefaults key, read by whatever greets them by
-/// name (the avatar's initials, the Daily Outlook's title). ZENO's `ProfileStore` has no name field.
-enum PulseOnboardingProfile {
-    static let firstNameKey = "profile.firstName"
-
-    static var firstName: String? {
-        let stored = UserDefaults.standard.string(forKey: firstNameKey)?
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        return (stored?.isEmpty ?? true) ? nil : stored
-    }
-
-    static func setFirstName(_ name: String) {
-        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        if trimmed.isEmpty {
-            UserDefaults.standard.removeObject(forKey: firstNameKey)
-        } else {
-            UserDefaults.standard.set(trimmed, forKey: firstNameKey)
-        }
-    }
-}
-
-/// "Welcome to ZENO!" / "Tell us your name so we get it right." (first name only, optional).
-struct PulseOnboardingNameStep: View {
-    let progress: Double
-    let onBack: () -> Void
-    let onNext: () -> Void
-
-    @State private var name = PulseOnboardingProfile.firstName ?? ""
-    @FocusState private var focused: Bool
-
+/// The Terms of Use behind the Privacy step's link: the points the first-run gate has always presented
+/// (`Terms.points`, the plain-English summary of TERMS.md), on onboarding's page.
+struct PulseOnboardingTermsSheet: View {
     var body: some View {
-        PulseOnboardingStepPage(
-            title: String(localized: "Welcome to ZENO!"),
-            subtitle: String(localized: "Tell us your name so we get it right."),
-            onBack: onBack,
-            illustration: { PulseOnboardingIllustration(symbol: "hands.clap.fill", accent: "sparkles",
-                                                        accentAlignment: .topTrailing) },
-            content: {
-                VStack(alignment: .leading, spacing: PulseOnboardingMetrics.labelToField) {
-                    PulseOnboardingFieldLabel(String(localized: "First name"))
-                    PulseOnboardingFieldBox {
-                        TextField("", text: $name,
-                                  prompt: Text(String(localized: "First name"))
-                                    .foregroundStyle(PulseOnboardingColors.placeholder))
-                            .pulseOnboardingText(.fieldValue)
-                            .foregroundStyle(PulseTheme.textPrimary)
-                            .textContentType(.givenName)
-                            .textInputAutocapitalization(.words)
-                            .autocorrectionDisabled(true)
-                            .submitLabel(.next)
-                            .focused($focused)
-                            .onSubmit(save)
-                            .accessibilityLabel(String(localized: "First name"))
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 18) {
+                    ForEach(Terms.points, id: \.0) { point in
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(point.0)
+                                .pulseText(.coachingTitle)
+                                .foregroundStyle(PulseTheme.textPrimary)
+                                .fixedSize(horizontal: false, vertical: true)
+                            Text(point.1)
+                                .pulseText(.body)
+                                .foregroundStyle(PulseTheme.textSecondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        .accessibilityElement(children: .combine)
                     }
-                    Text(String(localized: "Optional. It stays on this iPhone and only labels your profile."))
+                    Text(String(localized: "The full terms are in TERMS.md, shipped with ZENO. This is not legal advice."))
                         .pulseText(.secondary)
                         .foregroundStyle(PulseTheme.textTertiary)
-                        .padding(.leading, 4)
-                        .padding(.top, 2)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
-            },
-            cta: { PulseOnboardingRingButton(title: String(localized: "Next"), progress: progress, action: save) })
-    }
-
-    private func save() {
-        focused = false
-        PulseOnboardingProfile.setFirstName(name)
-        onNext()
+                .padding(.horizontal, PulseTheme.Layout.pageMargin)
+                .padding(.top, 8)
+                .padding(.bottom, 24)
+            }
+            .background(PulseOnboardingBackground())
+            .pulseNavHeader(String(localized: "Terms of Use"))
+            .environment(\.pulseModalRoot, true)
+        }
+        .environment(\.colorScheme, .dark)
+        .presentationDragIndicator(.visible)
     }
 }
+
+// MARK: Profile
 
 /// "Where Do You Live?": a searchable country list that only sets the default units (nothing about the
 /// country is stored). The selected row turns white (onboarding/16a). Optional: SKIP keeps the units.
@@ -387,7 +327,7 @@ struct PulseOnboardingHealthStep: View {
     let onBack: () -> Void
     let onNext: () -> Void
 
-    @EnvironmentObject private var model: AppModel
+    @Environment(\.pulseOnboardingApp) private var app
     @EnvironmentObject private var health: HealthKitBridge
     @State private var asked = false
     @State private var asking = false
@@ -439,10 +379,11 @@ struct PulseOnboardingHealthStep: View {
             guard health.auth == .authorized else { return }
             // The first sync runs on its own (Settings' Apple Health screen runs the same pair), so the
             // wearer is not held on this step while it reads.
+            let model = app.model
             Task {
                 await HealthSyncRefreshCoordinator.run(
                     sync: { await health.sync() },
-                    refresh: { await model.refreshAfterAppleHealthSync(authorized: health.auth == .authorized) })
+                    refresh: { await model?.refreshAfterAppleHealthSync(authorized: health.auth == .authorized) })
             }
             onNext()
         }
@@ -537,7 +478,7 @@ struct PulseOnboardingGenderStep: View {
     var body: some View {
         PulseOnboardingStepPage(
             title: String(localized: "Choose a Gender"),
-            subtitle: String(localized: "ZENO uses this as the physiological baseline for its calorie and hydration estimates."),
+            subtitle: String(localized: "ZENO uses this as the physiological baseline for its Strain, calorie, hydration and fitness-age estimates."),
             onBack: onBack,
             illustration: { PulseOnboardingIllustration(symbol: "person.text.rectangle.fill", accent: "checkmark.circle.fill") },
             content: {
@@ -560,9 +501,13 @@ struct PulseOnboardingGenderStep: View {
 
 /// "Height and Weight", with the two unit choices the classic onboarding kept explicit (body
 /// measurements and exercise distance are separate: Canadian pounds with kilometres is common). ZENO
-/// needs these when Apple Health has none. Values open a wheel sheet in the chosen unit.
+/// needs these when Apple Health has none. Values open a wheel sheet in the chosen unit. On a first run
+/// the profile still holds its defaults (178 cm, 75 kg), which are nobody's answer, so they show grey
+/// until the wearer opens their picker; a replay shows the stored values as they are.
 struct PulseOnboardingBodyStep: View {
     let progress: Double
+    /// True when the stored values are the wearer's own (a replay from inside the app).
+    let confirmed: Bool
     let onBack: () -> Void
     let onNext: () -> Void
 
@@ -570,6 +515,8 @@ struct PulseOnboardingBodyStep: View {
     @AppStorage(UnitPrefs.systemKey) private var unitSystemRaw = UnitSystem.metric.rawValue
     @AppStorage(UnitPrefs.distanceSystemKey) private var distanceSystemRaw = ""
     @State private var editing: PulseBodyField?
+    /// The fields whose picker the wearer has opened.
+    @State private var opened: Set<PulseBodyField> = []
 
     private var unitSystem: UnitSystem { UnitSystem(rawValue: unitSystemRaw) ?? .metric }
     private var distanceSystem: UnitSystem { UnitPrefs.resolveDistance(system: unitSystem, override: distanceSystemRaw) }
@@ -602,11 +549,6 @@ struct PulseOnboardingBodyStep: View {
                                    UnitFormatter.massFromKilograms(profile.weightKg, system: unitSystem), .weight)
                     }
                     .padding(.top, 22)
-                    Text(String(localized: "Estimated max heart rate · \(profile.hrMax) bpm"))
-                        .pulseText(.secondary)
-                        .foregroundStyle(PulseTheme.textTertiary)
-                        .padding(.leading, 4)
-                        .padding(.top, 14)
                 }
             },
             cta: { PulseOnboardingRingButton(title: String(localized: "Next"), progress: progress, action: onNext) })
@@ -617,19 +559,23 @@ struct PulseOnboardingBodyStep: View {
     }
 
     private func valueField(_ label: String, _ value: String, _ field: PulseBodyField) -> some View {
-        VStack(alignment: .leading, spacing: PulseOnboardingMetrics.labelToField) {
+        let shown = confirmed || opened.contains(field)
+        return VStack(alignment: .leading, spacing: PulseOnboardingMetrics.labelToField) {
             PulseOnboardingFieldLabel(label)
-            Button { editing = field } label: {
+            Button {
+                opened.insert(field)
+                editing = field
+            } label: {
                 PulseOnboardingFieldBox {
                     Text(value)
                         .pulseOnboardingText(.fieldValue)
-                        .foregroundStyle(PulseTheme.textPrimary)
+                        .foregroundStyle(shown ? PulseTheme.textPrimary : PulseOnboardingColors.placeholder)
                 }
                 .contentShape(Rectangle())
             }
             .buttonStyle(PulsePressStyle())
             .accessibilityLabel(label)
-            .accessibilityValue(value)
+            .accessibilityValue(shown ? value : String(localized: "\(value), not set yet"))
             .accessibilityHint(String(localized: "Opens a picker"))
         }
         .frame(maxWidth: .infinity)
@@ -637,7 +583,7 @@ struct PulseOnboardingBodyStep: View {
 }
 
 /// Which body value the wheel sheet edits.
-enum PulseBodyField: String, Identifiable {
+enum PulseBodyField: String, Identifiable, Hashable {
     case height, weight
     var id: String { rawValue }
 }
@@ -714,9 +660,11 @@ struct PulseOnboardingHistoryStep: View {
     let onBack: () -> Void
     let onNext: () -> Void
 
-    @EnvironmentObject private var model: AppModel
+    @Environment(\.pulseOnboardingApp) private var app
     @State private var importing = false
     @State private var target: DataSourceImportKind = .whoop
+    /// What the rows draw, mirrored by a hidden leaf so a heartbeat redraws the leaf alone.
+    @State private var state = PulseOnboardingImportState()
 
     var body: some View {
         PulseOnboardingStepPage(
@@ -728,38 +676,35 @@ struct PulseOnboardingHistoryStep: View {
                                                         accentAlignment: .topTrailing) },
             content: {
                 VStack(alignment: .leading, spacing: 10) {
-                    importRow(.whoop, title: model.isImporting(.whoop) ? String(localized: "Importing…")
+                    importRow(.whoop, title: state.importing(.whoop) ? String(localized: "Importing…")
                                                                      : String(localized: "Import WHOOP export"),
                               symbol: "tray.and.arrow.down")
-                    importRow(.appleHealth, title: model.isImporting(.appleHealth) ? String(localized: "Working…")
+                    importRow(.appleHealth, title: state.importing(.appleHealth) ? String(localized: "Working…")
                                                                                  : String(localized: "Import Apple Health export"),
                               symbol: "heart")
-                    if let summary {
+                    if let summary = state.summary(target) {
                         Text(summary)
                             .pulseOnboardingText(.checkLine)
-                            .foregroundStyle(model.importFailed(target) ? PulseTheme.Onboarding.validationText
-                                                                         : PulseTheme.positive)
+                            .foregroundStyle(state.failed(target) ? PulseTheme.Onboarding.validationText
+                                                                  : PulseTheme.positive)
                             .fixedSize(horizontal: false, vertical: true)
                             .padding(.top, 6)
                     }
                 }
+                .background(PulseOnboardingImportWatcher { state = $0 })
             },
             cta: { PulseOnboardingRingButton(title: String(localized: "Next"), progress: progress, action: onNext) })
             .fileImporter(isPresented: $importing, allowedContentTypes: allowedTypes, allowsMultipleSelection: false) { result in
                 guard case .success(let urls) = result, let url = urls.first else { return }
                 switch target {
-                case .appleHealth: model.importAppleHealth(url: url)
-                default: model.importWhoop(url: url)
+                case .appleHealth: app.model?.importAppleHealth(url: url)
+                default: app.model?.importWhoop(url: url)
                 }
             }
     }
 
     private var allowedTypes: [UTType] {
         target == .appleHealth ? [.zip, .xml] : [.zip]
-    }
-
-    private var summary: String? {
-        target == .appleHealth ? model.appleHealthImportSummary : model.whoopImportSummary
     }
 
     private func importRow(_ kind: DataSourceImportKind, title: String, symbol: String) -> some View {
@@ -770,8 +715,60 @@ struct PulseOnboardingHistoryStep: View {
             PulseListRow(symbol: symbol, title: title)
         }
         .buttonStyle(PulsePressStyle())
-        .disabled(model.hasActiveImport)
-        .opacity(model.hasActiveImport && !model.isImporting(kind) ? 0.5 : 1)
+        .disabled(state.anyImporting)
+        .opacity(state.anyImporting && !state.importing(kind) ? 0.5 : 1)
+    }
+}
+
+/// The import rows' state: which source is importing, and each one's last summary and failure flag.
+struct PulseOnboardingImportState: Equatable {
+    var whoopImporting = false
+    var healthImporting = false
+    var anyImporting = false
+    var whoopSummary: String?
+    var healthSummary: String?
+    var whoopFailed = false
+    var healthFailed = false
+
+    init() {}
+
+    @MainActor
+    init(_ model: AppModel) {
+        whoopImporting = model.isImporting(.whoop)
+        healthImporting = model.isImporting(.appleHealth)
+        anyImporting = model.hasActiveImport
+        whoopSummary = model.whoopImportSummary
+        healthSummary = model.appleHealthImportSummary
+        whoopFailed = model.importFailed(.whoop)
+        healthFailed = model.importFailed(.appleHealth)
+    }
+
+    func importing(_ kind: DataSourceImportKind) -> Bool {
+        kind == .appleHealth ? healthImporting : whoopImporting
+    }
+
+    func summary(_ kind: DataSourceImportKind) -> String? {
+        kind == .appleHealth ? healthSummary : whoopSummary
+    }
+
+    func failed(_ kind: DataSourceImportKind) -> Bool {
+        kind == .appleHealth ? healthFailed : whoopFailed
+    }
+}
+
+/// A hidden leaf that watches the app model for the import rows: it is the only view the History step has
+/// that observes the model, so a heartbeat re-evaluates this leaf and the step redraws only when the
+/// import state itself changes.
+private struct PulseOnboardingImportWatcher: View {
+    let onChange: (PulseOnboardingImportState) -> Void
+    @EnvironmentObject private var model: AppModel
+
+    var body: some View {
+        let state = PulseOnboardingImportState(model)
+        Color.clear
+            .onAppear { onChange(state) }
+            .onChange(of: state) { _, new in onChange(new) }
+            .accessibilityHidden(true)
     }
 }
 
@@ -845,6 +842,10 @@ struct PulseOnboardingExpectationsStep: View {
     let onBack: () -> Void
     let onDone: () -> Void
 
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    /// The "NIGHT 14" column, as wide as the label at the current text size.
+    @ScaledMetric(relativeTo: .caption2) private var nightColumn: CGFloat = 74
+
     /// The nights each score really waits for: Sleep after the first scored night, Recovery once its
     /// baselines seed (`Baselines.minNightsSeed`), Sleep Consistency once enough earlier nights exist
     /// (`SleepConsistency.minPriorNights` + the night scored), personal Health Monitor ranges once the
@@ -874,16 +875,7 @@ struct PulseOnboardingExpectationsStep: View {
             content: {
                 VStack(alignment: .leading, spacing: 10) {
                     ForEach(Self.milestones) { milestone in
-                        HStack(spacing: 10) {
-                            Text(String(localized: "Night \(milestone.night)"))
-                                .pulseText(.label)
-                                .foregroundStyle(PulseTheme.textTertiary)
-                                .frame(width: 74, alignment: .leading)
-                            Text(milestone.title)
-                                .pulseOnboardingText(.checkLine)
-                                .foregroundStyle(PulseTheme.textPrimary)
-                        }
-                        .accessibilityElement(children: .combine)
+                        milestoneRow(milestone)
                     }
                     Text(String(localized: "ZENO is installed outside the App Store: re-sign it about every 7 days on a free Apple ID, and unlock your iPhone once after it restarts so ZENO can sync."))
                         .pulseText(.secondary)
@@ -893,6 +885,31 @@ struct PulseOnboardingExpectationsStep: View {
                 }
             },
             cta: { PulseOnboardingFilledButton(title: String(localized: "Done"), kind: .finish, action: onDone) })
+    }
+
+    /// "NIGHT 4  Recovery": the night in a column that grows with the text, or above the title at the
+    /// accessibility sizes, where a fixed column broke "NIGHT / 1" over two lines.
+    @ViewBuilder
+    private func milestoneRow(_ milestone: PulseOnboardingMilestone) -> some View {
+        let night = Text(String(localized: "Night \(milestone.night)"))
+            .pulseText(.label)
+            .foregroundStyle(PulseTheme.textTertiary)
+            .lineLimit(1)
+        let title = Text(milestone.title)
+            .pulseOnboardingText(.checkLine)
+            .foregroundStyle(PulseTheme.textPrimary)
+            .fixedSize(horizontal: false, vertical: true)
+        Group {
+            if dynamicTypeSize.isAccessibilitySize {
+                VStack(alignment: .leading, spacing: 2) { night; title }
+            } else {
+                HStack(spacing: 10) {
+                    night.frame(width: nightColumn, alignment: .leading)
+                    title
+                }
+            }
+        }
+        .accessibilityElement(children: .combine)
     }
 
     /// The wheel's dots: one per distinct night (Recovery and Sleep Consistency share night 4).

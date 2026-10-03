@@ -7,25 +7,29 @@ import StrandDesign
 ///
 /// The flow, in ZENO's order (the terms come first, because ZENO must gate before it reads health data):
 ///
-///     Landing → Before You Use ZENO → Privacy and Terms of Use
+///     Landing → Privacy and Terms of Use (its "Terms of Use" link opens the points the gate presents)
 ///       → [Put On → Wake Up → Check for Pairing Mode → SEARCHING / SELECT / CONNECTING / CONNECTED]
-///       → Welcome (name) → Where Do You Live? → Connect To Apple Health → What's Your Birthday?
-///       → Choose a Gender → Height and Weight → Bring Your History → Turn On Notifications
-///       → Welcome to ZENO → What to Expect Next → Home
+///       → Where Do You Live? → Connect To Apple Health → What's Your Birthday? → Choose a Gender
+///       → Height and Weight → Bring Your History → Turn On Notifications → Welcome to ZENO
+///       → What to Expect Next → Home
 ///
 /// Two ways in:
 ///   - the FIRST RUN (`init(needsTerms:needsSetup:onAcceptTerms:onFinished:)`): the same gates as the
 ///     classic pair, on the same keys. `needsTerms` alone (an existing user whose terms changed) shows only
-///     the legal steps; accepting clears the gate exactly as `TermsGateView` did. The app root presents
+///     the Privacy step; accepting clears the gate exactly as `TermsGateView` did. The app root presents
 ///     it, and the app root is the foundation's: `iOSRootView` shows this flow in place of the classic
 ///     wizard and terms gate when `pulseEnabled && PulseOnboardingView.isRebuilt`, with
 ///     `onAcceptTerms` storing `Terms.currentVersion` (after resetting its launch-sheet flag) and
 ///     `onFinished` setting `noop.onboarded` and the last-seen changelog, as the classic pair do. Until that
 ///     call site lands, a first launch still shows the classic pair.
-///   - the `.onboarding` route (`init()`), a replay from inside the app: the legal steps only while the
+///   - the `.onboarding` route (`init()`), a replay from inside the app: the Privacy step only while the
 ///     terms are not accepted, and finishing simply closes it.
 ///
-/// The classic Appearance step is dropped (Pulse is dark only, §3.38); its other steps are all here.
+/// The classic Appearance step is dropped (Pulse is dark only, §3.38). WHOOP's "Welcome to WHOOP!" name
+/// step waits for a shared place to keep the name: `ProfileStore` has none, and a key private to this
+/// folder would be read by nothing and missed by backups. Once the foundation adds `ProfileStore.firstName`
+/// (a key in Profile.swift's `K`, the backup whitelist and its Android twin), the step comes back bound
+/// to it, ahead of Where Do You Live?.
 struct PulseOnboardingView: View {
     /// Rebuilt: the `.onboarding` route opens this flow, and the app root's first-run switch reads this
     /// flag (above). The `.onboarding` route has no classic fallback either way.
@@ -62,7 +66,13 @@ struct PulseOnboardingView: View {
 
     /// The `.onboarding` route: a replay from inside the app.
     init() {
+        #if DEBUG
+        // `--pulse-onboarding-first-run`: captures of the first-run variants (its callbacks do nothing).
+        firstRun = CommandLine.arguments.contains("--pulse-onboarding-first-run")
+            ? FirstRun(onAcceptTerms: {}, onFinished: {}) : nil
+        #else
         firstRun = nil
+        #endif
         let accepted = UserDefaults.standard.string(forKey: "noop.acceptedTermsVersion") == Terms.currentVersion
         _includesTerms = State(initialValue: !accepted)
         _includesSetup = State(initialValue: true)
@@ -87,7 +97,7 @@ struct PulseOnboardingView: View {
         #if DEBUG
         if let debug = PulseOnboardingStep.debugLaunchStep { return debug }
         #endif
-        return includesSetup ? .landing : .termsPoints
+        return includesSetup ? .landing : .privacy
     }
 
     // MARK: Sequence
@@ -95,11 +105,11 @@ struct PulseOnboardingView: View {
     private var sequence: [PulseOnboardingStep] {
         var steps: [PulseOnboardingStep] = []
         if includesSetup { steps.append(.landing) }
-        if includesTerms { steps += [.termsPoints, .privacy] }
+        if includesTerms { steps.append(.privacy) }
         if includesSetup {
             if pairsStrap { steps += PulseOnboardingStep.deviceSteps }
-            steps += [.name, .location, .appleHealth, .birthday, .gender, .body, .history, .notifications,
-                      .welcome, .expectations]
+            steps += [.location, .appleHealth, .birthday, .gender, .body, .history, .notifications, .welcome,
+                      .expectations]
         }
         return steps
     }
@@ -128,6 +138,7 @@ struct PulseOnboardingView: View {
         .preferredColorScheme(.dark)
         .toolbar(.hidden, for: .navigationBar)
         .interactiveDismissDisabled(firstRun != nil)
+        .modifier(PulseOnboardingAppProvider())
         .onDisappear { pairing.stop() }
     }
 
@@ -144,11 +155,9 @@ struct PulseOnboardingView: View {
             PulseOnboardingLanding(onPair: { pairsStrap = true; advance() },
                                    onWithoutStrap: { pairsStrap = false; advance() },
                                    onClose: firstRun == nil ? { dismiss() } : nil)
-        case .termsPoints:
-            PulseOnboardingTermsStep(progress: progress(.termsPoints), showsBack: canGoBack, onBack: back,
-                                     onNext: advance)
         case .privacy:
-            PulseOnboardingPrivacyStep(progress: progress(.privacy), onBack: back, onAccept: acceptTerms)
+            PulseOnboardingPrivacyStep(progress: progress(.privacy), showsBack: canGoBack, onBack: back,
+                                       onAccept: acceptTerms)
         case .putOn:
             PulseOnboardingPutOnStep(progress: progress(.putOn), onBack: back, onNext: advance)
         case .wakeUp:
@@ -163,9 +172,7 @@ struct PulseOnboardingView: View {
             PulseOnboardingSearchStep(pairing: pairing, family: family, onBack: {
                 pairing.stop()
                 go(to: .pairingMode, forward: false)
-            }, onSkip: skipPairing, onDone: { _ in go(to: .name) })
-        case .name:
-            PulseOnboardingNameStep(progress: progress(.name), onBack: back, onNext: advance)
+            }, onSkip: skipPairing, onDone: { _ in go(to: PulseOnboardingStep.firstProfileStep) })
         case .location:
             PulseOnboardingLocationStep(progress: progress(.location), onBack: back, onNext: advance)
         case .appleHealth:
@@ -176,7 +183,8 @@ struct PulseOnboardingView: View {
             PulseOnboardingGenderStep(progress: progress(.gender), preselect: firstRun == nil, onBack: back,
                                       onNext: advance)
         case .body:
-            PulseOnboardingBodyStep(progress: progress(.body), onBack: back, onNext: advance)
+            PulseOnboardingBodyStep(progress: progress(.body), confirmed: firstRun == nil, onBack: back,
+                                    onNext: advance)
         case .history:
             PulseOnboardingHistoryStep(progress: progress(.history), onBack: back, onNext: advance)
         case .notifications:
@@ -224,7 +232,7 @@ struct PulseOnboardingView: View {
     /// SKIP on the pairing steps: pair later from Devices, as ZENO always allowed.
     private func skipPairing() {
         pairing.stop()
-        go(to: .name)
+        go(to: PulseOnboardingStep.firstProfileStep)
         pairsStrap = false
     }
 
@@ -251,16 +259,50 @@ struct PulseOnboardingView: View {
     }
 }
 
+// MARK: - The app model, unobserved
+
+/// The app model for steps that call into it without drawing what it publishes. `AppModel` publishes
+/// `bpm` on every heartbeat, so a step holding it as an `@EnvironmentObject` redrew with every beat once a
+/// strap streamed (CONNECTED's blurred glows included). Steps read it from here and observe only what
+/// they draw, through small leaves (`PulseOnboardingStrapList`, `PulseOnboardingImportWatcher`).
+struct PulseOnboardingApp: Equatable {
+    let model: AppModel?
+
+    static func == (lhs: PulseOnboardingApp, rhs: PulseOnboardingApp) -> Bool {
+        lhs.model === rhs.model
+    }
+}
+
+private struct PulseOnboardingAppKey: EnvironmentKey {
+    static let defaultValue = PulseOnboardingApp(model: nil)
+}
+
+extension EnvironmentValues {
+    /// The app model, unobserved (`PulseOnboardingApp`).
+    var pulseOnboardingApp: PulseOnboardingApp {
+        get { self[PulseOnboardingAppKey.self] }
+        set { self[PulseOnboardingAppKey.self] = newValue }
+    }
+}
+
+/// Hands the app model down unobserved. Only this modifier re-evaluates on a heartbeat: the value it
+/// hands down compares equal (the same model), so nothing under it is invalidated.
+struct PulseOnboardingAppProvider: ViewModifier {
+    @EnvironmentObject private var model: AppModel
+
+    func body(content: Content) -> some View {
+        content.environment(\.pulseOnboardingApp, PulseOnboardingApp(model: model))
+    }
+}
+
 /// The steps, in the order they can appear.
 enum PulseOnboardingStep: String, CaseIterable {
     case landing
-    case termsPoints
     case privacy
     case putOn
     case wakeUp
     case pairingMode
     case searching
-    case name
     case location
     case appleHealth
     case birthday
@@ -275,6 +317,8 @@ enum PulseOnboardingStep: String, CaseIterable {
     static let deviceSteps: [PulseOnboardingStep] = [.putOn, .wakeUp, .pairingMode, .searching]
     /// The device tutorial's steps that carry the ring (START PAIRING is the filled circle that ends it).
     static let deviceRingSteps: [PulseOnboardingStep] = [.putOn, .wakeUp, .pairingMode]
+    /// Where the profile starts, after the device steps or a skipped pairing.
+    static let firstProfileStep = PulseOnboardingStep.location
 
     /// Steps whose ring shows progress through the setup (everything except the landing, the device steps
     /// and the last step's filled circle).

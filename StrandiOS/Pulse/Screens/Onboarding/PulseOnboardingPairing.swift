@@ -212,11 +212,6 @@ struct PulseOnboardingPairingModeStep: View {
                             family = option
                         }
                     }
-                    Text(String(localized: "ZENO talks to your strap directly over Bluetooth, with no server in between. If iOS asks, choose Allow so ZENO can find it."))
-                        .pulseOnboardingText(.checkLine)
-                        .foregroundStyle(PulseTheme.textTertiary)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .padding(.top, 6)
                 }
             },
             cta: { PulseOnboardingFilledButton(title: String(localized: "Start pairing"), action: onStart) })
@@ -242,9 +237,27 @@ struct PulseOnboardingSearchStep: View {
     /// Leave the device steps: `true` once a strap bonded, `false` when another device was added.
     let onDone: (_ bonded: Bool) -> Void
 
-    /// Not `LiveState`: it publishes every log line and beat. The link's few facts reach this screen through
-    /// the watcher below and `PulseStrapPairing`.
-    @EnvironmentObject private var model: AppModel
+    @Environment(\.pulseOnboardingApp) private var app
+
+    var body: some View {
+        if let model = app.model {
+            PulseOnboardingSearchScreen(model: model, pairing: pairing, family: family, onBack: onBack,
+                                        onSkip: onSkip, onDone: onDone)
+        }
+    }
+}
+
+/// The search step itself. It holds the app model as a plain reference, not an observed one: the model
+/// publishes every heartbeat and log line. The link's few facts reach this screen through the watcher
+/// below and `PulseStrapPairing`, and the strap list through `PulseOnboardingStrapList`.
+private struct PulseOnboardingSearchScreen: View {
+    let model: AppModel
+    @ObservedObject var pairing: PulseStrapPairing
+    let family: WhoopModel
+    let onBack: () -> Void
+    let onSkip: () -> Void
+    let onDone: (_ bonded: Bool) -> Void
+
     @State private var showsHelp = false
     @State private var showsOtherDevice = false
     @State private var activeBeforeOtherDevice: String?
@@ -507,6 +520,10 @@ struct PulseStrapHelpSheet: View {
                 Text(String(localized: "That's normal. WHOOP straps don't appear in your iPhone's Bluetooth settings: they advertise on a profile only apps like ZENO can find, so there's nothing to pair there, and you shouldn't try."))
                     .pulseOnboardingText(.subtitle)
                     .foregroundStyle(PulseTheme.Onboarding.subtitle)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text(String(localized: "ZENO talks to your strap directly over Bluetooth, with no server in between. If iOS asks to use Bluetooth, choose Allow so ZENO can find it."))
+                    .pulseOnboardingText(.checkLine)
+                    .foregroundStyle(PulseTheme.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
                 if let hint = live.pairingHint ?? live.reconnectGuide {
                     Text(hint)
