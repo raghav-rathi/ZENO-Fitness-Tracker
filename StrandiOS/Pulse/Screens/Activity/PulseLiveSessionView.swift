@@ -25,6 +25,8 @@ struct PulseLiveSessionView: View {
     @EnvironmentObject private var app: AppModel
     @Environment(\.pulseNavigator) private var navigator
     @AppStorage("workoutKeepScreenOn") private var keepScreenOn = false
+    /// The wearer's name, for the ring's initials when there is no photo; observed so an edit shows at once.
+    @AppStorage(PulseProfileIdentity.nameKey) private var storedName = ""
     @AppStorage(UnitPrefs.systemKey) private var unitSystemRaw = UnitSystem.metric.rawValue
     @AppStorage(UnitPrefs.distanceSystemKey) private var distanceSystemRaw = ""
 
@@ -248,7 +250,7 @@ struct PulseLiveSessionView: View {
         return VStack(spacing: 0) {
             Spacer(minLength: 12).frame(maxHeight: 89)
             PulseLiveStrainRing(strain: strain, target: session?.target, diameter: ring,
-                                avatar: app.profile.avatarImageData)
+                                avatar: app.profile.avatarImageData, name: storedName)
             Spacer(minLength: 16).frame(maxHeight: 52)
             VStack(alignment: .leading, spacing: 4) {
                 Text(String(localized: "Heart rate"))
@@ -424,6 +426,8 @@ struct PulseLiveStrainRing: View {
     let target: Double?
     var diameter: CGFloat = 290
     var avatar: Data?
+    /// The wearer's name, for initials when there is no photo (`PulseProfileIdentity`).
+    var name: String?
 
     private let stroke: CGFloat = 18
 
@@ -446,7 +450,7 @@ struct PulseLiveStrainRing: View {
             if let targetFraction {
                 PulseRingTick(fraction: targetFraction, thickness: stroke)
                     .stroke(PulseTheme.textPrimary, style: StrokeStyle(lineWidth: 2))
-                PulseAvatar(imageData: avatar, name: nil, size: 22)
+                PulseAvatar(imageData: avatar, name: name, size: 22)
                     .overlay(Circle().strokeBorder(PulseTheme.textPrimary, lineWidth: 1.5))
                     .offset(knobOffset(targetFraction))
             }
