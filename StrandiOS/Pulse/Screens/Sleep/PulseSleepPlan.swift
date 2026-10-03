@@ -15,10 +15,10 @@ import StrandAnalytics
 //             mornings.
 //   bedtime   REACH MY SLEEP NEED: the goal's share of tonight's need (`Repository.sleepNeedTonight`)
 //             before the wake, in bed 15 minutes earlier to fall asleep; IMPROVE MY SLEEP: asleep at the
-//             Sleep Consistency target's bed time; REACH MY WEEKLY PLAN GOAL: the Sleep Consistency
-//             target's bed time when the running Weekly Plan has a Sleep Consistency goal, else the whole
-//             need. Never before 20:00 the evening before unless the wake is before 05:00
-//             (`TonightSleepPlan`).
+//             Sleep Consistency target's bed time; REACH MY WEEKLY PLAN GOAL: the running Weekly Plan's
+//             Sleep Performance goal as that share of the need and its Sleep Consistency goal as the
+//             target's bed time, in bed by the earlier of the two, else the whole need. Never before 20:00
+//             the evening before unless the wake is before 05:00 (`TonightSleepPlan`).
 //   optimal   the bed and wake time that keep tonight's Sleep Consistency highest
 //             (`SleepConsistencyTarget`, the same target the dive's consistency curves draw).
 
@@ -229,14 +229,14 @@ struct PulseSleepPlan: Equatable {
             bed = TonightSleepPlan.bedtime(wake: wake.date, needMin: needMin, fraction: Double(percent) / 100,
                                            calendar: cal)
         case .weeklyPlan:
-            // A Sleep Consistency goal is judged on timing: be asleep at the target's bed time, as IMPROVE MY
-            // SLEEP plans. Otherwise (a Sleep Performance goal, or too few nights for a target yet) the whole
-            // need: the part of Sleep Performance a bedtime decides is the hours asleep against the need.
-            if weeklyPlan?.consistency != nil, let target {
-                bed = TonightSleepPlan.bedtime(asleepAtMinute: target.bedMinute, wake: wake.date, calendar: cal)
-            } else {
-                bed = TonightSleepPlan.bedtime(wake: wake.date, needMin: needMin, fraction: 1, calendar: cal)
-            }
+            // Every sleep goal the plan has, planned short of none: the part of Sleep Performance a bedtime
+            // decides is the hours asleep against the need, so its goal is that share of the need; a Sleep
+            // Consistency goal is judged on timing, so asleep at the target's bed time, as IMPROVE MY SLEEP
+            // plans (once there are nights enough for a target). With both, the earlier bedtime.
+            bed = TonightSleepPlan.bedtime(wake: wake.date, needMin: needMin,
+                                           share: weeklyPlan?.performance.map { $0 / 100 },
+                                           asleepAtMinute: weeklyPlan?.consistency == nil ? nil : target?.bedMinute,
+                                           calendar: cal)
         }
         let late = now > bed.inBed
         let sleepIfNow = late
