@@ -100,7 +100,7 @@ struct PulseOutlookFacts: Equatable {
 /// which way and how far, as the Health Monitor grades it (`HealthVital`).
 struct PulseMonitorGrades: Equatable {
     struct Flag: Equatable {
-        /// The vital's name ("Skin temperature").
+        /// The vital's name as the tile prints it, in Title Case ("Skin Temperature", `tileName`).
         let name: String
         /// Where the Health Monitor says "very high" / "very low" (VERY ELEVATED / VERY LOW), else just past
         /// its range (ELEVATED / LOW).
@@ -116,6 +116,20 @@ struct PulseMonitorGrades: Equatable {
     var inRange: Int { judged - out.count }
     /// Nothing judged yet (calibrating, no readings): the tile shows "Pending".
     var isPending: Bool { judged == 0 }
+
+    /// The tile's name for a Health Monitor vital (`HealthVital.id`), in Title Case under the status word as
+    /// WHOOP's tile prints it ("VERY ELEVATED" over "Skin Temperature", help-center/91); nil for a vital it
+    /// does not know. The Health Monitor's own rows keep their sentence-case names.
+    static func tileName(_ vitalID: String) -> String? {
+        switch vitalID {
+        case "resp": return String(localized: "Respiratory Rate")
+        case "spo2": return String(localized: "Blood Oxygen")
+        case "rhr": return String(localized: "Resting Heart Rate")
+        case "hrv": return String(localized: "Heart Rate Variability")
+        case "skin": return String(localized: "Skin Temperature")
+        default: return nil
+        }
+    }
 }
 
 /// The opt-in auto-detected workout for Home's coaching stack (§3.14 [Z]); `workout` is nil when there is none

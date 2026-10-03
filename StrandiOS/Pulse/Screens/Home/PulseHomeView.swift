@@ -421,7 +421,7 @@ enum PulseHomeDebug {
         #if DEBUG
         let args = CommandLine.arguments
         guard let i = args.firstIndex(of: "--pulse-monitor"), i + 1 < args.count else { return nil }
-        let skin = String(localized: "Skin temperature"), rhr = String(localized: "Resting heart rate")
+        let skin = PulseMonitorGrades.tileName("skin") ?? "", rhr = PulseMonitorGrades.tileName("rhr") ?? ""
         switch args[i + 1] {
         case "elevated": return PulseMonitorGrades(judged: 5, out: [.init(name: rhr, strong: false, high: true)])
         case "low": return PulseMonitorGrades(judged: 5, out: [.init(name: rhr, strong: false, high: false)])
