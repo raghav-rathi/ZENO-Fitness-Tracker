@@ -1032,6 +1032,8 @@ extension PulseSnapshotBuilder {
         let workouts = await workoutRows()
         guard isCurrent(r) else { return nil }
 
+        // The bounds the heart rate is binned by: an edit to HR max or the zones re-bins within the refresh.
+        let bounds = r.profile.zoneSet.zones.map { "\($0.lower)-\($0.upper)" }.joined(separator: ",")
         // Minutes per local day: zones 1-3, zones 4-5, strength.
         var z13: [String: Double] = [:]
         var z45: [String: Double] = [:]
@@ -1045,7 +1047,8 @@ extension PulseSnapshotBuilder {
             if let pct = WorkoutZones.percents(w.zonesJSON) {
                 zones = pct.map { minutes * $0 / 100 }
             } else {
-                zones = await cached("health.workoutZones.\(w.startTs).\(w.source)") { () async -> [Double]? in
+                let key = "health.workoutZones.\(w.startTs).\(w.source).\(bounds)"
+                zones = await cached(key) { () async -> [Double]? in
                     await repo.workoutZoneMinutes(from: w.startTs, to: w.endTs, zoneSet: r.profile.zoneSet,
                                                   source: w.source)
                 }
