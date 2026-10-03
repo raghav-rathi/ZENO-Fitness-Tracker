@@ -192,4 +192,17 @@ struct CycleInsightsSnapshot: Equatable {
         let detail: String
     }
 }
+
+/// Where the cycle is today, as Menstrual Cycle Insights' header states it, for a card outside the page (the
+/// Health tab's MENSTRUAL CYCLE INSIGHTS), built by the page's own funnel (`PulseSnapshotBuilder.cycleToday`)
+/// so the card and the page it opens state one cycle day and one phase.
+struct CycleTodaySnapshot: Equatable {
+    let seq: Int
+    /// The page's header: "Cycle Day 3" with "Menstrual Phase", "No Phase Predicted", "Menopause".
+    let header: CycleInsightsSnapshot.Header
+    /// The line under the card's label: the cycle day, or what there is instead ("Log a period to start").
+    let headline: String
+    /// Today's place in the cycle, 0…1, for the card's bar; nil without a cycle day to place.
+    let position: Double?
+}
 #endif

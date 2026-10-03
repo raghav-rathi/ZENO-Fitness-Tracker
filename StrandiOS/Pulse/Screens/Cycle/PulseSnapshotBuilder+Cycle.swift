@@ -33,13 +33,7 @@ extension PulseSnapshotBuilder {
         let today = inputs.today
         let logs = inputs.logs
         let menopause = inputs.mode == .menopause
-        let phasesApply = PulseCycleLog.phasesApply(mode: inputs.mode, contraception: inputs.contraception)
-        let predicts = PulseCycleLog.predicts(mode: inputs.mode, contraception: inputs.contraception)
-        let summary = MenstrualCycleModel.summarize(
-            periodStarts: logs.starts, flow: logs.flow, today: today,
-            temperatureCycleLength: inputs.engine?.cycleLengthDays, phasesApply: phasesApply,
-            extraSpread: inputs.mode == .perimenopause ? 2 : 0)
-        let active = summary.status == .active && !menopause
+        let (summary, active, phasesApply, predicts) = cycleSummary(inputs)
 
         // The calendar's span: from `firstLogDay` through the end of the month two months ahead.
         let rangeStart = PulseCycleDates.firstLogDay(logs, today: today)
@@ -141,6 +135,48 @@ extension PulseSnapshotBuilder {
             showsPhaseLegend: phasesApply && infos.contains { $0.phase != nil },
             symptomsToday: symptomsToday, journal: journal, coaching: coaching, currentCycle: currentCycle,
             patterns: patterns, symptomSummary: summaryRows)
+    }
+
+    /// The page's one pass over the logs: the summary everything on it reads, whether a cycle is running
+    /// (`active`), and whether phases and predictions apply in the wearer's mode and contraception.
+    private func cycleSummary(_ inputs: PulseCycleInputs)
+        -> (summary: MenstrualCycleModel.Summary, active: Bool, phasesApply: Bool, predicts: Bool) {
+        let phasesApply = PulseCycleLog.phasesApply(mode: inputs.mode, contraception: inputs.contraception)
+        let predicts = PulseCycleLog.predicts(mode: inputs.mode, contraception: inputs.contraception)
+        let summary = MenstrualCycleModel.summarize(
+            periodStarts: inputs.logs.starts, flow: inputs.logs.flow, today: inputs.today,
+            temperatureCycleLength: inputs.engine?.cycleLengthDays, phasesApply: phasesApply,
+            extraSpread: inputs.mode == .perimenopause ? 2 : 0)
+        return (summary, summary.status == .active && inputs.mode != .menopause, phasesApply, predicts)
+    }
+
+    // MARK: Today, for a card
+
+    /// Where the cycle is today for a card outside the page (the Health tab's): the page's own summary and
+    /// header (`cycleSummary`, `header`), so the card states the cycle day and phase the page it opens
+    /// states, and today's place in the cycle for the card's bar. The logs are read here, off the main actor.
+    func cycleToday(_ r: PulseRequest, today: String, engine: CyclePhaseEngine.Result?, mode: PulseCycleLog.Mode,
+                    contraception: PulseCycleLog.Contraception) async -> CycleTodaySnapshot {
+        var logs = PulseCycleLog.Logs()
+        if let store = await repo.storeHandle() { logs = await PulseCycleLog.read(store) }
+        let inputs = PulseCycleInputs(today: today, logs: logs, engine: engine, mode: mode, contraception: contraception)
+        let (summary, active, phasesApply, predicts) = cycleSummary(inputs)
+        let todayInfo = MenstrualCycleModel.calendar(from: today, to: today, summary: summary, flow: logs.flow,
+                                                     today: today, phasesApply: phasesApply).first
+        let header = header(summary: summary, inputs: inputs, active: active, phasesApply: phasesApply,
+                            predicts: predicts, todayInfo: todayInfo)
+        var position: Double?
+        if active, let cd = summary.cycleDay, summary.modelCycleLength > 0 {
+            position = Double(cd) / Double(summary.modelCycleLength)
+        } else if header.cycleDay != nil, let lo = engine?.cycleDayLow, let hi = engine?.cycleDayHigh,
+                  let length = engine?.cycleLengthDays, length > 0 {
+            // No usable logs: the header's cycle day is the temperature engine's estimate.
+            position = (Double(lo + hi) / 2) / Double(length)
+        }
+        let headline = header.cycleDay
+            ?? (mode == .menopause ? String(localized: "Symptom tracking") : String(localized: "Log a period to start"))
+        return CycleTodaySnapshot(seq: r.seq, header: header, headline: headline,
+                                  position: position.map { min(1, max(0, $0)) })
     }
 
     // MARK: Header
