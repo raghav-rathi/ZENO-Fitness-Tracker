@@ -14,9 +14,9 @@ import WhoopStore
 // never print a different number from the row or dial that opened it: Recovery, HRV, resting HR,
 // respiratory rate and blood oxygen from the merged daily rows (Home, the Recovery dive), Sleep
 // Performance through the Sleep dial's resolver, need / consistency / debt through
-// `Repository.resolvedNightSleep`, steps through the one `StepsResolver`, calories with Home's tile rule,
-// stress from its stored daily score (today's from the Stress Monitor's own reading), and anything else
-// through the Explore read path.
+// `Repository.resolvedNightSleep`, steps through the one `StepsResolver`, calories through Home's tile
+// resolver (`caloriesResolution`), stress from its stored daily score (today's from the Stress Monitor's
+// own reading), and anything else through the Explore read path.
 
 extension PulseSnapshotBuilder {
 
@@ -240,16 +240,10 @@ extension PulseSnapshotBuilder {
             return PulseTrendSeries(points: Self.points(resolved.map { ($0.day, Double($0.steps)) }, through: today))
 
         case .calories:
-            // Home's Calories tile rule: Apple Health's imported active calories first, else the strap's
-            // on-device estimate.
-            let apple = await appleRows()
-            var imported: [String: Double] = [:]
-            for a in apple { if let k = a.activeKcal { imported[a.day] = max(imported[a.day] ?? 0, k) } }
-            var merged = imported
-            for d in r.days where merged[d.day] == nil {
-                if let v = d.activeKcalEst { merged[d.day] = v }
-            }
-            return PulseTrendSeries(points: Self.points(merged.map { ($0.key, $0.value) }, through: today))
+            // The one resolver Home's CALORIES tile and the Strain dive read (`caloriesResolution`): Apple
+            // Health's imported active calories first, else the strap's on-device estimate.
+            let calories = await caloriesResolution(r)
+            return PulseTrendSeries(points: Self.points(calories.history.map { ($0.day, $0.value) }, through: today))
 
         case .zones(let zones):
             let rows = await workoutRows()

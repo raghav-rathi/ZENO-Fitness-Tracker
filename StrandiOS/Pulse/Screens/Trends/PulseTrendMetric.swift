@@ -146,7 +146,8 @@ enum PulseTrendSource: Equatable, Hashable, Sendable {
     case timeInBed
     /// The one steps resolver (`StepsResolver`).
     case steps
-    /// Active calories: Apple Health's imported figure, else the on-device estimate (Home's tile rule).
+    /// Active calories: Apple Health's imported figure, else the on-device estimate (`caloriesResolution`,
+    /// Home's tile resolver).
     case calories
     /// Minutes in heart-rate zones, derived from logged activities.
     case zones([Int])
