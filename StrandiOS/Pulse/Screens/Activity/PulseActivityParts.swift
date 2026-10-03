@@ -317,16 +317,18 @@ struct PulseActivityHRChart: View {
     var height: CGFloat = 186
     @Binding var scrub: PulseActivityScrub?
 
-    /// The y range and its gridlines: 25 bpm steps over a wide range, finer over a narrow one.
+    /// The y range and its gridlines: 25 bpm steps over a wide range, finer over a narrow one. Every gridline
+    /// is labelled, the lowest included, so the plot runs a little below it to a base of its own, which the
+    /// fill and the edge dots stand on (g24: 100 / 80 / 60 / 40 over an empty chart; h01, f09).
     private var axis: (domain: ClosedRange<Double>, ticks: [Double]) {
         let values = points.compactMap(\.value)
-        guard let lo = values.min(), let hi = values.max() else { return (40...100, [40, 60, 80, 100]) }
+        guard let lo = values.min(), let hi = values.max() else { return (32...100, [40, 60, 80, 100]) }
         let range = hi - lo
         let step: Double = range > 70 ? 25 : (range > 30 ? 20 : 10)
         let bottom = floor((lo - 4) / step) * step
         let top = max(bottom + step * 2, ceil((hi + 4) / step) * step)
         let ticks = stride(from: bottom, through: top, by: step).map { $0 }
-        return (bottom...top, ticks)
+        return ((bottom - step * 0.4)...top, ticks)
     }
 
     private var runs: [(Int, [PulseTimeValue])] {
@@ -394,8 +396,8 @@ struct PulseActivityHRChart: View {
                     if let plotAnchor = proxy.plotFrame {
                         let plot = geo[plotAnchor]
                         ZStack(alignment: .topLeading) {
-                            // y labels inside the plot at the left (h01, 82).
-                            ForEach(axis.ticks.dropFirst(), id: \.self) { tick in
+                            // y labels inside the plot at the left (h01, 82), one on every gridline.
+                            ForEach(axis.ticks, id: \.self) { tick in
                                 if let y = proxy.position(forY: tick) {
                                     Text("\(Int(tick))")
                                         .font(PulseType.font(.axis))
