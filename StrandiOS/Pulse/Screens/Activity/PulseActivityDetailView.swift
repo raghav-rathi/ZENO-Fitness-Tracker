@@ -145,7 +145,7 @@ struct PulseActivityDetailView: View {
         if let s = await model.build(dayOffset: 0, { builder, r in
             await builder.activityDetail(r, row: handed, inputs: inputs, liveSamples: live)
         }) {
-            if s.stress == nil, recoveryTab == .stress { recoveryTab = .heartRate }
+            // STRESS leads when there is a reading (e08, e10); without one the tabs are not shown.
             if s.stress != nil, snapshot?.stress == nil { recoveryTab = .stress }
             snapshot = s
         }
@@ -258,7 +258,7 @@ struct PulseActivityDetailView: View {
             hrChart(s, color: PulseTheme.strain)
                 .padding(.top, 22)
             if panes.strength == .exercises, let lift = s.lift {
-                PulseActivityLiftPager(lift: lift, title: s.title)
+                PulseActivityLiftPager(lift: lift)
                     .padding(.top, 26)
             } else {
                 zonesSection(s)

@@ -13,8 +13,6 @@ import SwiftUI
 /// sit under the card, outside it.
 struct PulseActivityLiftPager: View {
     let lift: ActivityLiftSummary
-    /// The activity's title, for the summary page's bar.
-    let title: String
 
     @State private var page: Int? = 0
     /// Each page's own height: the pager takes the settled page's, so the compact summary card has the
