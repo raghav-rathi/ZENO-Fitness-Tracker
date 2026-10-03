@@ -17,6 +17,7 @@ struct PulseSelectBehaviorsView: View {
 
     @Environment(\.dismiss) private var dismiss
     @Environment(\.pulseCoach) private var coach
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var local = PulseJournalLocalStore.shared
 
     private enum Tab: Hashable {
@@ -177,7 +178,11 @@ struct PulseSelectBehaviorsView: View {
                 }
                 .padding(.horizontal, 22)
             }
-            .onChange(of: tab) { _, t in withAnimation(.easeOut(duration: 0.2)) { proxy.scrollTo(t, anchor: .center) } }
+            .onChange(of: tab) { _, t in
+                withAnimation(PulseMotion.resolved(PulseMotion.chrome, reduceMotion: reduceMotion)) {
+                    proxy.scrollTo(t, anchor: .center)
+                }
+            }
         }
         .dynamicTypeSize(...DynamicTypeSize.xxLarge)
     }

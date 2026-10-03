@@ -16,6 +16,7 @@ import StrandAnalytics
 struct PulsePlanHomeCard: View {
     @Environment(PulseModel.self) private var model
     @Environment(\.pulseNavigator) private var navigator
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var plans = PulsePlanStore.shared
     @State private var snapshot: PlanWeekSnapshot?
     @State private var lastWeekPercent: Int?
@@ -40,7 +41,9 @@ struct PulsePlanHomeCard: View {
 
     private func activeCard(_ plan: PulsePlan) -> some View {
         VStack(alignment: .leading, spacing: 0) {
-            Button { withAnimation(PulseMotion.chrome) { expanded.toggle() } } label: {
+            Button {
+                withAnimation(PulseMotion.resolved(PulseMotion.chrome, reduceMotion: reduceMotion)) { expanded.toggle() }
+            } label: {
                 VStack(alignment: .leading, spacing: 6) {
                     HStack(alignment: .firstTextBaseline) {
                         Text(plan.cardTitle)

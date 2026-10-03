@@ -230,6 +230,10 @@ struct PlanPreviewView: View {
 /// The Custom plan's picker: every kind of goal, on or off, each adjustable once on.
 struct PlanGoalPicker: View {
     @Binding var goals: [PulsePlanGoal]
+    /// Kinds the plan already has (not offered again).
+    var existing: Set<PulsePlanGoal.Kind> = []
+    /// Before a plan starts, behaviour goals are added afterwards from Plan Overview.
+    var showsBehaviorNote = true
 
     private static let options: [(section: String, kinds: [PulsePlanGoal])] = [
         (String(localized: "Sleep"), [PulsePlanGoal(kind: .sleepPerformance, value: 85),
@@ -245,10 +249,10 @@ struct PlanGoalPicker: View {
     ]
 
     var body: some View {
-        ForEach(Self.options, id: \.section) { option in
+        ForEach(Self.options.filter { !Set($0.kinds.map(\.kind)).isSubset(of: existing) }, id: \.section) { option in
             PulseListSectionHeader(option.section)
                 .padding(.top, 8)
-            ForEach(option.kinds, id: \.kind) { template in
+            ForEach(option.kinds.filter { !existing.contains($0.kind) }, id: \.kind) { template in
                 if let i = goals.firstIndex(where: { $0.kind == template.kind }) {
                     PlanGoalEditorCard(goal: $goals[i], onRemove: { goals.remove(at: i) })
                 } else {
@@ -259,12 +263,14 @@ struct PlanGoalPicker: View {
                 }
             }
         }
-        PulseListSectionHeader(String(localized: "Behaviors"))
-            .padding(.top, 8)
-        Text(String(localized: "Add behavior goals from Plan Overview once the plan has started: BEHAVIORS › EDIT."))
-            .pulseText(.body)
-            .foregroundStyle(PulseTheme.textSecondary)
-            .fixedSize(horizontal: false, vertical: true)
+        if showsBehaviorNote {
+            PulseListSectionHeader(String(localized: "Behaviors"))
+                .padding(.top, 8)
+            Text(String(localized: "Add behavior goals from Plan Overview once the plan has started: BEHAVIORS › EDIT."))
+                .pulseText(.body)
+                .foregroundStyle(PulseTheme.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
     }
 }
 

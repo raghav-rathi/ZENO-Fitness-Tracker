@@ -21,20 +21,24 @@ struct PulseJournalView: View {
     /// Days back from today (nil = today).
     var dayOffset: Int?
 
-    /// Days the strip offers ("swipe back up to 14 days").
-    static let stripDays = 14
+    /// Days the strip offers ("swipe back up to 14 days"), longer only when an entry point asks for an older
+    /// day (Home's strip on a past day), never past `maxStripDays`.
+    static let minStripDays = 14
+    static let maxStripDays = 30
 
     @Environment(PulseModel.self) private var model
     @EnvironmentObject private var repo: Repository
     @EnvironmentObject private var router: NavRouter
     @Environment(\.dismiss) private var dismiss
     @Environment(\.pulseCoach) private var coach
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     @StateObject private var catalog = JournalCatalogStore()
     @State private var local = PulseJournalLocalStore.shared
     @State private var plans = PulsePlanStore.shared
 
     @State private var offset = 0
+    @State private var stripDays = PulseJournalView.minStripDays
     @State private var didStart = false
     @State private var snapshot: JournalDaySnapshot?
     /// What the day holds on disk, and what the screen shows (staged edits).
@@ -64,6 +68,7 @@ struct PulseJournalView: View {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 0) {
                         dateRow
+                            .padding(.top, 8)
                         dayStrip
                             .padding(.top, 14)
                         questionTitle
@@ -121,7 +126,7 @@ struct PulseJournalView: View {
     private var dateRow: some View {
         ZStack {
             HStack(spacing: 4) {
-                stepButton("chevron.left", enabled: offset < Self.stripDays - 1, label: String(localized: "Previous day")) {
+                stepButton("chevron.left", enabled: offset < stripDays - 1, label: String(localized: "Previous day")) {
                     requestDay(offset + 1)
                 }
                 Button { sheet = .calendar } label: {
@@ -198,14 +203,18 @@ struct PulseJournalView: View {
             }
             .defaultScrollAnchor(.trailing)
             .onChange(of: selectedKey) { _, key in
-                if let key { withAnimation(.easeOut(duration: 0.25)) { proxy.scrollTo(key, anchor: .center) } }
+                if let key {
+                    withAnimation(PulseMotion.resolved(PulseMotion.chrome, reduceMotion: reduceMotion)) {
+                        proxy.scrollTo(key, anchor: .center)
+                    }
+                }
             }
         }
     }
 
     /// Before the first load: the same fourteen days, nothing logged, so the strip never jumps.
     private var placeholderStrip: [JournalDaySnapshot.Day] {
-        (0..<Self.stripDays).reversed().map { n in
+        (0..<stripDays).reversed().map { n in
             JournalDaySnapshot.Day(key: Self.dayKey(offset: n), offset: n, logged: false)
         }
     }
@@ -525,7 +534,7 @@ struct PulseJournalView: View {
     // MARK: Day changes and closing
 
     private func requestDay(_ n: Int) {
-        let target = max(0, min(Self.stripDays - 1, n))
+        let target = max(0, min(stripDays - 1, n))
         guard target != offset else { return }
         if hasChanges {
             dialog = .discard(.switchDay(target))
@@ -584,7 +593,7 @@ struct PulseJournalView: View {
                                      onSaved: { reload &+= 1 })
                 .environment(model)
         case .calendar:
-            PulseJournalCalendarSheet(selectedKey: Self.dayKey(offset: offset), stripDays: Self.stripDays) { picked in
+            PulseJournalCalendarSheet(selectedKey: Self.dayKey(offset: offset), stripDays: stripDays) { picked in
                 sheet = nil
                 requestDay(picked)
             }
@@ -611,11 +620,12 @@ struct PulseJournalView: View {
     private func start() {
         guard !didStart else { return }
         didStart = true
-        offset = max(0, min(Self.stripDays - 1, dayOffset ?? 0))
+        stripDays = min(Self.maxStripDays, max(Self.minStripDays, (dayOffset ?? 0) + 1))
+        offset = max(0, min(stripDays - 1, dayOffset ?? 0))
         // The shell handed the router's pending day to `dayOffset`; consume it so it is not reused.
         router.pendingJournalDayOffset = nil
         #if DEBUG
-        if let n = JournalPlanDebug.journalDay { offset = max(0, min(Self.stripDays - 1, n)) }
+        if let n = JournalPlanDebug.journalDay { offset = max(0, min(stripDays - 1, n)) }
         #endif
     }
 
@@ -625,7 +635,7 @@ struct PulseJournalView: View {
         #endif
         let off = offset
         let goals = plans.plan?.goals ?? []
-        let days = Self.stripDays
+        let days = stripDays
         guard let s = await model.build(dayOffset: 0, { builder, r in
             await builder.journalDay(r, offset: off, stripDays: days, planGoals: goals)
         }), s.offset == offset else { return }

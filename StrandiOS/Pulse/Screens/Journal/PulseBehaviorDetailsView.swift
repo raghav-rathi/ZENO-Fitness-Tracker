@@ -80,7 +80,7 @@ struct PulseBehaviorDetailsView: View {
                 .frame(height: PulseTheme.JournalPlan.heroHeight * 1.4)
                 .frame(maxHeight: .infinity, alignment: .top)
             Image(systemName: symbol)
-                .font(.system(size: PulseTheme.JournalPlan.heroSymbolSize, weight: .ultraLight))
+                .font(PulseTheme.JournalPlan.heroSymbolFont)
                 .foregroundStyle(PulseTheme.JournalPlan.heroSymbol)
                 .padding(.top, 70)
                 .padding(.trailing, 6)
@@ -175,8 +175,8 @@ struct PulseBehaviorDetailsView: View {
             let half = geo.size.width / 2
             let length = half * CGFloat(min(1, abs(fraction)))
             ZStack {
-                PulseHatchedTrack(color: PulseTheme.Impact.hatch, cornerRadius: 4)
-                RoundedRectangle(cornerRadius: 4, style: .circular)
+                PulseHatchedTrack(color: PulseTheme.Impact.hatch, cornerRadius: PulseTheme.Radius.badge)
+                RoundedRectangle(cornerRadius: PulseTheme.Radius.badge, style: .circular)
                     .fill(BehaviorImpactFormat.color(effect))
                     .frame(width: length, height: geo.size.height)
                     .offset(x: fraction >= 0 ? length / 2 : -length / 2)
@@ -211,7 +211,7 @@ struct PulseBehaviorDetailsView: View {
                             .font(PulseType.font(.rowValue))
                             .foregroundStyle(BehaviorImpactFormat.color(effect))
                     } else {
-                        Text(String(localized: "\(bucket.days) logged"))
+                        Text(bucket.days == 1 ? String(localized: "1 day so far") : String(localized: "\(bucket.days) days so far"))
                             .pulseText(.secondary)
                             .foregroundStyle(PulseTheme.textTertiary)
                     }
@@ -489,9 +489,13 @@ struct PulseBehaviorDetailsView: View {
     private func load() async {
         let id = identity
         let edges = definition?.followUp?.bucketEdges
+        // A custom numeric behaviour's own unit ("mg"), for its breakdown's labels.
+        let unit = catalog.resolvedItems(imported: [], includeHidden: true)
+            .first { PulseBehaviorLibrary.identity(for: $0.canonical) == id }?.kind.unitLabel
         if let s = await model.build(dayOffset: 0, { builder, r in
             let questions = await builder.importedJournalQuestions()
-            return await builder.behaviorDetails(r, identity: id, followUpEdges: edges).map { ($0, questions) }
+            return await builder.behaviorDetails(r, identity: id, followUpEdges: edges, customUnit: unit)
+                .map { ($0, questions) }
         }) {
             names = BehaviorNames(catalog: catalog, imported: s.1, customTitles: local.customTitles,
                                   questions: s.0.question.map { [identity: $0] } ?? [:])

@@ -179,8 +179,13 @@ extension PulseTheme {
         static let recapPercent = PulseType.numeral(22)
         /// A plan goal card's progress figures ("0:57:01").
         static let goalFigure = PulseType.numeral(20)
-        /// The empty-hero watermark glyph on Behavior Details.
-        static let heroSymbolSize: CGFloat = 150
+        /// The hero's watermark glyph on Behavior Details, and MY WEEK RECAP's target art.
+        static let heroSymbolFont = Font.system(size: 150, weight: .ultraLight)
+        static let recapArtFont = Font.system(size: 44, weight: .light)
+        static let recapArtSize: CGFloat = 150
+        /// A metric goal chart's value labels and its GOAL pill's corners.
+        static let chartValue = PulseType.numeral(12)
+        static let goalPillRadius: CGFloat = 3
         /// The ✕ / ✓ glyphs in a 32 pt square.
         static let toggleGlyph = Font.system(size: 13, weight: .bold)
         static let checkGlyph = Font.system(size: 13, weight: .bold)

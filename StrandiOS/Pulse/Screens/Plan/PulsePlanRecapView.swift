@@ -67,11 +67,13 @@ struct PulsePlanRecapView: View {
     /// ZENO's art: a target of three rings with a dart's check, in SF Symbols.
     private var art: some View {
         ZStack {
-            Circle().fill(PulseTheme.card).frame(width: 150, height: 150)
-            Circle().strokeBorder(PulseTheme.dash, lineWidth: 2).frame(width: 118, height: 118)
-            Circle().strokeBorder(PulseTheme.Plan.progress.opacity(0.6), lineWidth: 2).frame(width: 84, height: 84)
+            let size = PulseTheme.JournalPlan.recapArtSize
+            Circle().fill(PulseTheme.card).frame(width: size, height: size)
+            Circle().strokeBorder(PulseTheme.dash, lineWidth: 2).frame(width: size * 0.79, height: size * 0.79)
+            Circle().strokeBorder(PulseTheme.Plan.progress, lineWidth: 2).opacity(0.6)
+                .frame(width: size * 0.56, height: size * 0.56)
             Image(systemName: "scope")
-                .font(.system(size: 44, weight: .light))
+                .font(PulseTheme.JournalPlan.recapArtFont)
                 .foregroundStyle(PulseTheme.Plan.progress)
         }
         .accessibilityHidden(true)

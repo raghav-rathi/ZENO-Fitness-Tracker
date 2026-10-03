@@ -155,7 +155,8 @@ struct PulsePlanGoalEditor: View {
         NavigationStack {
             PulseScreenScaffold(title: title) {
                 if adding {
-                    PlanGoalPicker(goals: $edited)
+                    PlanGoalPicker(goals: $edited, existing: Set(plans.plan?.goals.map(\.kind) ?? []),
+                                   showsBehaviorNote: false)
                 } else {
                     ForEach($edited) { $goal in
                         if !removed.contains(goal.id) {

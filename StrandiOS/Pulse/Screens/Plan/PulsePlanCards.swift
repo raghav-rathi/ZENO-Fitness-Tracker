@@ -51,10 +51,13 @@ struct PlanSectionHeader: View {
                 .foregroundStyle(PulseTheme.JournalPlan.planSectionLabel)
                 .layoutPriority(1)
                 .accessibilityAddTraits(.isHeader)
-            Rectangle().fill(PulseTheme.divider).frame(maxWidth: .infinity).frame(height: 1)
+            Rectangle().fill(PulseTheme.divider).frame(minWidth: 12, maxWidth: .infinity).frame(height: 1)
                 .accessibilityHidden(true)
             if let onEdit {
+                // Never squeezed: "EDIT" must not break inside the word at large text sizes.
                 PulseTextAccessory(title: String(localized: "Edit"), symbol: "pencil", action: onEdit)
+                    .fixedSize()
+                    .layoutPriority(2)
                     .accessibilityLabel(String(localized: "Edit \(title)"))
             }
         }
@@ -222,7 +225,7 @@ struct PlanMetricChart: View {
                 RectangleMark(x: .value("Day", PlanWeekdays.labels[highlightIndex]),
                               yStart: .value("Bottom", 0), yEnd: .value("Top", max(top, 1)), width: .fixed(29))
                     .foregroundStyle(PulseTheme.chartHighlight)
-                    .clipShape(RoundedRectangle(cornerRadius: 6, style: .circular))
+                    .clipShape(RoundedRectangle(cornerRadius: PulseTheme.Radius.toggle, style: .circular))
             }
             ForEach(plotted, id: \.0) { i, v in
                 BarMark(x: .value("Day", PlanWeekdays.labels[i]), y: .value("Value", v), width: .fixed(14))
@@ -230,7 +233,7 @@ struct PlanMetricChart: View {
                     .clipShape(UnevenRoundedRectangle(topLeadingRadius: 3, topTrailingRadius: 3, style: .circular))
                     .annotation(position: .top, spacing: 4) {
                         Text(format(v))
-                            .font(PulseType.numeral(12))
+                            .font(PulseTheme.JournalPlan.chartValue)
                             .foregroundStyle(color)
                     }
             }
@@ -244,7 +247,8 @@ struct PlanMetricChart: View {
                             .foregroundStyle(Color.black)
                             .padding(.horizontal, 4)
                             .padding(.vertical, 1)
-                            .background(RoundedRectangle(cornerRadius: 3, style: .circular).fill(Color.white))
+                            .background(RoundedRectangle(cornerRadius: PulseTheme.JournalPlan.goalPillRadius, style: .circular)
+                                .fill(PulseTheme.JournalPlan.goalLine))
                     }
             }
         }

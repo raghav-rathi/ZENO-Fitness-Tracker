@@ -150,11 +150,11 @@ private struct PlanWeekContext {
                                format: PulseFormat.grouped,
                                footer: String(localized: "Reach \(PulseFormat.grouped(threshold))+ steps at least \(target) days this week to complete this weekly goal."))
         case .hrZones45:
-            return time(goal, zones: [3, 4], symbolZone: 4, label: String(localized: "Zone 4-5"))
+            return time(goal, zones: [3, 4], label: String(localized: "Zone 4-5"))
         case .hrZones13:
-            return time(goal, zones: [0, 1, 2], symbolZone: 2, label: String(localized: "Zone 1-3"))
+            return time(goal, zones: [0, 1, 2], label: String(localized: "Zone 1-3"))
         case .strengthTime:
-            return time(goal, zones: nil, symbolZone: nil, label: String(localized: "strength activity"))
+            return time(goal, zones: nil, label: String(localized: "strength activity"))
         case .anyActivity:
             let n = target(goal)
             return count(goal, matching: { !PlanSports.isRecovery($0) },
@@ -221,7 +221,7 @@ private struct PlanWeekContext {
             activities: [], footer: footer, targetDays: target)
     }
 
-    private func time(_ goal: PulsePlanGoal, zones: [Int]?, symbolZone: Int?, label: String) -> PlanGoalProgress {
+    private func time(_ goal: PulsePlanGoal, zones: [Int]?, label: String) -> PlanGoalProgress {
         let base = goal.value ?? (zones == nil ? 90 : 30)
         let target = WeeklyPlanProgress.proratedTotal(base, countedDays: covered.count)
         var bySport: [String: Double] = [:]
@@ -241,7 +241,9 @@ private struct PlanWeekContext {
         let left = max(0, target - total)
         let footer: String
         if progress.met {
-            footer = String(localized: "You hit this week's goal of \(PulseFormat.hoursMinutes(target)) of \(label).")
+            footer = zones == nil
+                ? String(localized: "You hit this week's goal of \(PulseFormat.hoursMinutes(target)) of strength activity.")
+                : String(localized: "You hit this week's goal of \(PulseFormat.hoursMinutes(target)) in \(label).")
         } else if zones == nil {
             footer = String(localized: "Get \(PlanTimeFormat.short(left)) more of strength activity this week to hit your goal.")
         } else {

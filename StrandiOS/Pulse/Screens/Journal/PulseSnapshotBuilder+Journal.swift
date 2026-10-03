@@ -172,7 +172,8 @@ extension PulseSnapshotBuilder {
 
     /// Behavior Details for one behaviour identity: its row from the SAME analysis Behavior Insights shows,
     /// the follow-up breakdown, and all of its answered days for Logging History.
-    func behaviorDetails(_ r: PulseRequest, identity: String, followUpEdges: [Double]?) async -> BehaviorDetailsSnapshot? {
+    func behaviorDetails(_ r: PulseRequest, identity: String, followUpEdges: [Double]?,
+                         customUnit: String? = nil) async -> BehaviorDetailsSnapshot? {
         guard let data = await behaviorData(r) else { return nil }
         let isAuto = PulseBehaviorLibrary.Auto(rawValue: identity) != nil
         let row = (data.analysis.unlocked + data.analysis.locked).first { $0.behavior == identity }
@@ -196,7 +197,7 @@ extension PulseSnapshotBuilder {
                                                  recoveryByDay: windowRecovery, edges: edges)
                     .map { b in
                         let label = followUp?.bucketLabel(lower: b.lower, upper: b.upper)
-                            ?? PulseBehaviorFollowUp.custom(unit: nil).bucketLabel(lower: b.lower, upper: b.upper)
+                            ?? PulseBehaviorFollowUp.custom(unit: customUnit).bucketLabel(lower: b.lower, upper: b.upper)
                         return BehaviorDetailsSnapshot.BucketRow(id: "\(b.lower)", label: label, impact: b.impactPercent,
                                                                  significant: b.isSignificant, days: b.days)
                     }
