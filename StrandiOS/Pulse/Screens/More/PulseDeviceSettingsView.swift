@@ -461,7 +461,7 @@ private struct DeviceStatusTab: View {
     private func connected(device: PairedDevice, display: LiquidTodayView.StrapBatteryDisplay) -> some View {
         ZStack(alignment: .bottomTrailing) {
             DeviceStrapArt(height: 330)
-                .offset(x: -112, y: -8)
+                .offset(x: -40, y: -8)
                 .frame(maxWidth: .infinity, alignment: .leading)
             DeviceBatteryReadout(display: display, model: modelName)
                 .padding(.trailing, 4)
@@ -477,10 +477,9 @@ private struct DeviceStatusTab: View {
         VStack(spacing: 0) {
             ZStack {
                 HStack(spacing: 0) {
+                    // Wider than its slot: the band runs off the screen's left edge, as on onboarding/43a.
                     DeviceStrapArt(height: 230)
-                        .offset(x: -100)
-                        .frame(width: 120, alignment: .leading)
-                        .clipped()
+                        .frame(width: 130, alignment: .trailing)
                     Spacer(minLength: 0)
                     RoundedRectangle(cornerRadius: 26, style: .continuous)
                         .strokeBorder(Color.black, lineWidth: 5)

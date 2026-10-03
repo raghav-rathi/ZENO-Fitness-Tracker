@@ -138,7 +138,8 @@ struct PulseProfileView: View {
                 .pulseText(.rowSubline)
                 .foregroundStyle(PulseTheme.textSecondary)
             Text(snapshot?.firstDayKey.map(ProfileFormat.month) ?? (snapshot == nil ? " " : String(localized: "today")))
-                .font(.system(size: 13, weight: .semibold))
+                .pulseText(.rowSubline)
+                .fontWeight(.semibold)
                 .foregroundStyle(PulseTheme.textPrimary)
             Spacer(minLength: 0)
         }
@@ -253,8 +254,11 @@ struct PulseProfileView: View {
         let unlocked = s.unlockedBadges
         let shown = unlocked.isEmpty ? Array(s.badges.prefix(6)) : Array(unlocked.prefix(12))
         return VStack(alignment: .leading, spacing: 18) {
-            PulseSectionHeader(String(localized: "Achievements"), count: unlocked.count, style: .pageTitle,
-                               accessory: .viewAll { navigator.open(.achievements) })
+            ProfileSectionTitle(title: String(localized: "Achievements"), count: unlocked.count) {
+                PulseTextAccessory(title: String(localized: "View all"), symbol: "arrow.right") {
+                    navigator.open(.achievements)
+                }
+            }
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(alignment: .top, spacing: 14) {
                     ForEach(shown) { badge in
@@ -407,6 +411,47 @@ struct PulseProfileView: View {
 }
 
 // MARK: - Pieces
+
+/// A 24 pt section title with its grey count and an accessory at the right ("Achievements (34) VIEW ALL
+/// →"). The title is one word that must never break inside itself (DR §2), so at large text sizes the
+/// accessory moves under the title instead of squeezing it.
+private struct ProfileSectionTitle<Accessory: View>: View {
+    let title: String
+    var count: Int?
+    @ViewBuilder let accessory: () -> Accessory
+
+    var body: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                titleText
+                Spacer(minLength: 8)
+                accessory()
+            }
+            VStack(alignment: .leading, spacing: 4) {
+                titleText
+                accessory()
+            }
+        }
+        .padding(.horizontal, 4)
+    }
+
+    private var titleText: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 6) {
+            Text(title)
+                .pulseText(.pageTitle)
+                .foregroundStyle(PulseTheme.textPrimary)
+            if let count {
+                Text(verbatim: "(\(count))")
+                    .pulseText(.pageTitle)
+                    .foregroundStyle(PulseTheme.textTertiary)
+            }
+        }
+        .lineLimit(1)
+        .fixedSize()
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isHeader)
+    }
+}
 
 /// A half-width Profile card (LEVEL, ZENO AGE): art, a caps title and a grey line, "›" at the top-right.
 private struct ProfileHalfCard<Art: View>: View {

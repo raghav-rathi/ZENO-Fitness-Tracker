@@ -97,6 +97,15 @@ extension PulseSnapshotBuilder {
                                activity: activity)
     }
 
+    /// The First Week checklist's store facts (More › FIRST WEEK WITH ZENO).
+    func firstWeek(_ r: PulseRequest) async -> FirstWeekSnapshot? {
+        begin(r.seq)
+        let workouts = await workoutRows()
+        let journal = await repo.nativeJournalDays(from: "0000-01-01", to: "9999-12-31")
+        guard isCurrent(r) else { return nil }
+        return FirstWeekSnapshot(seq: r.seq, hasActivity: !workouts.isEmpty, hasJournal: !journal.isEmpty)
+    }
+
     // MARK: Pieces
 
     private static func highlights(_ days: [ProfileDay], sessions: [ProfileSession]) -> ProfileHighlights {

@@ -358,16 +358,16 @@ struct ProfileLaurel: View {
             let c = CGPoint(x: canvas.width / 2, y: canvas.height / 2)
             for side in [-1.0, 1.0] {
                 // From the foot (110° off the top) round to the shoulder (25°), leaves shrinking upward.
-                for i in 0..<7 {
-                    let t = Double(i) / 6
-                    let degrees = 160 - t * 125
+                for i in 0..<8 {
+                    let t = Double(i) / 7
+                    let degrees = 165 - t * 130
                     let a = degrees * .pi / 180
                     let point = CGPoint(x: c.x + CGFloat(sin(a) * side) * r, y: c.y - CGFloat(cos(a)) * r)
-                    let leaf = CGSize(width: r * 0.13 * (1 - t * 0.35), height: r * 0.3 * (1 - t * 0.35))
+                    let leaf = CGSize(width: r * 0.17 * (1 - t * 0.3), height: r * 0.4 * (1 - t * 0.3))
                     var ctx = context
                     ctx.translateBy(x: point.x, y: point.y)
-                    // Each leaf leans along the branch, tipped outward.
-                    ctx.rotate(by: .degrees(side * (degrees - 180) * -1 + side * 35))
+                    // Each leaf lies along the branch (the tangent is θ - 90°) and tips 30° outward.
+                    ctx.rotate(by: .degrees(side * (degrees - 60)))
                     let rect = CGRect(x: -leaf.width / 2, y: -leaf.height / 2, width: leaf.width, height: leaf.height)
                     ctx.fill(Path(ellipseIn: rect), with: .color(color))
                 }
@@ -482,61 +482,43 @@ struct ProfileFlameShape: Shape {
 
 // MARK: - Strap
 
-/// A band seen at an angle, cropped off the left edge (Device Settings STATUS): a dark woven loop and,
-/// on top of it, the sensor pod in a brushed-metal frame with its clasp. ZENO's own drawing, never a
-/// product render or a wordmark.
+/// The strap on Device Settings' STATUS tab, cropped off the left edge: ZENO's own band glyph
+/// (`PulseStrapShape`, the Home header's strap) drawn large and lit, a woven band running through a sensor
+/// pod in a brushed-metal frame, tilted. Original art: never a product render or a wordmark.
 struct DeviceStrapArt: View {
     var height: CGFloat = 360
 
     var body: some View {
-        let w = height * 0.95
-        let loop = Ellipse()
-        let metal = LinearGradient(colors: [Color(hex: "#D9DDE1"), Color(hex: "#7A8188"), Color(hex: "#C2C7CC"),
-                                            Color(hex: "#5C6268")],
+        let w = height * 0.62
+        let metal = LinearGradient(colors: [Color(hex: "#E4E7EA"), Color(hex: "#80878E"), Color(hex: "#CDD1D5"),
+                                            Color(hex: "#5E646A")],
                                    startPoint: .topLeading, endPoint: .bottomTrailing)
+        let band = RoundedRectangle(cornerRadius: w * 0.12, style: .continuous)
         ZStack {
-            // The loop of the band, its far side darker than its near side.
-            loop
-                .stroke(LinearGradient(colors: [Color(hex: "#353A40"), Color(hex: "#15181B"), Color(hex: "#272B30")],
-                                       startPoint: .topLeading, endPoint: .bottomTrailing),
-                        lineWidth: height * 0.19)
-                .frame(width: w * 0.9, height: height * 0.72)
-                .rotationEffect(.degrees(-16))
-                .offset(x: -w * 0.1, y: height * 0.05)
-            // The weave: fine diagonal ticks along the loop, and a faint lit edge.
-            loop
-                .stroke(Color.white.opacity(0.08), style: StrokeStyle(lineWidth: height * 0.17, dash: [1.5, 3.5]))
-                .frame(width: w * 0.9, height: height * 0.72)
-                .rotationEffect(.degrees(-16))
-                .offset(x: -w * 0.1, y: height * 0.05)
-            loop
-                .stroke(Color.white.opacity(0.12), lineWidth: 1)
-                .frame(width: w * 0.9 + height * 0.19, height: height * 0.72 + height * 0.19)
-                .rotationEffect(.degrees(-16))
-                .offset(x: -w * 0.1, y: height * 0.05)
-            // The pod: a dark woven face in a metal frame.
+            // The band, running past the frame at both ends, woven and lit from the top-left.
+            band
+                .fill(LinearGradient(colors: [Color(hex: "#3A3F45"), Color(hex: "#181B1E"), Color(hex: "#25292D")],
+                                     startPoint: .topLeading, endPoint: .bottomTrailing))
+                .overlay(PulseHatchedTrack(color: Color.white.opacity(0.06), spacing: 3, cornerRadius: w * 0.12))
+                .overlay(band.strokeBorder(Color.white.opacity(0.12), lineWidth: 1))
+                .frame(width: w * 0.62, height: height * 1.5)
+            // The pod: a dark face in a metal frame, with a soft highlight along its top edge.
             ZStack {
-                RoundedRectangle(cornerRadius: height * 0.05, style: .continuous)
-                    .fill(metal)
-                RoundedRectangle(cornerRadius: height * 0.04, style: .continuous)
-                    .fill(LinearGradient(colors: [Color(hex: "#202427"), Color(hex: "#0C0E10")],
-                                         startPoint: .topLeading, endPoint: .bottomTrailing))
-                    .overlay(RoundedRectangle(cornerRadius: height * 0.04, style: .continuous)
-                        .stroke(Color.white.opacity(0.04), style: StrokeStyle(lineWidth: height * 0.2, dash: [1, 3])))
-                    .clipShape(RoundedRectangle(cornerRadius: height * 0.04, style: .continuous))
-                    .padding(height * 0.014)
+                RoundedRectangle(cornerRadius: w * 0.2, style: .continuous).fill(metal)
+                RoundedRectangle(cornerRadius: w * 0.17, style: .continuous)
+                    .fill(LinearGradient(colors: [Color(hex: "#2A2E33"), Color(hex: "#0D0F11")],
+                                         startPoint: .top, endPoint: .bottom))
+                    .padding(w * 0.035)
+                RoundedRectangle(cornerRadius: w * 0.17, style: .continuous)
+                    .stroke(LinearGradient(colors: [Color.white.opacity(0.22), Color.clear], startPoint: .top,
+                                           endPoint: .center), lineWidth: 1.5)
+                    .padding(w * 0.035)
             }
-            .frame(width: w * 0.34, height: height * 0.47)
-            .rotationEffect(.degrees(-30))
-            .offset(x: w * 0.13, y: -height * 0.03)
-            // The clasp across the pod's foot.
-            RoundedRectangle(cornerRadius: height * 0.025, style: .continuous)
-                .fill(metal)
-                .frame(width: w * 0.37, height: height * 0.075)
-                .rotationEffect(.degrees(-30))
-                .offset(x: w * 0.22, y: height * 0.165)
+            .frame(width: w, height: height * 0.46)
+            .shadow(color: Color.black.opacity(0.6), radius: 18, y: 10)
         }
-        .frame(width: w, height: height)
+        .rotationEffect(.degrees(-24))
+        .frame(width: height * 0.95, height: height)
         .accessibilityHidden(true)
     }
 }

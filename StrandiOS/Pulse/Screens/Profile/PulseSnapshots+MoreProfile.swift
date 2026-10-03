@@ -130,4 +130,13 @@ struct ProfileActivitySummary: Equatable {
     /// Most logged first.
     let sports: [Sport]
 }
+
+/// What the First Week checklist reads from the store (More › FIRST WEEK WITH ZENO).
+struct FirstWeekSnapshot: Equatable {
+    let seq: Int
+    /// Any activity in the history.
+    let hasActivity: Bool
+    /// Any native journal entry.
+    let hasJournal: Bool
+}
 #endif
