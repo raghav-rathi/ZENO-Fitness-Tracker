@@ -128,7 +128,9 @@ enum PulseActivitySessionStore {
 /// The pre-start screen: the translucent header (✕ · sport glyph · NAME · ⌄), Track Route for GPS sports,
 /// the dimmed map (Track Route on, location allowed) or a neutral backdrop with halos, the live heart-rate
 /// circle, and the Strain Target panel with START ACTIVITY (strain sports) or a white outline START
-/// ACTIVITY (recovery sports).
+/// ACTIVITY (recovery sports). A GPS sport with Track Route on asks for location here, not only at START,
+/// so the map can show before the session; with location off in Settings a line under Track Route says no
+/// route is recorded.
 struct PulsePreStartView: View {
     @Environment(PulseModel.self) private var model
     @Environment(\.dismiss) private var dismiss
@@ -142,7 +144,7 @@ struct PulsePreStartView: View {
     /// A target the wearer dragged on the ring (0–21); nil keeps the recommendation.
     @State private var customTarget: Double?
     @State private var panelExpanded = false
-    @State private var locationAllowed = PulsePreStartView.locationAuthorized
+    @StateObject private var location = PulsePreStartLocation()
 
     private static var initialKind: PulseActivityKind {
         #if DEBUG
@@ -152,13 +154,10 @@ struct PulsePreStartView: View {
         return PulseActivityCatalog.kind(named: "Running")
     }
 
-    private static var locationAuthorized: Bool {
-        let status = CLLocationManager().authorizationStatus
-        return status == .authorizedWhenInUse || status == .authorizedAlways
-    }
-
     private var isRecovery: Bool { kind.category == .recovery }
-    private var showsMap: Bool { kind.isDistanceSport && trackRoute && locationAllowed }
+    /// A route would be recorded for this activity (the engine's rule at START, `AppModel.recordsRoute`).
+    private var wantsRoute: Bool { kind.isDistanceSport && trackRoute }
+    private var showsMap: Bool { wantsRoute && location.isAllowed }
 
     /// The Activity Strain the session aims at: the dragged one, else the recommendation; none once today
     /// has reached its target (a 0.0 target would park the live ring's knob at 12 o'clock).
@@ -185,10 +184,20 @@ struct PulsePreStartView: View {
                     .position(x: geo.size.width / 2, y: circleCentre - safeTop)
 
                 if kind.isDistanceSport {
-                    trackRouteRow
-                        .padding(.top, headerHeight - safeTop + 14)
-                        .frame(maxWidth: .infinity, alignment: .trailing)
-                        .padding(.trailing, 16)
+                    VStack(alignment: .trailing, spacing: 0) {
+                        trackRouteRow
+                        if trackRoute && location.isDenied {
+                            Text(String(localized: "Location is off for ZENO in Settings, so no route is recorded."))
+                                .activityText(.trackRoute)
+                                .foregroundStyle(PulseTheme.textTertiary)
+                                .multilineTextAlignment(.trailing)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .frame(maxWidth: 260, alignment: .trailing)
+                        }
+                    }
+                    .padding(.top, headerHeight - safeTop + 14)
+                    .frame(maxWidth: .infinity, alignment: .trailing)
+                    .padding(.trailing, 16)
                 }
 
                 VStack(spacing: 0) {
@@ -224,7 +233,12 @@ struct PulsePreStartView: View {
                 snapshot = s
             }
         }
-        .onChange(of: kind) { _, _ in customTarget = nil }
+        .onChange(of: kind) { _, _ in
+            customTarget = nil
+            askForLocationIfNeeded()
+        }
+        .onChange(of: trackRoute) { _, _ in askForLocationIfNeeded() }
+        .onAppear { askForLocationIfNeeded() }
         #if DEBUG
         .onAppear {
             if PulseActivityDebug.has("--activity-picker-open") { pickerOpen = true }
@@ -232,6 +246,12 @@ struct PulsePreStartView: View {
             if let value = PulseActivityDebug.value("--activity-target").flatMap(Double.init) { customTarget = value }
         }
         #endif
+    }
+
+    /// Asks for location while it has never been asked and a route would be recorded, so the map can show
+    /// before START (a01, a04); `GpsWorkoutRecorder` would otherwise ask only once the session runs.
+    private func askForLocationIfNeeded() {
+        if wantsRoute { location.requestIfUndetermined() }
     }
 
     // MARK: Header
@@ -358,6 +378,41 @@ struct PulsePreStartView: View {
         // A recovery activity has no Strain Target panel, so it starts with no target.
         PulseStartEngine.start(app: app, sport: kind.name, target: isRecovery ? nil : activityTarget,
                                trackRoute: !kind.isDistanceSport || trackRoute)
+    }
+}
+
+/// Whether this app may read location, kept current for the pre-start screen: it reads the status once,
+/// follows every change (the prompt's answer, a change made in Settings while the screen is open), and asks
+/// only while the wearer has never been asked. It records nothing; `GpsWorkoutRecorder` does, after START.
+@MainActor
+final class PulsePreStartLocation: NSObject, ObservableObject {
+    @Published private(set) var status: CLAuthorizationStatus = .notDetermined
+    private let manager = CLLocationManager()
+
+    override init() {
+        super.init()
+        manager.delegate = self
+        status = manager.authorizationStatus
+    }
+
+    var isAllowed: Bool { status == .authorizedWhenInUse || status == .authorizedAlways }
+    var isDenied: Bool { status == .denied || status == .restricted }
+
+    /// The system prompt, only while location has never been asked for (a refusal is the wearer's to
+    /// reverse in Settings).
+    func requestIfUndetermined() {
+        guard manager.authorizationStatus == .notDetermined else { return }
+        manager.requestWhenInUseAuthorization()
+    }
+}
+
+// The manager is created on the main thread, so CoreLocation calls back there and MainActor isolation is
+// sound; `@preconcurrency` lets this `@MainActor` type meet the nonisolated requirement (the idiom
+// `GpsWorkoutRecorder` uses).
+extension PulsePreStartLocation: @preconcurrency CLLocationManagerDelegate {
+    func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
+        let now = manager.authorizationStatus
+        if status != now { status = now }
     }
 }
 
