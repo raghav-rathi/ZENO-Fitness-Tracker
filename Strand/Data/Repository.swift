@@ -3272,6 +3272,12 @@ final class Repository: ObservableObject {
     /// candidate to suggest , newest first , that is NOT already saved and NOT previously dismissed.
     /// Returns nil when the toggle is off, there's nothing to suggest, or detection finds nothing.
     /// PURE READ: never writes a workout. The window scans from `daysBack` days ago to now.
+    ///
+    /// The detector itself (a sort and a walk over up to two days of 1 Hz heart rate) runs OFF the main
+    /// actor; only the reads and the dismissed-span pick, which use this repository's state, run on it.
+    /// So the classic card and a Pulse snapshot build (`await repo.autoDetectCandidate()` from the builder
+    /// actor) both get the candidate without stalling the UI. The Workouts & GPS test mode's traced pass
+    /// stays on the main actor: it is a diagnostic, and it writes trace lines as it goes.
     func autoDetectCandidate(daysBack: Int = 2) async -> DetectedWorkout? {
         guard PuffinExperiment.autoDetectWorkoutsEnabled else { return nil }
         let now = Int(Date().timeIntervalSince1970)
@@ -3313,9 +3319,11 @@ final class Repository: ObservableObject {
             }
             candidates = results
         } else {
-            candidates = AutoWorkoutDetector.detect(hr: hr, restingBpm: restingBpm,
-                                                    motion: nil, savedSpans: savedSpans,
-                                                    minimumSustainedMinutes: AutoWorkoutDetector.minSustainedMin)
+            candidates = await Task.detached(priority: .utility) {
+                AutoWorkoutDetector.detect(hr: hr, restingBpm: restingBpm,
+                                           motion: nil, savedSpans: savedSpans,
+                                           minimumSustainedMinutes: AutoWorkoutDetector.minSustainedMin)
+            }.value
         }
         return Self.selectAutoDetectCandidate(
             candidates,
