@@ -8,7 +8,7 @@ import Foundation
 // (`JournalCatalogStore`, shared with Android and with imported WHOOP history). That key is never changed
 // here. This file is the presentation layer the Pulse journal draws with:
 //
-//   - a WHOOP-style NAME ("Alcohol") and QUESTION ("Had any alcoholic drinks?") for each behaviour, so the
+//   - a WHOOP-style NAME ("Alcohol") and QUESTION ("Have any alcoholic drinks?") for each behaviour, so the
 //     starter set reads in WHOOP's phrasing while its stored key stays "Did you drink any alcohol?";
 //   - one of WHOOP's nine CATEGORIES (the SELECT BEHAVIORS tabs) and a journal SECTION (DAYTIME,
 //     NIGHTTIME, STATUS);
@@ -308,7 +308,7 @@ enum PulseBehaviorLibrary {
         PulseBehaviorDefinition(
             id: "alcohol", canonical: "Did you drink any alcohol?",
             aliases: ["Have any alcoholic drinks?", "Had any alcoholic drinks?", "Consumed alcohol?", "Drank alcohol?"],
-            title: String(localized: "Alcohol"), question: String(localized: "Had any alcoholic drinks?"),
+            title: String(localized: "Alcohol"), question: String(localized: "Have any alcoholic drinks?"),
             category: .nutrition, symbol: "wineglass",
             synonyms: ["drink", "drinks", "wine", "beer", "booze", "spirits", "cocktail", "liquor"],
             followUp: .drinks, goalTitle: String(localized: "Avoid Alcohol"), avoid: true,
