@@ -490,11 +490,6 @@ extension PulseSnapshotBuilder {
 
     private func outlookFacts(_ r: PulseRequest, home: HomeSnapshot, zones: [String: ZoneDay]) async -> PulseOutlookFacts {
         let key = r.day.key
-        // Recovery against its 7-day average (the days before today).
-        let weekAgo = PulseDisplay.dayKey(key, offsetBy: -7) ?? key
-        let recent = r.days.filter { $0.day >= weekAgo && $0.day < key }.compactMap(\.recovery)
-        let average = recent.count >= 3 ? PulseDisplay.displayedPercent(recent.reduce(0, +) / Double(recent.count)) : nil
-
         // The journal streak, over the local days the journal keys entries by.
         let localKeys = Self.journalKeys(r)
         let logged = await journalDays(r, home: home)
@@ -511,7 +506,7 @@ extension PulseSnapshotBuilder {
         let counted = week.reduce(0) { $0 + $1.activities }
         let total = week.reduce(0.0) { $0 + $1.minutes.reduce(0, +) }
         let high = week.reduce(0.0) { $0 + $1.minutes[3] + $1.minutes[4] }
-        return PulseOutlookFacts(recoveryAverage7: average, journalStreak: streak, journalLoggedToday: loggedToday,
+        return PulseOutlookFacts(journalStreak: streak, journalLoggedToday: loggedToday,
                                  zoneMinutesWeek: counted > 0 && total > 0 ? total : nil,
                                  highZoneMinutesWeek: counted > 0 && total > 0 ? high : nil,
                                  zoneActivitiesWeek: counted)

@@ -44,13 +44,13 @@ enum PulseDailyOutlook {
         var insights: [String] = []
         var recommendations: [String] = []
 
-        // Recovery, against the 7 days before it.
+        // Recovery, against the 7 days before it (`HomeSnapshot.recoveryAverage7`).
         switch home.recovery.state {
         case .scored:
             if let r = home.recovery.value {
                 let shown = PulseDisplay.displayedPercent(r)
                 // "7‑day" with a non-breaking hyphen, so a line never ends on "7-".
-                if let average = facts?.recoveryAverage7 {
+                if let average = home.recoveryAverage7 {
                     if shown > average {
                         insights.append(String(localized: "Your Recovery is **\(shown)%**, above your 7\u{2011}day average of **\(average)%**."))
                     } else if shown < average {

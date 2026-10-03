@@ -351,6 +351,10 @@ struct HomeSnapshot: Equatable {
     let streak: Int?
     /// The seven days ending on the selected one, oldest first, for STRAIN & RECOVERY.
     let week: [PulseWeekDay]
+    /// The mean scored Recovery over the 7 days before the selected one (3 scored days at least), whole
+    /// percent: the Daily Outlook's 7-day average, kept here so that every outlook made from this snapshot
+    /// (the Coach sheet's too) can print the one figure.
+    let recoveryAverage7: Int?
     /// Days with a Recovery score in the history: under 3 and no Coach provider, no outlook can be made,
     /// so My Day shows the Ask row instead of the coach pill.
     let scoredDays: Int

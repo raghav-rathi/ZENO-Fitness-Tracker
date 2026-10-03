@@ -82,9 +82,9 @@ struct PulseGetStartedFacts: Equatable {
 }
 
 /// The store-side facts the Daily Outlook / Day in Review template reads beside `HomeSnapshot` (§3.15 [Z]).
+/// Its Recovery average is on the snapshot instead (`HomeSnapshot.recoveryAverage7`), where the Coach sheet's
+/// outlook, which is made from the snapshot alone, can read the same figure.
 struct PulseOutlookFacts: Equatable {
-    /// The mean scored Recovery over the 7 days before the day (3 days at least), whole percent.
-    let recoveryAverage7: Int?
     /// Consecutive days with a journal entry, ending today (or yesterday while today is not logged).
     let journalStreak: Int
     let journalLoggedToday: Bool

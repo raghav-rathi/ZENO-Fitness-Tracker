@@ -474,7 +474,18 @@ actor PulseSnapshotBuilder {
             journal: journal,
             streak: streak,
             week: week(r, liveStrain: strain),
+            recoveryAverage7: recoveryAverage7(r),
             scoredDays: r.days.reduce(0) { $0 + ($1.recovery != nil ? 1 : 0) })
+    }
+
+    /// The mean scored Recovery over the 7 days before the selected one, when at least 3 of them scored, whole
+    /// percent (`HomeSnapshot.recoveryAverage7`).
+    func recoveryAverage7(_ r: PulseRequest) -> Int? {
+        let key = r.day.key
+        let weekAgo = PulseDisplay.dayKey(key, offsetBy: -7) ?? key
+        let recent = r.days.filter { $0.day >= weekAgo && $0.day < key }.compactMap(\.recovery)
+        guard recent.count >= 3 else { return nil }
+        return PulseDisplay.displayedPercent(recent.reduce(0, +) / Double(recent.count))
     }
 
     /// The seven days ending on the selected one, oldest first: each day's stored Strain (0–21) and
