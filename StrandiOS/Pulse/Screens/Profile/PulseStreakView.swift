@@ -79,10 +79,11 @@ struct PulseStreakView: View {
         }
     }
 
+    /// reviews/r48: the value's digits stand ≈10.7 pt ("Feb. 5, 2022" 78 pt wide at 390 pt), so 15 pt Bold.
     private func stat(value: String, caption: String) -> some View {
         VStack(spacing: 5) {
             Text(value)
-                .profileFont(18, weight: .bold, relativeTo: .headline)
+                .profileFont(15, weight: .bold, relativeTo: .subheadline)
                 .foregroundStyle(PulseTheme.textPrimary)
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
@@ -146,14 +147,15 @@ struct PulseStreakView: View {
     // MARK: Milestone
 
     /// "N more days to unlock your next milestone." between the last milestone's flame and the next one's,
-    /// greyed, with an orange bar from one to the other.
+    /// greyed, with an orange bar from one to the other. The copy is small beside the badges (reviews/r48,
+    /// profile-community-2026/15, 61): "N more days" 12 pt Semibold, the caption 11 pt on one line.
     private func milestoneCard(_ s: ProfileStreak) -> some View {
         let m = s.milestone
         return HStack(spacing: 14) {
             milestoneBadge(value: m.last ?? 0, days: s.current, reached: m.last != nil)
             VStack(spacing: 10) {
                 Text(m.remaining == 1 ? String(localized: "1 more day") : String(localized: "\(m.remaining) more days"))
-                    .pulseText(.coachingTitle)
+                    .pulseText(.secondary)
                     .foregroundStyle(PulseTheme.textPrimary)
                 GeometryReader { geo in
                     ZStack(alignment: .leading) {
@@ -164,7 +166,7 @@ struct PulseStreakView: View {
                 }
                 .frame(height: 6)
                 Text(String(localized: "to unlock your next milestone."))
-                    .pulseText(.rowSubline)
+                    .profileFont(11, weight: .regular, relativeTo: .caption2)
                     .foregroundStyle(PulseTheme.textSecondary)
                     .multilineTextAlignment(.center)
             }
