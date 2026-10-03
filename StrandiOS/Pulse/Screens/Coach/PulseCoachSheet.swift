@@ -57,6 +57,8 @@ struct PulseCoachSheet: View {
     @State private var remember: PulseCoachRemember?
     @State private var atBottom = true
     @State private var toast: String?
+    /// With the keyboard up the composer sits clear of it instead of dipping into the bottom inset.
+    @State private var keyboardShown = false
 
     /// The classic composer's draft key (K15), so a half-typed question survives either screen.
     private static let draftKey = "coach.composerDraft"
@@ -112,22 +114,31 @@ struct PulseCoachSheet: View {
 
     private var root: some View {
         VStack(spacing: 0) {
+            // The pill row centres ≈32 pt under the sheet's top edge (reviews/r123).
             topBar
                 .padding(.horizontal, PulseTheme.Layout.pageMargin)
-                .padding(.top, 22)
+                .padding(.top, 11)
             if configured {
                 transcript
                 chips
+                // r123: the chips sit ≈61 pt above the composer, whose bottom edge dips ≈8 pt into the
+                // home-indicator inset (its centre 50 pt above the screen edge).
                 PulseCoachComposer(draft: $draft, isSending: coach.sending, onSend: { send(draft) },
                                    onNewChat: newConversation)
                     .padding(.horizontal, PulseTheme.Layout.pageMargin)
-                    .padding(.top, 10)
-                    .padding(.bottom, 8)
+                    .padding(.top, 17)
+                    .padding(.bottom, keyboardShown ? 8 : -8)
             } else {
                 setup
             }
         }
         .background(PulseCoachBackground())
+        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in
+            keyboardShown = true
+        }
+        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in
+            keyboardShown = false
+        }
         .overlay(alignment: .top) {
             if let toast {
                 Text(toast)
@@ -178,8 +189,15 @@ struct PulseCoachSheet: View {
                 HStack(spacing: 8) {
                     Text(String(localized: "Memory"))
                         .font(.system(size: 14, weight: .semibold))
-                    Image(systemName: "lightbulb.max")
-                        .font(.system(size: 18, weight: .regular))
+                    // A bulb with a sparkle at its shoulder (WHOOP's glyph, drawn from SF Symbols).
+                    Image(systemName: "lightbulb")
+                        .font(.system(size: 19, weight: .light))
+                        .overlay(alignment: .topTrailing) {
+                            Image(systemName: "sparkle")
+                                .font(.system(size: 9, weight: .bold))
+                                .offset(x: 6, y: -3)
+                        }
+                        .padding(.trailing, 4)
                 }
                 .foregroundStyle(PulseTheme.textPrimary)
                 .frame(minHeight: PulseTheme.Layout.minTapTarget)
