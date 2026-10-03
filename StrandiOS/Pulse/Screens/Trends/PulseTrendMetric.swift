@@ -520,7 +520,7 @@ extension PulseTrendMetric {
 
     static let vo2Max = PulseTrendMetric(
         key: "vo2max_est", title: String(localized: "VO₂ Max"), sentenceName: String(localized: "VO₂ max"),
-        symbol: "lungs", pillar: .strain, unit: "mL/kg/min", format: .oneDecimal, scale: .dynamic,
+        symbol: "lungs", pillar: .strain, unit: "mL/kg/min", format: .whole, scale: .dynamic,
         chart: .line, color: PulseTheme.recoveryBlue, polarity: .higherIsBetter, chipPolarity: .higherIsBetter,
         aggregation: .average, isRunningTotal: false, showsTypicalRange: false, cta: nil, breakdown: nil,
         note: nil, explainer: nil, ranges: [.month, .sixMonths, .year, .all], source: .vo2Estimate)
