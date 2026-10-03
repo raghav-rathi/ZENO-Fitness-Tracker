@@ -557,6 +557,23 @@ Measured on the reference captures, where they disagree with the spec's numbers:
   ring (`PulseTheme.Coach`).
 - **Dial label gap.** The spec's 12–13 pt is to the label's caps; the text frame starts ≈2.5 pt above them,
   so `Dial.labelGap` is 10.
+- **Stress time in whole hours.** `DaytimeStress` scores stress by the hour (`bucketSeconds` 3600), and the
+  5-minute curve §3.22 [Z] integrates does not exist, so the Health tab's card and TOTAL DAY print "4 h"
+  (`HealthFormat.stressHours`), not WHOOP's minute-precise "0:44". A finer curve prints its own fraction.
+- **Healthspan's "Sleep regularity".** WHOOP's row is SLEEP CONSISTENCY, but ZENO Age reads
+  `VitalityEngine.sleepConsistency`, 1 − the variation of the nightly hours. That is not the timing-based
+  Sleep Consistency the Sleep dive shows, so naming the row the same would put two different "consistency"
+  figures on two screens.
+- **Healthspan's subtitle.** "FINAL IN N DAYS", not WHOOP's "NEXT UPDATE IN N DAYS": the weekly pass refines
+  the current week's ZENO Age every day until the week closes, so "next update" would promise a figure that
+  holds still.
+- **Healthspan's years.** A pillar row prints its years only when the rows add up to the ZENO Age the weekly
+  pass stored (`HealthspanBreakdown`, within 0.1 years); otherwise the rows show values without years and
+  the page says the breakdown updates with this week's ZENO Age. The seeded demo store's ZENO Age is
+  synthetic, so its captures always show the withheld state. TIME IN HR ZONES 1-3 / 4-5 and STRENGTH
+  ACTIVITY TIME count the week's workouts (ZENO Age does not use them, so they carry no years); VO₂ MAX
+  is a row without years, because the weekly pass leaves it to Fitness Age.
+- **Health Monitor footer text.** 11 pt (`.chip`), the floor, where WHOOP's runs ≈10.5 pt (reviews/r100).
 
 Housekeeping the next wave inherits:
 
@@ -575,8 +592,15 @@ Housekeeping the next wave inherits:
 - The coach summary pills on the dives and the Daily Outlook seed are local template sentences; the
   cycle-coach group replaces them with the Coach's text (`CoachBriefScheduler`) where a provider exists.
 - Home's STRESS MONITOR chart draws today's hourly curve (`DaytimeStress`); WHOOP's is finer-grained and
-  covers past days. The headline level and the curve come from different models (`StressModel` and the
-  hourly proxy), so they can disagree; the health group should give both one source.
+  covers past days. **Open: give Home's stress one source.** The health group's
+  `PulseSnapshotBuilder.stressDay(_:)` (`Screens/Health/PulseSnapshotBuilder+Health.swift`) resolves a day's
+  stress level from its curve (`gaugeLevel?.level`, at `latest?.at`), falling back to the daily score only
+  on a day with no curve, and the Stress Monitor shows exactly that. Home's STRESS MONITOR tile and the
+  dashboard card still take `stressSummary`'s `StressModel` daily score beside the curve's last hour, so on
+  one seed the tile read "2.7 HIGH 10:30 PM" and the Stress Monitor it opens "1.8 MEDIUM 10:30 PM". The
+  foundation fix is one line in `stressSummary`: `let day = await stressDay(r)`, then the score is
+  `day?.gaugeLevel?.level` and the time `day?.latest?.at`, for past days too (the method is already a
+  builder extension and caches its reads per refresh). Until it lands, the two readouts can disagree.
 - The day streak counts consecutive days with a Recovery score (`StreakCalculator`, the classic Settings
   card's rule). Initials on the avatar need a stored name, which ZENO does not have yet (Edit Profile).
 - WHOOP's Health Monitor tile prints "2/5 Metrics" next to OUT OF RANGE; whether that counts the metrics in
