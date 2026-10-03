@@ -349,7 +349,7 @@ All take plain values, never snapshots. Map a snapshot to them in your group (se
 | `PulseLabel` | `(_ text: String, color: Color = .textTertiary, alignment:)` | 11 pt Bold caps, wraps between words |
 | `PulseWordWrapText` | `(_ text:, style:, alignment:, lineSpacing:, minimumScale:)` | One line if it fits, else wrapped between words only; an over-long word shrinks with all the others |
 | `PulseTextMetrics.width(_:style:size:)` | | A string's width in a style (to pick one size for several labels) |
-| `PulseValueText` | `(value:unit:style:unitStyle:color:unitColor:)` | Number + smaller baseline-aligned unit |
+| `PulseValueText` | `(value:unit:style:unitStyle:color:unitColor:)` | Number + smaller baseline-aligned unit; a word space before a word unit ("797 kcal"), none before "%", "°", "/5" or "x" |
 | `PulseChevron` | `(color:size:)` | "›" 13 pt, 50% |
 
 ### Header and brand

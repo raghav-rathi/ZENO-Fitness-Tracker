@@ -220,7 +220,9 @@ struct PulseChevron: View {
     }
 }
 
-/// A number with its unit set smaller and baseline-aligned ("80%", "51 ms").
+/// A number with its unit set smaller and baseline-aligned ("80%", "51 ms"). A word unit takes a word space
+/// as WHOOP sets it ("214 cals", "126 bpm", "50 ms": help-center/82, activity-flows-2026/e01,
+/// deep-dives-2026/37); "%", "°C", "/5" and the "x" of a count stay tight ("80%", "698x").
 ///
 ///     PulseValueText(value: "80", unit: "%", style: .dialValue, unitStyle: .dialUnit)
 struct PulseValueText: View {
@@ -232,8 +234,14 @@ struct PulseValueText: View {
     /// The unit's colour (text units are tertiary; a dial's "%" stays primary).
     var unitColor: Color = PulseTheme.textTertiary
 
+    /// A word space before a unit that is a word ("kcal", "bpm", "ms", "h"), none before a sign.
+    private var unitGap: CGFloat {
+        guard let unit, unit.first?.isLetter == true, unit != "x" else { return 1 }
+        return 4
+    }
+
     var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 1) {
+        HStack(alignment: .firstTextBaseline, spacing: unitGap) {
             Text(value)
                 .pulseText(style)
                 .foregroundStyle(color)
