@@ -550,9 +550,11 @@ private struct ProfileRuleLabel: View {
 
     var body: some View {
         HStack(spacing: 10) {
+            // The label takes the width first, so the rule shrinks before the label wraps.
             Text(title)
                 .pulseText(.label)
                 .foregroundStyle(PulseTheme.textTertiary)
+                .layoutPriority(1)
                 .accessibilityAddTraits(.isHeader)
             Rectangle().fill(PulseTheme.divider).frame(height: 1)
         }
@@ -583,12 +585,16 @@ private struct ProfileStreakColumn: View {
             Text(ProfileFormat.days(days))
                 .font(.system(size: 17, weight: .semibold))
                 .foregroundStyle(PulseTheme.textPrimary)
+            // Two centred lines at large text sizes rather than "Green Recov…".
             Text(caption)
                 .pulseText(.legend)
                 .foregroundStyle(PulseTheme.textSecondary)
-                .lineLimit(1)
+                .multilineTextAlignment(.center)
+                .lineLimit(2)
                 .minimumScaleFactor(0.8)
+                .fixedSize(horizontal: false, vertical: true)
         }
+        .padding(.horizontal, 2)
         .frame(maxWidth: .infinity)
         .accessibilityElement(children: .combine)
     }
