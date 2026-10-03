@@ -264,11 +264,4 @@ public enum PulseDisplay {
             : (shifted[mid - 1] + shifted[mid]) / 2
         return ((median + 720) % minutesPerDay + minutesPerDay) % minutesPerDay
     }
-
-    /// The minute of day to be asleep by to wake at `wakeMinute` having slept `needMinutes`, wrapped
-    /// into 0..<1440 (a 06:30 wake with an 8 h need is 22:30 the evening before).
-    public static func bedtimeMinute(wakeMinute: Int, needMinutes: Double) -> Int {
-        let raw = wakeMinute - Int(needMinutes.rounded())
-        return ((raw % minutesPerDay) + minutesPerDay) % minutesPerDay
-    }
 }

@@ -22,14 +22,14 @@ final class TonightSleepPlanTests: XCTestCase {
     // MARK: The bedtime Home prints and the one the planner prints
 
     func testHomesRecommendedBedtimeIsThePlansAsleepByTime() {
-        // Home's card has always printed wake − need (`PulseDisplay.bedtimeMinute`); the plan's asleep-by
-        // time is the same instant, so the two screens can differ only by the latency the planner adds.
+        // The asleep-by time is wake − need on the clock, whole minutes, wrapped into the evening before (what
+        // Home's card printed before it read the plan), so the in-bed time differs only by the latency.
         for wakeMinute in [6 * 60 + 30, 6 * 60 + 58, 7 * 60, 9 * 60 + 15, 14 * 60] {
             for need in [360.0, 452.4, 480, 566.6] {
                 let plan = TonightSleepPlan.bedtime(wake: morning(wakeMinute), needMin: need, calendar: calendar)
                 XCTAssertFalse(plan.clamped, "wake \(wakeMinute) need \(need)")
                 XCTAssertEqual(minuteOfDay(plan.asleepBy),
-                               PulseDisplay.bedtimeMinute(wakeMinute: wakeMinute, needMinutes: need),
+                               ((wakeMinute - Int(need.rounded())) % 1440 + 1440) % 1440,
                                "wake \(wakeMinute) need \(need)")
             }
         }
