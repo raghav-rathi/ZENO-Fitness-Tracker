@@ -434,7 +434,9 @@ struct PulseChallengeJoinView: View {
     private var join: some View {
         let d = definition
         let canStart = store.runningCount(today: today) < PulseChallengeStore.maximumRunning
-        return PulseScreenScaffold(title: PulseChallengeText.navTitle(d), coach: .button) {
+        return PulseScreenScaffold(title: PulseChallengeText.navTitle(d),
+                                   trailing: PulseChallengeMoreGlyph.trailing { showsMenu = true },
+                                   coach: .button) {
             VStack(spacing: 0) {
                 PulseChallengeHero(kind: kind, fraction: 0, value: PulseChallengeText.target(d), target: nil,
                                    caption: kind.goalCaption, style: .preview)
@@ -468,11 +470,6 @@ struct PulseChallengeJoinView: View {
                 goalCard
                     .padding(.top, 20)
             }
-        }
-        .challengeNavTrailing {
-            Button { showsMenu = true } label: { PulseChallengeMoreGlyph() }
-                .buttonStyle(PulsePressStyle())
-                .accessibilityLabel(String(localized: "More"))
         }
         .confirmationDialog(String(localized: "Challenge"), isPresented: $showsMenu, titleVisibility: .hidden) {
             Button(String(localized: "Reset to Suggested Goal")) { resetGoal() }
@@ -592,17 +589,13 @@ struct PulseChallengeDetailView: View {
 
     var body: some View {
         PulseScreenScaffold(title: item.map { PulseChallengeText.navTitle($0.definition) } ?? String(localized: "Challenge"),
+                            trailing: PulseChallengeMoreGlyph.trailing { showsMenu = true },
                             coach: .button, ready: snapshot != nil) {
             PulseLoadingGate(isLoading: snapshot == nil) {
                 if let item { content(item) } else if snapshot != nil { gone }
             } skeleton: {
                 PulseSkeleton.cards([228, 64, 160])
             }
-        }
-        .challengeNavTrailing {
-            Button { showsMenu = true } label: { PulseChallengeMoreGlyph() }
-                .buttonStyle(PulsePressStyle())
-                .accessibilityLabel(String(localized: "More"))
         }
         .overlay {
             if let item, item.status.phase == .running {

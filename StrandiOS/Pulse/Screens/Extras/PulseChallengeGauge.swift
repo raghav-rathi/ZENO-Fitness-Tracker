@@ -77,32 +77,24 @@ struct PulseChallengeGauge: View {
     }
 }
 
-/// WHOOP's trailing "ooo" (profile-community-2026/76, 84, 13): three outlined circles in a row.
-struct PulseChallengeMoreGlyph: View {
+/// WHOOP's trailing "ooo" (profile-community-2026/76, 84, 13): three outlined circles in a row, centred in
+/// the bar's trailing slot. No SF Symbol draws it, so a screen hands it to the bar as a custom glyph.
+enum PulseChallengeMoreGlyph {
     private typealias C = PulseExtrasTheme.Challenge
 
-    var body: some View {
-        HStack(spacing: C.moreDotGap) {
-            ForEach(0..<3, id: \.self) { _ in
-                Circle()
-                    .strokeBorder(PulseTheme.textPrimary, lineWidth: C.moreDotStroke)
-                    .frame(width: C.moreDot, height: C.moreDot)
-            }
-        }
-        .frame(width: PulseTheme.Layout.minTapTarget, height: PulseTheme.Layout.minTapTarget)
-        .contentShape(Rectangle())
+    /// "•••" for the challenge screens' bar, opening their menu.
+    static func trailing(action: @escaping () -> Void) -> PulseNavTrailing {
+        .custom(accessibilityLabel: String(localized: "More"), action: action, draw: draw)
     }
-}
 
-extension View {
-    /// A trailing control in the Pulse bar's own spot (the scaffold's trailing accessory takes only an SF
-    /// Symbol, and none draws WHOOP's three outlined circles).
-    func challengeNavTrailing<Trailing: View>(@ViewBuilder _ trailing: () -> Trailing) -> some View {
-        overlay(alignment: .topTrailing) {
-            trailing()
-                .frame(height: PulseTheme.Header.navBar)
-                .padding(.trailing, PulseTheme.Layout.pageMargin)
-                .padding(.top, PulseTheme.Header.navBarTop)
+    private static func draw(_ context: inout GraphicsContext, size: CGSize) {
+        let width = 3 * C.moreDot + 2 * C.moreDotGap
+        for index in 0..<3 {
+            let dot = CGRect(x: (size.width - width) / 2 + CGFloat(index) * (C.moreDot + C.moreDotGap),
+                             y: (size.height - C.moreDot) / 2, width: C.moreDot, height: C.moreDot)
+            // Inset by half the line, as a stroked border sits inside its circle.
+            context.stroke(Path(ellipseIn: dot.insetBy(dx: C.moreDotStroke / 2, dy: C.moreDotStroke / 2)),
+                           with: .foreground, lineWidth: C.moreDotStroke)
         }
     }
 }
