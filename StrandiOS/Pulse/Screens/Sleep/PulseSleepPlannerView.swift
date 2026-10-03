@@ -117,8 +117,9 @@ struct PulseSleepPlannerView: View {
     private func upperZone(_ plan: PulseSleepPlan?, scheduleOn: Bool) -> some View {
         VStack(spacing: 0) {
             header(scheduleOn: scheduleOn)
+            // The mark's top ≈149 pt down, as on reviews/r134, 5 pt under the schedule chip.
             PulseSleepPlannerMark()
-                .padding(.top, 16)
+                .padding(.top, 5)
             PulseLoadingGate(isLoading: snapshot == nil) {
                 PulseWordWrapHeadline(text: plan.map(headline)
                                       ?? String(localized: "Sleep a few nights with your strap to get a plan for tonight."))
@@ -189,13 +190,14 @@ struct PulseSleepPlannerView: View {
         .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
     }
 
-    /// My Schedule: a 40 pt outlined circle with a calendar-moon glyph, and the ON / OFF chip under it
-    /// (11 pt Bold caps on white 20% in both states, §3.11 item 1 at DR's 11 pt floor).
+    /// My Schedule: a 40 pt outlined circle with a calendar-moon glyph, and 11 pt under it the ON / OFF chip,
+    /// 11 pt Bold caps on white 10%, ≈21 pt tall, OFF in a dim grey (reviews/r134; §3.11 item 1 at DR's 11 pt
+    /// floor).
     private func scheduleButton(on: Bool) -> some View {
         Button {
             navigator.open(PulseSleepScheduleRoute().route)
         } label: {
-            VStack(spacing: 6) {
+            VStack(spacing: 11) {
                 ZStack {
                     Circle().strokeBorder(Color.white, lineWidth: 1.5)
                     PulseSleepScheduleGlyph()
@@ -203,9 +205,9 @@ struct PulseSleepPlannerView: View {
                 .frame(width: 40, height: 40)
                 Text(on ? String(localized: "On") : String(localized: "Off"))
                     .pulseText(.label)
-                    .foregroundStyle(on ? PulseTheme.textPrimary : PulseTheme.textSecondary)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 1)
+                    .foregroundStyle(on ? PulseTheme.textPrimary : PulseTheme.Planner.scheduleChipText)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
                     .background(RoundedRectangle(cornerRadius: PulseTheme.Radius.badge, style: .circular)
                         .fill(PulseTheme.Planner.scheduleChip))
             }

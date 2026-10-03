@@ -21,9 +21,12 @@ struct PulseSleepTimeline: View {
 
     /// The two times with their two-line captions; the digits' tops sit ≈6 pt into it.
     private let timesHeight: CGFloat = 58
-    /// The bar's top edge: its ticks start ≈87 pt under the digits' tops (reviews/r134, r135).
-    private let barTop: CGFloat = 96
-    private let barHeight: CGFloat = 26
+    /// The strip's top edge, where the drop lines end, ≈88 pt under the digits' tops (reviews/r134, r135).
+    private let barTop: CGFloat = 94
+    /// The strip across the screen, and the hatched bar centred in it with its ticks flush (reviews/r134: 28
+    /// and 20 pt).
+    private let barHeight: CGFloat = 28
+    private let hatchHeight: CGFloat = 20
 
     /// What named the wake, under it: the wearer's own time (the alarm's, set with or without the alarm on,
     /// or the reminder's), else, while none was ever set, their usual one or a typical guess.
@@ -63,7 +66,7 @@ struct PulseSleepTimeline: View {
                     .frame(width: w + 2 * PulseTheme.Layout.pageMargin, height: barHeight)
                     .position(x: w / 2, y: barTop + barHeight / 2)
                 PulseHatchedTrack(color: PulseTheme.Planner.barHatch, spacing: 5, cornerRadius: 0)
-                    .frame(width: max(0, wakeX - bedX), height: barHeight - 2)
+                    .frame(width: max(0, wakeX - bedX), height: hatchHeight)
                     .position(x: (bedX + wakeX) / 2, y: barTop + barHeight / 2)
                 tick(x: bedX)
                 tick(x: wakeX)
@@ -127,7 +130,7 @@ struct PulseSleepTimeline: View {
     private func tick(x: CGFloat) -> some View {
         Rectangle()
             .fill(Color.white)
-            .frame(width: 2, height: barHeight + 6)
+            .frame(width: 2, height: hatchHeight)
             .position(x: x, y: barTop + barHeight / 2)
             .accessibilityHidden(true)
     }
@@ -168,9 +171,10 @@ struct PulseSleepTimeline: View {
                 .foregroundStyle(PulseTheme.Planner.optimalLabel)
                 .fixedSize()
                 .position(x: labelX, y: bottom)
-            Text("\(PulseFormat.clock(bed)) – \(PulseFormat.clock(wake))")
-                .pulseText(.secondary)
-                .foregroundStyle(PulseTheme.textTertiary)
+            // "6:55 PM - 6:45 AM": 11 pt with a spaced hyphen (reviews/r134; §3.11 item 7's "22:30 - 07:10").
+            Text(verbatim: "\(PulseFormat.clock(bed)) - \(PulseFormat.clock(wake))")
+                .pulseText(.chip)
+                .foregroundStyle(PulseTheme.Planner.optimalWindow)
                 .fixedSize()
                 .position(x: labelX, y: bottom + 17)
         }
@@ -252,6 +256,10 @@ struct PulseSleepAlarmPanel: View {
     let onMode: () -> Void
     let onWake: () -> Void
 
+    /// WAKE TIME SET TO's time: `.menuLabel`'s 13 pt Bold at its Dynamic Type size, without the caps' tracking
+    /// (reviews/r134, r135 print "8:00 AM" tight).
+    @ScaledMetric(relativeTo: .footnote) private var timeSize = PulseTextStyle.menuLabel.spec.size
+
     private var modeText: String {
         guard alarmOn else { return String(localized: "Off") }
         return warning == .notArmed ? String(localized: "Not armed") : String(localized: "Exact time")
@@ -294,7 +302,7 @@ struct PulseSleepAlarmPanel: View {
                 // the set time whenever one is set, and switching the alarm on arms the one shown here.
                 tile(title: String(localized: "Wake time set to"),
                      value: plan.map { PulseFormat.clock($0.wake) } ?? "--",
-                     valueColor: PulseTheme.textPrimary, action: onWake)
+                     valueColor: PulseTheme.textPrimary, tracked: false, action: onWake)
             }
         }
         .padding(.horizontal, PulseTheme.Layout.pageMargin)
@@ -309,7 +317,9 @@ struct PulseSleepAlarmPanel: View {
         .dynamicTypeSize(...DynamicTypeSize.xxLarge)
     }
 
-    private func tile(title: String, value: String, valueColor: Color, action: @escaping () -> Void) -> some View {
+    /// A tile: its caps title over its value, the value tracked as caps unless `tracked` is false (a time).
+    private func tile(title: String, value: String, valueColor: Color, tracked: Bool = true,
+                      action: @escaping () -> Void) -> some View {
         Button(action: action) {
             VStack(spacing: 4) {
                 Text(title)
@@ -317,11 +327,16 @@ struct PulseSleepAlarmPanel: View {
                     .foregroundStyle(PulseTheme.textTertiary)
                     .lineLimit(1)
                     .minimumScaleFactor(0.8)
-                Text(value)
-                    .pulseText(.menuLabel)
-                    .foregroundStyle(valueColor)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.8)
+                Group {
+                    if tracked {
+                        Text(value).pulseText(.menuLabel)
+                    } else {
+                        Text(value).font(PulseTextStyle.menuLabel.spec.font(size: max(11, timeSize)))
+                    }
+                }
+                .foregroundStyle(valueColor)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
             }
             .frame(maxWidth: .infinity, minHeight: 64)
             .background(RoundedRectangle(cornerRadius: PulseTheme.Radius.control, style: .circular)

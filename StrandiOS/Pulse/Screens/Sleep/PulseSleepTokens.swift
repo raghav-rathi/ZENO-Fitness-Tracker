@@ -39,10 +39,14 @@ extension PulseTheme {
         static let timeCapsule = Color.black
         /// The drop lines from the two times to the bar, and the optimal bracket.
         static let dropLine = Color.white.opacity(0.5)
-        /// "OPTIMAL": recovery blue, greyed (§3.11 item 7).
-        static let optimalLabel = PulseTheme.recoveryBlue.opacity(0.8)
-        /// My Schedule's ON / OFF chip: white 20% in both states (§3.11 item 1).
-        static let scheduleChip = Color.white.opacity(0.20)
+        /// "OPTIMAL": a greyed steel blue (#93ADBF on reviews/r134, where recovery blue reads saturated), and the
+        /// window's times under it in a darker blue-grey (#6F8292 there).
+        static let optimalLabel = Color(hex: "#93ADBF")
+        static let optimalWindow = Color(hex: "#6F8292")
+        /// My Schedule's ON / OFF chip: white 10% (#444F55 on the zone's #2F3B43 at reviews/r134, where the spec's
+        /// white 20% reads bright), and its OFF word a dim grey (#838E94 there).
+        static let scheduleChip = Color.white.opacity(0.10)
+        static let scheduleChipText = Color(hex: "#838E94")
         /// The pinned alarm panel, a blue-grey slate lighter at its top (sampled #3A454B → #303B41 on
         /// reviews/r134 and r135); opaque, so the page scrolls under it cleanly.
         static let panelTop = Color(hex: "#38434A")
