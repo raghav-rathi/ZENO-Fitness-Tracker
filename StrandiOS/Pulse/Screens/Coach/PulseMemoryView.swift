@@ -328,7 +328,7 @@ struct PulseMemoryExplainer: View {
                 .pulseText(.subtitle)
                 .foregroundStyle(PulseTheme.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
-            Text(String(localized: "Active memories are sent with the first message of each new conversation, to the provider you chose in AI Settings. Switch one off to keep it without using it, delete it at any time, or turn Memory off in AI Settings."))
+            Text(String(localized: "Active memories go with every question and your morning brief to the provider you chose in AI Settings. Switch one off to keep it without using it, delete it at any time, or turn Memory off in AI Settings."))
                 .pulseText(.subtitle)
                 .foregroundStyle(PulseTheme.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)

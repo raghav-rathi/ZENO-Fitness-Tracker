@@ -81,6 +81,31 @@ final class TonightSleepPlanTests: XCTestCase {
         XCTAssertEqual(minuteOfDay(early.inBed), 20 * 60)
     }
 
+    func testAPlanWithBothSleepGoalsIsInBedByTheEarlierOfThem() {
+        let wake = morning(7 * 60)
+        // Sleep Deeper's goals on a 10:20 need: 85% of it is 8:47 asleep, by 10:13 PM and in bed by 9:58 PM,
+        // which being asleep only at a Sleep Consistency target of 10:54 PM would cut to 8:06 (78%).
+        let both = TonightSleepPlan.bedtime(wake: wake, needMin: 620, share: 0.85, asleepAtMinute: 22 * 60 + 54,
+                                            calendar: calendar)
+        XCTAssertEqual(minuteOfDay(both.asleepBy), 22 * 60 + 13)
+        XCTAssertEqual(minuteOfDay(both.inBed), 21 * 60 + 58)
+        // A target earlier than that wins: the share is then exceeded, never shorted.
+        let early = TonightSleepPlan.bedtime(wake: wake, needMin: 620, share: 0.85, asleepAtMinute: 21 * 60 + 30,
+                                             calendar: calendar)
+        XCTAssertEqual(minuteOfDay(early.asleepBy), 21 * 60 + 30)
+        XCTAssertEqual(minuteOfDay(early.inBed), 21 * 60 + 15)
+        // One goal alone is that goal's bedtime; neither is the whole need.
+        XCTAssertEqual(TonightSleepPlan.bedtime(wake: wake, needMin: 620, share: nil, asleepAtMinute: 22 * 60 + 54,
+                                                calendar: calendar),
+                       TonightSleepPlan.bedtime(asleepAtMinute: 22 * 60 + 54, wake: wake, calendar: calendar))
+        XCTAssertEqual(TonightSleepPlan.bedtime(wake: wake, needMin: 620, share: 0.85, asleepAtMinute: nil,
+                                                calendar: calendar),
+                       TonightSleepPlan.bedtime(wake: wake, needMin: 620, fraction: 0.85, calendar: calendar))
+        XCTAssertEqual(TonightSleepPlan.bedtime(wake: wake, needMin: 620, share: nil, asleepAtMinute: nil,
+                                                calendar: calendar),
+                       TonightSleepPlan.bedtime(wake: wake, needMin: 620, calendar: calendar))
+    }
+
     func testAClockMinuteIsFoundOnTheCalendarAcrossADaylightSavingChange() {
         // US clocks go back at 2:00 on Sunday 1 Nov 2026: the night is 25 hours of wall clock long, so
         // counting minutes back from the wake would land an hour off the time asked for.

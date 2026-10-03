@@ -484,13 +484,23 @@ struct CycleTrackerView: View {
                                 titleVisibility: .visible) {
                 Button("Delete all period history", role: .destructive) {
                     Task {
+                        #if os(iOS)
+                        // The iPhone also keeps each day's flow and symptoms under this source (Menstrual
+                        // Cycle Insights): its own delete takes them with the starts, so none survive this.
+                        await repo.deleteAllCycleLogs()
+                        #else
                         await repo.deleteAllPeriodStarts()
+                        #endif
                         await model.refreshV5Signals()
                     }
                 }
                 Button("Cancel", role: .cancel) {}
             } message: {
+                #if os(iOS)
+                Text("This permanently removes the on-device period history: the logged starts and every day's flow and symptoms. Sensor history is not changed.")
+                #else
                 Text("This permanently removes the on-device period-start history. Sensor history is not changed.")
+                #endif
             }
         }
         #if os(macOS)
@@ -588,7 +598,8 @@ struct CycleTrackerView: View {
                             Spacer()
                             Button {
                                 Task {
-                                    await repo.deletePeriodStart(day: day)
+                                    // The start and its period's flow days, so no flow is left behind.
+                                    await repo.deletePeriod(startingOn: day)
                                     await model.refreshV5Signals()
                                 }
                             } label: {

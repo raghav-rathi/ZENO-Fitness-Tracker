@@ -310,6 +310,11 @@ struct SleepDiveSnapshot: Equatable {
     /// The coach summary pill's local sentence.
     let summary: String?
     let lastNight: SleepLastNight?
+    /// The night's main stored block, for EDIT (`SleepTimeEditor`); nil for a night with no block behind it.
+    let edit: SleepTimeEdit?
+    /// With no block to edit: the times EDIT opens ADD ACTIVITY on to add this night
+    /// (`PulseSnapshotBuilder.addNightWindow`); nil when there is a block, or no sleep to add yet.
+    let addWindow: ClosedRange<Date>?
     let hoursVsNeeded: SleepHoursVsNeeded?
     let consistency: SleepConsistencyCard?
     let efficiency: SleepEfficiencyCard?

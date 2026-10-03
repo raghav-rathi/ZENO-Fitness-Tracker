@@ -37,7 +37,7 @@ extension PulseSnapshotBuilder {
         let rows = await workoutRows()
         guard isCurrent(r) else { return nil }
         let stored = rows.first { Self.isSameWorkout($0, handed) }
-        var row = stored ?? handed
+        let row = stored ?? handed
 
         let start = Date(timeIntervalSince1970: TimeInterval(row.startTs))
         let end = Date(timeIntervalSince1970: TimeInterval(max(row.endTs, row.startTs + 1)))
@@ -79,18 +79,6 @@ extension PulseSnapshotBuilder {
             } else {
                 heartRate = .partial(missingSeconds: max(0, duration * (1 - storedCoverage)))
             }
-        }
-
-        // `Repository.workoutRows` shows a strap-native row's Avg / Max HR recomputed from the stored trace
-        // (#499). While that trace covers only part of the activity it is a fragment's average (a 57 bpm
-        // "AVG HR" beside a Strain scored from the whole session), so the row keeps the figures it was
-        // SAVED with until the trace covers it.
-        if heartRate != .stored, let saved = await savedHeartRate(for: row) {
-            guard isCurrent(r) else { return nil }
-            row = WorkoutRow(startTs: row.startTs, endTs: row.endTs, sport: row.sport, source: row.source,
-                             durationS: row.durationS, energyKcal: row.energyKcal, avgHr: saved.avg,
-                             maxHr: saved.max, strain: row.strain, distanceM: row.distanceM,
-                             zonesJSON: row.zonesJSON, notes: row.notes, steps: row.steps)
         }
 
         // The paired Lift Log session, when there is one.
@@ -209,20 +197,6 @@ extension PulseSnapshotBuilder {
             insight: insight)
     }
 
-    /// The Avg / Max HR a strap-native row (logged or recorded on this phone, or a detected bout) was saved
-    /// with, read from its own namespace before any display projection; nil for any other row or when the
-    /// row is not found there.
-    func savedHeartRate(for row: WorkoutRow) async -> (avg: Int?, max: Int?)? {
-        let origin = WorkoutSource.classify(row.source)
-        guard origin == .manual || origin == .detected, let store = await repo.storeHandle() else { return nil }
-        let owner = await repo.deviceId
-        for id in [owner, owner + "-noop"] {
-            let found = (try? await store.workouts(deviceId: id, from: row.startTs, to: row.startTs, limit: 10)) ?? []
-            if let hit = found.first(where: { Self.isSameWorkout($0, row) }) { return (hit.avgHr, hit.maxHr) }
-        }
-        return nil
-    }
-
     /// The share of the window's minutes a reading falls in, 0…1: how much of an activity a heart-rate
     /// stream covers, whatever its sample rate.
     static func coverage(_ samples: [HRSample], from: Int, to: Int) -> Double {
@@ -236,8 +210,11 @@ extension PulseSnapshotBuilder {
         return Double(hit.count) / Double(minutes)
     }
 
-    /// Coverage from which a heart-rate stream counts as the activity's whole.
-    static let fullCoverage = 0.9
+    /// Coverage from which a heart-rate stream counts as the activity's whole: the share at which
+    /// `Repository.workoutRows` starts reading the Avg / Max HR of a strap-native row saved with its own (a
+    /// live session's) from the stored trace (#499), so the chart and the figures beside it switch to the
+    /// strap's history together.
+    static let fullCoverage = Repository.workoutTraceFullCoverage
 
     /// The heart rate of a row's own strap around it (half its length either side, at least 15 minutes,
     /// never past now), bucketed for a chart: the Edit sheet's scrubber [Z].
@@ -393,31 +370,16 @@ extension PulseSnapshotBuilder {
     // MARK: Stress and impact (the recovery variant)
 
     /// The Stress Monitor's readings around a recovery activity (§3.6, e01–e03, e08, e10): the activity's
-    /// local day scored exactly as the Stress Monitor scores a day (`DaytimeStress.analyze` over the day's
-    /// heart rate, R-R and wrist motion, in the lens Settings picks, with the half-hourly display
-    /// timeline), then the reading nearest the activity's start and the next one nearest its end. Nil when
-    /// no reading covers it: outside the 6 AM–10 PM scoring window, too little heart rate, or an hour the
-    /// motion gate masked as exercise.
+    /// local day through the Stress Monitor's own resolver (`stressResult`, `DaytimeStress.analyze` over the
+    /// day's heart rate, R-R and wrist motion, in the lens Settings picks, with the half-hourly display
+    /// timeline), so the two screens share one cache and one curve, then the reading nearest the activity's
+    /// start and the next one nearest its end. Nil when no reading covers it: outside the 6 AM–10 PM scoring
+    /// window, too little heart rate, or an hour the motion gate masked as exercise.
     func activityStress(_ r: PulseRequest, row: WorkoutRow) async -> ActivityStressSummary? {
         let cal = Calendar.current
         let dayStart = cal.startOfDay(for: Date(timeIntervalSince1970: TimeInterval(row.startTs)))
-        guard let nextStart = cal.date(byAdding: .day, value: 1, to: dayStart) else { return nil }
         let isToday = cal.isDate(dayStart, inSameDayAs: r.now)
-        let from = Int(dayStart.timeIntervalSince1970)
-        let to = isToday ? Int(r.now.timeIntervalSince1970) : Int(nextStart.timeIntervalSince1970) - 1
-        let personal = r.prefs.stressPersonalBaseline
-        let key = "activity.stress.\(from).\(isToday ? to / 300 : 0).\(personal)"
-        let result: DaytimeStress.Result = await cached(key) { () async -> DaytimeStress.Result in
-            let hr = await repo.hrSamples(from: from, to: to, limit: 200_000)
-            guard hr.count >= DaytimeStress.minHourHRSamples else { return .empty }
-            let rr = await repo.rrIntervals(from: from, to: to, limit: 200_000)
-            let gravity = await repo.gravitySamplesUnion(from: from, to: to, limit: 200_000)
-            let mode = await DaytimeStressMode.selected(repo: repo, startOfToday: dayStart, calendar: cal,
-                                                        personalBaseline: personal)
-            let tz = TimeZone.current.secondsFromGMT(for: dayStart)
-            return DaytimeStress.analyze(hr: hr, rr: rr, gravity: gravity, tzOffsetSeconds: tz, mode: mode,
-                                         includeTimeline: true)
-        }
+        let result = await stressResult(dayStart: dayStart, isToday: isToday, r: r)
         return Self.stressSummary(result.timeline, startTs: row.startTs, endTs: row.endTs)
     }
 

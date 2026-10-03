@@ -4,8 +4,10 @@ import StrandAnalytics
 
 // MARK: - Tonight's plan (WHOOP_UI_SPEC §3.1 item 8c, §3.11)
 //
-// One resolver for everything any screen states about tonight, so Home's TONIGHT'S SLEEP card, the Sleep
-// Planner's times, bar, headline and alarm panel, and My Schedule can never describe different nights:
+// One resolver for everything a screen states about tonight, so the Sleep Planner's times, bar, headline
+// and alarm panel and My Schedule can never describe different nights. Home's TONIGHT'S SLEEP card is to
+// read it too (`PulseSnapshotBuilder.tonightSleepPlan`), but still works tonight out on its own
+// (`PulseSnapshotBuilder.tonightPlan`):
 //
 //   wake      `TonightSleepPlan.wake`: the strap alarm only when it will buzz that morning (on, armed,
 //             that weekday), else the wind-down reminder's wake while it is on, else the median wake of
@@ -15,17 +17,22 @@ import StrandAnalytics
 //             mornings.
 //   bedtime   REACH MY SLEEP NEED: the goal's share of tonight's need (`Repository.sleepNeedTonight`)
 //             before the wake, in bed 15 minutes earlier to fall asleep; IMPROVE MY SLEEP: asleep at the
-//             Sleep Consistency target's bed time. Never before 20:00 the evening before unless the wake
-//             is before 05:00 (`TonightSleepPlan`).
+//             Sleep Consistency target's bed time; REACH MY WEEKLY PLAN GOAL: the running Weekly Plan's
+//             Sleep Performance goal as that share of the need and its Sleep Consistency goal as the
+//             target's bed time, in bed by the earlier of the two, else the whole need. Never before 20:00
+//             the evening before unless the wake is before 05:00 (`TonightSleepPlan`).
 //   optimal   the bed and wake time that keep tonight's Sleep Consistency highest
 //             (`SleepConsistencyTarget`, the same target the dive's consistency curves draw).
 
-/// "TOMORROW I WANT TO" (§3.11 item 4). REACH MY WEEKLY PLAN GOAL joins once Plan exists.
+/// "TOMORROW I WANT TO" (§3.11 item 4).
 enum PulseSleepGoal: Hashable, Identifiable {
     /// REACH MY SLEEP NEED, planning for this share of tonight's need (100, 85 or 70).
     case need(percent: Int)
     /// IMPROVE MY SLEEP: the bedtime that keeps tomorrow's Sleep Consistency highest.
     case improve
+    /// REACH MY WEEKLY PLAN GOAL: tonight planned for the running Weekly Plan's sleep goals
+    /// (`PulseWeeklyPlanSleepGoals`).
+    case weeklyPlan
 
     static let needPercents = [100, 85, 70]
     static let `default` = PulseSleepGoal.need(percent: 100)
@@ -37,6 +44,7 @@ enum PulseSleepGoal: Hashable, Identifiable {
         switch self {
         case .need(let percent): return "need\(percent)"
         case .improve: return "improve"
+        case .weeklyPlan: return "weeklyPlan"
         }
     }
 
@@ -44,6 +52,7 @@ enum PulseSleepGoal: Hashable, Identifiable {
     init(storageValue raw: String) {
         switch raw {
         case "improve": self = .improve
+        case "weeklyPlan": self = .weeklyPlan
         case "need85", "perform": self = .need(percent: 85)
         case "need70", "getBy": self = .need(percent: 70)
         default: self = .default
@@ -55,6 +64,7 @@ enum PulseSleepGoal: Hashable, Identifiable {
         switch self {
         case .need: return String(localized: "Reach my sleep need")
         case .improve: return String(localized: "Improve my sleep")
+        case .weeklyPlan: return String(localized: "Reach my Weekly Plan goal")
         }
     }
 
@@ -63,7 +73,28 @@ enum PulseSleepGoal: Hashable, Identifiable {
         switch self {
         case .need(let percent): return String(localized: "Reach \(percent)% of my sleep need")
         case .improve: return String(localized: "Improve my sleep consistency")
+        case .weeklyPlan: return String(localized: "Reach my Weekly Plan goal")
         }
+    }
+}
+
+/// The running Weekly Plan's sleep goals (§3.19, `PulsePlanStore`), what REACH MY WEEKLY PLAN GOAL plans
+/// tonight for. nil when no plan runs or the plan has no sleep goal.
+struct PulseWeeklyPlanSleepGoals: Equatable {
+    /// The week's average Sleep Consistency the plan asks for (%), when it has that goal.
+    var consistency: Double?
+    /// The week's average Sleep Performance the plan asks for (%), when it has that goal.
+    var performance: Double?
+
+    /// Read from the plan as it stands (`store`, else the app's plan store), with the targets
+    /// `PulsePlanGoal.title` prints for a goal saved without one.
+    @MainActor
+    static func current(_ store: PulsePlanStore? = nil) -> PulseWeeklyPlanSleepGoals? {
+        guard let goals = (store ?? .shared).plan?.goals else { return nil }
+        let consistency = goals.first { $0.kind == .sleepConsistency }.map { $0.value ?? 80 }
+        let performance = goals.first { $0.kind == .sleepPerformance }.map { $0.value ?? 85 }
+        guard consistency != nil || performance != nil else { return nil }
+        return PulseWeeklyPlanSleepGoals(consistency: consistency, performance: performance)
     }
 }
 
@@ -94,8 +125,8 @@ struct PulseSleepPlanSettings: Equatable {
     }
 
     /// The same, read straight from the stored keys (BehaviorStore's alarm keys, as `BehaviorStore.init` reads
-    /// them, and WindDownNudge's), for a caller without the store, such as the shell building Home's
-    /// request: `PulseSnapshotBuilder.tonightSleepPlan(_:settings:)`.
+    /// them, and WindDownNudge's), for a caller without the store, such as the shell building the request
+    /// for Home's card (`PulseSnapshotBuilder.tonightSleepPlan`).
     @MainActor
     static func stored(strapWillArm: Bool = true, defaults d: UserDefaults = .standard) -> PulseSleepPlanSettings {
         let weekdays = (d.array(forKey: "behavior.smartAlarmWeekdays") as? [Int] ?? []).filter { (1...7).contains($0) }
@@ -149,9 +180,11 @@ struct PulseSleepPlan: Equatable {
     }
 
     /// The plan for `goal`, or nil before there is a need to plan for. `recentWakeMinutes` are the wake
-    /// minutes of the recent nights, newest first; `timings` the nights SleepConsistency compares with.
+    /// minutes of the recent nights, newest first; `timings` the nights SleepConsistency compares with;
+    /// `weeklyPlan` the running Weekly Plan's sleep goals, for REACH MY WEEKLY PLAN GOAL.
     static func resolve(now: Date, goal: PulseSleepGoal, needMin: Double, settings s: PulseSleepPlanSettings,
                         recentWakeMinutes: [Int], timings: [SleepConsistency.NightTiming],
+                        weeklyPlan: PulseWeeklyPlanSleepGoals? = nil,
                         calendar cal: Calendar = .current) -> PulseSleepPlan? {
         guard needMin > 0,
               let typical = AppModel.nextSmartAlarmDate(minutes: TonightSleepPlan.typicalWakeMinute, weekdays: [],
@@ -183,13 +216,28 @@ struct PulseSleepPlan: Equatable {
         // The consistency target for the night that ends on the wake's day.
         let wakeKey = Repository.localDayKey(wake.date)
         let target = SleepConsistencyTarget.target(forNightEnding: wakeKey, nights: timings)
-        let planned: PulseSleepGoal = (goal == .improve && target == nil) ? .default : goal
+        // IMPROVE MY SLEEP without a target, and REACH MY WEEKLY PLAN GOAL with no plan sleep goal left (the
+        // plan ended, or lost it), plan for the whole need, and say so.
+        let planned: PulseSleepGoal
+        switch goal {
+        case .improve where target == nil, .weeklyPlan where weeklyPlan == nil: planned = .default
+        default: planned = goal
+        }
         let bed: TonightSleepPlan.Bedtime
         switch planned {
         case .improve:
             bed = TonightSleepPlan.bedtime(asleepAtMinute: target?.bedMinute ?? 0, wake: wake.date, calendar: cal)
         case .need(let percent):
             bed = TonightSleepPlan.bedtime(wake: wake.date, needMin: needMin, fraction: Double(percent) / 100,
+                                           calendar: cal)
+        case .weeklyPlan:
+            // Every sleep goal the plan has, planned short of none: the part of Sleep Performance a bedtime
+            // decides is the hours asleep against the need, so its goal is that share of the need; a Sleep
+            // Consistency goal is judged on timing, so asleep at the target's bed time, as IMPROVE MY SLEEP
+            // plans (once there are nights enough for a target). With both, the earlier bedtime.
+            bed = TonightSleepPlan.bedtime(wake: wake.date, needMin: needMin,
+                                           share: weeklyPlan?.performance.map { $0 / 100 },
+                                           asleepAtMinute: weeklyPlan?.consistency == nil ? nil : target?.bedMinute,
                                            calendar: cal)
         }
         let late = now > bed.inBed

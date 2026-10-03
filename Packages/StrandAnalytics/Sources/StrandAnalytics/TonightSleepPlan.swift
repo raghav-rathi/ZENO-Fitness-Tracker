@@ -15,10 +15,11 @@ import Foundation
 // Each candidate is the source's NEXT occurrence after now, worked out by the app with the same function
 // the strap alarm is armed from, so this file never re-derives a clock time of its own.
 //
-// THE BEDTIME. `asleepBy` is wake − need × goal share (what Home's card has always printed);
-// `inBed` is `SleepNeed.suggestedBedtime`, which also allows `latencyMin` to fall asleep. Neither is
-// put before 20:00 on the evening before the wake unless the wake itself is before 05:00: WHOOP's
-// "go to bed at 6:55 PM" is the suggestion members complained about (§3.11 States).
+// THE BEDTIME. `asleepBy` is wake − need × goal share (what Home's card has always printed), or a Sleep
+// Consistency target's bed time, or for a plan with both goals the earlier of the two; `inBed` is
+// `SleepNeed.suggestedBedtime`, which also allows `latencyMin` to fall asleep. Neither is put before
+// 20:00 on the evening before the wake unless the wake itself is before 05:00: WHOOP's "go to bed at
+// 6:55 PM" is the suggestion members complained about (§3.11 States).
 //
 // Pure: no store, no clock, no settings. Minutes and dates in the calendar passed in.
 
@@ -131,6 +132,23 @@ public enum TonightSleepPlan {
         let held = earliest(asleep.addingTimeInterval(-latency * 60), wake: wake, calendar: calendar)
         return Bedtime(asleepBy: held.date.addingTimeInterval(latency * 60), inBed: held.date,
                        clamped: held.clamped)
+    }
+
+    /// The bedtime for two sleep goals at once (a Weekly Plan's): asleep for `share` of the need before the
+    /// wake (a Sleep Performance goal) and asleep at `asleepAtMinute` (a Sleep Consistency target's bed
+    /// time), whichever puts the wearer in bed first, so neither goal is planned short. With only one of
+    /// them, that one; with neither, the whole need. Each is worked out and held as above.
+    public static func bedtime(wake: Date, needMin: Double, share: Double?, asleepAtMinute: Double?,
+                               latencyMin: Double = SleepNeed.typicalSleepLatencyMin,
+                               calendar: Calendar) -> Bedtime {
+        let onTarget = asleepAtMinute.map {
+            bedtime(asleepAtMinute: $0, wake: wake, latencyMin: latencyMin, calendar: calendar)
+        }
+        if let onTarget, share == nil { return onTarget }
+        let forNeed = bedtime(wake: wake, needMin: needMin, fraction: share ?? 1, latencyMin: latencyMin,
+                              calendar: calendar)
+        guard let onTarget, onTarget.inBed < forNeed.inBed else { return forNeed }
+        return onTarget
     }
 
     /// The last time the clock reads `minute` (minutes since local midnight, in [0, 1440)) before

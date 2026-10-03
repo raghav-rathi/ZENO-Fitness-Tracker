@@ -205088,6 +205088,17 @@
         }
       }
     },
+    "This permanently removes the on-device period history: the logged starts and every day's flow and symptoms. Sensor history is not changed." : { "localizations" : {
+        "de": {"stringUnit": {"state": "translated", "value": "Dadurch wird der auf diesem Gerät gespeicherte Periodenverlauf dauerhaft gelöscht: die erfassten Periodenbeginne sowie Blutungsstärke und Symptome jedes Tages. Der Sensorverlauf bleibt unverändert."}},
+        "es": {"stringUnit": {"state": "translated", "value": "Esto elimina permanentemente el historial de períodos guardado en este dispositivo: los inicios registrados y el flujo y los síntomas de cada día. El historial del sensor no cambia."}},
+        "fr": {"stringUnit": {"state": "translated", "value": "Cela supprime définitivement l’historique des règles enregistré sur cet appareil : les débuts enregistrés ainsi que le flux et les symptômes de chaque jour. L’historique du capteur reste inchangé."}},
+        "it": {"stringUnit": {"state": "translated", "value": "Questa operazione elimina definitivamente la cronologia delle mestruazioni salvata sul dispositivo: le date di inizio registrate e il flusso e i sintomi di ogni giorno. La cronologia dei sensori non viene modificata."}},
+        "pl": {"stringUnit": {"state": "translated", "value": "Spowoduje to trwałe usunięcie historii okresu na urządzeniu: zapisanych dat rozpoczęcia oraz krwawienia i objawów z każdego dnia. Historia czujnika nie ulega zmianie."}},
+        "pt-PT": {"stringUnit": {"state": "translated", "value": "Isto elimina permanentemente o histórico de períodos guardado neste dispositivo: os inícios registados e o fluxo e os sintomas de cada dia. O histórico dos sensores não é alterado."}},
+        "ru": {"stringUnit": {"state": "translated", "value": "Это навсегда удалит сохранённую на устройстве историю менструаций: отмеченные даты начала, а также выделения и симптомы за каждый день. История показаний датчиков не изменится."}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "这将永久删除保存在此设备上的经期历史：已记录的开始日期，以及每天的经量和症状。传感器历史不会更改。"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "這會永久刪除儲存在此裝置上的經期記錄：已記錄的開始日期，以及每天的經量和症狀。感測器記錄不會變更。"}}
+    } },
     "Current estimate": {
       "localizations": {
         "de": {
@@ -217682,6 +217693,17 @@
         "ru": {"stringUnit": {"state": "translated", "value": "Включено: заряд, отдых, ВСР и тренировки отправляются провайдеру, каждая тренировка с видом спорта, длительностью, дистанцией и пульсом."}},
         "zh-Hans": {"stringUnit": {"state": "translated", "value": "开启：你的充能、休息、HRV 和训练会发送给服务商，每次训练包含运动类型、时长、距离和心率。"}},
         "zh-Hant": {"stringUnit": {"state": "translated", "value": "開啟：你的充能、休息、HRV 和訓練會傳送給服務商，每次訓練包含運動類型、時長、距離和心率。"}}
+    } },
+    "On: your Recovery, Strain, Sleep, HRV and workouts are sent to the provider, each workout with its sport, duration, distance and heart rate." : { "localizations" : {
+        "de": {"stringUnit": {"state": "translated", "value": "An: Erholung, Belastung, Schlaf, HRV und Workouts gehen an den Anbieter, jedes Workout mit Sportart, Dauer, Distanz und Herzfrequenz."}},
+        "es": {"stringUnit": {"state": "translated", "value": "Activado: tu Recuperación, Esfuerzo, Sueño, HRV y entrenamientos se envían al proveedor, cada entrenamiento con su deporte, duración, distancia y frecuencia cardíaca."}},
+        "fr": {"stringUnit": {"state": "translated", "value": "Activé : votre Récupération, Effort, Sommeil, VFC et entraînements sont envoyés au fournisseur, chaque entraînement avec son sport, sa durée, sa distance et sa fréquence cardiaque."}},
+        "it": {"stringUnit": {"state": "translated", "value": "Attivo: Recupero, Carico, Sonno, HRV e allenamenti vengono inviati al provider, ogni allenamento con sport, durata, distanza e frequenza cardiaca."}},
+        "pl": {"stringUnit": {"state": "translated", "value": "Włączone: Regeneracja, Obciążenie, Sen, HRV i treningi trafiają do dostawcy, każdy trening ze sportem, czasem, dystansem i tętnem."}},
+        "pt-PT": {"stringUnit": {"state": "translated", "value": "Ligado: a tua Recuperação, Esforço, Sono, VFC e treinos são enviados ao fornecedor, cada treino com o desporto, duração, distância e frequência cardíaca."}},
+        "ru": {"stringUnit": {"state": "translated", "value": "Включено: Восстановление, Нагрузка, Сон, ВСР и тренировки отправляются провайдеру, каждая тренировка с видом спорта, длительностью, дистанцией и пульсом."}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "开启：你的恢复、强度、睡眠、HRV 和训练会发送给服务商，每次训练包含运动类型、时长、距离和心率。"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "開啟：你的恢復、強度、睡眠、HRV 和訓練會傳送給服務商，每次訓練包含運動類型、時長、距離和心率。"}}
     } },
         "Strap alarm wake time": { "localizations": {
           "de": {"stringUnit": {"state": "translated", "value": "Weckzeit des Strap-Alarms"}}, "es": {"stringUnit": {"state": "translated", "value": "Hora de despertar de la alarma de la banda"}}, "fr": {"stringUnit": {"state": "translated", "value": "Heure de réveil de l'alarme du bracelet"}}, "it": {"stringUnit": {"state": "translated", "value": "Ora di sveglia dell'allarme del braccialetto"}}, "pl": {"stringUnit": {"state": "translated", "value": "Godzina budzenia alarmu opaski"}}, "pt-PT": {"stringUnit": {"state": "translated", "value": "Hora de despertar do alarme da banda"}}, "ru": {"stringUnit": {"state": "translated", "value": "Время подъёма для будильника ремешка"}}, "zh-Hans": {"stringUnit": {"state": "translated", "value": "手环闹钟的起床时间"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "手環鬧鐘的起床時間"}}

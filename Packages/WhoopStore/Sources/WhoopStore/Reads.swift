@@ -37,12 +37,20 @@ public struct HRBucket: Sendable, Equatable {
 }
 
 /// Aggregate HR over a time window: sample count + mean/peak bpm. Result of [WhoopStore.hrWindowStats],
-/// not a table. `avg`/`max` are nil when `n == 0`. Twin of the Kotlin `HrWindowStats` data class.
+/// not a table. `avg`/`max` are nil when `n == 0`. Twin of the Kotlin `HrWindowStats` data class, which
+/// does not carry `minutes` yet.
 public struct HRWindowStats: Sendable, Equatable {
     public let n: Int
     public let avg: Double?
     public let max: Int?
-    public init(n: Int, avg: Double?, max: Int?) { self.n = n; self.avg = avg; self.max = max }
+    /// How many of the window's minutes hold at least one sample: the window `[from, to]` is cut into
+    /// `max(1, ceil((to - from) / 60))` minutes counted from `from`, and a sample on `to` itself falls in
+    /// the last one. Coverage, not density, so a sparse stream and a 1 Hz one that span the same minutes
+    /// count the same.
+    public let minutes: Int
+    public init(n: Int, avg: Double?, max: Int?, minutes: Int = 0) {
+        self.n = n; self.avg = avg; self.max = max; self.minutes = minutes
+    }
 }
 
 extension WhoopStore {
@@ -340,11 +348,15 @@ extension WhoopStore {
     ///
     /// Passing the same id for both is byte-identical to the old single-id read, so a single-WHOOP
     /// install needs no special case and every existing number is unchanged.
+    ///
+    /// `minutes` (the minutes of the window the trace covers) rides the same scan, for the workout Avg HR
+    /// reconcile's coverage gate (#499); `n`, `avg` and `max` are the Kotlin query's, unchanged.
     public func hrWindowStats(primaryId: String, secondaryId: String,
                               from: Int, to: Int) async throws -> HRWindowStats {
         try syncRead { db in
             guard let row = try Row.fetchOne(db, sql: """
-                SELECT COUNT(*) AS n, AVG(bpm) AS avg, MAX(bpm) AS max FROM (
+                SELECT COUNT(*) AS n, AVG(bpm) AS avg, MAX(bpm) AS max,
+                       COUNT(DISTINCT MIN((ts - ?) / 60, MAX(0, (? - ? + 59) / 60 - 1))) AS minutes FROM (
                     SELECT ts, MIN(pri), bpm FROM (
                         SELECT ts, bpm, 0 AS pri FROM hrSample
                         WHERE deviceId = ? AND ts >= ? AND ts <= ?
@@ -363,10 +375,11 @@ extension WhoopStore {
                                           WHERE h.deviceId = p.deviceId AND h.ts = p.ts)
                     ) GROUP BY ts
                 )
-                """, arguments: [primaryId, from, to, primaryId, from, to,
+                """, arguments: [from, to, from,
+                                 primaryId, from, to, primaryId, from, to,
                                  secondaryId, from, to, secondaryId, from, to])
             else { return HRWindowStats(n: 0, avg: nil, max: nil) }
-            return HRWindowStats(n: row["n"], avg: row["avg"], max: row["max"])
+            return HRWindowStats(n: row["n"], avg: row["avg"], max: row["max"], minutes: row["minutes"])
         }
     }
 

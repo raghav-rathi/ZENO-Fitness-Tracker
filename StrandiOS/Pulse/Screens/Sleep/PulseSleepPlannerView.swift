@@ -47,9 +47,12 @@ struct PulseSleepPlannerView: View {
 
     var body: some View {
         let settings = PulseSleepPlanSettings.current(behavior: behavior, strapWillArm: actions.strapWillArm())
+        // Read through the plan store's observation, so starting, editing or ending a plan re-plans tonight.
+        let weeklyPlan = PulseWeeklyPlanSleepGoals.current()
         let plan = snapshot.flatMap { s in
             PulseSleepPlan.resolve(now: Date(), goal: goal, needMin: s.need.totalMin, settings: settings,
-                                   recentWakeMinutes: s.recentWakeMinutes, timings: s.timings)
+                                   recentWakeMinutes: s.recentWakeMinutes, timings: s.timings,
+                                   weeklyPlan: weeklyPlan)
         }
         ScrollView {
             VStack(spacing: 0) {
@@ -82,17 +85,27 @@ struct PulseSleepPlannerView: View {
         .confirmationDialog(String(localized: "Tomorrow I want to"), isPresented: $choosingGoal,
                             titleVisibility: .visible) {
             ForEach(goalChoices(plan: plan)) { choice in
-                Button(choice.choiceTitle) { goalRaw = choice.storageValue }
+                Button(choice.choiceTitle) { choose(choice, weeklyPlan: weeklyPlan) }
             }
             Button(String(localized: "Cancel"), role: .cancel) {}
         }
     }
 
     /// REACH MY SLEEP NEED at 100, 85 and 70%, then IMPROVE MY SLEEP once there are enough recent nights
-    /// for a consistency target.
+    /// for a consistency target, then REACH MY WEEKLY PLAN GOAL (§3.11 item 4).
     private func goalChoices(plan: PulseSleepPlan?) -> [PulseSleepGoal] {
         let need = PulseSleepGoal.needPercents.map { PulseSleepGoal.need(percent: $0) }
-        return plan?.optimalBed == nil ? need : need + [.improve]
+        return (plan?.optimalBed == nil ? need : need + [.improve]) + [.weeklyPlan]
+    }
+
+    /// Keep the choice; REACH MY WEEKLY PLAN GOAL with no plan sleep goal to reach opens Edit Plan instead
+    /// (inside this sheet), where a plan with one is started, and leaves the goal as it was.
+    private func choose(_ choice: PulseSleepGoal, weeklyPlan: PulseWeeklyPlanSleepGoals?) {
+        if choice == .weeklyPlan && weeklyPlan == nil {
+            navigator.open(.weeklyPlan(editing: true))
+        } else {
+            goalRaw = choice.storageValue
+        }
     }
 
     // MARK: Upper zone
@@ -207,6 +220,11 @@ struct PulseSleepPlannerView: View {
             return String(localized: "It's past your suggested bedtime. Going to bed now still gives you \(PulseFormat.hoursMinutes(left)) of sleep before \(wake).")
         }
         switch plan.goal {
+        case .weeklyPlan:
+            if plan.alarmFires {
+                return String(localized: "Your alarm will go off at \(wake). Get to bed by \(bed) to help you reach your Weekly Plan sleep goals.")
+            }
+            return String(localized: "Get to bed by \(bed) to help you reach your Weekly Plan sleep goals.")
         case .improve:
             let percent = PulseDisplay.displayedPercent(plan.consistencyPercent ?? 0)
             if Calendar.current.isDate(plan.bedtime, inSameDayAs: Date()) {
@@ -304,6 +322,8 @@ struct PulseSleepPlannerView: View {
     private func applyDebugLaunch() {
         guard !debugApplied else { return }
         debugApplied = true
+        // `--jp-plan <template>`: a running Weekly Plan, for REACH MY WEEKLY PLAN GOAL captures.
+        JournalPlanDebug.startPlanIfRequested()
         if PulseSleepDebug.showsSchedule { navigator.open(PulseSleepScheduleRoute().route) }
         switch PulseSleepDebug.sheet {
         case "goal": choosingGoal = true

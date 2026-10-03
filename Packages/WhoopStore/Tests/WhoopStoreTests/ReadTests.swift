@@ -252,6 +252,40 @@ final class ReadTests: XCTestCase {
         XCTAssertEqual(stats.max, measured.map(\.bpm).max())
     }
 
+    // MARK: - hrWindowStats minute coverage (#499)
+
+    /// `minutes` counts the window's minutes that hold a sample, not the samples: a 1 Hz stretch over the
+    /// first 4 minutes of a 10-minute window and a sparse one over the same 4 minutes both cover 4.
+    func testHrWindowStatsCountsCoveredMinutesNotSamples() async throws {
+        let store = try await WhoopStore.inMemory()
+        try await store.upsertDevice(id: "dense", mac: nil, name: nil)
+        try await store.upsertDevice(id: "sparse", mac: nil, name: nil)
+        _ = try await store.insert(Streams(hr: (0..<240).map { HRSample(ts: 1_000 + $0, bpm: 120) }),
+                                   deviceId: "dense")
+        _ = try await store.insert(Streams(hr: stride(from: 0, to: 240, by: 50).map { HRSample(ts: 1_000 + $0, bpm: 120) }),
+                                   deviceId: "sparse")
+        let dense = try await store.hrWindowStats(primaryId: "dense", secondaryId: "dense", from: 1_000, to: 1_600)
+        let sparse = try await store.hrWindowStats(primaryId: "sparse", secondaryId: "sparse", from: 1_000, to: 1_600)
+        XCTAssertEqual(dense.n, 240)
+        XCTAssertEqual(dense.minutes, 4)
+        XCTAssertEqual(sparse.n, 5)
+        XCTAssertEqual(sparse.minutes, 4)
+    }
+
+    /// A sample on the window's end, on a minute boundary, falls in the last minute rather than an
+    /// eleventh one, so a 10-minute window can never report more than 10 minutes covered.
+    func testHrWindowStatsCountsASampleOnTheEndInTheLastMinute() async throws {
+        let store = try await WhoopStore.inMemory()
+        try await store.upsertDevice(id: "dev1", mac: nil, name: nil)
+        _ = try await store.insert(Streams(hr: (0...600).map { HRSample(ts: 1_000 + $0, bpm: 120) }), deviceId: "dev1")
+        let stats = try await store.hrWindowStats(primaryId: "dev1", secondaryId: "dev1", from: 1_000, to: 1_600)
+        XCTAssertEqual(stats.n, 601)
+        XCTAssertEqual(stats.minutes, 10)
+
+        let empty = try await store.hrWindowStats(primaryId: "dev1", secondaryId: "dev1", from: 5_000, to: 5_600)
+        XCTAssertEqual(empty.minutes, 0)
+    }
+
     // MARK: - hrWindowStats across two device ids (#856)
 
     /// The control that matters: passing the SAME id twice must be byte-identical to the single-id

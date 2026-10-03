@@ -23,6 +23,7 @@ struct PulseLiveSessionView: View {
     let onDiscard: () -> Void
 
     @EnvironmentObject private var app: AppModel
+    @Environment(\.pulseNavigator) private var navigator
     @AppStorage("workoutKeepScreenOn") private var keepScreenOn = false
     @AppStorage(UnitPrefs.systemKey) private var unitSystemRaw = UnitSystem.metric.rawValue
     @AppStorage(UnitPrefs.distanceSystemKey) private var distanceSystemRaw = ""
@@ -31,6 +32,10 @@ struct PulseLiveSessionView: View {
     @State private var endDialog: EndDialog?
     @State private var calories: Double?
     @State private var session: PulseActivitySessionStore.Session?
+    #if DEBUG
+    /// `--activity-live-camera` opens ZENO Live once, not again on the way back.
+    @State private var debugCameraOpened = false
+    #endif
 
     enum Page: Hashable { case heartRate, strain, map }
     enum EndDialog: Identifiable {
@@ -40,8 +45,8 @@ struct PulseLiveSessionView: View {
 
     private var workout: AppModel.ActiveWorkout? { app.activeWorkout }
     private var kind: PulseActivityKind { PulseActivityCatalog.kind(named: workout?.sport ?? "") }
-    /// The session records a route: a distance sport whose Track Route stayed on.
-    private var hasMap: Bool { kind.isDistanceSport && (session?.trackRoute ?? true) }
+    /// The session records a route: a distance sport whose Track Route stayed on, as the engine armed it.
+    private var hasMap: Bool { app.activeWorkoutIsGps }
     /// The session's Activity Strain, 0–21, scored exactly as End & Save scores the saved row
     /// (`AppModel.endWorkout`: the profile's max heart rate and today's MEASURED resting heart rate). The
     /// engine's running `liveStrain` assumes a resting 60 bpm, a different scale from the saved row and from
@@ -88,10 +93,7 @@ struct PulseLiveSessionView: View {
             .ignoresSafeArea())
         .environment(\.colorScheme, .dark)
         .onAppear(perform: appear)
-        .onDisappear {
-            app.stopRealtimeHR()
-            ScreenIdle.keepAwake(false)
-        }
+        .onDisappear { PulseLiveSessionHold.release(app) }
         .task(id: (workout?.samples.count ?? 0) / 10) { await estimateCalories() }
         .fullScreenCover(item: $endDialog) { dialog in
             // §3.8 [Z]: END & SAVE on the white capsule, DISCARD as text.
@@ -123,12 +125,10 @@ struct PulseLiveSessionView: View {
     private func appear() {
         // Arm the realtime stream while the session is on screen (WHOOP 5/MG only stream it on request),
         // and hold the screen awake if the wearer asked for that (LiveWorkoutView's contract).
-        app.startRealtimeHR()
-        if keepScreenOn { ScreenIdle.keepAwake(true) }
+        PulseLiveSessionHold.take(app, keepAwake: keepScreenOn)
         if let start = workout?.start {
             session = PulseActivitySessionStore.session(startSec: Int(start.timeIntervalSince1970))
         }
-        enforceTrackRoute()
         #if DEBUG
         if let minutes = PulseActivityDebug.demoLiveMinutes, let w = workout {
             let count = w.samples.count
@@ -140,21 +140,18 @@ struct PulseLiveSessionView: View {
         default: break
         }
         if PulseActivityDebug.has("--activity-end-dialog") { endDialog = .end }
+        if PulseActivityDebug.has("--activity-live-camera"), !debugCameraOpened {
+            debugCameraOpened = true
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1) { navigator.open(PulseLiveCameraRoute().route) }
+        }
         if PulseActivityDebug.has("--activity-end-save") {
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { endAndSave() }
         }
         #endif
     }
 
-    /// Track Route switched off for a sport that records one: keep the recorder stopped, including after a
-    /// resume or a relaunch re-arms it.
-    private func enforceTrackRoute() {
-        if session?.trackRoute == false, app.gpsRecorder.isRecording { app.gpsRecorder.stop() }
-    }
-
     private func togglePause() {
         app.toggleWorkoutPause()
-        enforceTrackRoute()
     }
 
     private func endAndSave() {
@@ -281,6 +278,14 @@ struct PulseLiveSessionView: View {
             }
             .padding(.horizontal, 10)
             Spacer(minLength: 0)
+        }
+        // LIVE at the top-right under the band (b01, b03: the ring's top ≈30 pt down, ≈7 pt in from the
+        // edge). ZENO Live opens over the session, which keeps recording underneath (§3.10): its route holds
+        // the session's realtime stream and keep-awake while it covers this pager.
+        .overlay(alignment: .topTrailing) {
+            PulseLiveCameraButton { navigator.open(PulseLiveCameraRoute().route) }
+                .padding(.top, 30)
+                .padding(.trailing, 2)
         }
     }
 
@@ -478,6 +483,92 @@ struct PulseLiveStrainRing: View {
         let r = diameter / 2 - stroke - 6
         let angle = fraction * 2 * .pi - .pi / 2
         return CGSize(width: r * CGFloat(cos(angle)), height: r * CGFloat(sin(angle)))
+    }
+}
+
+// MARK: - LIVE (§3.8 "LIVE button", §3.10)
+
+/// A ≈36 pt white ring around a camera, broken at its upper left where ZENO's mark sits (WHOOP draws its
+/// own mark there; ZENO never does), over "LIVE". Opens ZENO Live.
+struct PulseLiveCameraButton: View {
+    let action: () -> Void
+
+    private let diameter: CGFloat = 36
+
+    var body: some View {
+        Button(action: action) {
+            VStack(spacing: 6) {
+                ZStack {
+                    // The gap is 15% of the ring, centred at 10:30 (225° from 3 o'clock, clockwise).
+                    Circle()
+                        .trim(from: 0, to: 0.85)
+                        .rotation(.degrees(225 + 0.075 * 360))
+                        .stroke(PulseTheme.textPrimary, style: StrokeStyle(lineWidth: 2, lineCap: .round))
+                    Image(systemName: "camera.fill")
+                        .font(.system(size: PulseActivityStyle.Glyph.liveCamera, weight: .regular))
+                        .foregroundStyle(PulseTheme.textPrimary)
+                    PulseZenoMonogramShape()
+                        .stroke(PulseTheme.textPrimary, style: StrokeStyle(lineWidth: 1.4, lineCap: .round, lineJoin: .round))
+                        .frame(width: 9, height: 9)
+                        .offset(x: -diameter / 2 * 0.707, y: -diameter / 2 * 0.707)
+                }
+                .frame(width: diameter, height: diameter)
+                Text(String(localized: "Live"))
+                    .activityText(.liveButton)
+                    .foregroundStyle(PulseTheme.textPrimary)
+                    .lineLimit(1)
+            }
+            .frame(minWidth: PulseTheme.Layout.minTapTarget, minHeight: PulseTheme.Layout.minTapTarget)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(PulsePressStyle())
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(String(localized: "ZENO Live"))
+        .accessibilityHint(String(localized: "Lays your live numbers over a photo to share. The activity keeps recording."))
+        .accessibilityAddTraits(.isButton)
+    }
+}
+
+/// ZENO Live opened from LIVE: `PulseZenoLiveView`, presented as its own route presents it, holding what the
+/// session's pager holds (`PulseLiveSessionHold`) while it is on screen. Pushed inside the Start Activity
+/// modal it takes the pager off screen, and the pager gives its own hold back as it goes.
+struct PulseLiveCameraRoute: PulseScreenRoute {
+    var presentation: PulsePresentation { PulseZenoLiveRoute().presentation }
+    var view: some View { PulseLiveCameraScreen() }
+}
+
+private struct PulseLiveCameraScreen: View {
+    @EnvironmentObject private var app: AppModel
+    @AppStorage("workoutKeepScreenOn") private var keepScreenOn = false
+
+    var body: some View {
+        PulseZenoLiveView()
+            .onAppear { PulseLiveSessionHold.take(app, keepAwake: keepScreenOn) }
+            .onDisappear { PulseLiveSessionHold.release(app) }
+    }
+}
+
+/// What a running session holds while its pager, or ZENO Live opened over it, is on screen: the strap's
+/// realtime stream (a WHOOP 5/MG streams heart rate only while armed, #681), which the session's samples,
+/// Strain and calories come from, and the screen awake when the wearer asked for that. Each screen takes
+/// it on appear and gives it back on disappear, and the holders are counted: SwiftUI shows a pushed screen
+/// before the one it covers disappears (and the same way back on a pop), so between the two the count goes
+/// from one to two to one and the workout never loses its stream. Were the order reversed, both would be
+/// let go and taken straight back.
+@MainActor
+enum PulseLiveSessionHold {
+    private static var holders = 0
+
+    static func take(_ app: AppModel, keepAwake: Bool) {
+        holders += 1
+        app.startRealtimeHR()
+        if keepAwake { ScreenIdle.keepAwake(true) }
+    }
+
+    static func release(_ app: AppModel) {
+        holders = max(0, holders - 1)
+        app.stopRealtimeHR()
+        if holders == 0 { ScreenIdle.keepAwake(false) }
     }
 }
 

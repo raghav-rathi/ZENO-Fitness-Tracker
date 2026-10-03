@@ -118,10 +118,14 @@ struct CoachSettingsView: View {
                     // The ON line NAMES what a session carries rather than saying "workouts" and
                     // leaving the reader to guess how much that is: the sport, how long, how far and how
                     // hard, per session. This toggle is the only place someone is asked to agree to it.
-                    // Android says the same sentence (#2033).
-                    Text(coach.dataConsent
-                         ? "On: your charge, rest, HRV and workouts are sent to the provider, each workout with its sport, duration, distance and heart rate."
-                         : "Off: the coach answers generally and sends none of your metrics.")
+                    // Android says the same sentence (#2033). The iPhone's Pulse interface, which links this
+                    // screen for the morning brief, names the scores as its screens and the coach's data
+                    // summary there do (`CoachVocabulary`).
+                    Text(!coach.dataConsent
+                         ? "Off: the coach answers generally and sends none of your metrics."
+                         : coach.vocabulary == .pulse
+                         ? "On: your Recovery, Strain, Sleep, HRV and workouts are sent to the provider, each workout with its sport, duration, distance and heart rate."
+                         : "On: your charge, rest, HRV and workouts are sent to the provider, each workout with its sport, duration, distance and heart rate.")
                         .font(StrandFont.footnote).foregroundStyle(StrandPalette.textTertiary)
                         .fixedSize(horizontal: false, vertical: true)
                 }

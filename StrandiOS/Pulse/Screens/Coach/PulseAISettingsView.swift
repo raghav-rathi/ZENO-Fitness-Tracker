@@ -72,7 +72,7 @@ struct PulseAISettingsView: View {
                         .padding(.top, 22)
                 }
                 toggleBlock(title: String(localized: "Memory"), isOn: $memoryEnabled,
-                            help: String(localized: "Allow Coach to use what you save in My Memory to personalise its guidance. Memories are stored only on this iPhone; active ones are sent with each new conversation to the provider you chose."))
+                            help: String(localized: "Allow Coach to use what you save in My Memory to personalise its guidance. Memories are stored only on this iPhone; active ones go with every question and your morning brief to the provider you chose."))
                     .padding(.top, 22)
 
                 PulseCoachDashedRule()
@@ -313,7 +313,7 @@ struct PulseAISettingsView: View {
                 Text(String(localized: "Data privacy"))
                     .pulseText(.subsectionTitle)
                     .foregroundStyle(PulseTheme.textPrimary)
-                Text(String(localized: "Coach is the only part of ZENO that uses the internet. Nothing is sent until you ask a question, and then only to the provider you chose, with your own key. Conversations and memories stay on this iPhone."))
+                Text(String(localized: "Coach is the only part of ZENO that uses the internet. Nothing is sent until you ask a question or your morning brief is due, and then only to the provider you chose, with your own key. Conversations and memories stay on this iPhone."))
                     .pulseText(.body)
                     .foregroundStyle(PulseTheme.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
