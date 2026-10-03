@@ -413,6 +413,10 @@ struct PulsePreStartHeartCircle: View {
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(String(localized: "Heart rate"))
         .accessibilityValue(app.bpm.map { String(localized: "\($0) beats per minute") } ?? String(localized: "No reading"))
+        // The circle shows live heart rate, which a WHOOP 5/MG streams only on request: arm it while the
+        // circle is on screen (ref-counted by the engine, so the live session's own arm balances it).
+        .onAppear { app.startRealtimeHR() }
+        .onDisappear { app.stopRealtimeHR() }
     }
 
     private static func batterySymbol(_ pct: Double) -> String {
