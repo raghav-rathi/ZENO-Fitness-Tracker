@@ -292,7 +292,7 @@ struct DayTimelineChart: View {
 
     @ViewBuilder
     private func stripLabels(_ g: DayTimelineGeometry) -> some View {
-        if let cursor {
+        if let cursor, g.x(cursor) >= plot.minX - 1, g.x(cursor) <= plot.maxX + 1 {
             readout(at: cursor, g)
         } else {
             ForEach(stripItems(g)) { item in

@@ -31,6 +31,18 @@ extension PulseSnapshotBuilder {
         let window = await dayWindow(r)
         guard isCurrent(r) else { return nil }
 
+        #if DEBUG
+        if Self.demoTimelineRequested {
+            let groups = await nightGroups(r)
+            let habitual = await habitualMidsleep()
+            let night = group(endingOn: r.day.key, in: groups)
+                .flatMap { SleepModel.mergeDay($0, habitualMidsleepSec: habitual, motionByStart: [:]) }
+                .map { (start: Int($0.onsetDate.timeIntervalSince1970), end: $0.session.endTs) }
+            let rows = await workoutRows().filter { $0.startTs >= window.from && $0.startTs < window.to }
+            await seedDemoTimeline(window: window, night: night, workouts: rows, now: r.now)
+        }
+        #endif
+
         // The raw readings: the newest one ("Data synced to"), today's live Strain (the same read and
         // scorer Home's dial uses, shared through the per-refresh cache) and the low / average / high the
         // Strain dive prints for the same window.

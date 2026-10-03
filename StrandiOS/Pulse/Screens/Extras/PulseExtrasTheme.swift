@@ -56,6 +56,9 @@ enum PulseExtrasTheme {
         static let barHeight: CGFloat = 42
         /// The label strip's height (43 → 97), then a 1 pt hairline.
         static let stripHeight: CGFloat = 54
+        /// The bar's "✕" and pager chevrons, heavier than a nav bar's (r132: ✕ ≈15 pt across, ‹ ≈16 pt tall).
+        static let barCloseSize: CGFloat = 19
+        static let barChevronSize: CGFloat = 17
         /// "✕" centres this far inside the side safe-area edge; the title starts 32 pt after it.
         static let closeCentre: CGFloat = 48
         static let titleGap: CGFloat = 32

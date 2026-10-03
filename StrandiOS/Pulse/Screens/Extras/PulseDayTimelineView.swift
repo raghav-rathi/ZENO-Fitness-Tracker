@@ -77,6 +77,10 @@ struct PulseDayTimelineView: View {
         .environment(\.colorScheme, .dark)
         .onAppear {
             if dayOffset == nil { dayOffset = model.dayOffset }
+            #if DEBUG
+            // At launch the route opens before Home has applied `--pulse-day`; take it straight from the flag.
+            if let launchDay = PulseDebugLaunch.dayOffset, model.dayOffset == 0 { dayOffset = launchDay }
+            #endif
             monitor.start()
         }
         .onDisappear { monitor.stop() }
@@ -110,12 +114,12 @@ struct PulseDayTimelineView: View {
     /// day (0…1), so simctl, which cannot touch, can capture both states.
     private func applyDebugState(_ s: DayTimelineSnapshot) {
         let args = CommandLine.arguments
-        if args.contains("--pulse-timeline-zoom"), !zoomed, zoomFactor(s) != nil {
-            toggleZoom()
-        }
         if let i = args.firstIndex(of: "--pulse-timeline-cursor"), i + 1 < args.count,
            let f = Double(args[i + 1]), cursor == nil {
             cursor = s.start.addingTimeInterval(min(max(f, 0), 1) * s.end.timeIntervalSince(s.start))
+        }
+        if args.contains("--pulse-timeline-zoom"), !zoomed, zoomFactor(s) != nil {
+            toggleZoom()
         }
     }
     #endif
@@ -163,11 +167,21 @@ struct PulseDayTimelineView: View {
     }
 
     private func toggleZoom() {
-        guard let snapshot, zoomFactor(snapshot) != nil else { return }
-        cursor = nil
+        guard let snapshot, let factor = zoomFactor(snapshot) else { return }
         zoomed.toggle()
-        // Today opens on the newest hours, as WHOOP's does; a finished day on its middle.
-        scrollFraction = zoomed ? (snapshot.day.isToday ? 1 : 0.5) : 0
+        guard zoomed else {
+            scrollFraction = 0
+            return
+        }
+        if let cursor {
+            // A cursor already placed (VoiceOver steps one through the day) stays in the middle of the view.
+            let span = max(1, snapshot.end.timeIntervalSince(snapshot.start))
+            let centre = CGFloat(cursor.timeIntervalSince(snapshot.start) / span)
+            scrollFraction = min(max((centre - 0.5 / factor) / (1 - 1 / factor), 0), 1)
+        } else {
+            // Today opens on the newest hours, as WHOOP's does; a finished day on its middle.
+            scrollFraction = snapshot.day.isToday ? 1 : 0.5
+        }
     }
 
     // MARK: Landscape
@@ -191,17 +205,17 @@ struct PulseDayTimelineView: View {
 
             chart(plot: plot, strip: strip, size: size)
 
-            PulseCloseButton { dismiss() }
+            barCloseButton
                 .position(x: side + T.closeCentre, y: T.barHeight / 2)
             Text(String(localized: "Heart rate"))
-                .pulseText(.navTitle)
+                .pulseText(.menuLabel)
                 .foregroundStyle(PulseTheme.textPrimary)
                 .lineLimit(1)
                 .fixedSize()
                 .frame(height: T.barHeight)
                 .offset(x: side + T.closeCentre + T.titleGap)
                 .accessibilityAddTraits(.isHeader)
-            pager
+            pager(label: .menuLabel, chevron: T.barChevronSize)
                 .position(x: size.width / 2, y: T.barHeight / 2)
             if let syncText {
                 Text(syncText)
@@ -262,7 +276,7 @@ struct PulseDayTimelineView: View {
             .frame(width: size.width, height: PulseTheme.Header.navBar)
             .offset(y: navTop)
             VStack(spacing: 2) {
-                pager.frame(height: 36)
+                pager(label: .navTitle, chevron: 14).frame(height: 36)
                 Text(syncText ?? " ")
                     .pulseText(.secondary)
                     .foregroundStyle(PulseTheme.textTertiary)
@@ -357,26 +371,42 @@ struct PulseDayTimelineView: View {
         .accessibilityHidden(true)
     }
 
-    /// "‹ TODAY ›": steps the day this timeline shows.
-    private var pager: some View {
+    /// "‹ TODAY ›": steps the day this timeline shows. The landscape bar sets it as WHOOP's does, 13 pt caps
+    /// between heavier chevrons (reviews/r132); the portrait stack in the nav bar's 12 pt.
+    private func pager(label: PulseTextStyle, chevron: CGFloat) -> some View {
         HStack(spacing: 0) {
-            pagerChevron("chevron.left", enabled: canGoBack, label: String(localized: "Previous day")) { step(1) }
+            pagerChevron("chevron.left", size: chevron, enabled: canGoBack,
+                         label: String(localized: "Previous day")) { step(1) }
             Text(dayTitle)
-                .pulseText(.navTitle)
+                .pulseText(label)
                 .foregroundStyle(PulseTheme.textPrimary)
                 .lineLimit(1)
                 .fixedSize()
                 .padding(.horizontal, 6)
                 .accessibilityAddTraits(.isHeader)
-            pagerChevron("chevron.right", enabled: canGoForward, label: String(localized: "Next day")) { step(-1) }
+            pagerChevron("chevron.right", size: chevron, enabled: canGoForward,
+                         label: String(localized: "Next day")) { step(-1) }
         }
     }
 
-    private func pagerChevron(_ symbol: String, enabled: Bool, label: String,
+    /// The landscape bar's "✕": WHOOP's is heavier than a nav bar's (≈15 pt across, 2 pt strokes).
+    private var barCloseButton: some View {
+        Button { dismiss() } label: {
+            Image(systemName: "xmark")
+                .font(.system(size: T.barCloseSize, weight: .medium))
+                .foregroundStyle(PulseTheme.textPrimary)
+                .frame(width: PulseTheme.Layout.minTapTarget, height: PulseTheme.Layout.minTapTarget)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(PulsePressStyle())
+        .accessibilityLabel(String(localized: "Close"))
+    }
+
+    private func pagerChevron(_ symbol: String, size: CGFloat, enabled: Bool, label: String,
                               action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: symbol)
-                .font(.system(size: 14, weight: .bold))
+                .font(.system(size: size, weight: .bold))
                 .foregroundStyle(enabled ? PulseTheme.textPrimary : PulseTheme.textDisabled)
                 .frame(width: 36, height: PulseTheme.Layout.minTapTarget)
                 .contentShape(Rectangle())
