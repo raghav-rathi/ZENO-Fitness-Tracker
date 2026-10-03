@@ -641,3 +641,49 @@ Activity group (`Screens/Activity/`), deviations and what the next wave inherits
   add a text second action and an attributed message, and can fold back into it once the card offers
   both; `AppModel.endWorkout` scores with `profile.hrMax` (rounded Tanaka) where the day uses
   `effortHRmax`, so the engine owner should align them (the live ring follows `endWorkout`).
+
+### journal-plan: decisions and hand-offs
+
+Blocker for shipping the rebuilt Weekly Plan:
+
+- **Home still places the empty My Plan card.** `Screens/Home/PulseHomeView.swift` (line 229 on the
+  foundation branch, 232 on the home branch) draws `PulsePlanCard()`, the "Build Your Best Self" state,
+  whether or not a plan runs. With `PulseWeeklyPlanView.isRebuilt` true a wearer can start a plan that
+  Home then says does not exist. The fix is one line for the home group or the foundation:
+  `PulsePlanCard()` → `PulsePlanHomeCard()` (`Screens/Plan/`, which loads its own week and draws the empty
+  state too). `.weeklyPlan` has no classic fallback, so the flag alone cannot hide the plan screens.
+
+Measured against the 2026 captures where they disagree with the spec:
+
+- **Journal section labels have no hairline.** DAYTIME, NIGHTTIME, STATUS, YOUR … PLAN and NOTES are
+  plain caps (journal-plan-2026/01, Jun 2026); the spec's "label + hairline" (§3.17 item 9) is the 2025
+  build (/95). SELECT BEHAVIORS keeps the hairline after CURRENTLY SELECTED (/13, Sep 2026).
+- **The Journal question title is 24 pt Semibold**, not ≈28: help-center/105 measures caps ≈16.5 pt on a
+  30 pt line pitch against its own 12 pt "JOURNAL" and 13 pt date, and /90 gives 24–26 against its 15 pt
+  rows (`PulseTheme.JournalPlan.questionStyle`).
+
+Left out on purpose [Z]:
+
+- **"X%+ of the Day in High Stress Zone"** (§3.18 ZENO data). ZENO keeps no per-day stress timeline, and
+  scoring 90 past days of heart rate, R-R and motion through `DaytimeStress` on each visit costs more than
+  Behavior Insights can spend; a cheaper proxy would disagree with the Stress Monitor. It can join
+  `AutoBehaviors` once each day's high-stress minutes are stored (health group). "Early Workout" is in:
+  an activity that started within 3 h of waking, judged against the next morning's Recovery.
+- **The time follow-up and its slider** ("When did you stop? 18:00", /08): a journal row stores one number,
+  which the amount already uses. **Apple Health pre-filling** ("Pre-filling compatible via Apple Health ⓘ"):
+  ZENO imports no mindful minutes, and no library behaviour is a workout question. **The classic caffeine
+  log as a question**: "Consumed caffeine?" with its servings is the behaviour Behavior Insights tests; a
+  second caffeine figure would contradict it.
+- **TALK on the Journal's Smart log card** stays hidden until the Coach sheet can start in voice; it opened
+  the same text composer as TEXT. The Coach sheet also ignores the seed the Journal and SELECT BEHAVIORS
+  hand it today (cycle-coach rebuild).
+
+Hand-offs:
+
+- **Journal notes are not backed up.** A day's note lives in UserDefaults (`pulse.journal.notes`) because
+  the journal table's `notes` column belongs to each answer, not to the day. It is outside the `.noopbak`
+  whitelist and Android does not read it; the WhoopStore owner can add it to `BackupSettings` on both
+  platforms (it would cross as one JSON string) or give the journal a per-day note.
+- **Group tokens.** `Components/JournalPlanTokens.swift` (`PulseTheme.JournalPlan`) holds the colours and
+  sizes the shared theme lacks, sampled on the captures; values the theme already has reference its tokens.
+  The foundation can hoist them into `PulsePalettes.Journal` / `.Plan` without call sites changing.
