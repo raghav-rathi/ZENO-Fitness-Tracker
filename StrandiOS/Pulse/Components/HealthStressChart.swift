@@ -4,12 +4,13 @@ import Charts
 
 // MARK: - The Stress Monitor's day chart and the Health tab's stress sparkline (WHOOP_UI_SPEC §2.7, §3.22)
 
-/// The day's stress on the page (no card), over an explicit window: the line coloured by its own value
-/// along the stress scale, sleep and activity periods as faint bands with a 3 pt cap on the 3.0 gridline
-/// and a 17 pt glyph above, faint verticals at the two inner times, a dashed line at the window's end with
-/// a white dot at its foot, y labels 0.0–3.0 on the left and four times under it, the last one white
-/// (completeness-critic/14, 15; reviews/33 draws the dot white today too). The black zoom button inside the
-/// plot's bottom-right corner narrows the window to its last six hours and back.
+/// The day's stress over an explicit window: the line coloured by its own value along the stress scale,
+/// sleep and activity periods as faint bands with a 3 pt cap on the 3.0 gridline and a 17 pt glyph above,
+/// faint verticals at the two inner times, a dashed line at the window's end with a white dot at its foot,
+/// y labels 0.0–3.0 on the left and four times under it, the last one white (completeness-critic/14, 15;
+/// reviews/33 draws the dot white today too). On the Stress Monitor's page, the black zoom button inside the
+/// plot's bottom-right corner narrows the window to its last six hours and back; a card (Home's STRESS
+/// MONITOR, which opens the monitor) turns the zoom off and draws its gridlines in the card's tone.
 ///
 /// The window is explicit, unlike `PulseStressChart`'s, so a rolling 24 h view keeps its span even when
 /// the readings start late in it. Missing readings are gaps, never zero.
@@ -24,6 +25,10 @@ struct HealthStressDayChart: View {
     var height: CGFloat = 160
     /// Shown over the empty plot when there is no reading in the window.
     var emptyMessage: String = String(localized: "No stress readings for this day.")
+    /// The zoom button and its VoiceOver action (off inside a card that is itself a link).
+    var showsZoom = true
+    /// The gridlines' and inner verticals' colour: the page's, or a card's.
+    var grid: Color = PulseTheme.gridOnPage
 
     @State private var zoomed = false
 
@@ -64,15 +69,19 @@ struct HealthStressDayChart: View {
     }
 
     var body: some View {
-        chart
+        let plot = chart
             .frame(height: height + 22)
             .padding(.top, 22)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(String(localized: "Stress through the day"))
-        .accessibilityValue(summary)
-        .accessibilityAction(named: zoomed ? String(localized: "Show the whole window")
-                                           : String(localized: "Zoom to the last six hours")) {
-            zoomed.toggle()
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(String(localized: "Stress through the day"))
+            .accessibilityValue(summary)
+        if showsZoom {
+            plot.accessibilityAction(named: zoomed ? String(localized: "Show the whole window")
+                                                   : String(localized: "Zoom to the last six hours")) {
+                zoomed.toggle()
+            }
+        } else {
+            plot
         }
     }
 
@@ -96,7 +105,7 @@ struct HealthStressDayChart: View {
             }
             ForEach(Array(ticks.dropFirst().dropLast().enumerated()), id: \.offset) { _, tick in
                 RuleMark(x: .value("Tick", tick))
-                    .foregroundStyle(PulseTheme.gridOnPage)
+                    .foregroundStyle(grid)
                     .lineStyle(StrokeStyle(lineWidth: 1))
             }
             // One short segment per pair of neighbouring readings, each in its own value's colour.
@@ -140,7 +149,7 @@ struct HealthStressDayChart: View {
         }
         .chartYAxis {
             AxisMarks(position: .leading, values: [0.0, 1.0, 2.0, 3.0]) { value in
-                AxisGridLine(stroke: StrokeStyle(lineWidth: 1)).foregroundStyle(PulseTheme.gridOnPage)
+                AxisGridLine(stroke: StrokeStyle(lineWidth: 1)).foregroundStyle(grid)
                 AxisValueLabel {
                     if let v = value.as(Double.self) {
                         Text(PulseFormat.oneDecimal(v))
@@ -162,7 +171,8 @@ struct HealthStressDayChart: View {
                             .frame(width: plot.width - 24)
                             .position(x: plot.midX, y: plot.midY)
                     }
-                    if hasReadings || zoomed, window.upperBound.timeIntervalSince(window.lowerBound) > Self.zoomSpan + 60 {
+                    if showsZoom, hasReadings || zoomed,
+                       window.upperBound.timeIntervalSince(window.lowerBound) > Self.zoomSpan + 60 {
                         zoomButton
                             .position(x: plot.maxX - 24, y: plot.maxY - 24)
                     }
@@ -222,7 +232,7 @@ struct HealthStressDayChart: View {
 /// whoop-site/11n). No axes.
 struct HealthStressSparkline: View {
     let points: [PulseTimeValue]
-    /// Today's start to now.
+    /// Today's start to the dashed line.
     let span: ClosedRange<Date>
     /// When the latest reading was read (the end of its hour window, now at most). The line runs on flat
     /// from that reading's point, which sits mid-window, to here, and ends in the dot; nil ends it on the

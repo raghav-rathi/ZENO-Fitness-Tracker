@@ -134,8 +134,8 @@ struct PulseStressDay: Equatable {
     let points: [PulseTimeValue]
     /// The day's own scored hours (non-overlapping), for the totals and the high-stress run. Waking only.
     let hours: [DaytimeStress.HourPoint]
-    /// The chart's window, 24 h ending at its "now": today the last 24 h, a past day the 24 h ending on its
-    /// last reading (completeness-critic/14), a past day without readings its calendar day.
+    /// The chart's window, the 24 h ending on the day's latest reading (completeness-critic/13, 14, 15); today
+    /// before its first reading the last 24 h, a past day without readings its calendar day.
     let window: ClosedRange<Date>
     /// The gauge's reading: the latest point of the curve, when it was.
     let latest: Reading?
@@ -157,8 +157,8 @@ struct PulseStressDay: Equatable {
         return nil
     }
 
-    /// Where the chart's window ends with a dashed line and a dot: now today, the last reading's end on a
-    /// past day; nil for a past day with no reading (its chart says so instead).
+    /// Where the chart's window ends with a dashed line and a dot: the latest reading's end (now, today,
+    /// before its first reading); nil for a past day with no reading (its chart says so instead).
     var chartEnd: Date? {
         isToday || latest != nil ? window.upperBound : nil
     }
@@ -187,7 +187,8 @@ struct HealthStressCard: Equatable {
     /// Today's curve so far, for the sparkline. (The typical weekday it is set against comes in a second,
     /// slower pass: `PulseSnapshotBuilder.healthTypicalHigh`.)
     let points: [PulseTimeValue]
-    /// The sparkline's span: today's start to now.
+    /// The sparkline's span: today's start to where the Stress Monitor's day ends, the latest reading (now
+    /// before today's first), so the line ends on the dashed line as WHOOP's does (reviews/r100).
     let span: ClosedRange<Date>
     /// The weekday's key, for "vs. typical Tue".
     let dayKey: String

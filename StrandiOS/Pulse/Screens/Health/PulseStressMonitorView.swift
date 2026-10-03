@@ -240,7 +240,7 @@ struct PulseStressMonitorView: View {
     static let infoParagraphs: [String] = [
         String(localized: "ZENO reads stress from your heart rate, and the beat-to-beat timing when the strap records it, across your waking hours (6 AM to 10 PM). Each hour is set against your calmest hours that day, or against your own daytime baseline if you turned that on in the Stress Monitor's settings (⚙), and placed on a 0 to 3 scale: low under 1.0, medium to 1.9, high from 2.0."),
         String(localized: "Hours when the strap saw you moving are left out, so a workout or a walk is not read as stress. Sleep is scored in five-minute windows against the waking hours before it, as on the Sleep dive, and drawn on the chart; TOTAL DAY counts your waking hours only. Because each waking hour is scored as a whole, time in each zone counts in whole hours."),
-        String(localized: "The Today view shows the last 24 hours; a past day shows the 24 hours up to its last reading. The gauge shows your latest scored hour; on a day without hourly readings it shows that day's score from your resting heart rate and HRV against your baseline."),
+        String(localized: "The chart shows the 24 hours up to the day's latest reading, or the last 24 hours before today's first one. The gauge shows your latest scored hour; on a day without hourly readings it shows that day's score from your resting heart rate and HRV against your baseline."),
         String(localized: "Typical is the average of the same weekday over the previous six weeks you wore the strap, up to the same hour when the day is still going. A wellness estimate, not a diagnosis."),
     ]
 }

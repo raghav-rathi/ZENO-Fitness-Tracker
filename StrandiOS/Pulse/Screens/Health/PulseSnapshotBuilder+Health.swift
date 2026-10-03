@@ -40,7 +40,8 @@ extension PulseSnapshotBuilder {
                 level: day.gaugeLevel?.level, readAt: day.latest?.at,
                 highMinutes: scored ? StressDayTotals.totals(todayHours).highMinutes : nil,
                 points: day.points.filter { $0.date >= start },
-                span: start...max(r.now, start.addingTimeInterval(60)),
+                // To where the Stress Monitor's day ends: the latest reading (now before today's first).
+                span: start...max(day.window.upperBound, start.addingTimeInterval(60)),
                 dayKey: day.dayKey)
         }
         return HealthTabSnapshot(seq: r.seq, age: age, labs: labs, vitals: vitals, stress: card,
@@ -350,8 +351,9 @@ extension PulseSnapshotBuilder {
 
     /// One day's stress for the request's day (`stressDayStart`): the intraday curve for both the gauge (its
     /// latest reading) and the chart, the daily score only as a labelled fallback. The chart covers 24 hours
-    /// ending at the day's "now": now today, the end of the last reading on a past day
-    /// (completeness-critic/14: "11:02 PM … 10:49 PM"), so the evening before is included either way.
+    /// ending at the day's latest reading, as WHOOP's does (completeness-critic/13, 15: chart and "Last
+    /// updated" both end at 8:29 AM at 11:03; /14: "11:02 PM … 10:49 PM" for a past day), or at now before
+    /// today's first reading, so the evening before is included either way.
     ///
     /// The curve is the waking hours (`DaytimeStress`, 6 AM–10 PM) with each night in the window scored as
     /// the Sleep dive scores it (`stressNights`) in place of the hours it overlaps, so it runs through the
@@ -373,9 +375,7 @@ extension PulseSnapshotBuilder {
         let ownLatest = result.timeline.filter { $0.level != nil }.max { $0.startTs < $1.startTs }.map(reading)
 
         let window: ClosedRange<Date>
-        if isToday {
-            window = r.now.addingTimeInterval(-24 * 3600)...r.now
-        } else if let end = ownLatest?.at {
+        if let end = ownLatest?.at ?? (isToday ? r.now : nil) {
             window = end.addingTimeInterval(-24 * 3600)...end
         } else {
             window = dayStart...nextStart
