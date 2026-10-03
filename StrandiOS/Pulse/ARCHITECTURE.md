@@ -605,3 +605,39 @@ Housekeeping the next wave inherits:
   card's rule). Initials on the avatar need a stored name, which ZENO does not have yet (Edit Profile).
 - WHOOP's Health Monitor tile prints "2/5 Metrics" next to OUT OF RANGE; whether that counts the metrics in
   or out of range is unconfirmed. Pulse names the one metric out of range, or "k/n Metrics" out of range.
+
+Activity group (`Screens/Activity/`), deviations and what the next wave inherits:
+
+- **Recovery activities compare with the 30-day AVERAGE.** WHOOP's recovery variant captions its tiles
+  "VS. 30 DAY RANGE" over chips whose meaning is unconfirmed; Pulse's chips print this sport's 30-day mean,
+  so the caption says AVERAGE on both variants rather than naming a range it does not draw.
+- **STRESS CHANGE and the STRESS tab use the Stress Monitor's own readings** (`DaytimeStress`, an hour of
+  heart rate re-read every half hour, 6 AM–10 PM, the lens Settings picks): the change is the reading
+  nearest the start against the next one nearest the end, the curve is coarser than WHOOP's minute-level
+  one (the chart says so), and the "▲0.9" chip beside WHOOP's value is left out (meaning unconfirmed). No
+  reading covering the activity hides both and says why. `activityStress` repeats the health group's
+  `stressResult` call; once both are on main, point it there so the two share one cache.
+- **IMPACT ON RECOVERY** counts days in the last 90 with and without the sport, each only when the next
+  morning's Recovery scored, and unlocks at five each (WHOOP's rule); the value is `BehaviorInsights`'
+  next-day Recovery difference, grey unless it clears the significance rule. The milestone card (§3.6
+  item 11) waits for Achievements (§3.30).
+- **No Strain Target from a carried Recovery.** As the Strain dial draws no band or tick from an earlier
+  night's Recovery, the Start panel withholds the target until today's scores and says why. A day already
+  at its target shows a check, not a 0.0 target, and starts the session with none.
+- **The Start picker has no SLEEP tab** [Z]: ZENO's live engine records workouts; a sleep is detected from
+  the strap or added afterwards. Add Activity offers one "Sleep or nap" entry, since both saved the same
+  manual sleep and the sleep pipeline itself files it with the night or as a nap.
+- **Add Activity's banner** keeps "ZENO scores an activity you add from your strap's heart rate over that
+  time." rather than the spec's [Z] "Your edits help ZENO recognise your activities.": the detector is a
+  fixed heuristic that learns nothing from edits.
+- **"View HR settings"** opens the classic Settings (the zones are in its Profile card); there is no
+  heart-rate page to deep-link to yet.
+- **After End & Save** Activity Details draws the live session's own samples until the strap's history
+  covers 90% of the window, and keeps the row's saved Avg / Max HR while `Repository.workoutRows`' trace
+  reconciliation (#499) would print a fragment's average.
+- Housekeeping: the group's own colours, sizes, radii and type (the light panel's ink, map overlays, the
+  route card's 14 pt radius, the panel's text styles) sit in `PulseActivityStyle` until the foundation
+  adopts them as `PulseTheme.Activity` tokens; `PulseActivityDialogCard` copies `PulseDialogCard` only to
+  add a text second action and an attributed message, and can fold back into it once the card offers
+  both; `AppModel.endWorkout` scores with `profile.hrMax` (rounded Tanaka) where the day uses
+  `effortHRmax`, so the engine owner should align them (the live ring follows `endWorkout`).
