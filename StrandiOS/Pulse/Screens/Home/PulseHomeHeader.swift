@@ -9,9 +9,11 @@ import StrandDesign
 /// the centre (its label opens the calendar), the strap's battery and status at the right (→ Device
 /// Settings), its glyph 23 pt from the screen edge. Hit areas stay 44 pt; they overflow the row.
 struct PulseHomeHeader: View {
+    /// The calendar sheet, held by Home so its tilt mode knows when the sheet is up.
+    @Binding var showCalendar: Bool
+
     @Environment(PulseModel.self) private var model
     @Environment(\.pulseNavigator) private var navigator
-    @State private var showCalendar = false
 
     var body: some View {
         ZStack {

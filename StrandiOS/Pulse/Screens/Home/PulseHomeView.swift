@@ -17,8 +17,9 @@ import StrandAnalytics
 /// Owned by group "home". The dials, activities and vitals render `model.home`, built off the main actor;
 /// Home's own facts (dashboard rows, coaching inputs, the outlook) come from `homeExtras`, built beside it
 /// for the same day. Swiping sideways changes the day, as do the header's pager and calendar. Once the
-/// dials scroll off, the mini-ring row pins under the status bar. A new achievement or day-streak
-/// milestone opens its unlock modal over Home (§3.30).
+/// dials scroll off, the mini-ring row pins under the status bar. Turning the phone sideways opens the
+/// day's heart-rate timeline (tilt mode, §3.7). A new achievement or day-streak milestone opens its unlock
+/// modal over Home (§3.30).
 struct PulseHomeView: View {
     @Environment(PulseModel.self) private var model
     @Environment(\.pulseNavigator) private var navigator
@@ -33,6 +34,8 @@ struct PulseHomeView: View {
     /// Today's profile figures (level, day streak, badges): the ONE snapshot both the unlock modal over
     /// Home and the coaching stack's milestone cards read, so the two can never announce different things.
     @State private var profile: ProfileSnapshot?
+    /// The header's day picker is up: tilt mode waits for it to close.
+    @State private var showCalendar = false
 
     /// The sticky row's 44 pt hit area, centred 19.5 pt under the safe-area top.
     private static let stickyRowTop = PulseTheme.Header.stickyRowCentre - PulseTheme.Layout.minTapTarget / 2
@@ -52,7 +55,7 @@ struct PulseHomeView: View {
                                 ? .extended(extra: Self.stickyRowTop + PulseTheme.Layout.minTapTarget + 12,
                                             fade: PulseTheme.Header.stickyFade)
                                 : .automatic) {
-            PulseHomeHeader()
+            PulseHomeHeader(showCalendar: $showCalendar)
             if model.dayOffset == 0 {
                 PulseHomeStatusBanner()
             }
@@ -77,6 +80,14 @@ struct PulseHomeView: View {
             }
         }
         .animation(PulseMotion.chrome, value: dialsScrolledOff)
+        // Tilt mode (§3.7): while Home's root is on screen with none of its own sheets up, turning the
+        // phone sideways opens the day timeline. The detector leaves with the calendar sheet and returns
+        // with a fresh reading when it closes.
+        .background {
+            if !showCalendar {
+                Color.clear.pulseDayTimelineOnTilt()
+            }
+        }
         .simultaneousGesture(daySwipe)
         .sensoryFeedback(.selection, trigger: model.dayOffset)
         .onChange(of: model.home) { _, _ in homeVersion &+= 1 }
