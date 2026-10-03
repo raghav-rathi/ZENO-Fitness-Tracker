@@ -3,13 +3,14 @@ import SwiftUI
 import StrandAnalytics
 
 /// Stress Monitor (WHOOP_UI_SPEC §3.22), pushed from Home's tile and dashboard card and the Health tab's
-/// card: its own day pager ("‹ TODAY ›"), the gauge with ⓘ, the 24 h chart, plain sentences on the day,
-/// TOTAL DAY against the typical same weekday, and Breathe under "Sessions".
+/// card: ⚙ in the bar (stress check-ins and the scoring lens, `HealthStressSettingsRoute`), its own day
+/// pager ("‹ TODAY ›"), the gauge with ⓘ, the 24 h chart, plain sentences on the day, TOTAL DAY against the
+/// typical same weekday, and Breathe under "Sessions".
 ///
 /// One source for the level and the curve (`PulseSnapshotBuilder.stressDay`): the gauge shows the curve's
 /// latest scored hour, and only a day without a curve falls back to the daily score, labelled as such.
-/// There is no ⚙: ZENO has no stress notifications to configure. The typical weekday reads six earlier
-/// days, so it arrives in a second pass (`stressMonitorTypical`) after the day has drawn.
+/// The typical weekday reads six earlier days, so it arrives in a second pass (`stressMonitorTypical`)
+/// after the day has drawn.
 struct PulseStressMonitorView: View {
     /// Rebuilt: existing entry points (Home's tile and dashboard card) open this instead of the classic screen.
     static let isRebuilt = true
@@ -40,8 +41,12 @@ struct PulseStressMonitorView: View {
     }
 
     var body: some View {
-        PulseScreenScaffold(title: String(localized: "Stress Monitor"), coach: .button, coachSeed: coachSeed,
-                            spacing: 0, topPadding: 0, ready: shown != nil) {
+        PulseScreenScaffold(title: String(localized: "Stress Monitor"),
+                            trailing: .symbol("gearshape",
+                                              accessibilityLabel: String(localized: "Stress Monitor settings")) {
+                                navigator.push(HealthStressSettingsRoute().route)
+                            },
+                            coach: .button, coachSeed: coachSeed, spacing: 0, topPadding: 0, ready: shown != nil) {
             HealthPager(title: shown?.title ?? pagerTitle, canGoBack: day < model.maxDayOffset,
                         canGoForward: day > 0,
                         onBack: { offset = min(model.maxDayOffset, day + 1) },
@@ -233,7 +238,7 @@ struct PulseStressMonitorView: View {
     }
 
     static let infoParagraphs: [String] = [
-        String(localized: "ZENO reads stress from your heart rate, and the beat-to-beat timing when the strap records it, across your waking hours (6 AM to 10 PM). Each hour is set against your calmest hours that day, or against your own daytime baseline if you turned that on in Settings, and placed on a 0 to 3 scale: low under 1.0, medium to 1.9, high from 2.0."),
+        String(localized: "ZENO reads stress from your heart rate, and the beat-to-beat timing when the strap records it, across your waking hours (6 AM to 10 PM). Each hour is set against your calmest hours that day, or against your own daytime baseline if you turned that on in the Stress Monitor's settings (⚙), and placed on a 0 to 3 scale: low under 1.0, medium to 1.9, high from 2.0."),
         String(localized: "Hours when the strap saw you moving are left out, so a workout or a walk is not read as stress. Sleep is not scored. Because each hour is scored as a whole, time in each zone counts in whole hours."),
         String(localized: "The Today view shows the last 24 hours; a past day shows the 24 hours up to its last reading. The gauge shows your latest scored hour; on a day without hourly readings it shows that day's score from your resting heart rate and HRV against your baseline."),
         String(localized: "Typical is the average of the same weekday over the previous six weeks you wore the strap, up to the same hour when the day is still going. A wellness estimate, not a diagnosis."),
