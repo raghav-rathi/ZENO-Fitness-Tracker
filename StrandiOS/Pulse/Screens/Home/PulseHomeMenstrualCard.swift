@@ -6,35 +6,51 @@ import StrandAnalytics
 //
 // Opt-in (Settings' cycle awareness), after MY JOURNAL. The card says where the cycle is from ZENO's own
 // temperature-shift engine (`CyclePhaseEngine`, published on AppModel): the estimated cycle day, the phase
-// in its colour, the likely window for the next period, a dot per day of the wearer's own cycle length
-// with today large and white, and "+ LOG CYCLE". Awareness only, never a fertility or medical claim; with
-// too little data it says it is learning, and with no clear pattern it predicts nothing.
+// in its colour, the likely window for the next period, a dot per day of the cycle coloured from what is
+// actually known (a logged period start, the detected temperature shift), today large and white, and
+// "+ LOG CYCLE". Awareness only, never a fertility or medical claim; with too little data it says it is
+// learning, and with no clear pattern it predicts nothing.
 
-/// Reads the cycle estimate off AppModel in its own leaf (AppModel publishes every heart-rate tick).
+/// Reads the cycle estimate off AppModel in its own leaf (AppModel publishes every heart-rate tick), and
+/// the logged period starts off the main actor, again whenever one is logged.
 struct PulseMenstrualCardHost: View {
     @EnvironmentObject private var app: AppModel
+    @EnvironmentObject private var repo: Repository
+    @Environment(PulseModel.self) private var model
     @AppStorage(AppModel.cycleAwarenessKey) private var enabled = false
+    @State private var periodStarts: [String] = []
 
     var body: some View {
-        if let demo = PulseMenstrualCardHost.debugResult {
-            PulseMenstrualCard(result: demo)
-                .equatable()
-        } else if enabled {
-            PulseMenstrualCard(result: app.cyclePhase)
-                .equatable()
+        Group {
+            if let demo = Self.debugResult {
+                PulseMenstrualCard(result: demo.result, periodStarts: demo.periodStarts)
+                    .equatable()
+            } else if enabled {
+                PulseMenstrualCard(result: app.cyclePhase, periodStarts: periodStarts)
+                    .equatable()
+            }
+        }
+        .task(id: enabled ? repo.cycleTrackingSeq : -1) {
+            guard enabled else { return }
+            if let starts = await model.build({ builder, _ in await builder.homePeriodStarts() }) {
+                periodStarts = starts
+            }
         }
     }
 
-    /// DEBUG `--pulse-cycle-demo`: a synthetic luteal estimate, so the card's phase, window and dot strip
-    /// can be captured without six weeks of temperature data. nil in Release and without the flag.
-    static var debugResult: CyclePhaseEngine.Result? {
+    /// DEBUG `--pulse-cycle-demo`: a synthetic luteal estimate (cycle day 21 of 28, a period logged on day 1
+    /// and the temperature shift on day 15), so the card's day, phase, window and dot strip can be captured
+    /// without six weeks of temperature data. nil in Release and without the flag.
+    static var debugResult: (result: CyclePhaseEngine.Result, periodStarts: [String])? {
         #if DEBUG
         guard CommandLine.arguments.contains("--pulse-cycle-demo") else { return nil }
         let today = Repository.localDayKey(Date())
-        let window = CyclePhaseEngine.NextPeriodWindow(earliestDay: PulseDisplay.dayKey(today, offsetBy: 6) ?? today,
-                                                       latestDay: PulseDisplay.dayKey(today, offsetBy: 9) ?? today)
-        return CyclePhaseEngine.Result(phase: .luteal, confidence: .building, cycleDayLow: 21, cycleDayHigh: 21,
-                                       cycleLengthDays: 28, nextPeriodWindow: window, shiftMarkers: [], note: "")
+        func day(_ offset: Int) -> String { PulseDisplay.dayKey(today, offsetBy: offset) ?? today }
+        let window = CyclePhaseEngine.NextPeriodWindow(earliestDay: day(6), latestDay: day(9))
+        let result = CyclePhaseEngine.Result(phase: .luteal, confidence: .building, cycleDayLow: 21, cycleDayHigh: 21,
+                                             cycleLengthDays: 28, nextPeriodWindow: window,
+                                             shiftMarkers: [CyclePhaseEngine.ShiftMarker(day: day(-6))], note: "")
+        return (result, [day(-20)])
         #else
         return nil
         #endif
@@ -43,10 +59,14 @@ struct PulseMenstrualCardHost: View {
 
 struct PulseMenstrualCard: View, Equatable {
     let result: CyclePhaseEngine.Result?
+    /// Logged period starts (`Repository.periodStarts`), oldest first.
+    let periodStarts: [String]
 
     @State private var logging = false
 
-    static func == (lhs: PulseMenstrualCard, rhs: PulseMenstrualCard) -> Bool { lhs.result == rhs.result }
+    static func == (lhs: PulseMenstrualCard, rhs: PulseMenstrualCard) -> Bool {
+        lhs.result == rhs.result && lhs.periodStarts == rhs.periodStarts
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: PulseTheme.Space.s) {
@@ -67,8 +87,9 @@ struct PulseMenstrualCard: View, Equatable {
                         .pulseText(.body)
                         .foregroundStyle(PulseTheme.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
-                    if let strip {
-                        PulseCycleDotStrip(length: strip.length, today: strip.today, color: phase?.color ?? PulseTheme.textSecondary)
+                    if let result, let dots = PulseCycleDotStrip.dots(result: result, periodStarts: periodStarts,
+                                                                       todayKey: Repository.localDayKey(Date())) {
+                        PulseCycleDotStrip(dots: dots)
                     }
                 }
                 .contentShape(Rectangle())
@@ -125,40 +146,75 @@ struct PulseMenstrualCard: View, Equatable {
             return String(localized: "Learning your pattern from your nightly temperature. Keep wearing your strap overnight.")
         }
     }
-
-    /// The dot strip, only once the engine has seen the wearer's own cycle length.
-    private var strip: (length: Int, today: Int)? {
-        guard let result, let length = result.cycleLengthDays, let day = result.cycleDayHigh, length > 0 else {
-            return nil
-        }
-        return (length, min(day, length))
-    }
 }
 
-/// One dot per day of the cycle: the days so far in the phase's colour (dimmed), today a larger white dot,
-/// the rest faint; day numbers 1 · 7 · 14 · 21 · 28 under the strip.
+/// One dot per day of the cycle (health-more-2026/04): a logged period day coral, the days after the
+/// detected temperature shift in the luteal colour, the days between the two in the follicular colour,
+/// today a larger white dot, the days ahead faint. A day nothing says anything about stays neutral: the
+/// strip never assumes a period length or a phase it was not given. Day numbers 1 · 7 · 14 · 21 · 28 under
+/// it. As long as the longer of the wearer's cycle length and today's cycle day.
 struct PulseCycleDotStrip: View {
-    let length: Int
-    let today: Int
-    let color: Color
+    enum Dot: Equatable {
+        case period, follicular, luteal, unknown, today, ahead
+
+        var color: Color {
+            switch self {
+            case .period: return PulseTheme.Menstrual.Phase.menstrual.dot
+            case .follicular: return PulseTheme.Menstrual.Phase.follicular.dot
+            case .luteal: return PulseTheme.Menstrual.Phase.luteal.dot
+            case .unknown: return PulseTheme.textTertiary
+            case .today: return PulseTheme.textPrimary
+            case .ahead: return PulseTheme.textDisabled.opacity(0.5)
+            }
+        }
+    }
+
+    /// Cycle days 1 ... n, in order.
+    let dots: [Dot]
+
+    /// The strip for `result`, once the engine has seen the wearer's own cycle length. Today's cycle day is
+    /// the middle of the engine's estimate (the headline's "Day 20-22" is day 21), mapped to `todayKey`.
+    static func dots(result: CyclePhaseEngine.Result, periodStarts: [String], todayKey: String) -> [Dot]? {
+        guard let length = result.cycleLengthDays, length > 0,
+              let low = result.cycleDayLow, let high = result.cycleDayHigh else { return nil }
+        let today = max(1, (low + high) / 2)
+        let count = max(length, today)
+        guard let firstDay = PulseDisplay.dayKey(todayKey, offsetBy: 1 - today) else { return nil }
+        let logged = Set(periodStarts)
+        // The latest logged start and temperature shift inside this cycle, if any.
+        let start = periodStarts.last { $0 >= firstDay && $0 <= todayKey }
+        let shift = result.shiftMarkers.map(\.day).last { $0 >= firstDay && $0 <= todayKey }
+        return (1...count).map { day -> Dot in
+            if day == today { return .today }
+            if day > today { return .ahead }
+            guard let key = PulseDisplay.dayKey(todayKey, offsetBy: day - today) else { return .unknown }
+            if logged.contains(key) { return .period }
+            if let shift, key >= shift { return .luteal }
+            // After a logged start and before the shift (or with no shift yet): the follicular phase.
+            if let start, key > start, shift.map({ key < $0 }) ?? true { return .follicular }
+            return .unknown
+        }
+    }
+
+    private var todayIndex: Int { (dots.firstIndex(of: .today) ?? 0) + 1 }
 
     var body: some View {
         VStack(spacing: PulseTheme.Space.xxs) {
             GeometryReader { geo in
-                let step = geo.size.width / CGFloat(max(1, length))
+                let step = geo.size.width / CGFloat(max(1, dots.count))
                 ZStack(alignment: .leading) {
-                    ForEach(1...max(1, length), id: \.self) { day in
-                        let isToday = day == today
+                    ForEach(Array(dots.enumerated()), id: \.offset) { index, dot in
+                        let size: CGFloat = dot == .today ? 10 : 5
                         Circle()
-                            .fill(isToday ? PulseTheme.textPrimary : (day < today ? color.opacity(0.7) : PulseTheme.textDisabled.opacity(0.5)))
-                            .frame(width: isToday ? 10 : 5, height: isToday ? 10 : 5)
-                            .position(x: step * (CGFloat(day) - 0.5), y: geo.size.height / 2)
+                            .fill(dot.color)
+                            .frame(width: size, height: size)
+                            .position(x: step * (CGFloat(index) + 0.5), y: geo.size.height / 2)
                     }
                 }
             }
             .frame(height: 12)
             GeometryReader { geo in
-                let step = geo.size.width / CGFloat(max(1, length))
+                let step = geo.size.width / CGFloat(max(1, dots.count))
                 ForEach(marks, id: \.self) { day in
                     Text(verbatim: "\(day)")
                         .font(PulseType.font(.axis))
@@ -169,11 +225,11 @@ struct PulseCycleDotStrip: View {
             .frame(height: 14)
         }
         .accessibilityElement()
-        .accessibilityLabel(String(localized: "Cycle day \(today) of \(length)"))
+        .accessibilityLabel(String(localized: "Cycle day \(todayIndex) of \(dots.count)"))
     }
 
     private var marks: [Int] {
-        [1, 7, 14, 21, 28, 35].filter { $0 <= length }
+        [1, 7, 14, 21, 28, 35, 42].filter { $0 <= dots.count }
     }
 }
 
