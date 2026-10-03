@@ -48,10 +48,9 @@ struct PulseStrengthWorkoutView: View {
             } skeleton: {
                 PulseSkeleton.cards([220, 220])
             }
-            // Room for the pinned START WORKOUT capsule.
-            Color.clear.frame(height: 72)
         }
-        .overlay(alignment: .bottom) {
+        // START WORKOUT is pinned over the page's foot, which fades out under it down to the screen edge.
+        .safeAreaInset(edge: .bottom, spacing: 0) {
             if let workout {
                 startButton(workout)
             }
@@ -75,6 +74,12 @@ struct PulseStrengthWorkoutView: View {
 
     @ViewBuilder
     private func content(_ workout: StrengthWorkout) -> some View {
+        // What MY WORKOUTS' one-line row leaves out.
+        Text([workout.detail, workout.lastDone].compactMap { $0 }.joined(separator: " · "))
+            .pulseText(.secondary)
+            .foregroundStyle(PulseTheme.textTertiary)
+            .fixedSize(horizontal: false, vertical: true)
+            .padding(.horizontal, 4)
         if let note = workout.program.note, !note.isEmpty {
             Text(note)
                 .pulseText(.body)
@@ -148,7 +153,7 @@ struct PulseStrengthWorkoutView: View {
             .padding(16)
         }
         .background(PulseStrengthColors.exerciseCard)
-        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: PulseStrengthMetrics.exerciseCardRadius, style: .circular))
     }
 
     private func valueBox(_ value: String?) -> some View {
@@ -157,8 +162,9 @@ struct PulseStrengthWorkoutView: View {
             .foregroundStyle(value == nil ? PulseTheme.textDisabled : PulseTheme.textPrimary)
             .padding(.horizontal, 14)
             .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
-            .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(PulseStrengthColors.inputFill))
-            .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous)
+            .background(RoundedRectangle(cornerRadius: PulseTheme.Radius.well, style: .circular)
+                .fill(PulseStrengthColors.inputFill))
+            .overlay(RoundedRectangle(cornerRadius: PulseTheme.Radius.well, style: .circular)
                 .strokeBorder(PulseStrengthColors.inputBorder, lineWidth: 1))
     }
 
@@ -173,11 +179,14 @@ struct PulseStrengthWorkoutView: View {
         .disabled(starting || workout.lines.isEmpty)
         .opacity(workout.lines.isEmpty ? 0.4 : 1)
         .padding(.horizontal, PulseTheme.Layout.pageMargin + 20)
+        .padding(.top, 28)
         .padding(.bottom, 12)
-        .background(alignment: .bottom) {
-            LinearGradient(colors: [PulseTheme.pageBottom.opacity(0), PulseTheme.pageBottom], startPoint: .top,
-                           endPoint: UnitPoint(x: 0.5, y: 0.45))
-                .frame(height: 120)
+        // The page's foot fades out from 28 pt above the capsule and stays opaque down through the
+        // home-indicator strip, so no card shows under it at full strength (completeness-critic/07).
+        .background {
+            LinearGradient(stops: [.init(color: PulseTheme.pageBottom.opacity(0), location: 0),
+                                   .init(color: PulseTheme.pageBottom, location: 0.3)],
+                           startPoint: .top, endPoint: .bottom)
                 .ignoresSafeArea(edges: .bottom)
                 .allowsHitTesting(false)
         }

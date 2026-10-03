@@ -9,8 +9,9 @@ import WhoopStore
 /// group "onboarding-strength".
 ///
 /// It is the Lift Log restyled, on the Lift Log's own data and controller:
-///   - MY WORKOUTS lists the Lift Log's programs; BUILD MANUALLY and Edit open the Lift Log's program
-///     editor, a row opens the workout page (START WORKOUT), "•••" starts, edits, shares or deletes;
+///   - MY WORKOUTS: "Generate with Coach" while Coach is set up (§3.29 [Z]), BUILD MANUALLY (the Lift Log's
+///     program editor), then the Lift Log's programs, one caps row each: a row opens the workout page
+///     (START WORKOUT), "•••" starts, edits, shares or deletes, and the header's IMPORT reads a spreadsheet;
 ///   - PROGRESS shows Total Volume Load (the mean session volume over M or 6M, monthly or weekly
 ///     segments over the sessions), Personal Records (→ Exercise Details), and, as ZENO extras kept from
 ///     the Lift Log, the week's sets per muscle and the recent sessions (→ the session detail);
@@ -29,6 +30,8 @@ struct PulseStrengthTrainerView: View {
 
     @Environment(PulseModel.self) private var model
     @Environment(\.pulseNavigator) private var navigator
+    @Environment(\.pulseCoach) private var coach
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @EnvironmentObject private var repo: Repository
     @EnvironmentObject private var session: LiftSessionController
     @AppStorage(UnitPrefs.systemKey) private var unitSystemRaw = UnitSystem.metric.rawValue
@@ -73,6 +76,8 @@ struct PulseStrengthTrainerView: View {
             }
         }
         .task(id: loadKey) { await load() }
+        // A page counts back from the current window of the range shown; another range starts over.
+        .onChange(of: range) { _, _ in page = 0 }
         .sheet(item: $editing) { target in
             LiftProgramEditorSheet(program: target.program) { PulseStrengthVersion.shared.bump() }
         }
@@ -117,23 +122,27 @@ struct PulseStrengthTrainerView: View {
 
     // MARK: MY WORKOUTS
 
+    /// g01, top to bottom: Generate with Coach (18 pt above), BUILD MANUALLY (48 pt), the MY WORKOUTS
+    /// hairline 42 pt under it, the first row 27 pt under that, rows of 56 pt 16 pt apart.
     @ViewBuilder
     private func workouts(_ snapshot: StrengthTrainerSnapshot) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 0) {
             if session.isActive {
                 activeSessionCard
+                    .padding(.bottom, 16)
+            }
+            if coach.availability == .ready {
+                PulseStrengthGenerateCard { coach.open(Self.generateSeed(snapshot)) }
+                    .padding(.bottom, 18)
             }
             Button(String(localized: "Build manually")) {
                 editing = PulseStrengthEditTarget(program: nil)
             }
             .buttonStyle(PulseStrengthWideButtonStyle())
-            PulseTextCTA(title: String(localized: "Import from a spreadsheet"), tint: .color(PulseTheme.recoveryBlue)) {
-                importing = true
-            }
-            .padding(.leading, 4)
-            PulseListSectionHeader(String(localized: "My Workouts"))
-                .padding(.top, 8)
-                .padding(.bottom, 4)
+            // The header row is a 44 pt target with its hairline at the middle.
+            workoutsHeader
+                .padding(.top, 42 - PulseTheme.Layout.minTapTarget / 2)
+                .padding(.bottom, 27 - PulseTheme.Layout.minTapTarget / 2)
             if snapshot.workouts.isEmpty {
                 PulseCard {
                     VStack(alignment: .leading, spacing: 6) {
@@ -147,50 +156,96 @@ struct PulseStrengthTrainerView: View {
                     }
                 }
             } else {
-                ForEach(snapshot.workouts) { workout in
-                    workoutRow(workout)
+                VStack(spacing: 16) {
+                    ForEach(snapshot.workouts) { workout in
+                        workoutRow(workout)
+                    }
                 }
             }
         }
     }
 
+    /// "MY WORKOUTS" and its hairline, with IMPORT at the end: reading workouts from a spreadsheet is the
+    /// Lift Log's other way in, kept off the path between BUILD MANUALLY and the list.
+    private var workoutsHeader: some View {
+        HStack(spacing: 12) {
+            PulseListSectionHeader(String(localized: "My Workouts"))
+            Button { importing = true } label: {
+                Text(String(localized: "Import"))
+                    .pulseText(.label)
+                    .foregroundStyle(PulseTheme.recoveryBlue)
+                    .frame(minHeight: PulseTheme.Layout.minTapTarget)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(PulsePressStyle())
+            .accessibilityLabel(String(localized: "Import workouts from a spreadsheet"))
+        }
+        .frame(minHeight: PulseTheme.Layout.minTapTarget)
+    }
+
+    /// The Coach's page context for "Generate with Coach": what the wearer has to build on, in its voice.
+    static func generateSeed(_ snapshot: StrengthTrainerSnapshot) -> String {
+        var parts = [String(localized: "Let's build a strength workout.")]
+        let names = snapshot.workouts.map(\.program.name)
+        if !names.isEmpty {
+            parts.append(String(localized: "Your saved workouts: \(names.joined(separator: ", ")).", comment: "A list of workout names"))
+        }
+        if let last = snapshot.sessions.first {
+            let date = StrengthFormat.shortDate(Date(timeIntervalSince1970: TimeInterval(last.row.startTs)))
+            parts.append(String(localized: "Your last session was \(last.title) on \(date)."))
+        }
+        parts.append(String(localized: "Tell me your goal, your equipment and how long you have, and I'll draft one you can save with Build manually."))
+        return parts.joined(separator: " ")
+    }
+
     private var activeSessionCard: some View {
         let shown = session.presentation(system: unitSystem)
+        let resume = Text(String(localized: "Resume"))
+            .pulseText(.buttonLabel)
+            .foregroundStyle(PulseTheme.Activity.strengthStartOutline)
+            .fixedSize()
+            .padding(.horizontal, 16)
+            .frame(minHeight: 36)
+            .background(Capsule(style: .continuous)
+                .strokeBorder(PulseTheme.Activity.strengthStartOutline, lineWidth: 1.5))
+        let text = VStack(alignment: .leading, spacing: 4) {
+            PulseWordWrapText(String(localized: "Workout in progress"), style: .label)
+                .foregroundStyle(PulseTheme.Activity.strengthActiveTimer)
+            Text(session.programName ?? String(localized: "Session"))
+                .pulseText(.coachingTitle)
+                .foregroundStyle(PulseTheme.textPrimary)
+                .fixedSize(horizontal: false, vertical: true)
+            if let shown {
+                Text("\(shown.status) · \(shown.exercise)")
+                    .pulseText(.secondary)
+                    .foregroundStyle(PulseTheme.textSecondary)
+                    .lineLimit(dynamicTypeSize.isAccessibilitySize ? 3 : 1)
+            }
+        }
         return Button { showsLive = true } label: {
-            HStack(spacing: 14) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(String(localized: "Workout in progress"))
-                        .pulseText(.label)
-                        .foregroundStyle(PulseTheme.Activity.strengthActiveTimer)
-                    Text(session.programName ?? String(localized: "Session"))
-                        .pulseText(.coachingTitle)
-                        .foregroundStyle(PulseTheme.textPrimary)
-                    if let shown {
-                        Text("\(shown.status) · \(shown.exercise)")
-                            .pulseText(.secondary)
-                            .foregroundStyle(PulseTheme.textSecondary)
-                            .lineLimit(1)
+            Group {
+                // At the accessibility sizes RESUME drops under the text rather than squeezing every word.
+                if dynamicTypeSize.isAccessibilitySize {
+                    VStack(alignment: .leading, spacing: 12) { text; resume }
+                } else {
+                    HStack(spacing: 14) {
+                        text
+                        Spacer(minLength: 8)
+                        resume
                     }
                 }
-                Spacer(minLength: 8)
-                Text(String(localized: "Resume"))
-                    .pulseText(.buttonLabel)
-                    .foregroundStyle(PulseTheme.Activity.strengthStartOutline)
-                    .padding(.horizontal, 16)
-                    .frame(minHeight: 36)
-                    .background(Capsule(style: .continuous)
-                        .strokeBorder(PulseTheme.Activity.strengthStartOutline, lineWidth: 1.5))
             }
             .padding(16)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(RoundedRectangle(cornerRadius: PulseTheme.Radius.card, style: .circular)
-                .fill(PulseStrengthColors.rowFill))
+            .pulseCardBackground(.standard, radius: PulseTheme.Radius.card)
             .contentShape(Rectangle())
         }
         .buttonStyle(PulsePressStyle())
         .accessibilityHint(String(localized: "Opens the running workout"))
     }
 
+    /// One saved workout: its name in bold caps on a 56 pt row (g01), "•••" for its actions. What it holds
+    /// and when it was last done are on its page, and read out here.
     private func workoutRow(_ workout: StrengthWorkout) -> some View {
         HStack(spacing: 0) {
             PulseLink(PulseStrengthWorkoutRoute(programId: workout.program.id).route) {
@@ -200,23 +255,21 @@ struct PulseStrengthTrainerView: View {
                         .foregroundStyle(PulseTheme.textTertiary)
                         .frame(width: 22)
                         .accessibilityHidden(true)
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text(workout.program.name)
-                            .pulseText(.menuLabel)
-                            .foregroundStyle(PulseTheme.textPrimary)
-                            .lineLimit(2)
-                        Text([workout.detail, workout.lastDone].compactMap { $0 }.joined(separator: " · "))
-                            .pulseText(.secondary)
-                            .foregroundStyle(PulseTheme.textTertiary)
-                            .lineLimit(1)
-                    }
+                    Text(workout.program.name)
+                        .pulseText(.menuLabel)
+                        .foregroundStyle(PulseTheme.textPrimary)
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
                     Spacer(minLength: 8)
                 }
                 .padding(.leading, 18)
-                .frame(maxWidth: .infinity, minHeight: 64, alignment: .leading)
+                .padding(.vertical, 8)
+                .frame(maxWidth: .infinity, minHeight: 56, alignment: .leading)
                 .contentShape(Rectangle())
             }
             .buttonStyle(PulsePressStyle())
+            .accessibilityLabel(workout.program.name)
+            .accessibilityValue([workout.detail, workout.lastDone].compactMap { $0 }.joined(separator: ", "))
             Menu {
                 Button { Task { await start(workout.program) } } label: {
                     Label(String(localized: "Start workout"), systemImage: "play.fill")
@@ -232,13 +285,12 @@ struct PulseStrengthTrainerView: View {
                 }
             } label: {
                 PulseStrengthMoreGlyph()
-                    .frame(width: 56, height: 64)
+                    .frame(width: 56, height: 56)
                     .contentShape(Rectangle())
             }
             .accessibilityLabel(String(localized: "More for \(workout.program.name)"))
         }
-        .background(RoundedRectangle(cornerRadius: PulseTheme.Radius.card, style: .circular)
-            .fill(PulseStrengthColors.rowFill))
+        .pulseCardBackground(.standard, radius: PulseTheme.Radius.card)
     }
 
     /// A workout as plain text, for the share sheet (spec [Z]: "QR share → share a text export").
@@ -265,20 +317,21 @@ struct PulseStrengthTrainerView: View {
                 .foregroundStyle(PulseTheme.textPrimary)
                 .accessibilityAddTraits(.isHeader)
                 .padding(.bottom, 14)
-            PulseStrengthChartHeader(label: String(localized: "Ø Volume load"), value: snapshot.averageVolume,
+            PulseStrengthChartHeader(label: String(localized: "Avg volume load"), value: snapshot.averageVolume,
                                      unit: snapshot.unit, range: $range, pager: snapshot.pager,
                                      onBack: { page += 1 }, onForward: { page = max(0, page - 1) })
             if snapshot.hasSessions {
                 PulseStrengthVolumeChart(chart: snapshot.chart)
                     .padding(.top, 10)
-                if snapshot.chart.points.isEmpty {
-                    Text(String(localized: "No finished sessions in this period."))
-                        .pulseText(.body)
-                        .foregroundStyle(PulseTheme.textSecondary)
-                        .frame(maxWidth: .infinity)
-                        .padding(.top, -150)
-                        .padding(.bottom, 130)
-                }
+                    .overlay {
+                        if snapshot.chart.points.isEmpty {
+                            Text(String(localized: "No finished sessions in this period."))
+                                .pulseText(.body)
+                                .foregroundStyle(PulseTheme.textSecondary)
+                                .multilineTextAlignment(.center)
+                                .padding(.horizontal, 24)
+                        }
+                    }
             } else {
                 PulseCard {
                     Text(String(localized: "Finish a workout and your volume, records and sets per muscle show here. Volume load is weight × reps over your working sets."))
@@ -291,7 +344,7 @@ struct PulseStrengthTrainerView: View {
 
             if !snapshot.records.isEmpty {
                 sectionTitle(String(localized: "Personal Records"))
-                VStack(spacing: 10) {
+                VStack(spacing: 12) {
                     ForEach(snapshot.records) { record in
                         recordRow(record)
                     }
@@ -332,25 +385,25 @@ struct PulseStrengthTrainerView: View {
         .padding(.bottom, 14)
     }
 
+    /// A record row (g02): the 66 × 45 thumbnail, the exercise, the best figure with its unit a space
+    /// apart, "›"; 54 pt tall.
     private func recordRow(_ record: StrengthRecord) -> some View {
         PulseLink(PulseStrengthExerciseRoute(exercise: record.exercise).route) {
             HStack(spacing: 14) {
-                PulseStrengthThumbnail(width: 72, height: 50)
+                PulseStrengthThumbnail(width: 66, height: 45)
                 Text(record.exercise)
                     .pulseText(.rowText)
                     .foregroundStyle(PulseTheme.textPrimary)
                     .lineLimit(2)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                PulseValueText(value: record.value, unit: record.unit, style: .tileValue, unitStyle: .tileUnit,
-                               unitColor: PulseTheme.textPrimary)
+                PulseStrengthFigure(value: record.value, unit: record.unit)
                 PulseChevron(color: PulseTheme.textSecondary, size: 14)
             }
-            .padding(.leading, 6)
+            .padding(.leading, 4.5)
             .padding(.trailing, 16)
-            .padding(.vertical, 6)
-            .frame(minHeight: 62)
-            .background(RoundedRectangle(cornerRadius: PulseTheme.Radius.card, style: .circular)
-                .fill(PulseStrengthColors.rowFill))
+            .padding(.vertical, 4.5)
+            .frame(minHeight: 54)
+            .pulseCardBackground(.standard, radius: PulseTheme.Radius.card)
             .contentShape(Rectangle())
         }
         .buttonStyle(PulsePressStyle())
@@ -406,11 +459,15 @@ struct PulseStrengthTrainerView: View {
     }
 
     #if DEBUG
-    /// Captures: `--pulse-strength-tab progress`, `--pulse-strength-live rest|active|warmup|exercises|done`.
+    /// Captures: `--pulse-strength-tab progress`, `--pulse-strength-range month`,
+    /// `--pulse-strength-live rest|active|warmup|exercises|done`.
     private func debugLaunch() async {
         let args = CommandLine.arguments
         if let i = args.firstIndex(of: "--pulse-strength-tab"), i + 1 < args.count, args[i + 1] == "progress" {
             tab = .progress
+        }
+        if let i = args.firstIndex(of: "--pulse-strength-range"), i + 1 < args.count, args[i + 1] == "month" {
+            range = .month
         }
         // Names take "_" for spaces (the capture script splits on spaces) and match by prefix.
         if let i = args.firstIndex(of: "--pulse-strength-exercise"), i + 1 < args.count {
@@ -529,8 +586,8 @@ struct PulseStrengthInfoSheet: View {
     private let points: [(String, String)] = [
         (String(localized: "Volume load"),
          String(localized: "Weight × reps, added up over a session's working sets. Warm-ups and sets you discarded don't count, and a set with no weight (bodyweight work) adds no volume.")),
-        (String(localized: "Ø Volume load"),
-         String(localized: "The average volume of the sessions you finished in the period shown. Each line on the chart is a month's (or a week's) average, with its change from the one before.")),
+        (String(localized: "Avg volume load"),
+         String(localized: "The average volume of the sessions you finished in the period shown. Each line on the chart is a month's (or a week's) average, with its change from the one before; the ringed point is your latest session.")),
         (String(localized: "Personal records"),
          String(localized: "Your heaviest working set of each exercise, or the most reps for an exercise you've never logged with a weight. The estimated one-rep max uses the Epley formula, for sets of 12 reps or fewer.")),
         (String(localized: "Sets per muscle"),

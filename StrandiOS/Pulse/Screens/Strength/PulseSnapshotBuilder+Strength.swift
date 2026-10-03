@@ -307,10 +307,14 @@ enum StrengthFormat {
                       system: UnitSystem, calendar: Calendar) -> StrengthVolumeChart {
         let from = Int(start.timeIntervalSince1970)
         let to = Int(end.timeIntervalSince1970)
-        let points = volumes.filter { $0.startTs >= from && $0.startTs < to }.map {
-            StrengthVolumeChart.Point(id: $0.sessionId, date: Date(timeIntervalSince1970: TimeInterval($0.startTs)),
-                                      value: LiftFormat.display(fromKilograms: $0.volumeKg, system: system))
-        }
+        let points = volumes.filter { $0.startTs >= from && $0.startTs < to }
+            .sorted { $0.startTs < $1.startTs }
+            .map { volume -> StrengthVolumeChart.Point in
+                let value = LiftFormat.display(fromKilograms: volume.volumeKg, system: system)
+                return StrengthVolumeChart.Point(id: volume.sessionId,
+                                                 date: Date(timeIntervalSince1970: TimeInterval(volume.startTs)),
+                                                 value: value, valueText: Int(value.rounded()).formatted(.number))
+            }
         let raw = LiftProgress.segments(volumes, from: from, to: to, bucket: range.bucket, calendar: calendar)
         let segments = raw.enumerated().map { index, segment -> StrengthVolumeChart.Segment in
             let value = LiftFormat.display(fromKilograms: segment.averageKg, system: system)
@@ -334,9 +338,9 @@ enum StrengthFormat {
         }
         let top = max(points.map(\.value).max() ?? 0, segments.map(\.value).max() ?? 0)
         return StrengthVolumeChart(start: start, end: end, points: points, segments: segments,
-                                   yTicks: ticks(top), xTicks: xTicks(start: start, end: end, range: range,
-                                                                       calendar: calendar),
-                                   monthLabels: range == .sixMonths)
+                                   yTicks: ticks(top),
+                                   xLabels: xLabels(start: start, end: end, range: range, segments: raw,
+                                                    calendar: calendar))
     }
 
     /// 0 and three "nice" steps (1, 2, 2.5 or 5 × 10ⁿ) that clear `top`.
@@ -357,14 +361,30 @@ enum StrengthFormat {
         return [0, step, step * 2, step * 3]
     }
 
-    /// Month starts (6M) or week starts (M) inside the window.
-    static func xTicks(start: Date, end: Date, range: StrengthRange, calendar: Calendar) -> [Date] {
+    /// One label per month (6M) or week (M) the window touches, under the middle of the part inside the
+    /// window, so a segment always has its month under it (g03), the partial first and last months
+    /// included. A sliver of a bucket (under a third of it) without a segment is left unnamed, so two
+    /// names never collide at the window's edge. Months read "Apr", weeks "Sep 7" (their first day in
+    /// the window).
+    static func xLabels(start: Date, end: Date, range: StrengthRange, segments: [LiftProgress.Segment],
+                        calendar: Calendar) -> [StrengthVolumeChart.AxisLabel] {
         let component: Calendar.Component = range == .sixMonths ? .month : .weekOfYear
         guard var cursor = calendar.dateInterval(of: component, for: start)?.start else { return [] }
-        var out: [Date] = []
+        var out: [StrengthVolumeChart.AxisLabel] = []
         while cursor < end {
-            if cursor >= start { out.append(cursor) }
             guard let next = calendar.date(byAdding: component, value: 1, to: cursor) else { break }
+            let from = max(cursor, start)
+            let to = min(next, end)
+            let share = to.timeIntervalSince(from) / next.timeIntervalSince(cursor)
+            let fromTs = Int(from.timeIntervalSince1970)
+            let toTs = Int(to.timeIntervalSince1970)
+            let hasSegment = segments.contains { $0.from < toTs && $0.to > fromTs }
+            if share >= 1.0 / 3 || hasSegment {
+                // A week is named by its first day in the window.
+                let text = range == .sixMonths ? cursor.formatted(.dateTime.month(.abbreviated))
+                                               : from.formatted(.dateTime.month(.abbreviated).day())
+                out.append(.init(date: from.addingTimeInterval(to.timeIntervalSince(from) / 2), text: text))
+            }
             cursor = next
         }
         return out

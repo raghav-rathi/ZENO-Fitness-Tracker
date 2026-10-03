@@ -10,9 +10,12 @@ import StrandDesign
 
 /// The Strength Trainer's colours beyond the shared token set (§2.1 "Activity-flow tokens" holds the
 /// START SET outline, its pressed fill and the ACTIVE timer; these are the rest, sampled on g01/g07).
+/// Rows, BUILD MANUALLY and record cards are the shared white-10% card (DR §1.2), not a solid grey.
 enum PulseStrengthColors {
-    /// The workout rows and BUILD MANUALLY's fill (g01: #2E3237 on the page).
-    static let rowFill = Color(hex: "#2C3035")
+    /// START SET's label while pressed, dark on the bright mint fill.
+    static let startPressedText = Color(hex: "#062417")
+    /// "Generate with Coach"'s border, purple to teal (g01, sampled along its bottom edge).
+    static let generateBorder = Gradient(colors: [Color(hex: "#594F94"), Color(hex: "#618FA7")])
     /// The live session's exercise card (g07a: #2B3034), its divider and the stats row's rules.
     static let exerciseCard = Color(hex: "#2B3034")
     static let exerciseCardTop = Color(hex: "#30353A")
@@ -56,6 +59,76 @@ enum PulseStrengthColors {
     static let bronze = Color(hex: "#C08457")
 }
 
+/// The Strength Trainer's own measurements.
+enum PulseStrengthMetrics {
+    /// The live session's and the workout page's exercise cards (§3.29: radius ≈14).
+    static let exerciseCardRadius: CGFloat = 14
+}
+
+/// A number and its unit a little apart ("115 kg", "6 reps"): g02 leaves ≈2.4 pt between them and g03
+/// ≈4.8 pt, where `PulseValueText` runs them together.
+struct PulseStrengthFigure: View {
+    let value: String
+    let unit: String?
+    var style: PulseTextStyle = .tileValue
+    var unitStyle: PulseTextStyle = .tileUnit
+    var color: Color = PulseTheme.textPrimary
+    var unitColor: Color = PulseTheme.textPrimary
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 3) {
+            Text(value)
+                .pulseText(style)
+                .foregroundStyle(color)
+            if let unit, !unit.isEmpty {
+                Text(unit)
+                    .pulseText(unitStyle)
+                    .foregroundStyle(unitColor)
+            }
+        }
+        .lineLimit(1)
+        .accessibilityElement(children: .combine)
+    }
+}
+
+/// "Generate with Coach" (§3.29 root item 3 and [Z]; g01): the AI entry card at the top of MY WORKOUTS,
+/// shown only while Coach is set up. Coach drafts a workout in conversation; the wearer saves the one
+/// they want with BUILD MANUALLY, so nothing is written for them. Coach styling (§2.1 AI entry card):
+/// the indigo-to-teal fill, a purple-to-teal border, the sparkle and an AI-gradient CTA.
+struct PulseStrengthGenerateCard: View {
+    let action: () -> Void
+
+    var body: some View {
+        let shape = RoundedRectangle(cornerRadius: PulseTheme.Radius.menu, style: .circular)
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 10) {
+                Image(systemName: "sparkles")
+                    .font(.system(size: 20, weight: .semibold))
+                    .foregroundStyle(PulseTheme.Gradients.aiEntrySparkle)
+                    .accessibilityHidden(true)
+                Text(String(localized: "Generate with Coach"))
+                    .pulseText(.cardHeadline)
+                    .foregroundStyle(PulseTheme.textPrimary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityAddTraits(.isHeader)
+            }
+            Text(String(localized: "Tell Coach your goal, your equipment and the time you have, and it drafts a workout. Save the one you like with Build manually."))
+                .pulseText(.body)
+                .foregroundStyle(PulseTheme.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+            PulseTextCTA(title: String(localized: "Draft a workout"), tint: .ai, action: action)
+        }
+        .padding(.horizontal, 18)
+        .padding(.top, 16)
+        .padding(.bottom, 4)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(shape.fill(LinearGradient(gradient: PulseTheme.Gradients.aiEntryFill,
+                                              startPoint: .leading, endPoint: .trailing)))
+        .overlay(shape.strokeBorder(LinearGradient(gradient: PulseStrengthColors.generateBorder,
+                                                   startPoint: .leading, endPoint: .trailing), lineWidth: 1.5))
+    }
+}
+
 /// Bumped whenever the Lift Log changes outside a repository refresh (a program edited, a session saved
 /// or deleted), so every Strength screen reloads: they live in different presentations, so a shared
 /// counter rather than a view's state.
@@ -89,8 +162,9 @@ struct PulseStrengthTabs<Tab: Hashable>: View {
                 Button {
                     selection = tab
                 } label: {
+                    // 11.5 pt Bold caps: g01's "MY WORKOUTS" and g07a's "LIVE SESSION" caps are 8.0 pt.
                     Text(title(tab))
-                        .pulseText(.menuLabel)
+                        .pulseText(.cardTitle)
                         .foregroundStyle(selected ? PulseTheme.textPrimary : PulseTheme.textTertiary)
                         .lineLimit(1)
                         .minimumScaleFactor(0.7)
@@ -127,7 +201,7 @@ struct PulseStrengthThumbnail: View {
     var height: CGFloat = 48
 
     var body: some View {
-        RoundedRectangle(cornerRadius: 8, style: .continuous)
+        RoundedRectangle(cornerRadius: PulseTheme.Radius.well, style: .circular)
             .fill(LinearGradient(colors: [PulseStrengthColors.thumbTop, PulseStrengthColors.thumbBottom],
                                  startPoint: .top, endPoint: .bottom))
             .overlay(
@@ -162,7 +236,7 @@ struct PulseStrengthSetButtonStyle: ButtonStyle {
 
     private func foreground(_ pressed: Bool) -> Color {
         switch kind {
-        case .start: return pressed ? Color(hex: "#062417") : PulseTheme.Activity.strengthStartOutline
+        case .start: return pressed ? PulseStrengthColors.startPressedText : PulseTheme.Activity.strengthStartOutline
         case .end: return PulseTheme.textPrimary
         case .finish: return Color.black
         }
@@ -186,15 +260,17 @@ struct PulseStrengthSetButtonStyle: ButtonStyle {
     }
 }
 
-/// BUILD MANUALLY: the full-width grey rounded button with a bold caps label (g01).
+/// BUILD MANUALLY: the full-width 48 pt card-coloured button with an 11.5 pt bold caps label (g01).
 struct PulseStrengthWideButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .pulseText(.navTitle)
+            .pulseText(.cardTitle)
             .foregroundStyle(PulseTheme.textPrimary)
-            .frame(maxWidth: .infinity, minHeight: 60)
-            .background(RoundedRectangle(cornerRadius: PulseTheme.Radius.card, style: .circular)
-                .fill(PulseStrengthColors.rowFill))
+            .multilineTextAlignment(.center)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 8)
+            .frame(maxWidth: .infinity, minHeight: 48)
+            .pulseCardBackground(.standard, radius: PulseTheme.Radius.card)
             .contentShape(Rectangle())
             .opacity(configuration.isPressed ? 0.7 : 1)
             .animation(configuration.isPressed ? nil : PulseMotion.pressRelease, value: configuration.isPressed)
@@ -203,10 +279,11 @@ struct PulseStrengthWideButtonStyle: ButtonStyle {
 
 // MARK: The volume chart
 
-/// The PROGRESS / Exercise Details chart (§2.7 "Trend View 6M"): each session's volume as a faint blue
-/// line, the per-month (or per-week) averages as 3 pt segments with their value above, white for the
-/// first and teal or orange after it by the direction of the change printed below, on three gridlines
-/// with left-hand labels. Missing buckets are gaps, never zeros.
+/// The PROGRESS / Exercise Details chart (§2.7 "Trend View 6M"; g02, g03): each session's volume as a
+/// faint blue line, the latest session ringed with its value in strain blue, and the per-month (or
+/// per-week) averages as 3 pt segments: the value above in white, the segment and the change below it
+/// white for the first and teal or orange after it by the direction of the change. Three gridlines with
+/// left-hand labels; a month (or week) named under each segment. Missing buckets are gaps, never zeros.
 struct PulseStrengthVolumeChart: View {
     let chart: StrengthVolumeChart
     var height: CGFloat = 290
@@ -219,15 +296,34 @@ struct PulseStrengthVolumeChart: View {
                     .lineStyle(StrokeStyle(lineWidth: 1.2, lineJoin: .round))
                     .interpolationMethod(.linear)
             }
+            if let latest = chart.points.last {
+                PointMark(x: .value("Day", latest.date), y: .value("Volume", latest.value))
+                    .symbol {
+                        Circle()
+                            .fill(PulseTheme.pageBottom)
+                            .overlay(Circle().strokeBorder(PulseTheme.strain, lineWidth: 2))
+                            .frame(width: 9, height: 9)
+                    }
+                    .annotation(position: .top, alignment: .center, spacing: 3) {
+                        if !latestLabelCollides(latest) {
+                            Text(latest.valueText)
+                                .font(PulseType.numeral(13))
+                                .foregroundStyle(PulseTheme.strain)
+                                .fixedSize()
+                        }
+                    }
+            }
             ForEach(chart.segments) { segment in
                 RuleMark(xStart: .value("From", segment.from), xEnd: .value("To", segment.to),
                          y: .value("Average", segment.value))
                     .foregroundStyle(color(segment.tone))
                     .lineStyle(StrokeStyle(lineWidth: 3, lineCap: .round))
+                    // The value is white on every segment (g02, g03; §2.7); only the line and the change
+                    // below it carry the direction's colour.
                     .annotation(position: .top, alignment: .center, spacing: 4) {
                         Text(segment.valueText)
                             .font(PulseType.numeral(15))
-                            .foregroundStyle(segment.tone == .first ? PulseTheme.textPrimary : color(segment.tone))
+                            .foregroundStyle(PulseTheme.textPrimary)
                             .fixedSize()
                     }
                     .annotation(position: .bottom, alignment: .center, spacing: 4) {
@@ -256,11 +352,11 @@ struct PulseStrengthVolumeChart: View {
             }
         }
         .chartXAxis {
-            AxisMarks(values: chart.xTicks) { value in
-                AxisValueLabel(centered: chart.monthLabels) {
-                    if let date = value.as(Date.self) {
-                        Text(chart.monthLabels ? date.formatted(.dateTime.month(.abbreviated))
-                                               : date.formatted(.dateTime.day()))
+            AxisMarks(values: chart.xLabels.map(\.date)) { value in
+                // The edge buckets' names may reach past the plot; they are short, so draw them whole.
+                AxisValueLabel(centered: false, anchor: .top, collisionResolution: .disabled) {
+                    if let date = value.as(Date.self), let label = chart.xLabels.first(where: { $0.date == date }) {
+                        Text(label.text)
                             .font(PulseType.font(.axis))
                             .foregroundStyle(PulseTheme.textTertiary)
                     }
@@ -274,6 +370,16 @@ struct PulseStrengthVolumeChart: View {
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(String(localized: "Volume load chart"))
         .accessibilityValue(accessibilitySummary)
+    }
+
+    /// Whether the latest session's value would print over its own segment's: the session is inside the
+    /// segment and within a label's height of its average. The ring still marks it, and VoiceOver reads
+    /// its value.
+    private func latestLabelCollides(_ latest: StrengthVolumeChart.Point) -> Bool {
+        guard let segment = chart.segments.first(where: { $0.from <= latest.date && latest.date < $0.to }) else {
+            return false
+        }
+        return abs(latest.value - segment.value) < chart.yMax * 0.1
     }
 
     private func color(_ tone: StrengthVolumeChart.Tone) -> Color {
@@ -296,48 +402,69 @@ struct PulseStrengthVolumeChart: View {
 
     private var accessibilitySummary: String {
         guard !chart.segments.isEmpty else { return String(localized: "No sessions in this period") }
-        return chart.segments.map { segment in
+        var parts = chart.segments.map { segment in
             let month = segment.from.formatted(.dateTime.month(.wide).day())
             if let change = segment.changeText {
                 return String(localized: "From \(month): average \(segment.valueText), \(change)")
             }
             return String(localized: "From \(month): average \(segment.valueText)")
-        }.joined(separator: ". ")
+        }
+        if let latest = chart.points.last {
+            parts.append(String(localized: "Latest session \(latest.date.formatted(.dateTime.month(.wide).day())): \(latest.valueText)"))
+        }
+        return parts.joined(separator: ". ")
     }
 }
 
-/// "Ø VOLUME LOAD" / "AVG VOLUME LOAD" over its value, with the range control and pager at the right.
+/// "AVG VOLUME LOAD" over its value (and, on Exercise Details, its change against the period before),
+/// with the range control and the pager at the right (g03).
 struct PulseStrengthChartHeader: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
     let label: String
     let value: String?
     let unit: String
+    /// "▲ 5% vs. prior 6 months", under the value (g03); nil on PROGRESS.
+    var change: (text: String, trend: PulseTrend)?
     @Binding var range: StrengthRange
     let pager: StrengthPager
     let onBack: () -> Void
     let onForward: () -> Void
 
+    /// The controls' column, and the room the value's column keeps beside it on a 6.1–6.3" phone.
+    private static let controlsWidth: CGFloat = 212
+    private static let valueColumn: CGFloat = 140
+
     var body: some View {
         ViewThatFits(in: .horizontal) {
             HStack(alignment: .top, spacing: 12) {
-                valueBlock
-                Spacer(minLength: 8)
-                controls.frame(width: 196)
+                valueBlock(beside: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                controls.frame(width: Self.controlsWidth)
             }
             VStack(alignment: .leading, spacing: 14) {
-                valueBlock
+                valueBlock(beside: false)
                 controls
             }
         }
     }
 
-    private var valueBlock: some View {
+    /// The label, the value and the change chip. Beside the controls the chip shrinks to the column,
+    /// as small as g03 sets it, rather than push the controls under the value.
+    private func valueBlock(beside: Bool) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(label)
                 .pulseText(.label)
                 .foregroundStyle(PulseTheme.textTertiary)
-            PulseValueText(value: value ?? "--", unit: value == nil ? nil : unit, style: .largeValue,
-                           unitStyle: .tileUnit, color: value == nil ? PulseTheme.textDisabled : PulseTheme.textPrimary,
-                           unitColor: PulseTheme.textPrimary)
+            PulseStrengthFigure(value: value ?? "--", unit: value == nil ? nil : unit, style: .largeValue,
+                                color: value == nil ? PulseTheme.textDisabled : PulseTheme.textPrimary)
+            if let change {
+                PulseDeltaChip(text: change.text, trend: change.trend)
+                    .lineLimit(beside ? 1 : nil)
+                    .minimumScaleFactor(beside ? 0.75 : 1)
+                    .frame(maxWidth: beside ? Self.valueColumn : nil, alignment: .leading)
+                    .padding(.top, 2)
+            }
         }
         .accessibilityElement(children: .combine)
     }
@@ -347,13 +474,14 @@ struct PulseStrengthChartHeader: View {
             PulseSegmentedControl(options: StrengthRange.allCases, selection: $range) { $0.title }
             HStack(spacing: 0) {
                 chevron("chevron.left", enabled: pager.canGoBack, label: String(localized: "Previous"), action: onBack)
-                // Two lines rather than a cut-off date (g02: "NOV. 27, 25 - MAI / 25, 26").
+                // One line, as g03's "DEC 22, 25 - JUN 19, 26"; two at the accessibility sizes rather than
+                // a cut-off date.
                 Text(pager.title)
-                    .pulseText(.navTitle)
+                    .pulseText(.label)
                     .foregroundStyle(PulseTheme.textPrimary)
                     .multilineTextAlignment(.center)
-                    .lineLimit(2)
-                    .minimumScaleFactor(0.85)
+                    .lineLimit(dynamicTypeSize.isAccessibilitySize ? 2 : 1)
+                    .minimumScaleFactor(0.8)
                     .frame(maxWidth: .infinity)
                 chevron("chevron.right", enabled: pager.canGoForward, label: String(localized: "Next"), action: onForward)
             }
@@ -365,7 +493,7 @@ struct PulseStrengthChartHeader: View {
             Image(systemName: symbol)
                 .font(.system(size: 13, weight: .bold))
                 .foregroundStyle(enabled ? PulseTheme.textPrimary : PulseTheme.textDisabled)
-                .frame(width: 28, height: PulseTheme.Layout.minTapTarget)
+                .frame(width: 24, height: PulseTheme.Layout.minTapTarget)
                 .contentShape(Rectangle())
         }
         .buttonStyle(PulsePressStyle())
@@ -437,7 +565,7 @@ extension View {
             ToolbarItemGroup(placement: .keyboard) {
                 Spacer()
                 Button(String(localized: "Done")) { focus.wrappedValue = nil }
-                    .font(.system(size: 17, weight: .semibold))
+                    .pulseText(.subsectionTitle)
                     .foregroundStyle(PulseTheme.textPrimary)
             }
         }

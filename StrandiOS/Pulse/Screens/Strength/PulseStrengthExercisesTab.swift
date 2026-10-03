@@ -102,7 +102,7 @@ struct PulseStrengthExercisesTab: View {
             .padding(14)
         }
         .background(PulseStrengthColors.exerciseCard)
-        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: PulseStrengthMetrics.exerciseCardRadius, style: .circular))
     }
 
     private var columnHeadings: some View {
@@ -133,7 +133,7 @@ struct PulseStrengthExercisesTab: View {
                     .font(PulseType.numeral(19))
                     .foregroundStyle(warmup ? PulseTheme.textPrimary : PulseTheme.textTertiary)
                     .frame(width: 26, height: 40)
-                    .background(RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .background(RoundedRectangle(cornerRadius: PulseTheme.Radius.toggle, style: .circular)
                         .fill(warmup ? PulseTheme.tagFill : Color.clear))
                     .contentShape(Rectangle())
             }
@@ -163,7 +163,7 @@ struct PulseStrengthExercisesTab: View {
                                          : (working ? String(localized: "This set is running") : String(localized: "Start this set")))
         }
         .padding(4)
-        .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous)
+        .overlay(RoundedRectangle(cornerRadius: PulseTheme.Radius.control, style: .circular)
             .strokeBorder(PulseTheme.Activity.strengthActiveTimer.opacity(working ? 0.8 : 0), lineWidth: 1))
     }
 
@@ -192,8 +192,9 @@ struct PulseStrengthExercisesTab: View {
         }
             .padding(.horizontal, 12)
             .frame(maxWidth: .infinity, minHeight: 40)
-            .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(PulseStrengthColors.inputFill))
-            .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous)
+            .background(RoundedRectangle(cornerRadius: PulseTheme.Radius.well, style: .circular)
+                .fill(PulseStrengthColors.inputFill))
+            .overlay(RoundedRectangle(cornerRadius: PulseTheme.Radius.well, style: .circular)
                 .strokeBorder(focused == key ? PulseTheme.textSecondary : PulseStrengthColors.inputBorder, lineWidth: 1))
     }
 
@@ -219,7 +220,8 @@ struct PulseStrengthExercisesTab: View {
                 .font(.system(size: 15, weight: .semibold))
                 .foregroundStyle(enabled ? PulseTheme.textPrimary : PulseTheme.textDisabled)
                 .frame(width: 42, height: 36)
-                .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(PulseTheme.nested))
+                .background(RoundedRectangle(cornerRadius: PulseTheme.Radius.well, style: .circular)
+                    .fill(PulseTheme.nested))
                 .contentShape(Rectangle())
         }
         .buttonStyle(PulsePressStyle())

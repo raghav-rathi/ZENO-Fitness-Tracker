@@ -46,17 +46,18 @@ enum StrengthRange: String, CaseIterable, Hashable, Sendable {
     }
 }
 
-/// The volume chart: each session's volume as a faint line, and the per-bucket averages as segments
-/// with their value above and the change from the previous segment below (spec §2.7, 6M grammar).
+/// The volume chart: each session's volume as a faint line (the latest one ringed), and the per-bucket
+/// averages as segments with their value above and the change from the previous segment below (spec
+/// §2.7, 6M grammar).
 struct StrengthVolumeChart: Equatable {
     let start: Date
     let end: Date
+    /// Oldest first.
     let points: [Point]
     let segments: [Segment]
     let yTicks: [Double]
-    let xTicks: [Date]
-    /// Month names on 6M, day numbers on M.
-    let monthLabels: Bool
+    /// One name per month (6M) or week (M), under the middle of its part of the window.
+    let xLabels: [AxisLabel]
 
     var yMax: Double { yTicks.last ?? 1 }
 
@@ -64,6 +65,13 @@ struct StrengthVolumeChart: Equatable {
         let id: String
         let date: Date
         let value: Double
+        /// "7,550".
+        let valueText: String
+    }
+
+    struct AxisLabel: Equatable {
+        let date: Date
+        let text: String
     }
 
     struct Segment: Equatable, Identifiable {
@@ -82,7 +90,7 @@ struct StrengthVolumeChart: Equatable {
     }
 
     static let empty = StrengthVolumeChart(start: Date(), end: Date(), points: [], segments: [], yTicks: [0, 1],
-                                           xTicks: [], monthLabels: true)
+                                           xLabels: [])
 }
 
 /// "‹ NOV 27, 25 - MAY 25, 26 ›".

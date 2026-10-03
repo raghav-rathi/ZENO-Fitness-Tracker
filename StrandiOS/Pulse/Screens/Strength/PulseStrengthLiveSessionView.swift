@@ -260,7 +260,8 @@ struct PulseStrengthLiveSessionView: View {
                 }
                 .padding(.vertical, 10)
             }
-            .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(PulseStrengthColors.exerciseCard))
+            .background(RoundedRectangle(cornerRadius: PulseStrengthMetrics.exerciseCardRadius, style: .circular)
+                .fill(PulseStrengthColors.exerciseCard))
             .accessibilityElement(children: .contain)
         }
     }

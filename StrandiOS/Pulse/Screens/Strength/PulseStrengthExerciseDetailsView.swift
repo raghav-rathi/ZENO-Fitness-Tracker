@@ -74,6 +74,8 @@ struct PulseStrengthExerciseDetailsView: View {
         .task(id: "\(model.detailKey)|\(PulseStrengthVersion.shared.value)|\(session.savedSessions)|\(range.rawValue)|\(page)|\(unitSystemRaw)") {
             await load()
         }
+        // A page counts back from the current window of the range shown; another range starts over.
+        .onChange(of: range) { _, _ in page = 0 }
         .sheet(isPresented: $showsInfo) { PulseStrengthInfoSheet() }
     }
 
@@ -107,12 +109,9 @@ struct PulseStrengthExerciseDetailsView: View {
     private func progress(_ snapshot: StrengthExerciseSnapshot) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             PulseStrengthChartHeader(label: String(localized: "Avg volume load"), value: snapshot.averageVolume,
-                                     unit: snapshot.unit, range: $range, pager: snapshot.pager,
+                                     unit: snapshot.unit, change: snapshot.change.map(Self.chip), range: $range,
+                                     pager: snapshot.pager,
                                      onBack: { page += 1 }, onForward: { page = max(0, page - 1) })
-            if let change = snapshot.change {
-                changeChip(change)
-                    .padding(.top, 6)
-            }
             if snapshot.chart.points.isEmpty {
                 Text(String(localized: "No weighted sets of this exercise in this period."))
                     .pulseText(.body)
@@ -145,10 +144,10 @@ struct PulseStrengthExerciseDetailsView: View {
     }
 
     /// "▼ 3% vs. prior 6 months": orange when volume fell, teal when it rose, grey when unchanged.
-    private func changeChip(_ change: StrengthExerciseSnapshot.Change) -> some View {
+    private static func chip(_ change: StrengthExerciseSnapshot.Change) -> (text: String, trend: PulseTrend) {
         let trend: PulseTrend = change.up.map { PulseTrend(direction: $0 ? .up : .down, polarity: .higherIsBetter) }
             ?? PulseTrend(direction: .flat, polarity: .higherIsBetter)
-        return PulseDeltaChip(text: change.text, trend: trend)
+        return (change.text, trend)
     }
 
     private func topSetCard(_ set: StrengthExerciseSnapshot.TopSet, unit: String) -> some View {
@@ -191,8 +190,7 @@ struct PulseStrengthExerciseDetailsView: View {
             .padding(.horizontal, 18)
             .padding(.vertical, 16)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(RoundedRectangle(cornerRadius: PulseTheme.Radius.card, style: .circular)
-                .fill(PulseStrengthColors.rowFill))
+            .pulseCardBackground(.standard, radius: PulseTheme.Radius.card)
             .contentShape(Rectangle())
         }
         .buttonStyle(PulsePressStyle())
@@ -203,12 +201,12 @@ struct PulseStrengthExerciseDetailsView: View {
     @ViewBuilder
     private func topSetFigures(_ set: StrengthExerciseSnapshot.TopSet, unit: String) -> some View {
         if let weight = set.weight {
-            PulseValueText(value: weight, unit: unit, style: .rowValue, unitStyle: .secondary,
-                           unitColor: PulseTheme.textSecondary)
+            PulseStrengthFigure(value: weight, unit: unit, style: .rowValue, unitStyle: .secondary,
+                                unitColor: PulseTheme.textSecondary)
         }
         if let reps = set.reps {
-            PulseValueText(value: reps, unit: String(localized: "reps"), style: .rowValue,
-                           unitStyle: .secondary, unitColor: PulseTheme.textSecondary)
+            PulseStrengthFigure(value: reps, unit: String(localized: "reps"), style: .rowValue,
+                                unitStyle: .secondary, unitColor: PulseTheme.textSecondary)
         }
         if set.rank <= 3 {
             medal(set.rank)
