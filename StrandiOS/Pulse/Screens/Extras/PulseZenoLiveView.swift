@@ -2,6 +2,7 @@
 import SwiftUI
 import UIKit
 import PhotosUI
+import ImageIO
 import StrandAnalytics
 
 /// ZENO Live (WHOOP_UI_SPEC §3.10): today's numbers laid over a photo, to share.
@@ -11,9 +12,10 @@ import StrandAnalytics
 /// dials on a card, Recovery, the Strain ring, or heart rate), drag it into place, and share the result.
 /// Everything stays on the phone: the photo comes through the system picker (which needs no library
 /// permission), the picture is composed here, and it leaves only through the share sheet. Its numbers are
-/// Home's (the same resolvers), and the heart rate is shown only when a reading is under 15 minutes old.
-/// Taking a photo with the camera needs a camera permission the app does not declare, so only the library
-/// is offered for now.
+/// Home's (the same resolvers and the same dial mapping, `PulseDialData.dialContent`), so a value carried
+/// from an earlier night says whose it is and a calibrating Recovery reads "--" and CALIBRATING, never as
+/// today's number; the heart rate is shown only when a reading is under 15 minutes old. Taking a photo with
+/// the camera needs a camera permission the app does not declare, so only the library is offered for now.
 ///
 /// Owned by group "extras". Opened by `PulseZenoLiveRoute` (full screen).
 struct PulseZenoLiveView: View {
@@ -28,6 +30,8 @@ struct PulseZenoLiveView: View {
     @State private var dragStart: CGPoint?
     @State private var exporting = false
 
+    private typealias L = PulseExtrasTheme.Live
+
     var body: some View {
         PulseScreenScaffold(title: String(localized: "ZENO Live"), spacing: 16) {
             GeometryReader { geo in
@@ -36,7 +40,7 @@ struct PulseZenoLiveView: View {
                     .frame(width: canvas.width, height: canvas.height)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
-            .frame(height: canvasHeight)
+            .frame(height: L.canvasHeight)
 
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
@@ -73,22 +77,29 @@ struct PulseZenoLiveView: View {
         .onChange(of: pick) { _, item in
             guard let item else { return }
             Task {
-                if let data = try? await item.loadTransferable(type: Data.self), let image = UIImage(data: data) {
-                    photo = image
-                }
+                guard let data = try? await item.loadTransferable(type: Data.self) else { return }
+                // Decode off the main actor, and no larger than the picture can be exported at.
+                let image = await Task.detached(priority: .userInitiated) {
+                    Self.downsampled(data, maxPixels: L.exportMaxPixels)
+                }.value
+                if let image { photo = image }
             }
         }
         #if DEBUG
         .onAppear {
-            if photo == nil, CommandLine.arguments.contains("--pulse-zeno-live-sample") {
+            // `--pulse-zeno-live-sample` draws a stand-in photo and `--pulse-zeno-live-template <name>` picks
+            // the overlay, for simulator captures (simctl can neither pick a photo nor tap).
+            let args = CommandLine.arguments
+            if photo == nil, args.contains("--pulse-zeno-live-sample") {
                 photo = ZenoLiveSample.image()
+            }
+            if let i = args.firstIndex(of: "--pulse-zeno-live-template"), i + 1 < args.count,
+               let t = ZenoLiveTemplate(rawValue: args[i + 1]) {
+                template = t
             }
         }
         #endif
     }
-
-    /// The picture area's height: the screen less the chips, buttons and caption under it.
-    private var canvasHeight: CGFloat { 470 }
 
     /// The photo's shape fitted into `space`, or 4:5 with no photo yet.
     private func canvasSize(fitting space: CGSize) -> CGSize {
@@ -133,23 +144,48 @@ struct PulseZenoLiveView: View {
         CGPoint(x: min(max(p.x, 0.12), 0.88), y: min(max(p.y, 0.1), 0.9))
     }
 
-    /// Compose the picture at the photo's own resolution and offer it through the share sheet.
-    @MainActor
+    /// Compose the picture at the photo's own width, up to `exportMaxPixels`, and offer it through the share
+    /// sheet. The view is rendered here (ImageRenderer needs the main actor); the JPEG is encoded and written
+    /// off it, then the sheet is presented back on it.
     private func share() {
-        guard let photo else { return }
+        guard let photo, !exporting else { return }
         exporting = true
-        defer { exporting = false }
-        let canvas = canvasSize(fitting: CGSize(width: 360, height: 10_000))
-        let pixelWidth = photo.size.width * photo.scale
+        let canvas = canvasSize(fitting: CGSize(width: L.layoutWidth, height: 10_000))
+        let pixelWidth = min(photo.size.width * photo.scale, L.exportMaxPixels)
         let renderer = ImageRenderer(content: ZenoLiveComposite(photo: photo, template: template, snapshot: snapshot,
                                                                 position: position, canvas: canvas, editable: false)
             .frame(width: canvas.width, height: canvas.height)
             .environment(\.colorScheme, .dark))
-        renderer.scale = min(max(1, pixelWidth / canvas.width), 6)
-        guard let data = renderer.uiImage?.jpegData(compressionQuality: 0.9) else { return }
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("ZENO-Live.jpg")
-        do { try data.write(to: url, options: .atomic) } catch { return }
-        PulseExtrasShareSheet.present(url)
+        renderer.scale = max(1, pixelWidth / canvas.width)
+        guard let image = renderer.uiImage else {
+            exporting = false
+            return
+        }
+        Task {
+            let url = await Task.detached(priority: .userInitiated) { () -> URL? in
+                guard let data = image.jpegData(compressionQuality: L.jpegQuality) else { return nil }
+                let url = FileManager.default.temporaryDirectory.appendingPathComponent("ZENO-Live.jpg")
+                do { try data.write(to: url, options: .atomic) } catch { return nil }
+                return url
+            }.value
+            exporting = false
+            if let url { PulseExtrasShareSheet.present(url) }
+        }
+    }
+
+    /// `data` decoded as an image no wider or taller than `maxPixels`, its orientation applied (ImageIO's
+    /// thumbnailer, which never decodes the full-size picture).
+    nonisolated static func downsampled(_ data: Data, maxPixels: CGFloat) -> UIImage? {
+        let source = CGImageSourceCreateWithData(data as CFData, [kCGImageSourceShouldCache: false] as CFDictionary)
+        guard let source else { return nil }
+        let options: [CFString: Any] = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceShouldCacheImmediately: true,
+            kCGImageSourceThumbnailMaxPixelSize: maxPixels
+        ]
+        guard let image = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else { return nil }
+        return UIImage(cgImage: image)
     }
 }
 
@@ -178,8 +214,10 @@ struct ZenoLiveComposite: View {
     let canvas: CGSize
     let editable: Bool
 
+    private typealias L = PulseExtrasTheme.Live
+
     /// Overlays are drawn for a 360 pt wide picture and scaled with it, so the exported photo matches.
-    private var scale: CGFloat { canvas.width / 360 }
+    private var scale: CGFloat { canvas.width / L.layoutWidth }
 
     var body: some View {
         ZStack {
@@ -191,11 +229,11 @@ struct ZenoLiveComposite: View {
                     .clipped()
                     .accessibilityHidden(true)
             } else {
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                RoundedRectangle(cornerRadius: L.canvasRadius, style: .continuous)
                     .fill(PulseTheme.card)
                 VStack(spacing: 10) {
                     Image(systemName: "photo.on.rectangle.angled")
-                        .font(.system(size: 34, weight: .light))
+                        .font(.system(size: L.placeholderGlyphSize, weight: .light))
                         .foregroundStyle(PulseTheme.textTertiary)
                     Text(String(localized: "Choose a photo to put today's numbers on."))
                         .pulseText(.body)
@@ -212,17 +250,18 @@ struct ZenoLiveComposite: View {
                 .accessibilityHint(editable ? String(localized: "Drag to move") : "")
         }
         .frame(width: canvas.width, height: canvas.height)
-        .clipShape(RoundedRectangle(cornerRadius: editable ? 16 : 0, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: editable ? L.canvasRadius : 0, style: .continuous))
     }
 }
 
-/// The overlay itself, laid out for a 360 pt wide picture.
+/// The overlay itself, laid out for a 360 pt wide picture. Each number comes through Home's dial mapping
+/// (`PulseDialData.dialContent`): a carried value carries its "Last night · Oct 2" line, a calibrating
+/// Recovery reads "--" with CALIBRATING and an empty ring, and nothing is printed as today's that is not.
 private struct ZenoLiveOverlay: View {
     let template: ZenoLiveTemplate
     let snapshot: ZenoLiveSnapshot?
 
-    private static let glass = Color.black.opacity(0.55)
-    private static let rim = Color.white.opacity(0.14)
+    private typealias L = PulseExtrasTheme.Live
 
     var body: some View {
         switch template {
@@ -237,113 +276,118 @@ private struct ZenoLiveOverlay: View {
         snapshot.map { PulseFormat.navDayTitle(offset: $0.day.offset, date: $0.day.date).uppercased() } ?? ""
     }
 
-    /// The three dials on a dark card, as Home's row.
+    private func content(_ score: PulseScore) -> PulseDialContent {
+        guard let snapshot else { return PulseDialData(score: score, value: nil, state: .noData).dialContent() }
+        switch score {
+        case .sleep: return snapshot.sleep.dialContent()
+        case .recovery: return snapshot.recovery.dialContent()
+        case .strain: return snapshot.strain.dialContent()
+        }
+    }
+
+    /// A label in the card's caps.
+    private func caps(_ text: String, color: Color) -> some View {
+        Text(text)
+            .font(PulseType.font(.label))
+            .tracking(L.labelTracking)
+            .textCase(.uppercase)
+            .foregroundStyle(color)
+    }
+
+    /// The three dials on a dark card, as Home's row, each with its state line when it has one.
     private var dials: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        let contents = PulseScore.allCases.map(content)
+        let anyCaption = contents.contains { $0.caption != nil }
+        return VStack(alignment: .leading, spacing: 12) {
             HStack {
-                PulseZenoWordmark(width: 60, height: 10)
+                PulseZenoWordmark(width: L.wordmark.width, height: L.wordmark.height)
                 Spacer()
-                Text(dayText)
-                    .font(PulseType.font(.label))
-                    .tracking(1)
-                    .foregroundStyle(PulseTheme.textSecondary)
+                caps(dayText, color: PulseTheme.textSecondary)
             }
-            HStack(spacing: 0) {
-                ForEach(dialData, id: \.score) { dial in
+            HStack(alignment: .top, spacing: 0) {
+                ForEach(Array(contents.enumerated()), id: \.offset) { _, dial in
                     VStack(spacing: 6) {
                         ZStack {
-                            PulseRing(fraction: dial.progress, color: dial.color, diameter: 64, thickness: 5)
+                            PulseRing(fraction: dial.fraction, color: dial.color, diameter: L.dialDiameter,
+                                      thickness: L.dialStroke)
                             HStack(alignment: .firstTextBaseline, spacing: 0) {
-                                Text(dial.value == nil ? "--" : dial.valueText)
-                                    .font(PulseType.numeral(20))
+                                Text(dial.valueText)
+                                    .font(PulseType.numeral(L.dialValueSize))
                                 if let unit = dial.unitText {
-                                    Text(unit).font(PulseType.numeral(13))
+                                    Text(unit).font(PulseType.numeral(L.dialUnitSize))
                                 }
                             }
-                            .foregroundStyle(PulseTheme.textPrimary)
+                            .foregroundStyle(dial.isPlaceholder ? PulseTheme.textDisabled : PulseTheme.textPrimary)
                         }
-                        Text(dial.score.displayName)
-                            .font(PulseType.font(.label))
-                            .tracking(1)
-                            .textCase(.uppercase)
-                            .foregroundStyle(PulseTheme.textPrimary)
+                        caps(dial.label, color: PulseTheme.textPrimary)
+                        if anyCaption {
+                            caps(dial.caption ?? " ", color: PulseTheme.textTertiary)
+                                .multilineTextAlignment(.center)
+                                .lineLimit(2)
+                                .minimumScaleFactor(0.8)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
                     }
                     .frame(maxWidth: .infinity)
                 }
             }
         }
-        .padding(14)
-        .frame(width: 300)
-        .background(RoundedRectangle(cornerRadius: 18, style: .continuous).fill(Self.glass))
-        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(Self.rim, lineWidth: 1))
+        .padding(L.cardPadding)
+        .frame(width: L.dialsCardWidth)
+        .background(RoundedRectangle(cornerRadius: L.cardRadius, style: .continuous).fill(L.glass))
+        .overlay(RoundedRectangle(cornerRadius: L.cardRadius, style: .continuous).strokeBorder(L.rim, lineWidth: 1))
     }
 
-    private var dialData: [PulseDialData] {
-        guard let snapshot else {
-            return PulseScore.allCases.map { PulseDialData(score: $0, value: nil, state: .noData) }
-        }
-        return [snapshot.sleep, snapshot.recovery, snapshot.strain]
-    }
-
-    /// RECOVERY and the percent in its band's colour.
+    /// RECOVERY and the percent in its band's colour; the line under it says whose it is when it is not
+    /// today's own (carried, or calibrating).
     private var recovery: some View {
-        let dial = snapshot?.recovery
-        let color = dial.map { $0.value == nil ? PulseTheme.textTertiary : $0.color } ?? PulseTheme.textTertiary
+        let dial = content(.recovery)
         return VStack(alignment: .leading, spacing: 2) {
-            Text(PulseScore.recovery.displayName)
-                .font(PulseType.font(.label))
-                .tracking(1)
-                .textCase(.uppercase)
-                .foregroundStyle(PulseTheme.textPrimary)
+            caps(dial.label, color: PulseTheme.textPrimary)
             HStack(alignment: .firstTextBaseline, spacing: 1) {
-                Text(dial.flatMap { $0.value == nil ? nil : $0.valueText } ?? "--")
-                    .font(PulseType.numeral(52))
-                Text(verbatim: "%").font(PulseType.numeral(28))
+                Text(dial.valueText)
+                    .font(PulseType.numeral(L.recoveryValueSize))
+                Text(verbatim: dial.unitText ?? "%").font(PulseType.numeral(L.recoveryUnitSize))
             }
-            .foregroundStyle(color)
-            Text(dayText)
-                .font(PulseType.font(.label))
-                .tracking(1)
-                .foregroundStyle(PulseTheme.textSecondary)
+            .foregroundStyle(dial.isPlaceholder ? PulseTheme.textTertiary : dial.color)
+            caps(dial.caption ?? dayText, color: PulseTheme.textSecondary)
         }
         .padding(.horizontal, 18)
-        .padding(.vertical, 14)
-        .background(RoundedRectangle(cornerRadius: 18, style: .continuous).fill(Self.glass))
-        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(Self.rim, lineWidth: 1))
+        .padding(.vertical, L.cardPadding)
+        .background(RoundedRectangle(cornerRadius: L.cardRadius, style: .continuous).fill(L.glass))
+        .overlay(RoundedRectangle(cornerRadius: L.cardRadius, style: .continuous).strokeBorder(L.rim, lineWidth: 1))
     }
 
-    /// The Strain ring with its value.
+    /// The Strain ring with its value (Strain is always the day's own, live).
     private var strain: some View {
-        let dial = snapshot?.strain ?? PulseDialData(score: .strain, value: nil, state: .noData)
+        let dial = content(.strain)
         return VStack(spacing: 8) {
             ZStack {
-                PulseRing(fraction: dial.progress, color: PulseTheme.strain, diameter: 112, thickness: 8)
-                Text(dial.value == nil ? "--" : dial.valueText)
-                    .font(PulseType.numeral(34))
-                    .foregroundStyle(PulseTheme.textPrimary)
+                PulseRing(fraction: dial.fraction, color: PulseTheme.strain, diameter: L.strainDiameter,
+                          thickness: L.strainStroke)
+                Text(dial.valueText)
+                    .font(PulseType.numeral(L.strainValueSize))
+                    .foregroundStyle(dial.isPlaceholder ? PulseTheme.textDisabled : PulseTheme.textPrimary)
             }
-            Text(PulseScore.strain.displayName)
-                .font(PulseType.font(.label))
-                .tracking(1)
-                .textCase(.uppercase)
-                .foregroundStyle(PulseTheme.textPrimary)
+            caps(dial.label, color: PulseTheme.textPrimary)
         }
         .padding(16)
-        .background(RoundedRectangle(cornerRadius: 22, style: .continuous).fill(Self.glass))
-        .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).strokeBorder(Self.rim, lineWidth: 1))
+        .background(RoundedRectangle(cornerRadius: L.strainCardRadius, style: .continuous).fill(L.glass))
+        .overlay(RoundedRectangle(cornerRadius: L.strainCardRadius, style: .continuous)
+            .strokeBorder(L.rim, lineWidth: 1))
     }
 
     /// The newest heart rate, or an honest dash when there is no current reading.
     private var heartRate: some View {
         HStack(spacing: 10) {
             Image(systemName: "heart.fill")
-                .font(.system(size: 22, weight: .regular))
+                .font(.system(size: L.heartGlyphSize, weight: .regular))
                 .foregroundStyle(PulseTheme.textPrimary)
             HStack(alignment: .firstTextBaseline, spacing: 4) {
                 Text(snapshot?.heartRate.map(String.init) ?? "--")
-                    .font(PulseType.numeral(38))
+                    .font(PulseType.numeral(L.heartValueSize))
                 Text(String(localized: "bpm"))
-                    .font(PulseType.numeral(16))
+                    .font(PulseType.numeral(L.heartUnitSize))
                     .foregroundStyle(PulseTheme.textSecondary)
             }
             .foregroundStyle(PulseTheme.textPrimary)
@@ -359,8 +403,8 @@ private struct ZenoLiveOverlay: View {
         }
         .padding(.horizontal, 18)
         .padding(.vertical, 12)
-        .background(Capsule().fill(Self.glass))
-        .overlay(Capsule().strokeBorder(Self.rim, lineWidth: 1))
+        .background(Capsule().fill(L.glass))
+        .overlay(Capsule().strokeBorder(L.rim, lineWidth: 1))
     }
 }
 

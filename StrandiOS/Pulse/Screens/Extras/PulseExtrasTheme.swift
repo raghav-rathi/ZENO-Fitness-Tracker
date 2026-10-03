@@ -201,6 +201,46 @@ enum PulseExtrasTheme {
         static let summaryRowIcon = Color(hex: "#C9A15A")
     }
 
+    /// ZENO Live (§3.10, [U] visuals: WHOOP's overlay was never captured, so these are ZENO's own). A dark
+    /// glass card (black 55% with a 1 pt white 14% rim) laid out for a 360 pt wide picture and scaled with it,
+    /// so the exported photo matches the preview.
+    enum Live {
+        static let glass = Color.black.opacity(0.55)
+        static let rim = Color.white.opacity(0.14)
+        static let layoutWidth: CGFloat = 360
+        /// The exported picture is at most this many pixels wide (the photo's own width when smaller), and a
+        /// picked photo is decoded no larger.
+        static let exportMaxPixels: CGFloat = 2_160
+        static let jpegQuality: CGFloat = 0.9
+        /// The editing canvas: its height on the page and its corners (the export has none).
+        static let canvasHeight: CGFloat = 470
+        static let canvasRadius: CGFloat = 16
+        static let placeholderGlyphSize: CGFloat = 34
+        /// The three dials on a card.
+        static let dialsCardWidth: CGFloat = 300
+        static let cardRadius: CGFloat = 18
+        static let cardPadding: CGFloat = 14
+        static let wordmark = CGSize(width: 60, height: 10)
+        static let dialDiameter: CGFloat = 64
+        static let dialStroke: CGFloat = 5
+        static let dialValueSize: CGFloat = 20
+        static let dialUnitSize: CGFloat = 13
+        /// RECOVERY and its percent.
+        static let recoveryValueSize: CGFloat = 52
+        static let recoveryUnitSize: CGFloat = 28
+        /// The Strain ring.
+        static let strainDiameter: CGFloat = 112
+        static let strainStroke: CGFloat = 8
+        static let strainValueSize: CGFloat = 34
+        static let strainCardRadius: CGFloat = 22
+        /// The heart-rate capsule.
+        static let heartGlyphSize: CGFloat = 22
+        static let heartValueSize: CGFloat = 38
+        static let heartUnitSize: CGFloat = 16
+        /// Labels on the card track 1 pt (the `.label` style's, fixed: the picture does not scale with text).
+        static let labelTracking: CGFloat = 1
+    }
+
     /// Challenges (profile-community-2026/13, 42, 76, 84, sampled at full size).
     enum Challenge {
         /// The tick gauge, measured at 3x on profile-community-2026/13, 76 and 84 (all 402 pt wide): a comb

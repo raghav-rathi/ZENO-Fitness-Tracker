@@ -421,12 +421,35 @@ extension PulseSnapshotBuilder {
     /// A reading this old or newer counts as the current heart rate on the overlay.
     static let liveHeartRateAge: TimeInterval = 15 * 60
 
+    #if DEBUG
+    static var zenoLiveDebugState: String? {
+        let args = CommandLine.arguments
+        guard let i = args.firstIndex(of: "--pulse-zeno-live-state"), i + 1 < args.count else { return nil }
+        return args[i + 1]
+    }
+    #endif
+
     /// Today's dials, through the same resolvers as Home's (so the overlay and Home never disagree), and the
     /// newest heart rate from today's window when it is recent.
-    func zenoLive(_ r: PulseRequest) async -> ZenoLiveSnapshot? {
-        begin(r.seq)
+    func zenoLive(_ request: PulseRequest) async -> ZenoLiveSnapshot? {
+        begin(request.seq)
+        var r = request
+        var rest = await restSeries()
+        #if DEBUG
+        // `--pulse-zeno-live-state unscored|calibrating`: build as on a morning before the day is scored (or a
+        // new wearer's second), by leaving today's row and sleep score out, so the carried and calibrating
+        // dials can be captured. The real resolvers then carry or calibrate exactly as they would.
+        if let state = Self.zenoLiveDebugState {
+            let kept = state == "calibrating" ? Array(r.days.filter { $0.day < r.day.key }.suffix(2))
+                                              : r.days.filter { $0.day < r.day.key }
+            r = PulseRequest(seq: r.seq, day: r.day, now: r.now, days: kept, sleeps: r.sleeps,
+                             importedSleep: r.importedSleep, vitalRows: r.vitalRows, prefs: r.prefs,
+                             profile: r.profile)
+            let keptDays = Set(kept.map(\.day))
+            rest = rest.filter { $0.day < r.day.key && (state != "calibrating" || keptDays.contains($0.day)) }
+        }
+        #endif
         let row = displayRow(r)
-        let rest = await restSeries()
         let window = await dayWindow(r)
         let hr = await heartRate(dayKey: r.day.key, from: window.from, to: window.to, isToday: r.day.isToday)
         guard isCurrent(r) else { return nil }
