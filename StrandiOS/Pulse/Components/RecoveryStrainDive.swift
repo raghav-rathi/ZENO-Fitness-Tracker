@@ -226,7 +226,8 @@ enum PulseDiveRoutes {
 
 /// A behaviour chip on the Recovery dive's BEHAVIOR INSIGHTS card (deep-dives-2026/17b, 17d): teal text
 /// and ▲ on a teal tint when it has gone with a higher Recovery, orange and ▼ when with a lower one, grey
-/// when no effect stands out. Radius 8, 32 pt tall, 14 pt text.
+/// when no effect stands out. Radius 8, 32 pt tall, 14 pt text; a name too long for the card (a long
+/// custom question, large text) wraps between words and the chip grows, never truncating (DR §2).
 struct PulseBehaviorChip: View {
     enum Effect: Equatable {
         case helps, hurts, neutral
@@ -254,16 +255,69 @@ struct PulseBehaviorChip: View {
             Text(title)
                 .pulseText(.body)
                 .foregroundStyle(colors.text)
-                .lineLimit(1)
-                .minimumScaleFactor(0.75)
+                .fixedSize(horizontal: false, vertical: true)
         }
         .padding(.horizontal, 12)
+        .padding(.vertical, 6)
         .frame(minHeight: 32)
         .background(RoundedRectangle(cornerRadius: PulseTheme.Radius.well, style: .circular).fill(colors.fill))
     }
 }
 
-/// "+4 pts" on a teal tint, "-1 pt" on orange, "0 pts" grey: what one input added to or took from
+/// Chips in rows, left to right: each at its natural width, or the row's full width when longer (it then
+/// wraps inside itself, see `PulseBehaviorChip`), the next one on a new row when it does not fit. Unlike
+/// `PulseWordFlow`, which shrinks every word when one is too wide, a long chip never squeezes the others.
+struct PulseChipFlow: Layout {
+    var spacing: CGFloat = 8
+    var lineSpacing: CGFloat = 8
+
+    private struct Row {
+        var items: [(index: Int, size: CGSize)] = []
+        var width: CGFloat = 0
+        var height: CGFloat = 0
+    }
+
+    private func rows(_ subviews: Subviews, maxWidth: CGFloat) -> [Row] {
+        var out: [Row] = []
+        var row = Row()
+        for index in subviews.indices {
+            let ideal = subviews[index].sizeThatFits(.unspecified)
+            let size = ideal.width > maxWidth
+                ? subviews[index].sizeThatFits(ProposedViewSize(width: maxWidth, height: nil))
+                : ideal
+            if !row.items.isEmpty && row.width + spacing + size.width > maxWidth {
+                out.append(row)
+                row = Row()
+            }
+            row.width = row.items.isEmpty ? size.width : row.width + spacing + size.width
+            row.height = max(row.height, size.height)
+            row.items.append((index, size))
+        }
+        if !row.items.isEmpty { out.append(row) }
+        return out
+    }
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let laid = rows(subviews, maxWidth: proposal.width ?? .infinity)
+        let height = laid.map(\.height).reduce(0, +) + lineSpacing * CGFloat(max(0, laid.count - 1))
+        return CGSize(width: laid.map(\.width).max() ?? 0, height: height)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        var y = bounds.minY
+        for row in rows(subviews, maxWidth: bounds.width) {
+            var x = bounds.minX
+            for item in row.items {
+                subviews[item.index].place(at: CGPoint(x: x, y: y + (row.height - item.size.height) / 2),
+                                           proposal: ProposedViewSize(item.size))
+                x += item.size.width + spacing
+            }
+            y += row.height + lineSpacing
+        }
+    }
+}
+
+/// "+4 pts" on a teal tint, "−1 pt" on orange, "0 pts" grey: what one input added to or took from
 /// Recovery ("What shaped it").
 struct PulsePointsChip: View {
     let points: Int

@@ -19,7 +19,9 @@ struct RecoveryDiveSnapshot: Equatable {
     /// Heart rate variability, resting heart rate, respiratory rate and sleep performance, each against
     /// its 30-day average.
     let contributors: [PulseDiveContributor]
-    /// The day's logged behaviours with a known effect on Recovery. Empty: the compact row instead.
+    /// The behaviours logged YES for the day that the analysis has unlocked, with their effect on
+    /// Recovery; empty unless today's Recovery is scored. The expanded card shows them only when one has
+    /// a known effect; otherwise the compact row.
     let behaviors: [Behavior]
     let week: Week
     /// "What shaped it": the engine's per-input points, or nil when the night cannot honestly score.

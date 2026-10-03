@@ -17,10 +17,17 @@ extension PulseSnapshotBuilder {
     func recoveryDive(_ r: PulseRequest) async -> RecoveryDiveSnapshot? {
         guard let base = await recovery(r) else { return nil }
         let rest = await restSeries()
-        // Read fresh every build: logging a journal answer does not bump the refresh.
-        let journal: [JournalEntry] = r.day.isToday
-            ? await repo.journalEntries(days: RecoveryBehaviorChips.windowDays + 10)
-            : []
+        // The behaviour chips read what the Insights hub reads: every journal answer on file (fresh each
+        // build, since logging an answer does not bump the refresh) and the four outcomes it ranks. Only
+        // for a Recovery scored today: the card says the behaviours "may have affected your Recovery
+        // score today", which a calibrating, carried or missing score cannot honour.
+        let namesBehaviors = r.day.isToday && base.dial.state == .scored
+        var journal: [JournalEntry] = []
+        var outcomes: [String: [String: Double]] = [:]
+        if namesBehaviors {
+            journal = await repo.journalEntries()
+            outcomes = await behaviorOutcomes(r)
+        }
         guard isCurrent(r) else { return nil }
 
         let days = r.days
@@ -40,6 +47,8 @@ extension PulseSnapshotBuilder {
             return value.map { (day: key, value: $0) }
         }
 
+        // No row links anywhere until the Trend View is rebuilt: the classic metric screens behind it say
+        // Charge and Rest and resolve their own figures (PulseDiveRoutes.trend).
         let contributors = [
             PulseDiveBaseline.contributor(
                 id: "hrv", symbol: "waveform.path.ecg", title: String(localized: "Heart rate variability"),
@@ -87,14 +96,13 @@ extension PulseSnapshotBuilder {
         }
 
         var behaviors: [RecoveryDiveSnapshot.Behavior] = []
-        if r.day.isToday {
+        if namesBehaviors {
             let answers = journal.map {
                 RecoveryBehaviorChips.Answer(day: $0.day, behavior: $0.question, answeredYes: $0.answeredYes)
             }
-            let recoveryByDay = Dictionary(days.compactMap { m in m.recovery.map { (m.day, $0) } },
-                                           uniquingKeysWith: { _, last in last })
-            behaviors = RecoveryBehaviorChips.chips(answers: answers, recoveryByDay: recoveryByDay,
-                                                    dayKey: r.day.key).map(Self.behavior)
+            let renames = PulseBehaviorNames.renames()
+            behaviors = RecoveryBehaviorChips.chips(answers: answers, outcomes: outcomes, dayKey: r.day.key)
+                .map { Self.behavior($0, renames: renames) }
         }
 
         var carried: String?
@@ -105,6 +113,45 @@ extension PulseSnapshotBuilder {
         return RecoveryDiveSnapshot(seq: r.seq, day: r.day, dial: base.dial, carriedCaption: carried,
                                     sourceDayKey: sourceKey, contributors: contributors, behaviors: behaviors,
                                     week: week, shaped: shaped, summary: text.summary, coachSeed: text.seed)
+    }
+
+    // MARK: Behaviour outcomes
+
+    /// The four outcome series the behaviour chips are ranked against, read as the Insights hub reads them
+    /// (`InsightsHubViewModel.load`), so the hub's ranking and the chips are one computation: each stored
+    /// series, filled from the merged day rows where it has no value (Recovery, HRV and resting heart
+    /// rate; Sleep Performance has no day column and stays stored-only). The stored reads are cached for
+    /// the refresh.
+    func behaviorOutcomes(_ r: PulseRequest) async -> [String: [String: Double]] {
+        let stored: [String: [String: Double]] = await cached("recovery.behaviorOutcomes") {
+            var out: [String: [String: Double]] = [:]
+            for key in RecoveryBehaviorChips.outcomeKeys {
+                let rows = await repo.series(key: key, source: "my-whoop")
+                var byDay: [String: Double] = [:]
+                for row in rows { byDay[row.day] = row.value }
+                out[key] = byDay
+            }
+            return out
+        }
+        var outcomes: [String: [String: Double]] = [:]
+        for key in RecoveryBehaviorChips.outcomeKeys {
+            var byDay = stored[key] ?? [:]
+            for d in r.days where byDay[d.day] == nil {
+                if let v = Self.dayOutcome(key, d) { byDay[d.day] = v }
+            }
+            outcomes[key] = byDay
+        }
+        return outcomes
+    }
+
+    /// The day column behind an outcome key, as the hub fills it.
+    private static func dayOutcome(_ key: String, _ d: DailyMetric) -> Double? {
+        switch key {
+        case "recovery": return d.recovery
+        case "hrv": return d.avgHrv
+        case "rhr": return d.restingHr.map(Double.init)
+        default: return nil
+        }
     }
 
     // MARK: What shaped it
@@ -182,21 +229,23 @@ extension PulseSnapshotBuilder {
 
     // MARK: Behaviours
 
-    private static func behavior(_ chip: RecoveryBehaviorChips.Chip) -> RecoveryDiveSnapshot.Behavior {
+    private static func behavior(_ chip: RecoveryBehaviorChips.Chip,
+                                 renames: [String: String]) -> RecoveryDiveSnapshot.Behavior {
+        let title = PulseBehaviorNames.title(for: chip.behavior, renames: renames)
         let effect: PulseBehaviorChip.Effect
         let spoken: String
         switch chip.effect {
         case .helps:
             effect = .helps
-            spoken = String(localized: "\(chip.behavior), has gone with a higher Recovery")
+            spoken = String(localized: "\(title), has gone with a higher Recovery")
         case .hurts:
             effect = .hurts
-            spoken = String(localized: "\(chip.behavior), has gone with a lower Recovery")
+            spoken = String(localized: "\(title), has gone with a lower Recovery")
         case .notSignificant:
             effect = .neutral
-            spoken = String(localized: "\(chip.behavior), no clear effect on Recovery")
+            spoken = String(localized: "\(title), no clear effect on Recovery")
         }
-        return RecoveryDiveSnapshot.Behavior(id: chip.behavior, title: chip.behavior, effect: effect, spoken: spoken)
+        return RecoveryDiveSnapshot.Behavior(id: chip.behavior, title: title, effect: effect, spoken: spoken)
     }
 
     // MARK: Sentences
@@ -235,5 +284,50 @@ extension PulseSnapshotBuilder {
         }
         return (summary, seed)
     }
+}
+
+// MARK: - Behaviour names
+
+/// What a behaviour chip prints (§3.18: "the name in Title Case"): the user's own name for the journal
+/// question when they renamed it in the journal catalog, else a Title Case name for the ten starter
+/// questions, else the question as stored. The chip's identity stays the stored question, the key the
+/// analysis and the journal share.
+enum PulseBehaviorNames {
+    /// The journal catalog's renames, keyed by the normalised question (the same blob
+    /// `JournalCatalogStore` persists; read directly because the store is main-actor bound).
+    static func renames(_ defaults: UserDefaults = .standard) -> [String: String] {
+        guard let blob = defaults.data(forKey: JournalCatalogBackupKeys.items),
+              let items = try? JSONDecoder().decode([JournalCatalogItem].self, from: blob) else { return [:] }
+        var out: [String: String] = [:]
+        for item in items {
+            guard let name = item.displayName?.trimmingCharacters(in: .whitespacesAndNewlines), !name.isEmpty else {
+                continue
+            }
+            out[JournalCatalogStore.norm(item.canonical)] = name
+        }
+        return out
+    }
+
+    /// The name to print for `question`.
+    static func title(for question: String, renames: [String: String]) -> String {
+        let key = JournalCatalogStore.norm(question)
+        if let renamed = renames[key] { return renamed }
+        if let starter = starterNames[key] { return starter }
+        return question.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// Title Case names for `JournalCatalogStore.starterQuestions`, keyed by the normalised question.
+    private static let starterNames: [String: String] = [
+        "did you drink any alcohol?": String(localized: "Alcohol"),
+        "did you have caffeine late in the day?": String(localized: "Late Caffeine"),
+        "did you view a screen in bed?": String(localized: "Screen In Bed"),
+        "did you eat close to bedtime?": String(localized: "Late Meal"),
+        "did you feel stressed?": String(localized: "Felt Stressed"),
+        "did you use a sauna?": String(localized: "Sauna"),
+        "did you share your bed?": String(localized: "Shared Bed"),
+        "did you feel sick or ill?": String(localized: "Felt Sick"),
+        "did you take magnesium?": String(localized: "Magnesium"),
+        "did you read before bed?": String(localized: "Read Before Bed"),
+    ]
 }
 #endif

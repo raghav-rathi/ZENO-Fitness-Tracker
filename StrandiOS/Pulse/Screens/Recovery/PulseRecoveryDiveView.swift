@@ -141,32 +141,38 @@ private struct PulseRecoveryCalibrationCard: View {
 
 // MARK: - Behavior Insights
 
-/// BEHAVIOR INSIGHTS (§3.4 item 5): the expanded card with the day's behaviour chips when the journal
-/// logged behaviours whose effect is known (deep-dives-2026/17b), else the compact row
-/// (deep-dives-2026/17c). Both open Behavior Insights.
+/// BEHAVIOR INSIGHTS (§3.4 item 5): the expanded card with the day's behaviour chips when at least one
+/// logged behaviour has a measurable effect on Recovery (deep-dives-2026/17b; grey chips may sit beside
+/// it), else the compact row (deep-dives-2026/17c), so the card never says behaviours "may have affected"
+/// the score above chips that all read "no clear effect". Both open Behavior Insights.
 private struct PulseRecoveryBehaviorCard: View {
     let behaviors: [RecoveryDiveSnapshot.Behavior]
 
     var body: some View {
         PulseLink(PulseRoute.behaviorInsights.forExistingEntryPoint) {
-            if behaviors.isEmpty {
-                compact
-            } else {
+            if behaviors.contains(where: { $0.effect != .neutral }) {
                 expanded
+            } else {
+                compact
             }
         }
         .buttonStyle(PulsePressStyle())
+    }
+
+    /// The outlined bulb, at the subsection title's size (light, as the captures draw it).
+    private var bulb: some View {
+        Image(systemName: "lightbulb.max")
+            .font(PulseType.font(.subsectionTitle).weight(.light))
+            .foregroundStyle(PulseTheme.subtitleRowIcon)
+            .accessibilityHidden(true)
     }
 
     /// The compact row (deep-dives-2026/17c): 64 pt, the bulb 19 pt in from the edge, the title's caps
     /// centred 22 pt down with the 12 pt subtitle under it on one line, "›" at the right.
     private var compact: some View {
         HStack(spacing: 8) {
-            Image(systemName: "lightbulb.max")
-                .font(.system(size: 18, weight: .light))
-                .foregroundStyle(PulseTheme.subtitleRowIcon)
+            bulb
                 .frame(width: 19)
-                .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 4) {
                 PulseWordWrapText(String(localized: "Behavior Insights"), style: .cardTitle)
                     .foregroundStyle(PulseTheme.textPrimary)
@@ -193,11 +199,8 @@ private struct PulseRecoveryBehaviorCard: View {
     private var expanded: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 9) {
-                Image(systemName: "lightbulb.max")
-                    .font(.system(size: 18, weight: .light))
-                    .foregroundStyle(PulseTheme.subtitleRowIcon)
+                bulb
                     .frame(width: 19, height: 20)
-                    .accessibilityHidden(true)
                 PulseWordWrapText(String(localized: "Behavior Insights"), style: .cardTitle)
                     .foregroundStyle(PulseTheme.textPrimary)
                     .accessibilityAddTraits(.isHeader)
@@ -210,7 +213,7 @@ private struct PulseRecoveryBehaviorCard: View {
                 .foregroundStyle(PulseTheme.subtitleRowText)
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.top, 13)
-            PulseWordFlow(alignment: .leading, spacing: 8, lineSpacing: 8) {
+            PulseChipFlow(spacing: 8, lineSpacing: 8) {
                 ForEach(behaviors) { behavior in
                     PulseBehaviorChip(title: behavior.title, effect: behavior.effect)
                         .accessibilityElement(children: .ignore)
