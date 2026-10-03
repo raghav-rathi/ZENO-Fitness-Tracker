@@ -159,36 +159,12 @@ enum AICoachError: LocalizedError {
 
 // MARK: - Vocabulary
 
-/// The names a request gives the three daily scores. NOOP's classic interface says Charge (0-100), Effort
-/// (0-100) and Rest; the iPhone's Pulse interface shows Recovery (%), Strain (0-21) and Sleep, and a reply
-/// or a morning brief that said "charge 62" there would contradict the screen it is read on. The data is
-/// the same either way: Strain is the stored Effort rescaled for display (`UnitFormatter.effortValue(_:
-/// scale: .whoop)`), exactly as Pulse's screens print it.
-enum CoachVocabulary: Equatable {
-    case classic
-    case pulse
-
-    /// The iPhone's interface switch (`@AppStorage("pulse.enabled")` in StrandiOSApp).
-    static let pulseEnabledKey = "pulse.enabled"
-
-    /// The vocabulary of the interface the app runs: Pulse on an iPhone while `pulse.enabled` is on, classic
-    /// otherwise, and always on the Mac, which has only the classic interface.
-    static var current: CoachVocabulary {
-        #if os(iOS)
-        return resolve(UserDefaults.standard)
-        #else
-        return .classic
-        #endif
-    }
-
-    /// The iPhone rule, on its own for tests. An unset key reads as ON, as StrandiOSApp's `@AppStorage`
-    /// defaults it: `bool(forKey:)` alone answers false for a key never written, which would give every
-    /// install that never touched the switch the classic names under the Pulse screens.
-    static func resolve(_ defaults: UserDefaults) -> CoachVocabulary {
-        guard defaults.object(forKey: pulseEnabledKey) != nil else { return .pulse }
-        return defaults.bool(forKey: pulseEnabledKey) ? .pulse : .classic
-    }
-}
+/// The names a request gives the three daily scores: the interface's own (`ScoreVocabulary`). NOOP's
+/// classic interface says Charge (0-100), Effort (0-100) and Rest; the iPhone's Pulse interface shows
+/// Recovery (%), Strain (0-21) and Sleep, and a reply or a morning brief that said "charge 62" there would
+/// contradict the screen it is read on. The data is the same either way: Strain is the stored Effort
+/// rescaled for display (`UnitFormatter.effortValue(_:scale: .whoop)`), exactly as Pulse's screens print it.
+typealias CoachVocabulary = ScoreVocabulary
 
 // MARK: - Engine
 

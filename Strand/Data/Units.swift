@@ -112,7 +112,7 @@ enum UnitPrefs {
     /// mirrors Android's effortDisplayFactor helper so digest sentences match the charts on both.
     static func currentEffortDisplayFactor() -> Double {
         let raw = UserDefaults.standard.string(forKey: effortScaleKey) ?? ""
-        return raw == EffortScale.whoop.rawValue ? 0.21 : 1.0
+        return resolveEffortScale(raw) == .whoop ? 0.21 : 1.0
     }
 
     /// Whether the live-HR Live Activity (Lock Screen + Dynamic Island) may show, iOS only (#336).
@@ -154,9 +154,16 @@ enum UnitPrefs {
         UnitSystem(rawValue: raw) ?? system
     }
 
-    /// Resolve the stored Effort-scale raw value, defaulting to NOOP's native 0–100 axis.
+    /// Resolve the stored Effort-scale raw value, defaulting to NOOP's native 0–100 axis. Under the iPhone's
+    /// Pulse interface it is always WHOOP's 0–21 (`ScoreVocabulary.forcedEffortScale`).
     static func resolveEffortScale(_ raw: String) -> EffortScale {
-        EffortScale(rawValue: raw) ?? .hundred
+        resolveEffortScale(raw, vocabulary: .current)
+    }
+
+    /// The rule on its own for tests: Pulse shows Strain on 0-21 whatever the stored setting says
+    /// (`ScoreVocabulary.forcedEffortScale`, spec §0.3); the classic interface follows the setting.
+    static func resolveEffortScale(_ raw: String, vocabulary: ScoreVocabulary) -> EffortScale {
+        vocabulary.forcedEffortScale ?? EffortScale(rawValue: raw) ?? .hundred
     }
 }
 
