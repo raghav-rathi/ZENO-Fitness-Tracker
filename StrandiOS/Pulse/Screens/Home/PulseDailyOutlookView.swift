@@ -49,13 +49,14 @@ enum PulseDailyOutlook {
         case .scored:
             if let r = home.recovery.value {
                 let shown = PulseDisplay.displayedPercent(r)
+                // "7‑day" with a non-breaking hyphen, so a line never ends on "7-".
                 if let average = facts?.recoveryAverage7 {
                     if shown > average {
-                        insights.append(String(localized: "Your Recovery is **\(shown)%**, above your 7-day average of **\(average)%**."))
+                        insights.append(String(localized: "Your Recovery is **\(shown)%**, above your 7\u{2011}day average of **\(average)%**."))
                     } else if shown < average {
-                        insights.append(String(localized: "Your Recovery is **\(shown)%**, below your 7-day average of **\(average)%**."))
+                        insights.append(String(localized: "Your Recovery is **\(shown)%**, below your 7\u{2011}day average of **\(average)%**."))
                     } else {
-                        insights.append(String(localized: "Your Recovery is **\(shown)%**, right on your 7-day average."))
+                        insights.append(String(localized: "Your Recovery is **\(shown)%**, right on your 7\u{2011}day average."))
                     }
                 } else {
                     insights.append(String(localized: "Your Recovery is **\(shown)%**."))
@@ -67,9 +68,9 @@ enum PulseDailyOutlook {
             break
         }
 
-        // Last night's sleep.
+        // Last night's sleep, as a duration ("6h 47m"; "6:47" reads as a clock time in prose).
         if let night = home.lastNight {
-            let slept = PulseFormat.hoursMinutes(night.asleepMin)
+            let slept = PulseFormat.duration(minutes: night.asleepMin)
             if let performance = night.performance {
                 insights.append(String(localized: "You slept **\(slept)** last night, a Sleep Performance of **\(PulseDisplay.displayedPercent(performance))%**."))
             } else {
@@ -114,9 +115,15 @@ enum PulseDailyOutlook {
             }
         }
 
-        // Tonight's bedtime, from the Sleep Planner's need.
+        // Tonight's bedtime, from the Sleep Planner's need; once it has passed, "now" (as the card says).
         if let tonight = home.tonight {
-            recommendations.append(String(localized: "To get the **\(PulseFormat.duration(minutes: tonight.needMin))** of sleep you need tonight, be asleep by **\(PulseFormat.clock(tonight.bedtime))** to wake at **\(PulseFormat.clock(tonight.wake))**."))
+            let need = PulseFormat.duration(minutes: tonight.needMin)
+            let wake = PulseFormat.clock(tonight.wake)
+            if now >= tonight.bedtime {
+                recommendations.append(String(localized: "To get as close as you can to the **\(need)** of sleep you need tonight, go to sleep now to wake at **\(wake)**."))
+            } else {
+                recommendations.append(String(localized: "To get the **\(need)** of sleep you need tonight, be asleep by **\(PulseFormat.clock(tonight.bedtime))** to wake at **\(wake)**."))
+            }
         }
         return Content(evening: evening, greeting: greeting, insights: insights, recommendations: recommendations)
     }
@@ -130,17 +137,25 @@ struct PulseDailyOutlookRoute: PulseScreenRoute {
 }
 
 /// The page (reviews/88): "‹ · DAILY OUTLOOK", the tan → slate → near-black page (indigo in the evening), a
-/// message from ZENO's mark with the greeting, Key Insights and Activity Recommendations as bullets with
-/// bold figures, a note that it was written on the phone, and, while Coach can answer, the Ask row.
+/// message from ZENO's mark with the greeting, Key Insights and Activity Recommendations (15 pt Semibold)
+/// as round-bulleted lines with bold figures, a note that it was written on the phone, and, while Coach can
+/// answer, the Ask row.
 struct PulseDailyOutlookView: View {
     let content: PulseDailyOutlook.Content
 
     @Environment(\.pulseCoach) private var coach
+    @ScaledMetric(relativeTo: .body) private var bulletSize: CGFloat = 5
+
+    /// Where the page's three colours sit, sampled at the left edge of reviews/88: slate by 35% of the
+    /// height and flat near-black from ≈47%, not a tan → slate run down the whole page.
+    // TODO(foundation): carry these locations on `Gradients.dailyOutlookPage` itself.
+    private static let pageLocations: [CGFloat] = [0, 0.35, 0.47]
 
     private var page: Gradient {
-        content.evening
-            ? Gradient(colors: PulseTheme.Gradients.pillEvening.stops.map(\.color) + [PulseTheme.pageBottom])
-            : PulseTheme.Gradients.dailyOutlookPage
+        let colors = content.evening
+            ? PulseTheme.Gradients.pillEvening.stops.map(\.color) + [PulseTheme.pageBottom]
+            : PulseTheme.Gradients.dailyOutlookPage.stops.map(\.color)
+        return Gradient(stops: zip(colors, Self.pageLocations).map { Gradient.Stop(color: $0, location: $1) })
     }
 
     var body: some View {
@@ -183,13 +198,16 @@ struct PulseDailyOutlookView: View {
         if !lines.isEmpty {
             VStack(alignment: .leading, spacing: PulseTheme.Space.xs) {
                 Text(title)
-                    .pulseText(.subsectionTitle)
+                    .pulseText(.coachingTitle)
                     .foregroundStyle(PulseTheme.textPrimary)
                     .accessibilityAddTraits(.isHeader)
                 ForEach(Array(lines.enumerated()), id: \.offset) { _, line in
                     HStack(alignment: .firstTextBaseline, spacing: PulseTheme.Space.s) {
+                        // A round 5 pt bullet on the line's middle; the hidden "•" lends it the baseline.
                         Text(verbatim: "•")
                             .pulseText(.trendInsight)
+                            .hidden()
+                            .overlay { Circle().frame(width: bulletSize, height: bulletSize) }
                             .accessibilityHidden(true)
                         Text(Self.markdown(line))
                             .pulseText(.trendInsight)
