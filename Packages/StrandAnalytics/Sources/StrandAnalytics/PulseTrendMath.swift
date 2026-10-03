@@ -203,19 +203,25 @@ public enum PulseTrendMath {
         public let total: Double
         /// Days of the block that carried a reading.
         public let count: Int
+        /// The block holds a day whose value is UNKNOWN (an activity logged without heart-rate zones), so
+        /// its total covers only its known days: a lower bound, never averaged or compared as a week.
+        public let isPartial: Bool
 
-        public init(start: String, end: String, total: Double, count: Int) {
+        public init(start: String, end: String, total: Double, count: Int, isPartial: Bool = false) {
             self.start = start
             self.end = end
             self.total = total
             self.count = count
+            self.isPartial = isPartial
         }
     }
 
     /// The window's COMPLETE 7-day blocks, counted back from its last day, oldest first. A leading
     /// partial block is dropped, so every total covers the same seven days. Blocks with no reading at all
-    /// are dropped too: a week before the first reading is not a week of zeros.
-    public static func weeklyTotals(_ series: [Point], in window: Window) -> [WeekTotal] {
+    /// are dropped too: a week before the first reading is not a week of zeros. A block that holds one of
+    /// `unknownDays` is kept but marked `isPartial`.
+    public static func weeklyTotals(_ series: [Point], in window: Window,
+                                    unknownDays: Set<String> = []) -> [WeekTotal] {
         guard let endJDN = jdn(window.end), let startJDN = jdn(window.start) else { return [] }
         let inside = points(series, in: window)
         var byDay: [String: Double] = [:]
@@ -227,16 +233,19 @@ public enum PulseTrendMath {
             let present = keys.compactMap { byDay[$0] }
             if !present.isEmpty {
                 out.append(WeekTotal(start: keys[0], end: keys[6], total: present.reduce(0, +),
-                                     count: present.count))
+                                     count: present.count,
+                                     isPartial: keys.contains(where: unknownDays.contains)))
             }
             blockEnd -= 7
         }
         return out.reversed()
     }
 
-    /// The average of the window's complete weekly totals ("AVG. WEEKLY TOTAL"), or nil without one.
-    public static func averageWeeklyTotal(_ series: [Point], in window: Window) -> Double? {
-        let weeks = weeklyTotals(series, in: window)
+    /// The average of the window's complete weekly totals ("AVG. WEEKLY TOTAL"), or nil without one. A
+    /// week holding one of `unknownDays` is left out: its total is only a lower bound.
+    public static func averageWeeklyTotal(_ series: [Point], in window: Window,
+                                          unknownDays: Set<String> = []) -> Double? {
+        let weeks = weeklyTotals(series, in: window, unknownDays: unknownDays).filter { !$0.isPartial }
         guard !weeks.isEmpty else { return nil }
         return mean(weeks.map(\.total))
     }
@@ -266,6 +275,50 @@ public enum PulseTrendMath {
         let delta = current - previous
         let percent: Double? = abs(previous) >= percentFloor ? delta / abs(previous) * 100 : nil
         return Change(current: current, previous: previous, delta: delta, percent: percent)
+    }
+
+    // MARK: - Comparison (the one rule a chip and its sentence share)
+
+    /// A value against a reference, judged by the ONE rule the Trend View's chip and its sentence both
+    /// use, so a "● 0%" chip can never sit beside "above" and an "▼ 2%" chip never beside "consistent".
+    public struct Comparison: Equatable, Sendable {
+        /// `.within` when unchanged; otherwise the way the value moved.
+        public let relation: Relation
+        /// The change in whole percent, unsigned: 0 when unchanged, nil for an absolute comparison.
+        public let percent: Int?
+        /// The change rounded to the printed step, unsigned: 0 when unchanged.
+        public let magnitude: Double
+        /// `current - reference`, or 0 when unchanged (what a ▲▼ glyph is drawn from).
+        public let delta: Double
+
+        public init(relation: Relation, percent: Int?, magnitude: Double, delta: Double) {
+            self.relation = relation
+            self.percent = percent
+            self.magnitude = magnitude
+            self.delta = delta
+        }
+
+        public var isUnchanged: Bool { relation == .within }
+    }
+
+    /// Compares `current` with `reference` as they PRINT at `step` (1 for "74", 0.1 for "15.5", 1 for a
+    /// minute count shown as "7:40"). Unchanged when the two print the same, or when the change rounds to
+    /// 0% (for an `absolute` comparison, or a reference too close to zero to divide by: when the change
+    /// rounds to 0 at `step`). Otherwise above or below. nil when either value is not finite.
+    public static func compare(_ current: Double, with reference: Double, step: Double,
+                               absolute: Bool = false, percentFloor: Double = 0.5) -> Comparison? {
+        guard current.isFinite, reference.isFinite, step > 0 else { return nil }
+        let delta = current - reference
+        let magnitudeSteps = (abs(delta) / step).rounded()
+        let usesPercent = !absolute && abs(reference) >= percentFloor
+        let percent = usesPercent ? Int((abs(delta) / abs(reference) * 100).rounded()) : nil
+        let samePrinted = (current / step).rounded() == (reference / step).rounded()
+        let unchanged = samePrinted || (percent.map { $0 == 0 } ?? (magnitudeSteps == 0))
+        if unchanged {
+            return Comparison(relation: .within, percent: usesPercent ? 0 : nil, magnitude: 0, delta: 0)
+        }
+        return Comparison(relation: delta > 0 ? .above : .below, percent: percent,
+                          magnitude: magnitudeSteps * step, delta: delta)
     }
 
     // MARK: - Typical range
@@ -358,9 +411,11 @@ public enum PulseTrendMath {
 
     /// Consecutive `blockDays` blocks counted back from the window's last day, oldest first. The oldest
     /// block may be shorter; one shorter than a third of a block is dropped (it would print a value
-    /// from a few days as if it were a period).
+    /// from a few days as if it were a period). A weekly-total segment averages only its complete weeks
+    /// (none holding one of `unknownDays`) and has no value when every week in it is partial.
     public static func segments(_ series: [Point], in window: Window, blockDays: Int,
-                                aggregation: Aggregation = .mean, percentFloor: Double = 0.5) -> [Segment] {
+                                aggregation: Aggregation = .mean, unknownDays: Set<String> = [],
+                                percentFloor: Double = 0.5) -> [Segment] {
         guard blockDays > 0, let endJDN = jdn(window.end), let startJDN = jdn(window.start) else { return [] }
         var blocks: [(start: Int, end: Int)] = []
         var blockEnd = endJDN
@@ -385,14 +440,22 @@ public enum PulseTrendMath {
             case .mean:
                 value = inside.isEmpty ? nil : mean(inside.map(\.value))
             case .weeklyTotal:
-                // A block shorter than a week still has a weekly RATE: its total scaled to seven days.
+                // A block shorter than a week still has a weekly RATE: its total scaled to seven days,
+                // unless it holds an unknown day, which would make the rate a guess.
+                let rate = inside.map(\.value).reduce(0, +) / Double(w.dayCount) * 7
+                let holdsUnknown = w.dayKeys.contains(where: unknownDays.contains)
                 if inside.isEmpty {
                     value = nil
                 } else if w.dayCount >= 7 {
-                    value = averageWeeklyTotal(series, in: w)
-                        ?? inside.map(\.value).reduce(0, +) / Double(w.dayCount) * 7
+                    let weeks = weeklyTotals(series, in: w, unknownDays: unknownDays)
+                    let complete = weeks.filter { !$0.isPartial }
+                    if !complete.isEmpty {
+                        value = mean(complete.map(\.total))
+                    } else {
+                        value = weeks.isEmpty && !holdsUnknown ? rate : nil
+                    }
                 } else {
-                    value = inside.map(\.value).reduce(0, +) / Double(w.dayCount) * 7
+                    value = holdsUnknown ? nil : rate
                 }
             }
             var changePercent: Double?

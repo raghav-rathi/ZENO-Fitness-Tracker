@@ -141,6 +141,88 @@ final class PulseTrendMathTests: XCTestCase {
         XCTAssertNil(M.averageWeeklyTotal([], in: w))
     }
 
+    func testAWeekHoldingAnUnknownDayIsPartialAndLeftOutOfTheAverage() {
+        // The review's case: three weeks of 110, 144 and 140 minutes, then a week whose one activity had
+        // no zones (left out of the series) and whose other days are zero. Averaging that week's 0:00 in
+        // gave 1:39; it is a lower bound, not a week.
+        let anchor = "2026-10-02"
+        var values: [Double?] = Array(repeating: 0, count: 30)
+        values[2] = 110
+        values[9] = 144
+        values[16] = 140
+        values[25] = nil
+        let s = series(values, endingOn: anchor)
+        let unknown: Set<String> = [M.addDays(anchor, -4)]
+        let w = M.window(.month, anchor: anchor, earliest: nil)!
+        let weeks = M.weeklyTotals(s, in: w, unknownDays: unknown)
+        XCTAssertEqual(weeks.map(\.total), [110, 144, 140, 0])
+        XCTAssertEqual(weeks.map(\.isPartial), [false, false, false, true])
+        XCTAssertEqual(M.averageWeeklyTotal(s, in: w, unknownDays: unknown) ?? 0, 394.0 / 3, accuracy: 1e-9)
+        // Without the unknown day named, the week counts, as before.
+        XCTAssertEqual(M.averageWeeklyTotal(s, in: w) ?? 0, 98.5, accuracy: 1e-9)
+        // Every week partial: no average at all, rather than one made of lower bounds.
+        let everyWeek = Set((0..<4).map { M.addDays(anchor, -7 * $0) })
+        XCTAssertNil(M.averageWeeklyTotal(s, in: w, unknownDays: everyWeek))
+    }
+
+    func testWeeklyTotalSegmentsSkipPartialWeeks() {
+        let anchor = "2026-09-26"
+        let w = M.window(.sixMonths, anchor: anchor, earliest: nil)!
+        let s = series((0..<180).map { _ in 10.0 }, endingOn: anchor)
+        // One unknown day in the newest block's last week: that block averages its other weeks only.
+        let unknown: Set<String> = [anchor]
+        let segs = M.segments(s, in: w, blockDays: 30, aggregation: .weeklyTotal, unknownDays: unknown)
+        XCTAssertEqual(segs.last?.value ?? 0, 70, accuracy: 1e-9)
+        // A block whose every week holds an unknown day has no value.
+        let block = Set(stride(from: 0, to: 30, by: 7).map { M.addDays(anchor, -$0) })
+        let none = M.segments(s, in: w, blockDays: 30, aggregation: .weeklyTotal, unknownDays: block)
+        XCTAssertNil(none.last?.value)
+    }
+
+    // MARK: - Comparison
+
+    func testComparisonIsUnchangedWhenTheTwoPrintTheSame() {
+        // HRV 79.4 against 78.6: both print "79", so the chip says "● 0%", never "● 1%".
+        let c = M.compare(79.4, with: 78.6, step: 1)
+        XCTAssertEqual(c?.relation, .within)
+        XCTAssertEqual(c?.percent, 0)
+        XCTAssertEqual(c?.delta, 0)
+        XCTAssertEqual(c?.isUnchanged, true)
+    }
+
+    func testComparisonIsUnchangedWhenTheChangeRoundsToZeroPercent() {
+        let c = M.compare(10_127, with: 10_140, step: 1)
+        XCTAssertEqual(c?.relation, .within)
+        XCTAssertEqual(c?.percent, 0)
+    }
+
+    func testComparisonGivesTheWayAndTheRoundedPercentOtherwise() {
+        // Steps 9,942 against 10,127: "▼ 2%" and, in the sentence, "below", never "consistent with".
+        let c = M.compare(9_942, with: 10_127, step: 1)
+        XCTAssertEqual(c?.relation, .below)
+        XCTAssertEqual(c?.percent, 2)
+        XCTAssertEqual(c?.magnitude ?? 0, 185, accuracy: 1e-9)
+        XCTAssertEqual(c?.delta ?? 0, -185, accuracy: 1e-9)
+        XCTAssertEqual(M.compare(74, with: 51, step: 1)?.percent, 45)
+        XCTAssertEqual(M.compare(74, with: 51, step: 1)?.relation, .above)
+    }
+
+    func testAbsoluteComparisonRoundsToThePrintedStep() {
+        // Strain's "▲ 0.6 vs. prior week".
+        let c = M.compare(11.46, with: 10.84, step: 0.1, absolute: true)
+        XCTAssertEqual(c?.relation, .above)
+        XCTAssertNil(c?.percent)
+        XCTAssertEqual(c?.magnitude ?? 0, 0.6, accuracy: 1e-9)
+        // 11.46 and 11.44 print 11.5 and 11.4 but differ by less than a step: unchanged, "● 0.0".
+        XCTAssertEqual(M.compare(11.46, with: 11.44, step: 0.1, absolute: true)?.relation, .within)
+        // A reference too close to zero to divide by is compared absolutely.
+        let small = M.compare(0.3, with: 0.1, step: 0.1)
+        XCTAssertNil(small?.percent)
+        XCTAssertEqual(small?.relation, .above)
+        XCTAssertEqual(small?.magnitude ?? 0, 0.2, accuracy: 1e-9)
+        XCTAssertNil(M.compare(.nan, with: 1, step: 1))
+    }
+
     // MARK: - Change
 
     func testChangeIsAPercentOfThePreviousPeriodWhenThatCanBeDivided() {
