@@ -107,7 +107,9 @@ struct PulseComponentGallery: View {
             PulseNavBar(title: nil, titlePager: PulseNavTitlePager(title: "Wed, Sep 30", canGoBack: true,
                                                                    canGoForward: true, onBack: {}, onForward: {}),
                         leading: .back,
-                        trailing: .achievement(symbol: "hexagon.fill", tint: PulseTheme.sleep, count: 796, action: {}),
+                        trailing: .achievement(symbol: "hexagon.fill", tint: PulseTheme.sleep, count: 796,
+                                               accessibilityLabel: "Restful Nights: 796 Nights of 85%+ Sleep Performance",
+                                               action: {}),
                         onLeading: {})
                 .padding(.horizontal, -16)
         }

@@ -255,13 +255,16 @@ enum PulseDiveAchievement {
     }
 
     /// The bar's right accessory: nothing while the profile snapshot loads, then the chip, or ⓘ while
-    /// the badge has nothing to count.
+    /// the badge has nothing to count. VoiceOver names the badge and what its count counts, in the words of
+    /// its Achievement Details ("Green Light: 3 Green Recoveries"), not a bare "3 achievements".
     func trailing(_ profile: ProfileSnapshot?, open: @escaping (PulseRoute) -> Void) -> PulseNavTrailing {
         guard let profile else { return .none }
         guard let badge = profile.badges.first(where: { $0.rule == rule }), badge.count > 0 else {
             return .info { open(.classic(.scoringGuide)) }
         }
-        return .achievement(symbol: symbol, tint: ProfileArtPalette.family(badge.family)[0], count: badge.count) {
+        let info = ProfileBadgeInfo(badge)
+        return .achievement(symbol: symbol, tint: ProfileArtPalette.family(badge.family)[0], count: badge.count,
+                            accessibilityLabel: String(localized: "\(info.name): \(badge.count) \(info.criterion)")) {
             open(PulseAchievementDetailsRoute(badgeID: badge.id).route)
         }
     }
