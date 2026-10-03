@@ -24,10 +24,22 @@ import StrandAnalytics
 /// them. The L3 `StressNudgeCenter` is OPTIONAL via the environment: Wave 3 injects a shared instance;
 /// absent that we fall back to a local one, so the view always compiles + the card surface always exists.
 struct BreathingView: View {
-    var body: some View { BreathingContent() }
+    /// A catalogue protocol to open on (`BreathProtocolCatalog` id: "relax_4_6", "coherence_5_5",
+    /// "box_4_4_4_4", "four_seven_eight", "kapalabhati", …), with its recommended session length, for an
+    /// entry point that knows what the wearer needs (the Stress Monitor's Sessions row). nil, or an id the
+    /// catalogue does not hold, opens on the default pace as before.
+    var preselectedProtocolId: String? = nil
+
+    var body: some View { BreathingContent(preselectedProtocolId: preselectedProtocolId) }
 }
 
 private struct BreathingContent: View {
+
+    init(preselectedProtocolId: String?) {
+        guard let id = preselectedProtocolId, let proto = BreathProtocolCatalog.protocolById(id) else { return }
+        _pace = State(initialValue: .catalog(id))
+        _sessionLength = State(initialValue: SessionLength.from(recommendedMs: proto.recommendedDurationMs))
+    }
 
     @EnvironmentObject private var model: AppModel
     @EnvironmentObject private var live: LiveState
