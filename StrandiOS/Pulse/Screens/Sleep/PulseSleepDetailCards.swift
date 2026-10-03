@@ -69,7 +69,7 @@ struct PulseSleepHoursVsNeededCard: View {
                 .foregroundStyle(PulseTheme.textSecondary)
                 .padding(.bottom, 2)
             Text(value)
-                .pulseText(.rowValue)
+                .sleepRowValue()
                 .foregroundStyle(PulseTheme.textPrimary)
                 .fixedSize()
                 .frame(width: max(width, PulseTextMetrics.width(label, style: .label) + 56), alignment: .trailing)
@@ -116,7 +116,7 @@ struct PulseSleepHoursVsNeededCard: View {
                         .foregroundStyle(row.dimmed ? PulseTheme.textSecondary : PulseTheme.textPrimary)
                     Spacer(minLength: 8)
                     Text(row.value)
-                        .pulseText(.rowValue)
+                        .sleepRowValue()
                         .foregroundStyle(row.dimmed ? PulseTheme.textSecondary : PulseTheme.textPrimary)
                 }
                 // 23 pt from row to row with the well's own 4 pt spacing (deep-dives-2026/18).
@@ -297,11 +297,9 @@ struct PulseSleepConsistencyChart: View {
     }
 
     private func pill(_ text: String) -> some View {
+        // 13 pt Bold condensed: 28 px caps at 3x on deep-dives-2026/19c (the spec's 15 pt reads large).
         Text(text)
-            .font(PulseType.font(.filter))
-            .fontWeight(.bold)
-            .fontWidth(.condensed)
-            .monospacedDigit()
+            .font(PulseType.font(.baseline))
             .foregroundStyle(PulseTheme.sleep)
             .lineLimit(1)
             .fixedSize()
@@ -343,7 +341,7 @@ struct PulseSleepEfficiencyCard: View {
                         .foregroundStyle(PulseTheme.textPrimary)
                     Spacer(minLength: 8)
                     Text("\(events)")
-                        .pulseText(.calloutValue)
+                        .pulseText(.rowValue)
                         .foregroundStyle(PulseTheme.textPrimary)
                 }
                 .padding(.top, 4)
@@ -447,7 +445,7 @@ struct PulseSleepStressCard: View {
                             .foregroundStyle(color(level.band))
                         Spacer(minLength: 8)
                         Text(level.durationText)
-                            .pulseText(.rowValue)
+                            .sleepRowValue()
                             .foregroundStyle(PulseTheme.textPrimary)
                     }
                     SleepShareBar(fraction: level.share, color: color(level.band))

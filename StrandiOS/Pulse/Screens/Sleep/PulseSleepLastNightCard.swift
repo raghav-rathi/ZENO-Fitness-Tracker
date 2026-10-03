@@ -47,14 +47,14 @@ struct PulseSleepLastNightCard: View {
                         .pulseText(.label)
                         .foregroundStyle(PulseTheme.textSecondary)
                     Text(night.durationText)
-                        .pulseText(.rowValue)
+                        .sleepRowValue()
                         .foregroundStyle(PulseTheme.textPrimary)
                 }
                 .padding(.top, 16)
                 .accessibilityElement(children: .combine)
 
-                // 70 pt from stage row to stage row: 22 + 11 + 16 + 21 (deep-dives-2026/12).
-                VStack(spacing: 21) {
+                // 70 pt from stage row to stage row: 26 + 11 + 16 + 17 (deep-dives-2026/12).
+                VStack(spacing: 17) {
                     ForEach(night.stages) { line in
                         PulseSleepStageRowView(line: line, selected: selected, selectable: night.hasTimeline) {
                             withAnimation(PulseMotion.resolved(PulseMotion.crossFade, reduceMotion: reduceMotion)) {
@@ -80,7 +80,7 @@ struct PulseSleepLastNightCard: View {
                             .foregroundStyle(PulseTheme.textPrimary)
                         Spacer(minLength: 8)
                         Text(latency)
-                            .pulseText(.rowValue)
+                            .sleepRowValue()
                             .foregroundStyle(PulseTheme.textPrimary)
                     }
                     .padding(.top, 18)
@@ -100,7 +100,7 @@ struct PulseSleepLastNightCard: View {
             VStack(alignment: .trailing, spacing: 1) {
                 HStack(spacing: 6) {
                     Text(night.restorative.value)
-                        .pulseText(.rowValue)
+                        .sleepRowValue()
                         .foregroundStyle(PulseTheme.textPrimary)
                     if let trend = night.restorative.trend {
                         PulseTrendGlyph(trend: trend)
@@ -120,7 +120,7 @@ struct PulseSleepLastNightCard: View {
 
 // MARK: - Stage row (§2.6 item 19)
 
-/// A stage row: a 22 pt radio, the UPPERCASE stage name, its share in the stage colour and the duration at
+/// A stage row: a 26 pt radio, the UPPERCASE stage name, its share in the stage colour and the duration at
 /// the right; under it the share as a bar on the hatched track with the typical-range box, or, once a stage
 /// is selected, the barcode of when this row's stage happened (the selected one in its colour).
 struct PulseSleepStageRowView: View {
@@ -144,7 +144,7 @@ struct PulseSleepStageRowView: View {
                         .foregroundStyle(selected == nil || isSelected ? line.stage.pulseColor : PulseTheme.textTertiary)
                     Spacer(minLength: 8)
                     Text(line.durationText)
-                        .pulseText(.rowValue)
+                        .sleepRowValue()
                         .foregroundStyle(PulseTheme.textPrimary)
                 }
                 if selected == nil {
@@ -174,7 +174,7 @@ struct PulseSleepStageRowView: View {
                 Circle().strokeBorder(Color.white, lineWidth: 1.5)
             }
         }
-        .frame(width: 22, height: 22)
+        .frame(width: PulseTheme.SleepDive.stageRadio, height: PulseTheme.SleepDive.stageRadio)
         .opacity(selectable ? 1 : 0.4)
         .accessibilityHidden(true)
     }

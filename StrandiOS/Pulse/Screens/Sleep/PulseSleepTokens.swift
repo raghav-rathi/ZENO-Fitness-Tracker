@@ -63,6 +63,13 @@ extension PulseTheme {
         /// Where the stress chart's plot starts, past its 0.0–3.0 labels (the shared chart's own label row
         /// starts there too), for the times placed along it.
         static let stressPlotInset: CGFloat = 28
+        /// The cards' row figures (stage durations, DURATION, RESTORATIVE, HOURS OF SLEEP / SLEEP NEEDED and the
+        /// need's parts, ASLEEP / AWAKE, the stress levels' durations): 15 pt Bold condensed, WHOOP's 30–32 px
+        /// caps at 3x on deep-dives-2026/14, 15, 19, 19b and 19c (§2.6 item 19, §3.3 item 6), where
+        /// `.rowValue`'s 17 pt reads heavier.
+        static let rowValueSize: CGFloat = 15
+        /// A stage row's radio: 78 px at 3x on deep-dives-2026/14 and 15 (the spec's 22 pt measures small).
+        static let stageRadio: CGFloat = 26
     }
 }
 #endif

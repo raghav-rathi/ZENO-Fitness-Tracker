@@ -102,7 +102,6 @@ struct SleepLabelValueRow: View {
     let label: String
     let value: String
     var labelColor: Color = PulseTheme.textSecondary
-    var valueStyle: PulseTextStyle = .rowValue
 
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
@@ -111,10 +110,27 @@ struct SleepLabelValueRow: View {
                 .foregroundStyle(labelColor)
             Spacer(minLength: 8)
             Text(value)
-                .pulseText(valueStyle)
+                .sleepRowValue()
                 .foregroundStyle(PulseTheme.textPrimary)
         }
         .accessibilityElement(children: .combine)
+    }
+}
+
+/// A row figure on the dive's cards (`PulseTheme.SleepDive.rowValueSize`), Bold condensed with tabular digits,
+/// following Dynamic Type from the size `.subheadline` starts at, as `.rowValue` follows `.headline`.
+struct SleepRowValueText: ViewModifier {
+    @ScaledMetric(relativeTo: .subheadline) private var size: CGFloat = PulseTheme.SleepDive.rowValueSize
+
+    func body(content: Content) -> some View {
+        content.font(PulseType.numeral(max(11, size)))
+    }
+}
+
+extension View {
+    /// Style a figure in a Sleep dive card's row (`SleepRowValueText`).
+    func sleepRowValue() -> some View {
+        modifier(SleepRowValueText())
     }
 }
 
