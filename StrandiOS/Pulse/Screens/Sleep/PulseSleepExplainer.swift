@@ -49,6 +49,7 @@ enum PulseSleepExplainerTopic: String, Hashable, CaseIterable {
             return [
                 String(localized: "Your heart rate and heart-rate variability through the night, scored on the same 0 to 3 scale as the Stress Monitor and measured against how calm you were while awake the day before."),
                 String(localized: "High sleep stress is the share of the night that read 2.0 or above. A settled night stays low; a wake-up or a restless stretch shows as a spike. It is an approximate read, not a medical one."),
+                String(localized: "The figure under it is your average over the 30 nights before, once five of them could be scored, and the arrow is coloured by whether the change is good for you."),
             ]
         case .planner:
             return [

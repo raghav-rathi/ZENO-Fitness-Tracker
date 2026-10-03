@@ -27,6 +27,11 @@ struct SleepFigure: Equatable {
 
     /// True when there is no value (the empty card shows only its title and the dash).
     var isEmpty: Bool { value.hasPrefix("-") }
+
+    /// The dashes an empty card prints (deep-dives-2026/01, 19f): "-:--" on every card but SLEEP
+    /// CONSISTENCY, which prints "--%".
+    static let durationDash = "-:--"
+    static let percentDash = "--%"
 }
 
 /// One of the four Sleep Performance contributors in the callout (§3.3 item 3).
@@ -190,11 +195,29 @@ struct SleepEfficiencyCard: Equatable {
     let wakeEvents: Int?
 }
 
-/// The window the night's stress is scored over, handed to the second build.
+/// The window the night's stress is scored over, handed to the second build, and the prior 30 nights its
+/// baseline is the mean over (newest first).
 struct SleepStressRequest: Equatable {
     let nightKey: String
     let onset: Date
     let wake: Date
+    let prior: [SleepStressNight]
+}
+
+/// A prior night's window, for the SLEEP STRESS baseline.
+struct SleepStressNight: Equatable {
+    let key: String
+    let onsetTs: Int
+    let wakeTs: Int
+}
+
+/// HIGH SLEEP STRESS against the prior 30 nights (a third build: it scores up to 30 past nights, each once).
+struct SleepStressBaseline: Equatable {
+    let nightKey: String
+    /// The night's HIGH share with the prior nights' mean under it and the trend glyph (lower is better);
+    /// no baseline under five scored nights.
+    let figure: SleepFigure
+    let scoredNights: Int
 }
 
 /// SLEEP STRESS (§3.3 item 7d) and the HIGH SLEEP STRESS contributor, built after the rest of the page
@@ -223,16 +246,26 @@ struct SleepStressSnapshot: Equatable {
     let state: State
     /// HIGH SLEEP STRESS, 0–100 (printed whole).
     let highPercent: Double?
+    /// The same as a card figure, before its baseline lands (`SleepStressBaseline`).
+    let figure: SleepFigure?
     let levels: [Level]
     /// The curve (window midpoints), with gaps as nil.
     let points: [PulseTimeValue]
     let sleepStart: Date
     let sleepEnd: Date
     let chartEnd: Date
-    /// Four times under the chart, oldest first.
-    let xLabels: [String]
+    /// The times under the chart, each at its own place along it.
+    let xTicks: [XTick]
     /// The last scored level, for the end rule's dot.
     let lastLevel: Double?
+
+    /// A time under the stress chart: its start, two half hours, and its end (bold).
+    struct XTick: Equatable {
+        /// 0…1 along the chart's span.
+        let fraction: Double
+        let text: String
+        let isEnd: Bool
+    }
 }
 
 /// One day of the Weekly Trends cards (§3.3 item 8), keyed by wake day.
@@ -259,13 +292,19 @@ struct SleepWeekNight: Equatable, Identifiable {
 /// The Sleep deep dive for one night.
 struct SleepDiveSnapshot: Equatable {
     let seq: Int
-    /// The day the request was for (Home's day): the nav title says "TODAY" for its night.
+    /// The day the request was for (Home's day): the nav title mirrors Home's for its night.
     let requestDayKey: String
-    /// Every banked night's wake day, newest first: ‹ › step through these.
+    /// Today's day key: its night is titled "TODAY" wherever the wearer stepped from.
+    let todayKey: String
+    /// Every banked night's wake day, newest first.
     let nightKeys: [String]
-    let nightIndex: Int
-    /// The wake day of the night shown; nil with no night at all.
-    let wakeDayKey: String?
+    /// The wake day of the night shown: a banked night, or a day with none (the empty night).
+    let wakeDayKey: String
+    /// False for a day with no banked night: the ring and every card show their empty state.
+    let hasNight: Bool
+    /// The nearest banked nights before and after it: ‹ › step to these.
+    let olderKey: String?
+    let newerKey: String?
     let dial: PulseDialData
     let contributors: [SleepContributorRow]
     /// The coach summary pill's local sentence.
@@ -280,10 +319,9 @@ struct SleepDiveSnapshot: Equatable {
     let sleepingHR: Int?
     let lowestHR: Int?
     let respRate: Double?
-    /// The night is the newest one banked.
-    var isLatest: Bool { nightIndex == 0 }
-    var hasOlder: Bool { nightIndex + 1 < nightKeys.count }
-    var hasNewer: Bool { nightIndex > 0 }
+    /// The sleep metrics whose classic detail page has data (where a card may send the wearer while Trend
+    /// View is being rebuilt).
+    let metricPages: Set<String>
 }
 
 // MARK: - Sleep Planner

@@ -46,5 +46,23 @@ extension PulseTheme {
         static let glyphRadius: CGFloat = 3
     }
 
+    /// The Sleep dive's own shapes and fills (§3.3).
+    enum SleepDive {
+        /// The 30-night typical-range box over a stage or level bar: a lighter block than the track, under
+        /// its dashed sides (#35393C with a #43474A–#494D50 hatch on the #1E2225 card, deep-dives-2026/12).
+        static let typicalBoxFill = Color.white.opacity(0.12)
+        static let typicalBoxHatch = Color.white.opacity(0.10)
+        /// Legend and breakdown swatches.
+        static let swatchRadius: CGFloat = 2
+        /// The floating bed → wake bars (SLEEP CONSISTENCY, TIME IN BED) and the stacked restorative bars.
+        static let rangeBarRadius: CGFloat = 3
+        /// The ASLEEP track's ends (SLEEP EFFICIENCY).
+        static let asleepTrackRadius: CGFloat = PulseTheme.Radius.toggle
+        /// The gap between a stacked bar's REM and Deep segments (deep-dives-2026/08: 1–2 pt, card colour).
+        static let segmentGap: CGFloat = 1.5
+        /// Where the stress chart's plot starts, past its 0.0–3.0 labels (the shared chart's own label row
+        /// starts there too), for the times placed along it.
+        static let stressPlotInset: CGFloat = 28
+    }
 }
 #endif

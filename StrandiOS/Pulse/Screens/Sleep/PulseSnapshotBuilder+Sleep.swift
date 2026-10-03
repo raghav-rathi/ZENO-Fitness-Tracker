@@ -11,9 +11,10 @@ import WhoopProtocol
 // All of this runs on the builder actor (`PulseModel.build`), off the main actor. A night is the SAME night
 // everywhere: the Sleep tab's wake-day grouping (`nightGroups`) merged by `SleepModel.mergeDay`, its Sleep
 // Performance through the ONE resolver Home's dial reads (`sleepPerformance`), its need and consistency
-// through the ONE per-night read (`Repository.resolvedNightSleep`). Every "vs. prior 30 days" figure is the
-// mean of the same quantity over the nights that ended in the 30 calendar days before this one, computed
-// the same way, so the value, its baseline and the Weekly Trends bar for the same night cannot disagree.
+// through the ONE per-night read (`Repository.resolvedNightSleep`), its efficiency through the ONE series the
+// classic Sleep Efficiency page reads (`Repository.exploreSeries`). Every "vs. prior 30 days" figure is the
+// mean of the same quantity over the nights that ended in the 30 calendar days before this one, read the
+// same way, so the value, its baseline and the Weekly Trends point for the same night cannot disagree.
 
 extension PulseSnapshotBuilder {
 
@@ -25,11 +26,13 @@ extension PulseSnapshotBuilder {
         let wakeTs: Int
         let resolved: ResolvedNightSleep
         let performance: Double?
+        /// SLEEP EFFICIENCY as stored for the night (spec §3.3 "Efficiency, Consistency: stored"), in percent:
+        /// the figure the classic Sleep Efficiency page prints. The merged night only draws its barcode.
+        let efficiency: Double?
 
         var asleep: Double { night.stages.asleep }
         var inBed: Double { night.stages.total }
         var restorative: Double { night.stages.deep + night.stages.rem }
-        var efficiency: Double? { inBed > 0 ? asleep / inBed * 100 : nil }
         var need: Double? { resolved.needMin.flatMap { $0 > 0 ? $0 : nil } }
         /// Asleep ÷ need, capped at 100 (the merged night against the resolved need, as the dive has always
         /// divided it, so the percent and its "x of y" can never disagree).
@@ -55,26 +58,68 @@ extension PulseSnapshotBuilder {
         await cached("sleep.computed") { await repo.computedSleep }
     }
 
+    /// Each night's stored SLEEP EFFICIENCY in percent, by wake day, read once per refresh through the
+    /// series the classic Sleep Efficiency page draws (`Repository.exploreSeries`: an import over NOOP's own
+    /// computed value over the day's stored column). The stored column is a 0–1 fraction where an import
+    /// writes 0–100; anything over 1.5 is already a percent, the classic Sleep screen's own test.
+    func sleepEfficiencyByNight() async -> [String: Double] {
+        await cached("sleep.efficiency") {
+            let series = await repo.exploreSeries(key: "sleep_efficiency", source: "my-whoop")
+            var out: [String: Double] = [:]
+            for point in series where point.value.isFinite && point.value > 0 {
+                out[point.day] = min(100, point.value > 1.5 ? point.value : point.value * 100)
+            }
+            return out
+        }
+    }
+
+    /// The sleep metrics whose classic detail page holds at least one reading (the question the Explore
+    /// list asks for its "no data" dot), so a card is never routed to an empty page while Trend View is
+    /// being rebuilt. Read once per refresh.
+    func sleepMetricPagesWithData() async -> Set<String> {
+        await cached("sleep.metricPages") {
+            let keys = Set(PulseSleepRoutes.metricKeys)
+            let descriptors = MetricCatalog.all.filter { keys.contains($0.key) && $0.source == "my-whoop" }
+            let ids = await repo.nonEmptyMetricIDs(descriptors)
+            return Set(descriptors.filter { ids.contains($0.id) }.map(\.key))
+        }
+    }
+
     // MARK: - The dive
 
-    /// The Sleep dive for the newest night that ended on or before `anchorKey` (a wake day key; Home's day
-    /// when nil). Nights are addressed by wake day, never by position, so a night banked while the screen is
-    /// open cannot swap what it shows.
+    /// The Sleep dive for the night that ended on `anchorKey` (a wake day key the wearer stepped to), or on
+    /// Home's day when nil. A day with no banked night is that day's empty night ("No sleep was recorded"),
+    /// never an older night under the day's title (§1.7: the dive mirrors Home's day); ‹ › step to the
+    /// nearest banked nights either side. Nights are addressed by wake day, never by position, so a night
+    /// banked while the screen is open cannot swap what it shows.
     func sleepDive(_ r: PulseRequest, onOrBefore anchorKey: String?) async -> SleepDiveSnapshot? {
         begin(r.seq)
         let groups = await nightGroups(r)
         let habitual = await habitualMidsleep()
         let rest = await restSeries()
         let computed = await sleepComputedFigures()
+        let efficiencies = await sleepEfficiencyByNight()
+        let metricPages = await sleepMetricPagesWithData()
         guard isCurrent(r) else { return nil }
 
-        let anchor = anchorKey ?? r.day.key
         // `navDays` groups blocks by the local day they END on, newest first.
-        let keys = groups.map { g in
-            Repository.localDayKey(Date(timeIntervalSince1970: TimeInterval(g.first?.endTs ?? 0)))
-        }
+        var keys: [String] = []
         var groupByKey: [String: [CachedSleepSession]] = [:]
-        for (key, group) in zip(keys, groups) where groupByKey[key] == nil { groupByKey[key] = group }
+        for group in groups {
+            let key = Repository.localDayKey(Date(timeIntervalSince1970: TimeInterval(group.first?.endTs ?? 0)))
+            guard groupByKey[key] == nil else { continue }
+            groupByKey[key] = group
+            keys.append(key)
+        }
+        keys.sort(by: >)
+        #if DEBUG
+        // `--sleep-drop-night`: capture Home's day as a day whose night was never recorded (the demo seed
+        // banks a night every day). Nothing is invented: the night is only left out.
+        if PulseSleepDebug.dropsHomeNight {
+            groupByKey[r.day.key] = nil
+            keys.removeAll { $0 == r.day.key }
+        }
+        #endif
         let daysByKey = Dictionary(r.days.map { ($0.day, $0) }, uniquingKeysWith: { _, last in last })
 
         #if DEBUG
@@ -105,21 +150,22 @@ extension PulseSnapshotBuilder {
                 #endif
                 out = SleepNightFacts(key: key, night: night, onsetTs: night.session.effectiveStartTs,
                                       wakeTs: night.session.endTs, resolved: resolved,
-                                      performance: sleepPerformance(dayKey: key, rest: rest, days: r.days))
+                                      performance: sleepPerformance(dayKey: key, rest: rest, days: r.days),
+                                      efficiency: efficiencies[key])
             }
             memo[key] = .some(out)
             return out
         }
 
-        guard !keys.isEmpty else {
-            return Self.emptySleepDive(seq: r.seq, requestDayKey: r.day.key)
-        }
-        // A day older than every banked night opens on the oldest night, the nearest one there is.
-        let index = keys.firstIndex { $0 <= anchor } ?? keys.count - 1
-        let key = keys[index]
+        let key = anchorKey ?? r.day.key
         let group = groupByKey[key] ?? []
         let tonight = facts(key)
-        let perf = sleepPerformance(dayKey: key, rest: rest, days: r.days)
+        // The dial is Home's own resolver for the day, so the two always agree (a day with a score but no
+        // night to break down shows the score over empty cards).
+        var perf = sleepPerformance(dayKey: key, rest: rest, days: r.days)
+        #if DEBUG
+        if PulseSleepDebug.dropsHomeNight && key == r.day.key { perf = nil }
+        #endif
         let dial = PulseDialData(score: .sleep, value: perf, state: perf == nil ? .noData : .scored)
 
         // The 30 calendar days before the night, oldest first, and the nights that ended on them.
@@ -180,43 +226,31 @@ extension PulseSnapshotBuilder {
             Self.efficiencyCard(night, prior: prior, wakeEvents: daysByKey[key]?.disturbances)
         }
 
-        // MARK: Weekly Trends: the seven days ending on the night's wake day.
+        // MARK: Weekly Trends: the seven days ending on the night's wake day, a night or not.
         let weekKeys = PulseDisplay.trailingDayKeys(endingOn: key, count: 7)
         let weekly = weekKeys.map { day -> SleepWeekNight in
-            Self.weekNight(day, facts: facts(day), performance: sleepPerformance(dayKey: day, rest: rest, days: r.days))
+            // The night shown takes the dial's own figure, so its bar and the ring cannot differ.
+            Self.weekNight(day, facts: facts(day),
+                           performance: day == key ? perf : sleepPerformance(dayKey: day, rest: rest, days: r.days))
         }
 
-        let napList = naps(in: group, night: tonight?.night)
+        let napList = tonight == nil ? [] : naps(in: group, night: tonight?.night)
         let summary = Self.sleepSummary(perf: perf, night: tonight, contributors: contributors)
-        let stress = tonight.map {
-            SleepStressRequest(nightKey: key, onset: Date(timeIntervalSince1970: TimeInterval($0.onsetTs)),
-                               wake: Date(timeIntervalSince1970: TimeInterval($0.wakeTs)))
+        let stress = tonight.map { night in
+            SleepStressRequest(nightKey: key, onset: Date(timeIntervalSince1970: TimeInterval(night.onsetTs)),
+                               wake: Date(timeIntervalSince1970: TimeInterval(night.wakeTs)),
+                               prior: prior.reversed().map {
+                                   SleepStressNight(key: $0.key, onsetTs: $0.onsetTs, wakeTs: $0.wakeTs)
+                               })
         }
         guard isCurrent(r) else { return nil }
         return SleepDiveSnapshot(
-            seq: r.seq, requestDayKey: r.day.key, nightKeys: keys, nightIndex: index, wakeDayKey: key,
-            dial: dial, contributors: contributors, summary: summary, lastNight: lastNight,
-            hoursVsNeeded: hoursVsNeeded, consistency: consistency, efficiency: efficiency, stress: stress,
-            weekly: weekly, naps: napList, sleepingHR: sleepingHR, lowestHR: lowestHR,
-            respRate: daysByKey[key]?.respRateBpm)
-    }
-
-    /// The dive with nothing banked at all.
-    static func emptySleepDive(seq: Int, requestDayKey: String) -> SleepDiveSnapshot {
-        let rows: [(SleepContributorRow.Kind, String, String)] = [
-            (.hours, String(localized: "Hours vs. needed"), "hours_vs_needed_pct"),
-            (.consistency, String(localized: "Sleep consistency"), "sleep_consistency"),
-            (.efficiency, String(localized: "Sleep efficiency"), "sleep_efficiency"),
-            (.stress, String(localized: "High sleep stress"), "sleep_stress"),
-        ]
-        return SleepDiveSnapshot(
-            seq: seq, requestDayKey: requestDayKey, nightKeys: [], nightIndex: 0, wakeDayKey: nil,
-            dial: PulseDialData(score: .sleep, value: nil, state: .noData),
-            contributors: rows.map { SleepContributorRow(kind: $0.0, title: $0.1, percent: nil, calibrating: false,
-                                                         band: nil, metric: $0.2) },
-            summary: sleepSummary(perf: nil, night: nil, contributors: []), lastNight: nil, hoursVsNeeded: nil,
-            consistency: nil, efficiency: nil, stress: nil, weekly: [], naps: [], sleepingHR: nil, lowestHR: nil,
-            respRate: nil)
+            seq: r.seq, requestDayKey: r.day.key, todayKey: Repository.localDayKey(r.now), nightKeys: keys,
+            wakeDayKey: key, hasNight: tonight != nil, olderKey: keys.first { $0 < key },
+            newerKey: keys.last { $0 > key }, dial: dial, contributors: contributors, summary: summary,
+            lastNight: lastNight, hoursVsNeeded: hoursVsNeeded, consistency: consistency, efficiency: efficiency,
+            stress: stress, weekly: weekly, naps: napList, sleepingHR: sleepingHR, lowestHR: lowestHR,
+            respRate: tonight == nil ? nil : daysByKey[key]?.respRateBpm, metricPages: metricPages)
     }
 
     // MARK: Contributor bands (§3.3 item 3 thresholds)
@@ -464,11 +498,25 @@ extension PulseSnapshotBuilder {
         let wakeDay = cal.startOfDay(for: Date(timeIntervalSince1970: TimeInterval(wakeTs)))
         let noon = cal.date(byAdding: .hour, value: -12, to: wakeDay) ?? wakeDay
         let date = noon.addingTimeInterval(position * 60)
-        let f = DateFormatter()
-        f.locale = AppClock.formattingLocale
-        f.setLocalizedDateFormatFromTemplate(AppClock.uses24Hour ? "HHmm" : "ha")
-        return f.string(from: date).replacingOccurrences(of: " ", with: "")
+        return hourFormatter().string(from: date).replacingOccurrences(of: " ", with: "")
             .replacingOccurrences(of: "\u{202F}", with: "")
+    }
+
+    private static let hourFormatterLock = NSLock()
+    private static var hourFormatterCache: (key: String, formatter: DateFormatter)?
+
+    /// The hour formatter for the reader's locale and clock, made once rather than per gridline.
+    private static func hourFormatter() -> DateFormatter {
+        let locale = AppClock.formattingLocale
+        let use24 = AppClock.uses24Hour
+        let key = "\(locale.identifier)|\(use24)"
+        hourFormatterLock.lock(); defer { hourFormatterLock.unlock() }
+        if let cached = hourFormatterCache, cached.key == key { return cached.formatter }
+        let f = DateFormatter()
+        f.locale = locale
+        f.setLocalizedDateFormatFromTemplate(use24 ? "HHmm" : "ha")
+        hourFormatterCache = (key, f)
+        return f
     }
 
     // MARK: SLEEP EFFICIENCY
@@ -511,6 +559,10 @@ extension PulseSnapshotBuilder {
 
     static func sleepSummary(perf: Double?, night: SleepNightFacts?, contributors: [SleepContributorRow]) -> String? {
         guard let night else {
+            if let perf {
+                let word = PulseSleepBand.name(PulseSleepBand.index(percent: perf) ?? 0).lowercased()
+                return String(localized: "Your sleep was \(word) at **\(PulseDisplay.displayedPercent(perf))%**. This night has no sleep details to break it down.")
+            }
             return String(localized: "No sleep was recorded for this night. Wear your strap to bed to see your Sleep Performance.")
         }
         guard let perf else {
@@ -531,13 +583,18 @@ extension PulseSnapshotBuilder {
 
     // MARK: - The night's stress (a second build: raw heart rate and R-R)
 
-    /// HIGH / MEDIUM / LOW for the night in `q`, scored by `SleepStress` against the waking hours before it.
-    func sleepStress(_ r: PulseRequest, request q: SleepStressRequest) async -> SleepStressSnapshot? {
-        begin(r.seq)
-        let onset = Int(q.onset.timeIntervalSince1970)
-        let wake = Int(q.wake.timeIntervalSince1970)
-        let chartFrom = onset - 45 * 60
-        let chartTo = wake + 30 * 60
+    /// One night's stress, or why there is none.
+    enum NightStress {
+        /// No waking heart rate before the night to compare it against.
+        case noReference
+        /// Too little heart rate during the night.
+        case noHeartRate
+        case scored(SleepStress.Result)
+    }
+
+    /// Scores the night from `onset` to `wake` (its curve from `chartFrom` to `chartTo`) with `SleepStress`,
+    /// against the waking hours before it. nil when a newer refresh superseded the reads.
+    func nightStress(_ r: PulseRequest, onset: Int, wake: Int, chartFrom: Int, chartTo: Int) async -> NightStress? {
         // The waking day the night is compared with: the 18 hours before it (the Stress Monitor's 06–22
         // waking window always falls inside them, whenever the night began).
         let referenceFrom = onset - 18 * 3_600
@@ -548,21 +605,34 @@ extension PulseSnapshotBuilder {
         let gravity = await repo.gravitySamplesUnion(from: referenceFrom, to: onset, limit: 200_000)
         guard isCurrent(r) else { return nil }
 
-        let tz = TimeZone.current.secondsFromGMT(for: q.onset)
+        let tz = TimeZone.current.secondsFromGMT(for: Date(timeIntervalSince1970: TimeInterval(onset)))
         let day = DaytimeStress.analyze(hr: hr.filter { $0.ts < onset }, rr: rr.filter { $0.ts < onset },
                                         gravity: gravity, tzOffsetSeconds: tz)
-        let empty = SleepStressSnapshot(nightKey: q.nightKey, state: .noReference, highPercent: nil, levels: [],
-                                        points: [], sleepStart: q.onset, sleepEnd: q.wake,
-                                        chartEnd: Date(timeIntervalSince1970: TimeInterval(chartTo)),
-                                        xLabels: [], lastLevel: nil)
-        guard let reference = SleepStress.reference(wakingHours: day.hours, endingBy: onset) else { return empty }
+        guard let reference = SleepStress.reference(wakingHours: day.hours, endingBy: onset) else { return .noReference }
         let res = SleepStress.analyze(hr: hr.filter { $0.ts >= chartFrom }, rr: rr.filter { $0.ts >= chartFrom },
                                       sleepStart: onset, sleepEnd: wake, reference: reference,
                                       chartStart: chartFrom, chartEnd: chartTo)
-        guard res.hasScore else {
-            return SleepStressSnapshot(nightKey: q.nightKey, state: .noHeartRate, highPercent: nil, levels: [],
-                                       points: [], sleepStart: q.onset, sleepEnd: q.wake,
-                                       chartEnd: empty.chartEnd, xLabels: [], lastLevel: nil)
+        return res.hasScore ? .scored(res) : .noHeartRate
+    }
+
+    /// HIGH / MEDIUM / LOW for the night in `q`, scored by `SleepStress` against the waking hours before it.
+    func sleepStress(_ r: PulseRequest, request q: SleepStressRequest) async -> SleepStressSnapshot? {
+        begin(r.seq)
+        let onset = Int(q.onset.timeIntervalSince1970)
+        let wake = Int(q.wake.timeIntervalSince1970)
+        let chartFrom = onset - 45 * 60
+        let chartTo = wake + 30 * 60
+        let chartEnd = Date(timeIntervalSince1970: TimeInterval(chartTo))
+        guard let scored = await nightStress(r, onset: onset, wake: wake, chartFrom: chartFrom, chartTo: chartTo)
+        else { return nil }
+        let res: SleepStress.Result
+        switch scored {
+        case .noReference, .noHeartRate:
+            return SleepStressSnapshot(nightKey: q.nightKey, state: scored.isNoReference ? .noReference : .noHeartRate,
+                                       highPercent: nil, figure: nil, levels: [], points: [], sleepStart: q.onset,
+                                       sleepEnd: q.wake, chartEnd: chartEnd, xTicks: [], lastLevel: nil)
+        case .scored(let result):
+            res = result
         }
         let order: [(SleepStress.Band, String)] = [
             (.high, String(localized: "High")), (.medium, String(localized: "Medium")), (.low, String(localized: "Low")),
@@ -576,14 +646,69 @@ extension PulseSnapshotBuilder {
             PulseTimeValue(date: Date(timeIntervalSince1970: TimeInterval(w.startTs) + TimeInterval(w.seconds) / 2),
                            value: w.level)
         }
-        let labels = (0...3).map { i -> String in
-            let ts = chartFrom + (chartTo - chartFrom) * i / 3
-            return PulseFormat.clock(Date(timeIntervalSince1970: TimeInterval(ts)))
-        }
+        let dates = points.map(\.date) + [q.onset, q.wake, chartEnd]
+        let ticks = Self.stressTicks(from: dates.min() ?? q.onset, to: dates.max() ?? chartEnd)
+        let figure = Self.sleepFigure(res.highPercent, history: [], polarity: .lowerIsBetter, unit: "%",
+                                      name: String(localized: "High sleep stress"), format: Self.percentText)
         return SleepStressSnapshot(nightKey: q.nightKey, state: .scored, highPercent: res.highPercent,
-                                   levels: levels, points: points, sleepStart: q.onset, sleepEnd: q.wake,
-                                   chartEnd: empty.chartEnd, xLabels: labels,
+                                   figure: figure, levels: levels, points: points, sleepStart: q.onset,
+                                   sleepEnd: q.wake, chartEnd: chartEnd, xTicks: ticks,
                                    lastLevel: res.windows.last(where: { $0.level != nil })?.level)
+    }
+
+    /// The chart's times: its start and its end (bold), and between them the two half hours nearest a third
+    /// and two thirds of the way along, each placed at its own time (deep-dives-2026/19b: "1:30 AM",
+    /// "4:30 AM"). `from` / `to` are the span `PulseStressChart` plots.
+    static func stressTicks(from: Date, to: Date, calendar cal: Calendar = .current) -> [SleepStressSnapshot.XTick] {
+        let span = to.timeIntervalSince(from)
+        guard span > 0 else { return [] }
+        var ticks = [SleepStressSnapshot.XTick(fraction: 0, text: PulseFormat.clock(from), isEnd: false)]
+        var used = Set<Int>()
+        for third in [1.0 / 3, 2.0 / 3] {
+            let target = from.addingTimeInterval(span * third)
+            let offset = Double(cal.timeZone.secondsFromGMT(for: target))
+            let local = target.timeIntervalSince1970 + offset
+            let snapped = Date(timeIntervalSince1970: (local / 1_800).rounded() * 1_800 - offset)
+            let fraction = snapped.timeIntervalSince(from) / span
+            let id = Int(snapped.timeIntervalSince1970)
+            guard fraction > 0.15, fraction < 0.85, !used.contains(id) else { continue }
+            used.insert(id)
+            ticks.append(.init(fraction: fraction, text: PulseFormat.clock(snapped), isEnd: false))
+        }
+        ticks.append(.init(fraction: 1, text: PulseFormat.clock(to), isEnd: true))
+        return ticks
+    }
+
+    /// SLEEP STRESS against the prior 30 nights: the mean HIGH share over the prior nights that score (at
+    /// least five, as every other "vs. prior 30 days" figure asks), with the trend lower-is-better. A past
+    /// night's score is kept (`PulseSleepStressHistory`), keyed on its window and its heart-rate coverage,
+    /// so it is scored once unless more of its data arrives. nil when a newer refresh superseded the build.
+    func sleepStressBaseline(_ r: PulseRequest, request q: SleepStressRequest,
+                             highPercent: Double) async -> SleepStressBaseline? {
+        begin(r.seq)
+        var history: [Double] = []
+        for night in q.prior {
+            let chartFrom = night.onsetTs - 45 * 60
+            let chartTo = night.wakeTs + 30 * 60
+            let coverage = await repo.hrFingerprint(from: night.onsetTs - 18 * 3_600, to: chartTo)
+            guard isCurrent(r) else { return nil }
+            let cacheKey = "\(night.key)|\(night.onsetTs)|\(night.wakeTs)|\(coverage?.count ?? 0)|\(coverage?.maxTs ?? 0)"
+            if let kept = await PulseSleepStressHistory.shared.lookup(cacheKey) {
+                if let kept { history.append(kept) }
+                continue
+            }
+            guard (coverage?.count ?? 0) > 0 else { continue }
+            guard let scored = await nightStress(r, onset: night.onsetTs, wake: night.wakeTs, chartFrom: chartFrom,
+                                                 chartTo: chartTo) else { return nil }
+            var high: Double?
+            if case .scored(let res) = scored { high = res.highPercent }
+            await PulseSleepStressHistory.shared.keep(cacheKey, high: high)
+            if let high { history.append(high) }
+        }
+        guard isCurrent(r) else { return nil }
+        let figure = Self.sleepFigure(highPercent, history: history, polarity: .lowerIsBetter, unit: "%",
+                                      name: String(localized: "High sleep stress"), format: Self.percentText)
+        return SleepStressBaseline(nightKey: q.nightKey, figure: figure, scoredNights: history.count)
     }
 
     // MARK: - Tonight's plan (Sleep Planner, Home's TONIGHT'S SLEEP)
@@ -637,4 +762,27 @@ extension PulseSnapshotBuilder {
     }
 }
 
+extension PulseSnapshotBuilder.NightStress {
+    var isNoReference: Bool {
+        if case .noReference = self { return true }
+        return false
+    }
+}
+
+/// Past nights' HIGH SLEEP STRESS, kept for the app's life: a past night's heart rate does not change, so
+/// the dive's baseline scores each night once (its key carries the night's window and heart-rate coverage,
+/// so a night whose data arrives later is scored again).
+actor PulseSleepStressHistory {
+    static let shared = PulseSleepStressHistory()
+    /// HIGH SLEEP STRESS by night key; nil for a night that does not score.
+    private var byNight: [String: Double?] = [:]
+
+    /// The kept score (nil inside when the night does not score), or nil when the night was never scored.
+    func lookup(_ key: String) -> Double?? { byNight[key] }
+
+    func keep(_ key: String, high: Double?) {
+        if byNight.count > 400 { byNight.removeAll() }
+        byNight[key] = .some(high)
+    }
+}
 #endif

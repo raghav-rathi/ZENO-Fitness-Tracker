@@ -198,8 +198,9 @@ struct PulseSleepConsistencyCard: View {
 struct PulseSleepConsistencyChart: View {
     let card: SleepConsistencyCard
 
-    /// 40 pt per four-hour gridline step, as WHOOP spaces them (deep-dives-2026/03, 18), plus the x labels.
-    private var height: CGFloat { CGFloat(max(card.lines.count - 1, 2)) * 40 + 30 }
+    /// The PLOT, 40 pt per four-hour gridline step as WHOOP spaces them (deep-dives-2026/03, 18); the
+    /// weekday labels under it add their own height.
+    private var plotHeight: CGFloat { CGFloat(max(card.lines.count - 1, 2)) * 40 }
 
     var body: some View {
         // Positions are minutes after noon; the y axis is drawn negated so the evening sits on top.
@@ -209,7 +210,7 @@ struct PulseSleepConsistencyChart: View {
                 RectangleMark(x: .value("Night", night.id), yStart: .value("Bed", -night.bed),
                               yEnd: .value("Wake", -night.wake), width: .fixed(14))
                     .foregroundStyle(night.isLast ? PulseTheme.sleep : PulseTheme.SleepDetail.consistencyPast)
-                    .cornerRadius(3)
+                    .cornerRadius(PulseTheme.SleepDive.rangeBarRadius)
             }
         }
         .chartXScale(domain: card.nights.map(\.id))
@@ -237,6 +238,9 @@ struct PulseSleepConsistencyChart: View {
                 }
             }
         }
+        .chartPlotStyle { plot in
+            plot.frame(height: plotHeight)
+        }
         .chartOverlay { proxy in
             GeometryReader { geo in
                 if let anchor = proxy.plotFrame {
@@ -247,7 +251,6 @@ struct PulseSleepConsistencyChart: View {
                 }
             }
         }
-        .frame(height: height)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(String(localized: "Bed and wake times, last five nights"))
         .accessibilityValue([card.lastBedText.map { String(localized: "last night to bed \($0)") },
@@ -292,7 +295,10 @@ struct PulseSleepConsistencyChart: View {
 
     private func pill(_ text: String) -> some View {
         Text(text)
-            .font(PulseType.numeral(15))
+            .font(PulseType.font(.filter))
+            .fontWeight(.bold)
+            .fontWidth(.condensed)
+            .monospacedDigit()
             .foregroundStyle(PulseTheme.sleep)
             .lineLimit(1)
             .fixedSize()
@@ -347,7 +353,7 @@ struct PulseSleepEfficiencyCard: View {
         GeometryReader { geo in
             let w = geo.size.width
             ZStack(alignment: .leading) {
-                PulseHatchedTrack(cornerRadius: 6)
+                PulseHatchedTrack(cornerRadius: PulseTheme.SleepDive.asleepTrackRadius)
                 ForEach(Array(card.asleepRuns.enumerated()), id: \.offset) { _, run in
                     Rectangle()
                         .fill(PulseTheme.sleep)
@@ -355,7 +361,7 @@ struct PulseSleepEfficiencyCard: View {
                         .offset(x: w * CGFloat(run.lowerBound))
                 }
             }
-            .clipShape(RoundedRectangle(cornerRadius: 6, style: .circular))
+            .clipShape(RoundedRectangle(cornerRadius: PulseTheme.SleepDive.asleepTrackRadius, style: .circular))
         }
         .frame(height: 16)
         .accessibilityHidden(true)
@@ -366,7 +372,7 @@ struct PulseSleepEfficiencyCard: View {
         GeometryReader { geo in
             let w = geo.size.width
             ZStack(alignment: .leading) {
-                PulseHatchedTrack(cornerRadius: 2)
+                PulseHatchedTrack(cornerRadius: PulseTheme.SleepDive.swatchRadius)
                 ForEach(Array(card.awakeRuns.enumerated()), id: \.offset) { _, run in
                     Rectangle()
                         .fill(run.isLong ? PulseTheme.SleepDetail.awakeBlock : Color.white)
@@ -385,20 +391,25 @@ struct PulseSleepEfficiencyCard: View {
 struct PulseSleepStressCard: View {
     /// nil while the night's stress is still being scored.
     let stress: SleepStressSnapshot?
+    /// Its prior-30-night baseline, once the third build has scored the prior nights.
+    var baseline: SleepStressBaseline?
     var onInfo: () -> Void
 
     var body: some View {
         SleepDetailCard(String(localized: "Sleep stress"), onInfo: onInfo) {
-            if let stress {
-                switch stress.state {
-                case .scored:
-                    scored(stress)
-                case .noReference:
-                    empty(String(localized: "Sleep stress is measured against your heart rate while awake the day before. Wear your strap through the day to see it."))
-                case .noHeartRate:
-                    empty(String(localized: "There was too little heart rate during this night to measure its stress."))
+            // White-10% blocks after 200 ms, held at least 400 ms, never a spinner (DR §8).
+            PulseLoadingGate(isLoading: stress == nil) {
+                if let stress {
+                    switch stress.state {
+                    case .scored:
+                        scored(stress)
+                    case .noReference:
+                        empty(String(localized: "Sleep stress is measured against your heart rate while awake the day before. Wear your strap through the day to see it."))
+                    case .noHeartRate:
+                        empty(String(localized: "There was too little heart rate during this night to measure its stress."))
+                    }
                 }
-            } else {
+            } skeleton: {
                 PulseSkeletonBlock(height: 150)
                     .accessibilityLabel(String(localized: "Loading"))
             }
@@ -407,14 +418,17 @@ struct PulseSleepStressCard: View {
 
     @ViewBuilder
     private func scored(_ s: SleepStressSnapshot) -> some View {
-        Text("\(Int((s.highPercent ?? 0).rounded()))%")
-            .pulseText(.largeValue)
-            .foregroundStyle(PulseTheme.textPrimary)
-            .accessibilityLabel(String(localized: "High sleep stress \(Int((s.highPercent ?? 0).rounded())) percent"))
-        PulseStressChart(points: s.points,
-                         periods: [PulseChartPeriod(id: "sleep", start: s.sleepStart, end: s.sleepEnd, kind: .sleep,
-                                                    symbol: "moon.fill")],
-                         now: s.chartEnd, currentLevel: s.lastLevel, xLabels: s.xLabels, height: 150)
+        // "0% ▼" teal over "5%" once the prior nights are in (lower is better); the bare value before.
+        if let figure = baseline?.figure ?? s.figure {
+            SleepFigureView(figure: figure)
+        }
+        VStack(spacing: 6) {
+            PulseStressChart(points: s.points,
+                             periods: [PulseChartPeriod(id: "sleep", start: s.sleepStart, end: s.sleepEnd,
+                                                        kind: .sleep, symbol: "moon.fill")],
+                             now: s.chartEnd, currentLevel: s.lastLevel, xLabels: [], height: 150)
+            PulseSleepStressTicks(ticks: s.xTicks)
+        }
         VStack(spacing: 16) {
             ForEach(s.levels) { level in
                 VStack(alignment: .leading, spacing: 9) {
@@ -441,7 +455,7 @@ struct PulseSleepStressCard: View {
 
     private func empty(_ message: String) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            SleepEmptyFigure(text: "--%")
+            SleepEmptyFigure(text: SleepFigure.durationDash)
             Text(message)
                 .pulseText(.body)
                 .foregroundStyle(PulseTheme.textSecondary)
@@ -455,6 +469,32 @@ struct PulseSleepStressCard: View {
         case .medium: return PulseTheme.Stress.medium
         case .high: return PulseTheme.Stress.high
         }
+    }
+}
+
+/// The stress chart's times, each at its own place along the plot (the chart's own label row spaces its
+/// labels evenly): the start at the left, two half hours, and the end in bold white at the right.
+struct PulseSleepStressTicks: View {
+    let ticks: [SleepStressSnapshot.XTick]
+
+    var body: some View {
+        GeometryReader { geo in
+            let inset = PulseTheme.SleepDive.stressPlotInset
+            let width = max(geo.size.width - inset, 1)
+            ForEach(Array(ticks.enumerated()), id: \.offset) { _, tick in
+                let x = inset + width * CGFloat(tick.fraction)
+                Text(tick.text)
+                    .font(PulseType.font(.axis))
+                    .foregroundStyle(tick.isEnd ? PulseTheme.textPrimary : PulseTheme.textTertiary)
+                    .fixedSize()
+                    .alignmentGuide(.leading) { d in
+                        tick.fraction <= 0 ? -x : (tick.fraction >= 1 ? -(x - d.width) : -(x - d.width / 2))
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            }
+        }
+        .frame(height: 14)
+        .accessibilityHidden(true)
     }
 }
 

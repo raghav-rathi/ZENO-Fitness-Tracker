@@ -6,13 +6,16 @@ import StrandAnalytics
 
 // MARK: - Weekly Trends (WHOOP_UI_SPEC §3.3 item 8, §2.7 "Weekly Trends card chart")
 //
-// Seven cards on the standard card fill, each "TITLE ›" opening Trend View for its metric, in WHOOP's order:
+// Seven cards on the standard card fill, each "TITLE ›" opening its metric (`PulseSleepRoutes`: Trend View
+// once rebuilt, else the classic page when it has data, else the classic Sleep screen), in WHOOP's order:
 // SLEEP PERFORMANCE, HOURS VS. NEEDED (HOURS), HOURS VS. NEEDED (%), RESTORATIVE SLEEP (HOURS), SLEEP
 // CONSISTENCY, TIME IN BED, SLEEP EFFICIENCY. Each plots the seven days ending on the night shown (the
 // latest highlighted); a day without a night is a gap, never a zero.
 
 struct PulseSleepWeeklyTrends: View {
     let week: [SleepWeekNight]
+    /// The metrics whose classic page has data.
+    var metricPages: Set<String> = []
 
     private var highlightID: String? { week.last?.id }
 
@@ -34,7 +37,7 @@ struct PulseSleepWeeklyTrends: View {
             .id("pulse.trend-hours-pct")
             card(String(localized: "Restorative sleep (hours)"), metric: "restorative_min",
                  legend: AnyView(restorativeLegend)) {
-                PulseStackedBarChart(columns: restorativeColumns, highlightID: highlightID)
+                PulseSleepRestorativeChart(week: week, highlightID: highlightID)
                     .padding(.top, 10)
             }
             .id("pulse.trend-restorative")
@@ -64,21 +67,6 @@ struct PulseSleepWeeklyTrends: View {
             return PulseChartDatum(id: day.id, label: day.label, sublabel: day.sublabel, value: v,
                                    color: PulseTheme.sleep,
                                    valueLabel: v.map { "\(PulseDisplay.displayedPercent($0))%" })
-        }
-    }
-
-    private var restorativeColumns: [PulseStackedBarChart.Column] {
-        week.map { day in
-            let rem = day.remMin
-            let deep = day.deepMin
-            let has = rem != nil || deep != nil
-            return PulseStackedBarChart.Column(
-                id: day.id, label: day.label, sublabel: day.sublabel,
-                segments: has ? [
-                    .init(id: "\(day.id)-rem", value: rem ?? 0, color: PulseTheme.Stage.rem),
-                    .init(id: "\(day.id)-deep", value: deep ?? 0, color: PulseTheme.Stage.deep),
-                ] : [],
-                totalLabel: has ? PulseFormat.hoursMinutes((rem ?? 0) + (deep ?? 0)) : nil)
         }
     }
 
@@ -114,12 +102,13 @@ struct PulseSleepWeeklyTrends: View {
 
     // MARK: Card
 
-    /// A Weekly Trends card: the whole card opens Trend View for `metric` (the classic metric detail until
-    /// the trends group's Trend View lands, through `forExistingEntryPoint`).
+    /// A Weekly Trends card: the whole card opens its metric (`PulseSleepRoutes`), and VoiceOver names
+    /// where.
     private func card<Content: View>(_ title: String, metric: String, legend: AnyView? = nil,
                                      @ViewBuilder content: () -> Content) -> some View {
         let chart = content()
-        return PulseLink(PulseRoute.trendView(metric: metric).forExistingEntryPoint) {
+        let route = PulseSleepRoutes.route(metric: metric, pagesWithData: metricPages)
+        return PulseLink(route) {
             PulseCard {
                 VStack(alignment: .leading, spacing: 14) {
                     PulseCardTitle(title, accessory: .trailingChevron)
@@ -134,7 +123,13 @@ struct PulseSleepWeeklyTrends: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(PulsePressStyle())
-        .accessibilityHint(String(localized: "Opens Trend View"))
+        .accessibilityHint(PulseSleepRoutes.hint(route))
+    }
+
+    /// A duration chart's top: whole two-hour steps, never under `floor` minutes (WHOOP's 0–6 h for
+    /// restorative sleep, 0–12 h for hours and need; deep-dives-2026/07, 08, 13).
+    static func durationTop(_ values: [Double], floor: Double) -> Double {
+        max(floor, ((values.max() ?? 0) / 120).rounded(.up) * 120)
     }
 }
 
@@ -149,7 +144,7 @@ private struct SleepChartHighlight: View {
         GeometryReader { geo in
             if let id, let anchor = proxy.plotFrame, let x = proxy.position(forX: id) {
                 let plot = geo[anchor]
-                RoundedRectangle(cornerRadius: 6, style: .circular)
+                RoundedRectangle(cornerRadius: PulseTheme.Radius.toggle, style: .circular)
                     .fill(PulseTheme.chartHighlight)
                     .frame(width: 29, height: geo.size.height)
                     .position(x: plot.minX + x, y: geo.size.height / 2)
@@ -177,9 +172,10 @@ struct PulseSleepHoursNeedChart: View {
     let highlightID: String?
     var height: CGFloat = 197
 
+    /// 0–12 h, as WHOOP fixes it (deep-dives-2026/07, 13), in two-hour steps past it.
     private var top: Double {
-        let values = week.flatMap { [$0.hoursMin, $0.needMin].compactMap { $0 } }
-        return max((values.max() ?? 480) * 1.18, 60)
+        PulseSleepWeeklyTrends.durationTop(week.flatMap { [$0.hoursMin, $0.needMin].compactMap { $0 } },
+                                           floor: 12 * 60)
     }
 
     var body: some View {
@@ -254,9 +250,79 @@ struct PulseSleepHoursNeedChart: View {
     private func label(_ minutes: Double?, color: Color) -> some View {
         if let minutes {
             Text(PulseFormat.hoursMinutes(minutes))
-                .font(PulseType.numeral(13))
+                .font(PulseType.font(.baseline))
                 .foregroundStyle(color)
         }
+    }
+}
+
+// MARK: - RESTORATIVE SLEEP (HOURS): stacked bars
+
+/// REM at the bottom and deep (SWS) on top, a sliver of card between them, the night's total above in
+/// white, on 0–6 h in two-hour steps (deep-dives-2026/08, 30). A day without a night is left out.
+struct PulseSleepRestorativeChart: View {
+    let week: [SleepWeekNight]
+    let highlightID: String?
+    var height: CGFloat = 197
+
+    private var nights: [SleepWeekNight] { week.filter { $0.remMin != nil || $0.deepMin != nil } }
+
+    private var top: Double {
+        PulseSleepWeeklyTrends.durationTop(nights.map { ($0.remMin ?? 0) + ($0.deepMin ?? 0) }, floor: 6 * 60)
+    }
+
+    var body: some View {
+        let byID = Dictionary(week.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        // The gap in minutes: the segment gap over the plot's height (the chart less its day labels).
+        let gap = top / Double(max(height - 30, 1)) * Double(PulseTheme.SleepDive.segmentGap)
+        Chart {
+            ForEach(nights) { day in
+                let rem = day.remMin ?? 0
+                let deep = day.deepMin ?? 0
+                if rem > 0 {
+                    RectangleMark(x: .value("Day", day.id), yStart: .value("Start", 0),
+                                  yEnd: .value("REM", max(0, rem - (deep > 0 ? gap : 0))), width: .fixed(14))
+                        .foregroundStyle(PulseTheme.Stage.rem)
+                        .cornerRadius(PulseTheme.SleepDive.rangeBarRadius)
+                }
+                RectangleMark(x: .value("Day", day.id), yStart: .value("REM", rem),
+                              yEnd: .value("Total", rem + deep), width: .fixed(14))
+                    .foregroundStyle(PulseTheme.Stage.deep)
+                    .cornerRadius(PulseTheme.SleepDive.rangeBarRadius)
+                    .annotation(position: .top, spacing: 4) {
+                        Text(PulseFormat.hoursMinutes(rem + deep))
+                            .font(PulseType.font(.axis))
+                            .foregroundStyle(PulseTheme.textPrimary)
+                    }
+            }
+        }
+        .chartXScale(domain: week.map(\.id))
+        .chartYScale(domain: 0...top)
+        .chartYAxis {
+            AxisMarks(position: .leading, values: Array(stride(from: 0.0, through: top, by: 120))) { _ in
+                AxisGridLine(stroke: StrokeStyle(lineWidth: 1)).foregroundStyle(PulseTheme.gridOnCard)
+            }
+        }
+        .chartXAxis {
+            AxisMarks(values: week.map(\.id)) { value in
+                AxisValueLabel(centered: true) {
+                    let id = value.as(String.self)
+                    sleepXLabel(id.flatMap { byID[$0] }, highlighted: id != nil && id == highlightID)
+                }
+            }
+        }
+        .chartBackground { proxy in SleepChartHighlight(proxy: proxy, id: highlightID) }
+        .frame(height: height)
+        .overlay {
+            if nights.isEmpty {
+                Text(String(localized: "No data yet")).pulseText(.body).foregroundStyle(PulseTheme.textSecondary)
+            }
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(String(localized: "Restorative sleep, last 7 days"))
+        .accessibilityValue(nights.map { day in
+            "\(day.label) \(day.sublabel): \(PulseFormat.hoursMinutes((day.remMin ?? 0) + (day.deepMin ?? 0)))"
+        }.joined(separator: "; "))
     }
 }
 
@@ -271,10 +337,12 @@ struct PulseSleepTimeInBedChart: View {
 
     private var nights: [SleepWeekNight] { week.filter { $0.bed != nil && $0.wake != nil } }
 
+    /// The nights' span with two hours either side, so the bedtime above the earliest bar and the wake
+    /// time below the latest clear the plot's edges and the day labels (deep-dives-2026/10).
     private var domain: ClosedRange<Double> {
         let values: [Double] = nights.flatMap { night -> [Double] in [night.bed ?? 0, night.wake ?? 0] }
-        let lo: Double = (values.min() ?? 600) - 70
-        let hi: Double = (values.max() ?? 1_200) + 70
+        let lo: Double = (values.min() ?? 600) - 120
+        let hi: Double = (values.max() ?? 1_200) + 120
         return (-hi)...(-lo)
     }
 
@@ -285,12 +353,12 @@ struct PulseSleepTimeInBedChart: View {
                 RectangleMark(x: .value("Day", day.id), yStart: .value("Bed", -(day.bed ?? 0)),
                               yEnd: .value("Wake", -(day.wake ?? 0)), width: .fixed(14))
                     .foregroundStyle(PulseTheme.sleep)
-                    .cornerRadius(3)
+                    .cornerRadius(PulseTheme.SleepDive.rangeBarRadius)
                     .annotation(position: .top, spacing: 3) {
-                        Text(day.bedText ?? "").font(PulseType.numeral(13)).foregroundStyle(PulseTheme.sleep)
+                        Text(day.bedText ?? "").font(PulseType.font(.baseline)).foregroundStyle(PulseTheme.sleep)
                     }
                     .annotation(position: .bottom, spacing: 3) {
-                        Text(day.wakeText ?? "").font(PulseType.numeral(13)).foregroundStyle(PulseTheme.sleep)
+                        Text(day.wakeText ?? "").font(PulseType.font(.baseline)).foregroundStyle(PulseTheme.sleep)
                     }
             }
         }

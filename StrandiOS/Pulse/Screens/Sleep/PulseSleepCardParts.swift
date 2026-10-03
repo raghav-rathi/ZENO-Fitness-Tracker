@@ -17,7 +17,7 @@ struct SleepCardHeader: View {
                 if let onInfo {
                     Button(action: onInfo) {
                         Image(systemName: "info.circle")
-                            .font(.system(size: 16, weight: .regular))
+                            .pulseText(.subtitle)
                             .foregroundStyle(PulseTheme.textTertiary)
                             .frame(width: PulseTheme.Layout.minTapTarget, height: PulseTheme.Layout.minTapTarget)
                             .contentShape(Rectangle())
@@ -31,10 +31,12 @@ struct SleepCardHeader: View {
 }
 
 /// A figure with its trend glyph beside it and the prior-30-night baseline under it ("60% ▼" over "73%").
+/// `compactBaseline` sets the baseline at 12 pt, as HOURS OF SLEEP's is (§2.2: "8:44" 24 pt, baseline 12).
 struct SleepFigureView: View {
     let figure: SleepFigure
     var style: PulseTextStyle = .largeValue
     var glyphSize: CGFloat = 7
+    var compactBaseline = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 1) {
@@ -49,9 +51,17 @@ struct SleepFigureView: View {
                 }
             }
             if let baseline = figure.baseline {
-                Text(baseline)
-                    .pulseText(.baseline)
-                    .foregroundStyle(PulseTheme.textTertiary)
+                if compactBaseline {
+                    Text(baseline)
+                        .pulseText(.secondary)
+                        .fontWeight(.bold)
+                        .fontWidth(.condensed)
+                        .foregroundStyle(PulseTheme.textTertiary)
+                } else {
+                    Text(baseline)
+                        .pulseText(.baseline)
+                        .foregroundStyle(PulseTheme.textTertiary)
+                }
             }
         }
         .accessibilityElement(children: .ignore)
@@ -108,7 +118,7 @@ struct SleepSwatch: View {
     var size: CGFloat = 12
 
     var body: some View {
-        RoundedRectangle(cornerRadius: 2, style: .circular)
+        RoundedRectangle(cornerRadius: PulseTheme.SleepDive.swatchRadius, style: .circular)
             .fill(color)
             .frame(width: size, height: size)
             .accessibilityHidden(true)
@@ -126,7 +136,7 @@ struct SleepRestorativeSwatch: View {
             SleepDiagonalHalf().fill(PulseTheme.Stage.restorativePink)
         }
         .frame(width: size, height: size)
-        .clipShape(RoundedRectangle(cornerRadius: 2, style: .circular))
+        .clipShape(RoundedRectangle(cornerRadius: PulseTheme.SleepDive.swatchRadius, style: .circular))
         .accessibilityHidden(true)
     }
 }
@@ -143,16 +153,34 @@ struct SleepDiagonalHalf: Shape {
     }
 }
 
-/// The TYPICAL RANGE legend's box: dashed sides around a faint hatch.
+/// The 30-night typical range: a lighter block than the track between the shared box's dashed sides, so
+/// the range reads at a glance (deep-dives-2026/12 samples #35393C with a #43474A–#494D50 hatch on the
+/// #1E2225 card, the track around it #1D2023).
+struct SleepTypicalRangeBox: View {
+    var body: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: PulseTheme.SleepDive.swatchRadius, style: .circular)
+                .fill(PulseTheme.SleepDive.typicalBoxFill)
+            PulseHatchedTrack(color: PulseTheme.SleepDive.typicalBoxHatch, cornerRadius: PulseTheme.SleepDive.swatchRadius)
+            PulseTypicalRangeBox()
+        }
+        .accessibilityHidden(true)
+    }
+}
+
+/// The TYPICAL RANGE legend's box: the same block as the rows draw.
 struct SleepTypicalLegendBox: View {
     var body: some View {
-        PulseTypicalRangeBox()
+        SleepTypicalRangeBox()
             .frame(width: 11, height: 12)
             .accessibilityHidden(true)
     }
 }
 
-/// A rounded bar on the hatched track, `fraction` of the width (zone, stage and stress-level rows).
+/// A rounded bar on the hatched track, `fraction` of the width (zone, stage and stress-level rows), with
+/// the typical-range box laid over bar and track and standing 4 pt proud of them (deep-dives-2026/12). The
+/// bar and track keep their own height whatever the box does: the box is an overlay, never part of the
+/// layout, so a row is as tall with a box as without one.
 struct SleepShareBar: View {
     let fraction: Double
     let color: Color
@@ -164,14 +192,16 @@ struct SleepShareBar: View {
             let w = geo.size.width
             ZStack(alignment: .leading) {
                 PulseHatchedTrack()
+                    .frame(width: w, height: height)
                 RoundedRectangle(cornerRadius: PulseTheme.Radius.badge, style: .circular)
                     .fill(color)
-                    .frame(width: fraction > 0 ? max(4, w * CGFloat(min(1, fraction))) : 0)
+                    .frame(width: fraction > 0 ? max(4, w * CGFloat(min(1, fraction))) : 0, height: height)
+            }
+            .frame(width: w, height: height, alignment: .leading)
+            .overlay(alignment: .leading) {
                 if let typical {
-                    // The box stands a little proud of the bar, as WHOOP's does (deep-dives-2026/12).
-                    PulseTypicalRangeBox()
-                        .frame(width: max(6, w * CGFloat(typical.upperBound - typical.lowerBound)),
-                               height: height + 8)
+                    SleepTypicalRangeBox()
+                        .frame(width: max(6, w * CGFloat(typical.upperBound - typical.lowerBound)), height: height + 8)
                         .offset(x: w * CGFloat(typical.lowerBound))
                 }
             }

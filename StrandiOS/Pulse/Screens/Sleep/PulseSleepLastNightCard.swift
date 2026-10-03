@@ -23,7 +23,7 @@ struct PulseSleepLastNightCard: View {
         PulseCard(.detail) {
             VStack(alignment: .leading, spacing: 0) {
                 SleepCardHeader(title: String(localized: "Hours of sleep"), onInfo: onInfo)
-                SleepFigureView(figure: night.hours, style: .mediumValue, glyphSize: 6)
+                SleepFigureView(figure: night.hours, style: .mediumValue, glyphSize: 6, compactBaseline: true)
                     .padding(.top, 10)
 
                 PulseSleepHRChart(night: night, selected: selected)
@@ -52,7 +52,8 @@ struct PulseSleepLastNightCard: View {
                 .padding(.top, 16)
                 .accessibilityElement(children: .combine)
 
-                VStack(spacing: 24) {
+                // 70 pt from stage row to stage row: 22 + 11 + 16 + 21 (deep-dives-2026/12).
+                VStack(spacing: 21) {
                     ForEach(night.stages) { line in
                         PulseSleepStageRowView(line: line, selected: selected, selectable: night.hasTimeline) {
                             withAnimation(PulseMotion.resolved(PulseMotion.crossFade, reduceMotion: reduceMotion)) {
@@ -322,7 +323,9 @@ struct PulseSleepHRChart: View {
 
     private func edgeLabel(_ text: String) -> some View {
         Text(text)
-            .font(PulseType.numeral(12))
+            .font(PulseType.font(.secondary))
+            .fontWeight(.bold)
+            .fontWidth(.condensed)
             .foregroundStyle(PulseTheme.textPrimary)
     }
 
