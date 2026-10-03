@@ -44,7 +44,8 @@ extension PulseSnapshotBuilder {
         let run = PulseDayStreak.currentRun(dayKeys: dayKeys, qualified: qualified, today: todayKey)
         let streak = ProfileStreak(current: streaks.current, longest: streaks.longest,
                                    startKey: streaks.current > 0 ? run?.startDay : nil,
-                                   week: PulseDayStreak.week(dayKeys: dayKeys, qualified: qualified, today: todayKey),
+                                   week: PulseDayStreak.week(dayKeys: dayKeys, qualified: qualified, today: todayKey,
+                                                             firstDay: days.first?.day),
                                    milestone: PulseDayStreak.milestoneProgress(days: streaks.current))
 
         // One resolved row per day, shared by the badges and the highlights.

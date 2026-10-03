@@ -135,6 +135,9 @@ public enum PulseDayStreak {
         case pending
         /// A day still to come: a dashed circle.
         case upcoming
+        /// A past day before the wearer's first recorded day: there was no streak to keep or miss yet, so
+        /// it is drawn neutral (a dashed circle), never a ✕.
+        case beforeStart
     }
 
     public struct WeekDay: Equatable, Sendable {
@@ -147,15 +150,23 @@ public enum PulseDayStreak {
     }
 
     /// Monday to Sunday of the week holding `today`, each with its state; empty for a malformed `today`.
-    public static func week(dayKeys: [String], qualified: [Bool], today: String) -> [WeekDay] {
+    /// `firstDay` is the wearer's first recorded day: a past day before it is `.beforeStart`, not missed
+    /// (a member who starts on a Friday has no Monday to have missed). nil means nothing is recorded yet,
+    /// so every past day of the week is before the start.
+    public static func week(dayKeys: [String], qualified: [Bool], today: String,
+                            firstDay: String?) -> [WeekDay] {
         guard let t = Baselines.isoEpochDay(today) else { return [] }
         let days = qualifiedEpochDays(dayKeys: dayKeys, qualified: qualified)
+        // Nothing recorded: the start is still ahead, so no past day of the week can have been missed.
+        let start = firstDay.flatMap(Baselines.isoEpochDay) ?? t
         let monday = t - ActivityHeatmap.mondayFirstWeekday(t)
         return (0..<7).map { offset in
             let d = monday + offset
             let state: DayState
             if days.contains(d) {
                 state = .kept
+            } else if d < t && d < start {
+                state = .beforeStart
             } else if d < t {
                 state = .missed
             } else if d == t {

@@ -96,7 +96,7 @@ final class PulseDayStreakTests: XCTestCase {
     func testTheWeekRunsMondayToSundayWithAStatePerDay() {
         // Mon Sep 28 kept, Tue Sep 29 missed, Wed Sep 30 kept, Thu Oct 1 (today) not scored yet.
         let week = PulseDayStreak.week(dayKeys: ["2026-09-28", "2026-09-29", "2026-09-30"],
-                                       qualified: [true, false, true], today: today)
+                                       qualified: [true, false, true], today: today, firstDay: "2026-09-01")
         XCTAssertEqual(week.map(\.day), ["2026-09-28", "2026-09-29", "2026-09-30", "2026-10-01",
                                          "2026-10-02", "2026-10-03", "2026-10-04"])
         XCTAssertEqual(week.map(\.weekday), [1, 2, 3, 4, 5, 6, 7])
@@ -105,7 +105,8 @@ final class PulseDayStreakTests: XCTestCase {
     }
 
     func testASundayTodayEndsItsOwnWeek() {
-        let week = PulseDayStreak.week(dayKeys: ["2026-10-04"], qualified: [true], today: "2026-10-04")
+        let week = PulseDayStreak.week(dayKeys: ["2026-10-04"], qualified: [true], today: "2026-10-04",
+                                       firstDay: "2026-09-01")
         XCTAssertEqual(week.first?.day, "2026-09-28")
         XCTAssertEqual(week.last?.day, "2026-10-04")
         XCTAssertEqual(week.last?.state, .kept)
@@ -113,7 +114,29 @@ final class PulseDayStreakTests: XCTestCase {
     }
 
     func testAMalformedTodayHasNoWeek() {
-        XCTAssertTrue(PulseDayStreak.week(dayKeys: [], qualified: [], today: "2026-13-40").isEmpty)
+        XCTAssertTrue(PulseDayStreak.week(dayKeys: [], qualified: [], today: "2026-13-40", firstDay: nil).isEmpty)
+    }
+
+    func testDaysBeforeAMidWeekStartAreNeitherKeptNorMissed() {
+        // History starts on Tuesday Sep 29 (a missed Tuesday, a kept Wednesday); today is Thursday Oct 1.
+        // Monday came before the first recorded day: no streak existed to miss.
+        let week = PulseDayStreak.week(dayKeys: ["2026-09-29", "2026-09-30"], qualified: [false, true],
+                                       today: today, firstDay: "2026-09-29")
+        XCTAssertEqual(week.map(\.state), [.beforeStart, .missed, .kept, .pending, .upcoming, .upcoming, .upcoming])
+    }
+
+    func testAFridayStartLeavesMondayToThursdayNeutral() {
+        // A member whose first day is Friday Oct 2, looking on Saturday Oct 3 with Friday scored.
+        let week = PulseDayStreak.week(dayKeys: ["2026-10-02"], qualified: [true], today: "2026-10-03",
+                                       firstDay: "2026-10-02")
+        XCTAssertEqual(week.map(\.state), [.beforeStart, .beforeStart, .beforeStart, .beforeStart,
+                                           .kept, .pending, .upcoming])
+    }
+
+    func testNothingRecordedYetMissesNothing() {
+        let week = PulseDayStreak.week(dayKeys: [], qualified: [], today: today, firstDay: nil)
+        XCTAssertEqual(week.map(\.state), [.beforeStart, .beforeStart, .beforeStart, .pending,
+                                           .upcoming, .upcoming, .upcoming])
     }
 
     // MARK: Unlocks

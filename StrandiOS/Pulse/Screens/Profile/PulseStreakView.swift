@@ -132,6 +132,7 @@ struct PulseStreakView: View {
         case .missed: return String(localized: "Missed")
         case .pending: return String(localized: "Not scored yet")
         case .upcoming: return String(localized: "Upcoming")
+        case .beforeStart: return String(localized: "Before your first day")
         }
     }
 
@@ -235,7 +236,7 @@ struct PulseStreakView: View {
 }
 
 /// A THIS WEEK mark: a small flame for a kept day, ✕ in a ring for a missed one, a dashed ring for today
-/// before it is scored and for the days still to come.
+/// before it is scored, for the days still to come and for the days before the wearer's first one.
 private struct StreakDayMark: View {
     let state: PulseDayStreak.DayState
     let days: Int
@@ -251,7 +252,7 @@ private struct StreakDayMark: View {
                     Image(systemName: "xmark").font(.system(size: 12, weight: .bold))
                         .foregroundStyle(PulseTheme.textSecondary)
                 }
-            case .pending, .upcoming:
+            case .pending, .upcoming, .beforeStart:
                 Circle().strokeBorder(PulseTheme.textDisabled, style: StrokeStyle(lineWidth: 1.5, dash: [3, 3]))
             }
         }
