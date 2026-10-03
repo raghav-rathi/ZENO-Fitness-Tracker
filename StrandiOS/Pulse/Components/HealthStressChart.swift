@@ -217,21 +217,36 @@ struct HealthStressDayChart: View {
 }
 
 /// The Health tab's STRESS MONITOR sparkline: the day so far across today's whole span (midnight to now),
-/// coloured by value, over faint gridlines at 0, 1, 2 and 3, with a dashed line at now and a white dot on
-/// the latest reading (reviews/r100: four lines 25 pt apart in its 74 pt; health-more-2026/03 frame 121).
-/// No axes.
+/// coloured by value, over faint gridlines at 0, 1, 2 and 3, with a dashed line at now and a white dot where
+/// the line ends (reviews/r100: four lines 25 pt apart in its 74 pt; health-more-2026/03 frame 121;
+/// whoop-site/11n). No axes.
 struct HealthStressSparkline: View {
     let points: [PulseTimeValue]
     /// Today's start to now.
     let span: ClosedRange<Date>
+    /// When the latest reading was read (the end of its hour window, now at most). The line runs on flat
+    /// from that reading's point, which sits mid-window, to here, and ends in the dot; nil ends it on the
+    /// point itself.
+    var endAt: Date? = nil
     var height: CGFloat = 64
 
+    /// The points in the span, the flat run to `endAt` appended, and the one the dot sits on.
+    private var plotted: (points: [PulseTimeValue], last: PulseTimeValue?) {
+        var pts = points.filter { span.contains($0.date) }
+        guard let reading = pts.last(where: { $0.value != nil }) else { return (pts, nil) }
+        guard pts.last?.date == reading.date, let endAt, span.contains(endAt), endAt > reading.date else {
+            return (pts, reading)
+        }
+        let end = PulseTimeValue(date: min(endAt, span.upperBound), value: reading.value)
+        pts.append(end)
+        return (pts, end)
+    }
+
     var body: some View {
-        let pts = points.filter { span.contains($0.date) }
+        let (pts, last) = plotted
         let pairs: [(PulseTimeValue, PulseTimeValue)] = pts.count > 1 ? (1..<pts.count).compactMap { i in
             pts[i - 1].value != nil && pts[i].value != nil ? (pts[i - 1], pts[i]) : nil
         } : []
-        let last = pts.last { $0.value != nil }
         Chart {
             ForEach([0.0, 1.0, 2.0, 3.0], id: \.self) { y in
                 RuleMark(y: .value("Grid", y))

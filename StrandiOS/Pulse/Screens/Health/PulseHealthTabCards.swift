@@ -741,7 +741,8 @@ struct HealthStressCardView: View {
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
                         if let card, card.points.contains(where: { $0.value != nil }) {
-                            HealthStressSparkline(points: card.points, span: card.span, height: 74)
+                            HealthStressSparkline(points: card.points, span: card.span, endAt: card.readAt,
+                                                  height: 74)
                                 .frame(width: 150)
                         }
                     }
