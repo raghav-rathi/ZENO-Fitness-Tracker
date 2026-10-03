@@ -63,7 +63,7 @@ struct PulseStreakView: View {
                 .id("pulse.week")
             milestoneCard(s)
                 .padding(.top, 16)
-            messageCard(s.tier)
+            messageCard(s.current == 0 ? Self.noStreakMessage : Self.message(s.tier))
                 .padding(.top, 16)
         }
         .padding(.horizontal, PulseTheme.Layout.pageMargin)
@@ -200,9 +200,8 @@ struct PulseStreakView: View {
 
     // MARK: Message
 
-    private func messageCard(_ tier: PulseDayStreak.Tier) -> some View {
-        let message = Self.message(tier)
-        return VStack(alignment: .leading, spacing: 6) {
+    private func messageCard(_ message: (title: String, body: String)) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
             Text(message.title)
                 .pulseText(.coachingTitle)
                 .foregroundStyle(PulseTheme.textPrimary)
@@ -216,6 +215,10 @@ struct PulseStreakView: View {
         .background(RoundedRectangle(cornerRadius: MoreLayout.profileCardRadius, style: .circular).fill(ProfileArtPalette.milestoneCard))
         .accessibilityElement(children: .combine)
     }
+
+    /// With no streak running, the first tier's "The spark is lit" would claim a flame that is not there.
+    static let noStreakMessage = (title: String(localized: "No streak yet"),
+                                  body: String(localized: "Wear your strap tonight: tomorrow's scored Recovery starts your streak."))
 
     /// ZENO's own words for each flame tier (spec §3.30 [Z]).
     static func message(_ tier: PulseDayStreak.Tier) -> (title: String, body: String) {
