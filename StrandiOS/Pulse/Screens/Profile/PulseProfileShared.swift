@@ -576,29 +576,32 @@ struct ProfileFlatPage<Content: View>: View {
     private var header: some View {
         if circularBack {
             ZStack {
-                // profile-community-2026/11: "LEVELS" in the 12 pt nav caps every bar uses, and a 17.5 pt
-                // "?" circle 14 pt after it.
-                HStack(spacing: 14) {
-                    Text(title)
-                        .pulseText(.navTitle)
-                        .foregroundStyle(PulseTheme.textPrimary)
-                        .accessibilityAddTraits(.isHeader)
-                    if let onHelp {
-                        Button(action: onHelp) {
-                            Text(verbatim: "?")
-                                .font(.system(size: 11, weight: .semibold))
-                                .foregroundStyle(PulseTheme.textTertiary)
-                                .frame(width: 18, height: 18)
-                                .overlay(Circle().strokeBorder(PulseTheme.textTertiary, lineWidth: 1.1))
-                                // A 44 pt touch that does not push the circle away from the title.
-                                .padding(13)
-                                .contentShape(Rectangle())
-                                .padding(-13)
+                // profile-community-2026/11: "LEVELS" in the 12 pt nav caps every bar uses, centred on the
+                // screen like the medal and LEVEL line under it (/11, /56, /57), and a 17.5 pt "?" circle
+                // hanging 14 pt after it, outside the centring.
+                Text(title)
+                    .pulseText(.navTitle)
+                    .foregroundStyle(PulseTheme.textPrimary)
+                    .accessibilityAddTraits(.isHeader)
+                    .overlay(alignment: .trailing) {
+                        if let onHelp {
+                            Button(action: onHelp) {
+                                Text(verbatim: "?")
+                                    .font(.system(size: 11, weight: .semibold))
+                                    .foregroundStyle(PulseTheme.textTertiary)
+                                    .frame(width: 18, height: 18)
+                                    .overlay(Circle().strokeBorder(PulseTheme.textTertiary, lineWidth: 1.1))
+                                    // A 44 pt touch that does not push the circle away from the title.
+                                    .padding(13)
+                                    .contentShape(Rectangle())
+                                    .padding(-13)
+                            }
+                            .buttonStyle(PulsePressStyle())
+                            .accessibilityLabel(String(localized: "About levels"))
+                            .fixedSize()
+                            .alignmentGuide(.trailing) { d in d[.leading] - 14 }
                         }
-                        .buttonStyle(PulsePressStyle())
-                        .accessibilityLabel(String(localized: "About levels"))
                     }
-                }
                 HStack {
                     Button { dismiss() } label: {
                         Image(systemName: modalRoot ? "xmark" : "chevron.left")
