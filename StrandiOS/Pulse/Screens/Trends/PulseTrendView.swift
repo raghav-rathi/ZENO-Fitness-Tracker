@@ -283,6 +283,11 @@ private struct PulseTrendPage: View {
                 PulseTrendBreakdownView(breakdown: breakdown)
                     .padding(.top, 28)
             }
+            // VO₂ Max: the chart, then YOUR CARDIO FITNESS LEVEL (reviews/83).
+            if let state = snapshot.cardioFitness {
+                HealthVO2MaxCard(state: state, title: String(localized: "Your Cardio Fitness Level"))
+                    .padding(.top, 28)
+            }
             if snapshot.showsCycleNote {
                 cycleNote.padding(.top, 24)
             }

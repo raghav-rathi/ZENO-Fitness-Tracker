@@ -744,6 +744,16 @@ extension PulseSnapshotBuilder {
         return max(0, y - x)
     }
 
+    /// The sleeps logged before VO₂ max unlocks: Healthspan's VO₂ MAX row and the VO₂ Max Trend View's
+    /// YOUR CARDIO FITNESS LEVEL card count the same nights against it.
+    static let vo2UnlockNights = 14
+
+    /// What the weekly VO₂ max estimate waits for once the sleeps are logged, in the one wording both of
+    /// those readouts use.
+    static var vo2WaitingSentence: String {
+        String(localized: "ZENO estimates VO₂ max each week once your profile has your age and biological sex and the strap has your resting heart rate on most nights of the week.")
+    }
+
     /// VO₂ MAX as a Fitness row (reviews/29: "55 mL/kg/min" on a 15–70 bar): the latest weekly estimate up
     /// to the week's end, the 6-month and 30-day averages of the weekly estimates, and that week's Fitness
     /// Age in the sentence (§3.23 [Z]). The weekly ZENO Age pass leaves VO₂ max to Fitness Age, so it carries
@@ -755,10 +765,10 @@ extension PulseSnapshotBuilder {
         let unit = String(localized: "mL/kg/min")
         let route = PulseRoute.trendView(metric: "vo2max_est").forExistingEntryPoint
         guard let latest = points.last else {
-            let needed = 14
+            let needed = Self.vo2UnlockNights
             let sentence = nights < needed
                 ? String(localized: "Log \(needed - nights) more sleeps to unlock VO₂ max.")
-                : String(localized: "ZENO estimates VO₂ max each week once your profile has your age and biological sex and the strap has your resting heart rate on most nights of the week.")
+                : Self.vo2WaitingSentence
             return HealthspanRow(id: "vo2", title: title, valueText: nil, scale: 15...70, lowLabel: "15",
                                  highLabel: "70", tones: [], unit: unit, sixMonth: nil, sixMonthNumber: nil,
                                  thirtyDay: nil, thirtyDayNumber: nil, years: nil,
