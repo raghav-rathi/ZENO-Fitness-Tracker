@@ -102,12 +102,12 @@ extension PulseSnapshotBuilder {
         }
 
         var behaviors: [RecoveryDiveSnapshot.Behavior] = []
-        var naming = RecoveryDiveSnapshot.BehaviorNaming()
+        var names = BehaviorNameSources()
         if let insights {
             behaviors = RecoveryBehaviorChips.chips(analysis: insights.analysis, answers: insights.answers,
                                                     dayKey: r.day.key)
                 .map(Self.behavior)
-            naming = RecoveryDiveSnapshot.BehaviorNaming(imported: imported, questions: insights.questions)
+            names = BehaviorNameSources(imported: imported, questions: insights.questions)
         }
 
         var carried: String?
@@ -120,7 +120,7 @@ extension PulseSnapshotBuilder {
         guard isCurrent(r) else { return nil }
         return RecoveryDiveSnapshot(seq: r.seq, day: r.day, dial: base.dial, carriedCaption: carried,
                                     sourceDayKey: sourceKey, contributors: contributors, behaviors: behaviors,
-                                    behaviorNaming: naming,
+                                    behaviorNames: names,
                                     week: week, shaped: shaped, summary: text.summary,
                                     insight: calibrating ? nil : text.insight, calibrationRestart: restart,
                                     coachSeed: text.seed)

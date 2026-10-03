@@ -13,7 +13,8 @@ import StrandAnalytics
 ///      the same Monday, so the two never disagree; it opens Plan Overview;
 ///   4. the deep dives' Weekly Trends cards for RECOVERY, STRAIN and SLEEP PERFORMANCE;
 ///   5. Highlights: best Recovery, max Strain, longest sleep, most time in HR zones, each with its day;
-///   6. Behaviors this week: the journal behaviours logged, each with its effect on Recovery over 90 days;
+///   6. Behaviors this week: the journal behaviours logged, each with its effect on Recovery over 90 days
+///      as Behavior Insights shows it (the page's analysis, colours and names);
 ///   7. a plain summary (local text, not the Coach's), ASK COACH when the Coach is on, and EXPORT REPORT as
 ///      a nested button inside that card (§3.40 item 7), once the period has readings to export.
 ///
@@ -108,6 +109,8 @@ private struct PulseDigestContent: View {
 
     @Environment(\.pulseNavigator) private var navigator
     @Environment(\.pulseCoach) private var coach
+    @StateObject private var catalog = JournalCatalogStore()
+    @State private var local = PulseJournalLocalStore.shared
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -232,7 +235,8 @@ private struct PulseDigestContent: View {
     }
 
     private var behaviors: some View {
-        PulseCard {
+        let names = BehaviorNames(catalog: catalog, customTitles: local.customTitles, sources: snapshot.behaviorNames)
+        return PulseCard {
             VStack(alignment: .leading, spacing: 0) {
                 PulseCardTitle(snapshot.mode == .week ? String(localized: "Behaviors this week")
                                                       : String(localized: "Behaviors this month"))
@@ -245,7 +249,7 @@ private struct PulseDigestContent: View {
                     if index > 0 { PulseDivider() }
                     VStack(alignment: .leading, spacing: 8) {
                         HStack(alignment: .firstTextBaseline) {
-                            Text(item.title)
+                            Text(names.title(item.id))
                                 .pulseText(.rowText)
                                 .foregroundStyle(PulseTheme.textPrimary)
                                 .fixedSize(horizontal: false, vertical: true)

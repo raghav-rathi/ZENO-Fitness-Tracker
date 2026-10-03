@@ -104,7 +104,7 @@ private struct PulseRecoveryDiveContent: View {
                     .padding(.top, PulseTheme.Layout.stackGap)
             }
 
-            PulseRecoveryBehaviorCard(behaviors: s.behaviors, naming: s.behaviorNaming)
+            PulseRecoveryBehaviorCard(behaviors: s.behaviors, sources: s.behaviorNames)
                 .padding(.top, PulseTheme.Layout.stackGap)
                 .id("pulse.behavior")
 
@@ -169,7 +169,7 @@ private struct PulseRecoveryCalibrationCard: View {
 /// as the page names it (`BehaviorNames`), opens its behaviour's Behavior Details.
 private struct PulseRecoveryBehaviorCard: View {
     let behaviors: [RecoveryDiveSnapshot.Behavior]
-    let naming: RecoveryDiveSnapshot.BehaviorNaming
+    let sources: BehaviorNameSources
 
     @StateObject private var catalog = JournalCatalogStore()
     @State private var local = PulseJournalLocalStore.shared
@@ -221,8 +221,7 @@ private struct PulseRecoveryBehaviorCard: View {
     /// 26 pt under the card's top, the 13 pt body's lines 17.5 pt apart from 57 pt down, the chips 15 pt
     /// under it. The title and the sentence open Behavior Insights, each chip its own Behavior Details.
     private var expanded: some View {
-        let names = BehaviorNames(catalog: catalog, imported: naming.imported, customTitles: local.customTitles,
-                                  questions: naming.questions)
+        let names = BehaviorNames(catalog: catalog, customTitles: local.customTitles, sources: sources)
         return VStack(alignment: .leading, spacing: 0) {
             PulseLink(PulseRoute.behaviorInsights.forExistingEntryPoint) {
                 VStack(alignment: .leading, spacing: 0) {

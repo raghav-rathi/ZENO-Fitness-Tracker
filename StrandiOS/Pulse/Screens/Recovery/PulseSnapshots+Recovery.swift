@@ -24,7 +24,7 @@ struct RecoveryDiveSnapshot: Equatable {
     /// effect; otherwise the compact row.
     let behaviors: [Behavior]
     /// What the card names the behaviours from, exactly as Behavior Insights names them (`BehaviorNames`).
-    let behaviorNaming: BehaviorNaming
+    let behaviorNames: BehaviorNameSources
     let week: Week
     /// "What shaped it": the engine's per-input points, or nil when the night cannot honestly score.
     let shaped: Shaped?
@@ -46,13 +46,6 @@ struct RecoveryDiveSnapshot: Equatable {
         /// Details opens with.
         let id: String
         let effect: PulseBehaviorChip.Effect
-    }
-
-    /// The imported WHOOP questions and, per identity, the latest stored question: what `BehaviorNames`
-    /// needs besides the journal catalog.
-    struct BehaviorNaming: Equatable {
-        var imported: [String] = []
-        var questions: [String: String] = [:]
     }
 
     /// The seven days ending on the dive's day.

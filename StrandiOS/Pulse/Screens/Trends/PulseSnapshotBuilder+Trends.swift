@@ -101,13 +101,17 @@ extension PulseSnapshotBuilder {
         let zones13 = await trendSeries(r, metric: .zones13, units: units)
         let zones45 = await trendSeries(r, metric: .zones45, units: units)
         guard isCurrent(r) else { return nil }
-        // Not cached: logging a journal entry does not bump the refresh, and this is one indexed read.
-        let journal = await repo.journalEntries(days: 400)
+        // The behaviours read Behavior Insights' own analysis (fresh each build: logging a journal entry
+        // does not bump the refresh), so "Behaviors this week" says what that page says.
+        guard let insights = await behaviorData(r) else { return nil }
+        let imported = await importedJournalQuestions()
         guard isCurrent(r) else { return nil }
         guard var digest = PulseDigestBuilder.digest(
             seq: r.seq, today: r.day.key, mode: mode, page: page,
             inputs: .init(sleep: sleep, recovery: recovery, strain: strain, hours: hours, zones13: zones13,
-                          zones45: zones45, journal: journal)) else { return nil }
+                          zones45: zones45, behaviorAnalysis: insights.analysis,
+                          behaviorAnswers: insights.answers)) else { return nil }
+        digest.behaviorNames = BehaviorNameSources(imported: imported, questions: insights.questions)
         // The digest's week and the plan's are both Monday to Sunday around the same day; the block shows
         // only when they are the same week and the plan had begun by its Sunday.
         if let plan, mode == .week,
