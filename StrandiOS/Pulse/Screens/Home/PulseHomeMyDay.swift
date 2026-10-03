@@ -308,44 +308,38 @@ enum PulseHomeActivity {
 
 // MARK: - Tonight's Sleep (§3.1 item 8c)
 
-/// TONIGHT'S SLEEP ›: the bedtime that meets tonight's need and the wake time, side by side on one baseline
-/// (22 pt Bold condensed, no AM / PM), joined by a dashed connector; under them "RECOMMENDED BEDTIME" and
-/// the alarm state (orange "ALARM OFF", or teal "● ALARM ON" over "EXACT TIME"); then SET ALARM (EDIT ALARM
-/// once set) with the strap-vibrate glyph. Opens the Sleep Planner.
+/// TONIGHT'S SLEEP ›: the bedtime that meets tonight's need ("Now" once it has passed) and the wake time,
+/// side by side on one baseline (22 pt Bold condensed, no AM / PM), joined by a dashed connector; under
+/// them "RECOMMENDED BEDTIME" and the alarm state (orange "ALARM OFF", or teal "● ALARM ON" over "EXACT
+/// TIME"), both captions at one size; then SET ALARM (EDIT ALARM once set) with the strap-vibrate glyph.
+/// The title and both times are one link to the Sleep Planner (WHOOP's whole card opens it); SET ALARM is
+/// its own button. Spacing measured on reviews/r41: times centred 41.5 pt under the title's, SET ALARM
+/// 19.6 pt under the captions.
 struct PulseTonightsSleepCard: View {
     let tonight: PulseTonight
 
     @Environment(\.pulseNavigator) private var navigator
+    /// The captions' size: the label style's Dynamic Type size, shrunk only as far as the widest word of
+    /// EITHER caption needs to fit its column, so the two never print at different sizes.
+    @ScaledMetric(relativeTo: .caption2) private var labelSize = PulseTextStyle.label.spec.size
+    /// The card's inner width, for the columns' width (measured outside the minute timeline).
+    @State private var innerWidth: CGFloat = 0
 
     var body: some View {
         PulseCard {
             VStack(alignment: .leading, spacing: 14) {
                 PulseLink(PulseRoute.sleepPlanner.forExistingEntryPoint) {
-                    PulseCardTitle(String(localized: "Tonight's Sleep"), accessory: .trailingChevron)
-                        .contentShape(Rectangle())
+                    VStack(alignment: .leading, spacing: 14) {
+                        PulseCardTitle(String(localized: "Tonight's Sleep"), accessory: .trailingChevron)
+                        // Re-read each minute, so the bedtime turns into "Now" when it passes.
+                        TimelineView(.everyMinute) { context in
+                            columns(now: context.date)
+                        }
+                        .padding(.top, PulseHomeMetrics.tonightTimesTop)
+                    }
+                    .contentShape(Rectangle())
                 }
                 .buttonStyle(PulsePressStyle())
-                HStack(alignment: .top, spacing: 8) {
-                    column(icon: AnyView(sunIcon("sunset")),
-                           time: tonight.bedtime) {
-                        PulseWordWrapText(String(localized: "Recommended bedtime"), style: .label, alignment: .center)
-                            .foregroundStyle(PulseTheme.textSecondary)
-                    }
-                    .accessibilityElement(children: .ignore)
-                    .accessibilityLabel(String(localized: "Recommended bedtime \(PulseFormat.clock(tonight.bedtime))"))
-                    Line()
-                        .stroke(PulseTheme.dash, style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
-                        .frame(maxWidth: 60)
-                        .frame(height: 26)
-                        .accessibilityHidden(true)
-                    column(icon: tonight.alarmOn ? AnyView(PulseStrapVibrateGlyph(height: 17).foregroundStyle(PulseTheme.textSecondary))
-                                                 : AnyView(sunIcon("sunrise")),
-                           time: tonight.wake) {
-                        alarmCaption
-                    }
-                    .accessibilityElement(children: .ignore)
-                    .accessibilityLabel(wakeAccessibility)
-                }
                 Button { navigator.open(PulseRoute.sleepPlanner.forExistingEntryPoint) } label: {
                     Label {
                         Text(tonight.alarmOn ? String(localized: "Edit alarm") : String(localized: "Set alarm"))
@@ -358,14 +352,41 @@ struct PulseTonightsSleepCard: View {
                     }
                 }
                 .buttonStyle(.pulseNested)
+                .padding(.top, PulseHomeMetrics.tonightButtonTop)
             }
+            .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { innerWidth = $0 }
         }
         .id("pulse.tonight")
     }
 
+    private func columns(now: Date) -> some View {
+        let passed = now >= tonight.bedtime
+        return HStack(alignment: .top, spacing: PulseTheme.Space.xs) {
+            column(icon: AnyView(sunIcon("sunset")),
+                   time: passed ? String(localized: "Now") : PulseFormat.clockNoMeridiem(tonight.bedtime)) {
+                caption(String(localized: "Recommended bedtime"), color: PulseTheme.textSecondary)
+            }
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(passed ? String(localized: "Recommended bedtime now")
+                                       : String(localized: "Recommended bedtime \(PulseFormat.clock(tonight.bedtime))"))
+            Line()
+                .stroke(PulseTheme.dash, style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
+                .frame(maxWidth: PulseHomeMetrics.tonightConnector)
+                .frame(height: PulseHomeMetrics.tonightTimeRow)
+                .accessibilityHidden(true)
+            column(icon: tonight.alarmOn ? AnyView(PulseStrapVibrateGlyph(height: 17).foregroundStyle(PulseTheme.textSecondary))
+                                         : AnyView(sunIcon("sunrise")),
+                   time: PulseFormat.clockNoMeridiem(tonight.wake)) {
+                alarmCaption
+            }
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(wakeAccessibility)
+        }
+    }
+
     private func sunIcon(_ symbol: String) -> some View {
         Image(systemName: symbol)
-            .font(.system(size: 17, weight: .regular))
+            .pulseHomeGlyph(.tonightSun)
             .foregroundStyle(PulseTheme.textSecondary)
     }
 
@@ -375,19 +396,48 @@ struct PulseTonightsSleepCard: View {
             VStack(spacing: 2) {
                 HStack(spacing: 4) {
                     Circle().fill(PulseTheme.positive).frame(width: 6, height: 6)
-                    Text(String(localized: "Alarm on"))
-                        .pulseText(.label)
-                        .foregroundStyle(PulseTheme.positive)
+                    caption(String(localized: "Alarm on"), color: PulseTheme.positive)
                 }
-                Text(String(localized: "Exact time"))
-                    .pulseText(.label)
-                    .foregroundStyle(PulseTheme.textSecondary)
+                caption(String(localized: "Exact time"), color: PulseTheme.textSecondary)
             }
         } else {
-            Text(String(localized: "Alarm off"))
-                .pulseText(.label)
-                .foregroundStyle(PulseTheme.negative)
+            caption(String(localized: "Alarm off"), color: PulseTheme.negative)
         }
+    }
+
+    /// Every caption word, for the one size they share.
+    private var captionWords: [String] {
+        let alarm = tonight.alarmOn ? [String(localized: "Alarm on"), String(localized: "Exact time")]
+                                    : [String(localized: "Alarm off")]
+        return ([String(localized: "Recommended bedtime")] + alarm)
+            .flatMap { $0.split(separator: " ").map(String.init) }
+    }
+
+    /// One time column's width: the card's inner width less the connector and the two gaps around it.
+    private var columnWidth: CGFloat {
+        max(0, (innerWidth - PulseHomeMetrics.tonightConnector - 2 * PulseTheme.Space.xs) / 2)
+    }
+
+    /// The label style's scaled size, shrunk (never below 60%) until the widest caption word fits a column,
+    /// with a little room to spare: Text sets a word a hair wider than its measured advance.
+    private var captionSize: CGFloat {
+        let room = columnWidth * 0.94
+        let widest = captionWords.map { PulseTextMetrics.width($0, style: .label, size: labelSize) }.max() ?? 0
+        guard room > 0, widest > room else { return labelSize }
+        return max(labelSize * 0.6, labelSize * room / widest)
+    }
+
+    /// A caption at the shared size, wrapping between words only (every word fits by construction).
+    private func caption(_ text: String, color: Color) -> some View {
+        let spec = PulseTextStyle.label.spec
+        let size = captionSize
+        return Text(text)
+            .font(spec.font(size: size))
+            .tracking(spec.tracking * size / spec.size)
+            .textCase(.uppercase)
+            .multilineTextAlignment(.center)
+            .foregroundStyle(color)
+            .fixedSize(horizontal: false, vertical: true)
     }
 
     private var wakeAccessibility: String {
@@ -398,17 +448,17 @@ struct PulseTonightsSleepCard: View {
     }
 
     /// A column: the icon and time on one line (the same baseline in both columns), the caption under it.
-    private func column<Caption: View>(icon: AnyView, time: Date,
+    private func column<Caption: View>(icon: AnyView, time: String,
                                        @ViewBuilder caption: () -> Caption) -> some View {
         VStack(spacing: 6) {
             HStack(alignment: .center, spacing: 6) {
                 icon
-                Text(PulseFormat.clockNoMeridiem(time))
+                Text(time)
                     .font(PulseType.font(.sleepTime))
                     .foregroundStyle(PulseTheme.textPrimary)
                     .lineLimit(1)
             }
-            .frame(height: 26)
+            .frame(height: PulseHomeMetrics.tonightTimeRow)
             caption()
         }
         .frame(maxWidth: .infinity)
@@ -426,9 +476,11 @@ struct PulseTonightsSleepCard: View {
 
 // MARK: - Journal (§3.1 item 8d)
 
-/// MY JOURNAL › : the seven days ending on the selected day as circles (logged: green with a black ✓; not
-/// logged: a white-40% ring; the selected day pending: grey with a white ring), the newest at the right,
+/// MY JOURNAL › : the seven days ending on the selected day as 22 pt circles (logged: green with a black ✓;
+/// not logged: a white-40% ring; the selected day pending: grey with a white ring), the newest at the right,
 /// then BEHAVIOR INSIGHTS. The title opens the selected day's journal; a day's circle opens that day's.
+/// Proportions from completeness-critic/16 and reviews/r113: day labels centred ≈47 pt under the title's
+/// centre, BEHAVIOR INSIGHTS ≈41 pt under the circles' centres, ≈188 pt in all.
 struct PulseJournalCard: View {
     let strip: PulseJournalStrip
     @EnvironmentObject private var router: NavRouter
@@ -439,7 +491,7 @@ struct PulseJournalCard: View {
             VStack(alignment: .leading, spacing: 14) {
                 Button { openJournal(strip.days.last?.offset ?? 0) } label: {
                     PulseCardTitle(String(localized: "My Journal"), accessory: .trailingChevron)
-                        .contentShape(Rectangle())
+                        .pulseHomeHitArea()
                 }
                 .buttonStyle(PulsePressStyle())
                 .accessibilityHint(String(localized: "Opens the journal"))
@@ -450,13 +502,15 @@ struct PulseJournalCard: View {
                         label: PulseFormat.dayLabel(day.key, template: "EEE"),
                         state: day.logged ? .logged : (newest ? .pending : .notLogged),
                         isCurrent: newest)
-                }, onTap: { day in
+                }, diameter: PulseHomeMetrics.journalCircle, onTap: { day in
                     if let match = strip.days.first(where: { $0.key == day.id }) { openJournal(match.offset) }
                 })
+                .padding(.top, PulseHomeMetrics.journalStripTop)
                 Button { navigator.open(PulseRoute.behaviorInsights.forExistingEntryPoint) } label: {
                     Label(String(localized: "Behavior insights"), systemImage: "lightbulb")
                 }
                 .buttonStyle(.pulseNested(fill: PulseTheme.Journal.insightsButton))
+                .padding(.top, PulseHomeMetrics.journalButtonTop)
             }
         }
     }
@@ -470,9 +524,10 @@ struct PulseJournalCard: View {
 
 // MARK: - My Plan (§3.1 item 9)
 
-/// My Plan. Today it shows the empty state (§3.1 item 9, reviews/r113): "Build Your Best Self", one line on
-/// what a plan does, and "EXPLORE PLANS →", with ZENO's own art (three dashed green rings holding a moon, a
-/// heart and a lifter). It opens the Plan Overview (`.weeklyPlan`).
+/// My Plan. Today it shows the empty state (§3.1 item 9, reviews/r113): "Build Your Best Self" (17 pt
+/// Semibold), one line on what a plan does in a ≈240 pt column so it wraps to two lines, and "EXPLORE PLANS
+/// →", with ZENO's own art (three dashed green rings holding a moon, a heart and a lifter). It opens the
+/// Plan Overview (`.weeklyPlan`).
 ///
 /// TODO(plan-card): group "journal-plan" builds the plan store. Once an active plan exists, replace this
 /// empty state with the collapsed card ("CUSTOM PLAN" ⌄, "6 days left", "27% ACCOMPLISHED" over a 4 pt
@@ -483,28 +538,29 @@ struct PulsePlanCard: View {
 
     var body: some View {
         Button { navigator.open(PulseRoute.weeklyPlan(editing: false).forExistingEntryPoint) } label: {
-            HStack(alignment: .center, spacing: 12) {
-                VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .center, spacing: PulseTheme.Space.xs) {
+                VStack(alignment: .leading, spacing: PulseTheme.Space.xs) {
                     Text(String(localized: "Build Your Best Self"))
-                        .pulseText(.cardHeadline)
+                        .pulseText(.subsectionTitle)
                         .foregroundStyle(PulseTheme.textPrimary)
-                    Text(String(localized: "Set goals, track progress, and turn small actions into long-term wins."))
+                    // "long‑term" with a non-breaking hyphen: the line wraps before it, never at it.
+                    Text(String(localized: "Set goals, track progress, and turn small actions into long\u{2011}term wins."))
                         .pulseText(.body)
                         .foregroundStyle(PulseTheme.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
                     HStack(spacing: 6) {
                         Text(String(localized: "Explore plans")).pulseText(.label)
-                        Image(systemName: "arrow.right").font(.system(size: 12, weight: .semibold))
+                        Image(systemName: "arrow.right").pulseText(.label)
                     }
                     .foregroundStyle(PulseTheme.Plan.exploreCTA)
-                    .padding(.top, 4)
+                    .padding(.top, PulseTheme.Space.xxs)
                 }
                 Spacer(minLength: 0)
                 PulsePlanArt()
             }
-            .padding(.leading, PulseTheme.Layout.cardPadding + 4)
-            .padding(.trailing, PulseTheme.Layout.cardPadding)
-            .padding(.vertical, PulseTheme.Layout.cardPadding + 8)
+            .padding(.leading, PulseTheme.Layout.cardPadding + PulseTheme.Space.xxs)
+            .padding(.trailing, PulseTheme.Space.s)
+            .padding(.vertical, PulseTheme.Layout.cardPadding + PulseTheme.Space.xs)
             .frame(maxWidth: .infinity, alignment: .leading)
             .pulseCardBackground(.solid(PulseTheme.Plan.emptyCard))
             .contentShape(Rectangle())
@@ -515,15 +571,16 @@ struct PulsePlanCard: View {
     }
 }
 
-/// Three dashed green rings holding a moon, a heart and a lifter (SF Symbols; ZENO's own art).
+/// Three dashed green rings holding a moon, a heart and a lifter (SF Symbols; ZENO's own art), in an
+/// 84 × 96 pt slot.
 private struct PulsePlanArt: View {
     var body: some View {
         ZStack {
-            ring("moon.stars.fill", size: 50).offset(x: 14, y: -18)
-            ring("heart.fill", size: 34).offset(x: -30, y: -4)
-            ring("figure.strengthtraining.traditional", size: 42).offset(x: 6, y: 26)
+            ring("moon.stars.fill", size: 48).offset(x: 14, y: -20)
+            ring("heart.fill", size: 32).offset(x: -24, y: -4)
+            ring("figure.strengthtraining.traditional", size: 40).offset(x: 6, y: 24)
         }
-        .frame(width: 96, height: 100)
+        .frame(width: PulseHomeMetrics.planArt.width, height: PulseHomeMetrics.planArt.height)
         .accessibilityHidden(true)
     }
 
@@ -532,7 +589,7 @@ private struct PulsePlanArt: View {
             Circle().fill(PulseTheme.card)
             Circle().strokeBorder(PulseTheme.Plan.progress, style: StrokeStyle(lineWidth: 2, dash: [5, 4]))
             Image(systemName: symbol)
-                .font(.system(size: size * 0.38, weight: .semibold))
+                .font(PulseHomeGlyph.art(size * 0.38))
                 .foregroundStyle(PulseTheme.textSecondary)
         }
         .frame(width: size, height: size)
