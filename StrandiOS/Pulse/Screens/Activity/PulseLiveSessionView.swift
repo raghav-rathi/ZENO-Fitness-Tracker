@@ -2,6 +2,7 @@
 import SwiftUI
 import Charts
 import MapKit
+import CoreLocation
 import StrandAnalytics
 import WhoopStore
 import WhoopProtocol
@@ -56,7 +57,9 @@ struct PulseLiveSessionView: View {
                 band(safeTop: geo.safeAreaInsets.top)
                 TabView(selection: $page) {
                     heartRatePage.tag(Page.heartRate)
-                    strainPage(height: geo.size.height - 81 - 44).tag(Page.strain)
+                    strainPage(height: geo.size.height + geo.safeAreaInsets.top + geo.safeAreaInsets.bottom
+                               - (geo.safeAreaInsets.top + 81) - (44 + max(4, geo.safeAreaInsets.bottom - 18)))
+                        .tag(Page.strain)
                     if hasMap {
                         PulseLiveMapPage(recorder: app.gpsRecorder, start: workout?.start, isPaused: workout?.isPaused ?? false,
                                          elapsed: { workout?.elapsed() ?? 0 }, system: distanceSystem,
@@ -226,12 +229,15 @@ struct PulseLiveSessionView: View {
     // MARK: Activity Strain page
 
     private func strainPage(height: CGFloat) -> some View {
-        let ring = min(290, max(200, height * 0.4))
+        // 290 pt on a 402 × 874 screen (b01), smaller where the page is shorter.
+        let ring = min(290, max(200, height * 0.435))
+        // Spacings measured on b01 (402 × 874): the ring 89 pt under the band, the HEART RATE label 52 pt
+        // under the ring, the zone bar 21 pt under the value's digits, the stats 40 pt under the zone labels.
         return VStack(spacing: 0) {
-            Spacer(minLength: 24).frame(maxHeight: 89)
+            Spacer(minLength: 12).frame(maxHeight: 89)
             PulseLiveStrainRing(strain: strain, target: session?.target, diameter: ring,
                                 avatar: app.profile.avatarImageData)
-            Spacer(minLength: 20).frame(maxHeight: 46)
+            Spacer(minLength: 16).frame(maxHeight: 52)
             VStack(alignment: .leading, spacing: 4) {
                 Text(String(localized: "Heart rate"))
                     .pulseText(.cardTitle)
@@ -247,7 +253,7 @@ struct PulseLiveSessionView: View {
             PulseLiveZoneBar(zone: zone, bpm: app.bpm.map(Double.init), zoneSet: zoneSet)
                 .padding(.horizontal, 10)
                 .padding(.top, 14)
-            Spacer(minLength: 16).frame(maxHeight: 42)
+            Spacer(minLength: 12).frame(maxHeight: 40)
             HStack(spacing: 0) {
                 statColumn(icon: "heart.fill", title: String(localized: "Avg HR"),
                            value: (workout?.avgHr ?? 0) > 0 ? "\(workout?.avgHr ?? 0)" : "--")
@@ -287,7 +293,7 @@ struct PulseLiveSessionView: View {
     }
 
     private var hairline: some View {
-        Rectangle().fill(PulseTheme.divider).frame(width: 1, height: 96)
+        Rectangle().fill(PulseTheme.divider).frame(width: 1, height: 74)
     }
 
     // MARK: Heart Rate page
@@ -572,6 +578,12 @@ struct PulseLiveMapPage: View {
     let showsPace: Bool
 
     @State private var route: [CLLocationCoordinate2D] = []
+    @State private var locationDenied = PulseLiveMapPage.isLocationDenied
+
+    private static var isLocationDenied: Bool {
+        let status = CLLocationManager().authorizationStatus
+        return status == .denied || status == .restricted
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -586,8 +598,9 @@ struct PulseLiveMapPage: View {
             .environment(\.colorScheme, .light)
             .overlay {
                 if recorder.pointCount == 0 {
-                    Text(isPaused ? String(localized: "Paused. The route resumes with the session.")
-                                  : String(localized: "Waiting for a GPS fix…"))
+                    Text(locationDenied ? String(localized: "Location is off for ZENO, so no route is recorded.")
+                         : (isPaused ? String(localized: "Paused. The route resumes with the session.")
+                                     : String(localized: "Waiting for a GPS fix…")))
                         .font(.system(size: 15, weight: .medium))
                         .foregroundStyle(Color.black.opacity(0.7))
                         .padding(.horizontal, 14)

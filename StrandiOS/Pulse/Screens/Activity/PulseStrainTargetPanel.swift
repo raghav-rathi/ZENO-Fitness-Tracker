@@ -148,15 +148,20 @@ struct PulseStrainTargetPanel: View {
                     PulseTrainingStateView(snapshot: snapshot, activity: value).tag(1)
                 }
                 .tabViewStyle(.page(indexDisplayMode: .never))
-                HStack(spacing: 8) {
+                HStack(spacing: 0) {
                     ForEach(0..<2, id: \.self) { i in
-                        Circle()
-                            .fill(Color.black.opacity(page == i ? 0.75 : 0.18))
-                            .frame(width: 7, height: 7)
+                        Button { page = i } label: {
+                            Circle()
+                                .fill(Color.black.opacity(page == i ? 0.75 : 0.18))
+                                .frame(width: 7, height: 7)
+                                .frame(width: 28, height: 28)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel(i == 0 ? String(localized: "Target ring") : String(localized: "Training state"))
+                        .accessibilityAddTraits(page == i ? .isSelected : [])
                     }
                 }
-                .padding(.top, 6)
-                .accessibilityHidden(true)
             }
             .padding(.top, 12)
             #if DEBUG
@@ -299,7 +304,8 @@ struct PulseStrainTargetRing: View {
                     .position(point(at: fraction, radius: radius, center: center))
             }
             .frame(width: geo.size.width, height: geo.size.height)
-            .contentShape(Circle())
+            // Only the ring's band drags the target, so a swipe from the middle still turns the page.
+            .contentShape(PulseAnnulus(inset: 0, thickness: 60), eoFill: true)
             .gesture(DragGesture(minimumDistance: 0).onChanged { drag in
                 let dx = drag.location.x - center.x, dy = drag.location.y - center.y
                 guard hypot(dx, dy) > radius * 0.45 else { return }
@@ -578,6 +584,22 @@ struct PulseDayStrainBarChart: View {
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(String(localized: "Day Strain"))
         .accessibilityValue(String(localized: "\(PulseFormat.oneDecimal(current)) now, \(PulseFormat.oneDecimal(estimated)) after this activity"))
+    }
+}
+
+/// A ring band `thickness` deep whose outer edge sits `inset` inside the frame (even-odd fill): the hit area
+/// of the light ring's knob.
+struct PulseAnnulus: Shape {
+    var inset: CGFloat
+    var thickness: CGFloat
+
+    func path(in rect: CGRect) -> Path {
+        let outer = rect.insetBy(dx: max(0, inset), dy: max(0, inset))
+        let inner = outer.insetBy(dx: thickness, dy: thickness)
+        var p = Path()
+        p.addEllipse(in: outer)
+        if inner.width > 0 { p.addEllipse(in: inner) }
+        return p
     }
 }
 #endif

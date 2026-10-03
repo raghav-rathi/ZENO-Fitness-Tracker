@@ -186,7 +186,7 @@ struct PulseActivityZoneRow: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 9) {
+        VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .firstTextBaseline, spacing: 7) {
                 Text(String(localized: "Zone \(row.zone)"))
                     .pulseText(.cardTitle)
@@ -222,9 +222,10 @@ struct PulseActivityZoneRow: View {
                 .frame(height: 14)
             }
         }
+        // 66 pt with its bar and 44 pt without, as the 2026 captures measure (h01, 82).
         .padding(.horizontal, 14)
-        .padding(.top, 13)
-        .padding(.bottom, row.seconds > 0 ? 14 : 13)
+        .padding(.top, 9)
+        .padding(.bottom, 12)
         .frame(maxWidth: .infinity, alignment: .leading)
         .pulseCardBackground()
         .opacity(row.seconds > 0 ? 1 : 0.4)
