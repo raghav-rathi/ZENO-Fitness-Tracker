@@ -4,104 +4,99 @@ import StrandDesign
 import StrandAnalytics
 
 /// The My Dashboard views (WHOOP_UI_SPEC §3.1 item 12): the "My Dashboard" header with CUSTOMIZE ✎, the
-/// metric rows (`PulseMetricRow`: value, ▲▼ by good / bad, the 30-day baseline) that open the Trend View,
-/// and the STRESS MONITOR and STRAIN & RECOVERY chart cards. They replace the old KEY STATS grid and Stress
-/// section.
+/// wearer's items in their chosen order (`PulseDashboardLayout`), each metric row's value with ▲▼ by good /
+/// bad and the 30-day baseline, and the STRESS MONITOR and STRAIN & RECOVERY chart cards. While the strap is
+/// still personalizing, the pencil hides and "Personalization in Progress" leads the list.
 ///
-/// Owned by group "home", which adds reordering and the Customize Dashboard set.
+/// Owned by group "home". Rows open the Trend View once it is rebuilt (group "trends"), else the metric's
+/// current detail screen.
 enum PulseDashboardViews {
     /// The whole My Dashboard section as Home places it.
     struct Section: View {
         let home: HomeSnapshot
+        /// Home's own facts for the same day; nil while they build (rows read label + "›" meanwhile).
+        let extras: HomeExtrasSnapshot?
+        let items: [PulseDashboardItem]
+        /// Fewer than 7 scored days: the Personalization card shows and CUSTOMIZE hides.
+        let personalizing: Bool
+        /// The rows' values are the previous day's while this day's build: they dim, as Home does while a
+        /// day loads, rather than pass for it or flash "no data".
+        var extrasStale = false
+        /// The stress reading's update time, resolved once for the STRESS MONITOR tile and card.
+        var stressUpdated: String?
 
         @Environment(\.pulseNavigator) private var navigator
 
         var body: some View {
             VStack(alignment: .leading, spacing: 0) {
                 PulseSectionHeader(String(localized: "My Dashboard"),
-                                   accessory: .customize { navigator.open(.customizeDashboard) })
+                                   accessory: personalizing ? .none
+                                                            : .customize { navigator.open(.customizeDashboard) })
                     .id("pulse.dashboard")
                 VStack(spacing: PulseTheme.Layout.gridGap) {
-                    ForEach(home.stats) { stat in
-                        PulseLink(route(stat)) { row(stat) }
-                            .buttonStyle(PulsePressStyle())
+                    if personalizing {
+                        PersonalizationCard()
                     }
-                    StressCard(home: home)
-                        .id("pulse.stress")
-                    StrainRecoveryCard(home: home)
-                        .id("pulse.strain-recovery")
+                    ForEach(items) { item in
+                        switch item {
+                        case .stressMonitor:
+                            StressCard(home: home, updated: stressUpdated)
+                                .id("pulse.stress")
+                        case .strainRecovery:
+                            StrainRecoveryCard(home: home)
+                                .id("pulse.strain-recovery")
+                        default:
+                            let value = extras?.dashboard[item] ?? .empty(item.classicRoute)
+                            PulseLink(route(item, value: value)) {
+                                PulseDashboardMetricRow(item: item, value: value,
+                                                        caption: value.captionText(dayKey: home.day.key))
+                                    .opacity(extrasStale ? 0.45 : 1)
+                            }
+                            .buttonStyle(PulsePressStyle())
+                            .disabled(extrasStale)
+                        }
+                    }
                 }
                 .padding(.top, PulseTheme.Layout.headerGap)
             }
         }
 
-        /// The Trend View once it is rebuilt, else the metric's current detail screen.
-        private func route(_ stat: PulseKeyStat) -> PulseRoute {
-            let trend = PulseRoute.trendView(metric: Self.catalogKey(stat))
-            return trend.isRebuilt ? trend : .tab(stat.route)
+        /// The Trend View once it is rebuilt, else the row's own detail screen.
+        private func route(_ item: PulseDashboardItem, value: PulseDashboardValue) -> PulseRoute {
+            let trend = PulseRoute.trendView(metric: item.trendMetric)
+            return trend.isRebuilt ? trend : value.fallback
         }
+    }
 
-        /// The metric's catalog key (what the Trend View takes): "resp_rate", not the stat's short id.
-        private static func catalogKey(_ stat: PulseKeyStat) -> String {
-            switch stat.route {
-            case .metric(let key): return key
-            case .metricSourced(let key, _): return key
-            case .steps: return "steps"
-            default: return stat.id
+    /// "Personalization in Progress" (help-center/62, 67): an outlined card while the strap calibrates.
+    struct PersonalizationCard: View {
+        var body: some View {
+            HStack(alignment: .center, spacing: PulseTheme.Space.s) {
+                VStack(alignment: .leading, spacing: PulseTheme.Space.xxs) {
+                    Text(String(localized: "Personalization in Progress"))
+                        .pulseText(.coachingTitle)
+                        .foregroundStyle(PulseTheme.textPrimary)
+                    Text(String(localized: "As your strap calibrates to your unique physiology, you'll gain insight into your trends here."))
+                        .pulseText(.body)
+                        .foregroundStyle(PulseTheme.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                PulseCalibratingArt()
             }
-        }
-
-        private func row(_ stat: PulseKeyStat) -> PulseMetricRow {
-            let hasValue = stat.value != "–"
-            return PulseMetricRow(symbol: Self.symbol(stat.id), title: Self.title(stat),
-                                  value: hasValue ? stat.value : nil,
-                                  unit: stat.unit.isEmpty ? nil : stat.unit,
-                                  trend: stat.baselineDelta.map { delta in
-                                      PulseTrend(delta: delta, polarity: PulseMetricPolarity.forMetric(stat.id))
-                                  } ?? stat.comparison.map { c in
-                                      PulseTrend(direction: Self.direction(c.direction),
-                                                 polarity: PulseMetricPolarity.forMetric(stat.id))
-                                  },
-                                  baseline: stat.baseline)
-        }
-
-        /// The dashboard's names: the ones Recovery and the Health tab use, never abbreviations.
-        private static func title(_ stat: PulseKeyStat) -> String {
-            switch stat.id {
-            case "hrv": return String(localized: "Heart rate variability")
-            case "rhr": return String(localized: "Resting heart rate")
-            case "resp": return String(localized: "Respiratory rate")
-            case "skin": return String(localized: "Skin temperature")
-            case "spo2": return String(localized: "Blood oxygen")
-            default: return stat.title
-            }
-        }
-
-        private static func symbol(_ id: String) -> String {
-            switch id {
-            case "hrv": return "waveform.path.ecg"
-            case "rhr": return "heart"
-            case "resp": return "lungs"
-            case "skin": return "thermometer.medium"
-            case "spo2": return "drop"
-            case "steps": return "figure.walk"
-            case "kcal": return "flame"
-            default: return "circle"
-            }
-        }
-
-        private static func direction(_ d: PulseDisplay.Direction) -> PulseTrend.Direction {
-            switch d {
-            case .up: return .up
-            case .down: return .down
-            case .flat: return .flat
-            }
+            .padding(.horizontal, PulseTheme.Layout.cardPadding + 4)
+            .padding(.vertical, PulseTheme.Layout.cardPadding + 8)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .pulseCardBackground(.outlined)
+            .accessibilityElement(children: .combine)
         }
     }
 
     /// STRESS MONITOR ›: "Last updated 10:15 PM" and "MEDIUM 1.1", then the day's stress chart (150 pt).
     struct StressCard: View {
         let home: HomeSnapshot
+        /// When the reading was last updated (`PulseHomeStress.updated`, shared with the tile).
+        let updated: String?
 
         var body: some View {
             PulseLink(PulseRoute.stressMonitor.forExistingEntryPoint) {
@@ -117,7 +112,7 @@ enum PulseDashboardViews {
                             Spacer(minLength: 8)
                             if let score = home.stress?.score {
                                 let level = PulseTheme.Stress.Level(value: score)
-                                Text(levelWord(level))
+                                Text(PulseHomeStress.word(level))
                                     .pulseText(.label)
                                     .foregroundStyle(level.color)
                                 Text(PulseFormat.oneDecimal(score))
@@ -155,11 +150,6 @@ enum PulseDashboardViews {
             return out
         }
 
-        private var updated: String? {
-            guard let hour = home.stress?.hours.last(where: { $0.level != nil }) else { return nil }
-            return PulseFormat.clock(min(Date(timeIntervalSince1970: TimeInterval(hour.startTs + 3600)), Date()))
-        }
-
         /// The chart's x labels: four times across the span shown, the last one now.
         private var xLabels: [String] {
             let dates = points.map(\.date) + periods.flatMap { [$0.start, $0.end] }
@@ -170,18 +160,14 @@ enum PulseDashboardViews {
             return (0...3).map { PulseFormat.clock(lo.addingTimeInterval(step * Double($0))) }
         }
 
-        private func levelWord(_ level: PulseTheme.Stress.Level) -> String {
-            switch level {
-            case .low: return String(localized: "Low")
-            case .medium: return String(localized: "Medium")
-            case .high: return String(localized: "High")
-            }
-        }
     }
 
-    /// STRAIN & RECOVERY ⓘ: the seven days ending on the selected one, Strain against Recovery.
+    /// STRAIN & RECOVERY ⓘ: the seven days ending on the selected one, Strain against Recovery, on a
+    /// ≈191 pt plot (completeness-critic/13). A week with neither says why the grid is bare (§2.7).
     struct StrainRecoveryCard: View {
         let home: HomeSnapshot
+
+        private var isEmpty: Bool { home.week.allSatisfy { $0.strain == nil && $0.recovery == nil } }
 
         var body: some View {
             PulseLink(PulseRoute.trendView(metric: "recovery").forExistingEntryPoint) {
@@ -191,12 +177,127 @@ enum PulseDashboardViews {
                                                      label: PulseFormat.dayLabel(day.id, template: "EEE"),
                                                      sublabel: PulseFormat.dayLabel(day.id, template: "d"),
                                                      strain: day.strain, recovery: day.recovery)
-                    }, highlightID: home.day.key)
+                    }, highlightID: home.day.key, height: PulseHomeMetrics.strainRecoveryChart)
+                    .overlay {
+                        if isEmpty {
+                            Text(String(localized: "Strain and Recovery fill in as your days score."))
+                                .pulseText(.body)
+                                .foregroundStyle(PulseTheme.textSecondary)
+                                .multilineTextAlignment(.center)
+                                .padding(.horizontal, PulseTheme.Space.l)
+                        }
+                    }
                 }
                 .contentShape(Rectangle())
             }
             .buttonStyle(PulsePressStyle())
         }
+    }
+}
+
+// MARK: - Metric row
+
+/// A My Dashboard metric row (completeness-critic/16, reviews/r111): a ≈58 pt card, a 20 pt line icon at
+/// 50% and the UPPERCASE name at the left; at the right the value (22 pt Bold condensed) with the 30-day
+/// baseline under it, right-aligned to the value, and the 6 pt ▲▼ / ● hanging beside the value. A value
+/// carried from an earlier day names that day under the row's name. With nothing to show, the name and a
+/// white "›" only.
+///
+/// `PulseMetricRow` (Components/) draws the same row with the glyph inside the value column and a grey
+/// chevron; this keeps WHOOP's alignment and the carried-day line, which the dashboard needs.
+struct PulseDashboardMetricRow: View {
+    let item: PulseDashboardItem
+    let value: PulseDashboardValue
+    /// Whose day a carried value is ("Last night · 28 Sep"), shown under the name.
+    var caption: String?
+
+    /// The icon column, scaling with the icon so the names stay in one column at every text size.
+    @ScaledMetric(relativeTo: .body) private var iconWidth: CGFloat = 22
+
+    var body: some View {
+        // The icon 14 pt in, the name at 44 pt (completeness-critic/16).
+        HStack(spacing: PulseTheme.Space.xs) {
+            Image(systemName: item.symbol)
+                .pulseHomeGlyph(.dashboardIcon)
+                .foregroundStyle(PulseTheme.textTertiary)
+                .frame(width: iconWidth)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 2) {
+                PulseWordWrapText(item.title, style: .cardTitle)
+                    .foregroundStyle(PulseTheme.textPrimary)
+                if let caption, value.value != nil {
+                    Text(caption)
+                        .pulseText(.secondary)
+                        .foregroundStyle(PulseTheme.textTertiary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
+                }
+            }
+            .layoutPriority(1)
+            Spacer(minLength: PulseTheme.Space.xs)
+            if let text = value.value {
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    VStack(alignment: .trailing, spacing: 1) {
+                        PulseValueText(value: text, unit: value.unit, style: .tileValue, unitStyle: .tileUnit,
+                                       unitColor: value.unit == "%" ? PulseTheme.textPrimary : PulseTheme.textTertiary)
+                        if let baseline = value.baseline {
+                            Text(baseline)
+                                .pulseText(.baseline)
+                                .foregroundStyle(PulseTheme.textTertiary)
+                                .lineLimit(1)
+                        }
+                    }
+                    // WHOOP sits the glyph just above the value's baseline, not mid-height.
+                    PulseTrendGlyph(trend: value.trend ?? PulseTrend(direction: .flat, polarity: .neutral))
+                        .opacity(value.trend == nil ? 0 : 1)
+                        .alignmentGuide(.firstTextBaseline) { d in d[.bottom] + 1.5 }
+                }
+                .fixedSize()
+            } else {
+                PulseChevron(color: PulseTheme.textPrimary, size: 16)
+            }
+        }
+        .padding(.leading, PulseTheme.Space.s + 2)
+        .padding(.trailing, PulseTheme.Space.s)
+        .padding(.vertical, PulseTheme.Space.xs)
+        .frame(maxWidth: .infinity, minHeight: PulseTheme.Row.dashboard, alignment: .leading)
+        .pulseCardBackground()
+        .contentShape(Rectangle())
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(item.title)
+        .accessibilityValue(spoken)
+        .accessibilityAddTraits(.isButton)
+    }
+
+    private var spoken: String {
+        guard let text = value.value else { return String(localized: "No data yet") }
+        var parts = [[text, value.unit ?? value.spokenUnit].compactMap { $0 }.joined(separator: " ")]
+        if value.isRunningTotal { parts.append(String(localized: "so far today")) }
+        if let caption { parts.append(caption) }
+        if let trend = value.trend { parts.append(trend.accessibilityDescription) }
+        if let baseline = value.baseline {
+            switch value.baselineKind {
+            case .thirtyDays: parts.append(String(localized: "30-day average \(baseline)"))
+            case .fourWeeks: parts.append(String(localized: "weekly average of the 4 weeks before \(baseline)"))
+            }
+        }
+        return parts.joined(separator: ", ")
+    }
+}
+
+/// ZENO's own art for a calibrating strap: the band outline with a heartbeat line through it.
+struct PulseCalibratingArt: View {
+    var body: some View {
+        ZStack {
+            PulseStrapShape()
+                .stroke(PulseTheme.textTertiary, style: StrokeStyle(lineWidth: 1.5, lineCap: .round, lineJoin: .round))
+                .frame(width: 40, height: 62)
+            Image(systemName: "waveform.path")
+                .font(PulseHomeGlyph.art(34, weight: .light))
+                .foregroundStyle(PulseTheme.recoveryBlue)
+        }
+        .frame(width: 84, height: 66)
+        .accessibilityHidden(true)
     }
 }
 #endif
