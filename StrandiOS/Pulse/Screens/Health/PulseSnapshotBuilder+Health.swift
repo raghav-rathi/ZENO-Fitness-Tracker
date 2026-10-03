@@ -515,12 +515,28 @@ extension PulseSnapshotBuilder {
 
     // MARK: - Healthspan
 
+    /// The week a Healthspan build shows: the one keyed `weekKey`, else the newest.
+    private func healthspanWeek(_ weeks: [HealthAgeWeek], weekKey: String?) -> HealthAgeWeek? {
+        weekKey.flatMap { k in weeks.first { $0.id == k } } ?? weeks.last
+    }
+
+    /// The last day a week's figures run to: its Friday, or today while it is still being scored.
+    private func healthspanEndKey(_ week: HealthAgeWeek, todayKey: String) -> String {
+        min(PulseDisplay.dayKey(week.id, offsetBy: 6) ?? week.id, todayKey)
+    }
+
     /// Healthspan for the week keyed `weekKey` (the newest when nil).
+    ///
+    /// The orb shows the ZENO Age the weekly pass stored. The rows recompute the week's inputs and print each
+    /// factor's years only when they add up to that stored age (`HealthspanBreakdown`); otherwise they show
+    /// their values without years and `breakdownNote` says why. The rows outside the model (time in HR
+    /// zones, strength time) come in a second pass, `healthspanTracked`.
     func healthspan(_ r: PulseRequest, weekKey: String?, dateOfBirth: Date) async -> HealthspanSnapshot? {
         begin(r.seq)
         let weeks = await healthAgeWeeks(dateOfBirth: dateOfBirth, now: r.now)
         let groups = await nightGroups(r)
         let vo2Series = await cached("health.vo2") { await repo.resolvedSeries(key: "vo2max_est", source: "my-whoop").values }
+        let fitnessAge = await cached("health.fitnessAge") { await repo.exploreSeries(key: "fitness_age", source: "my-whoop") }
         let lean = await cached("health.leanMass") { await repo.exploreSeries(key: "lean_mass", source: "apple-health") }
         guard isCurrent(r) else { return nil }
 
@@ -530,7 +546,7 @@ extension PulseSnapshotBuilder {
         let paceSeries = PaceOfAging.series(weeks.map(\.paceWeek))
             .map { HealthspanSnapshot.PacePoint(id: $0.day, pace: $0.pace) }
 
-        guard case .ready = state, let week = weekKey.flatMap({ k in weeks.first { $0.id == k } }) ?? weeks.last else {
+        guard case .ready = state, let week = healthspanWeek(weeks, weekKey: weekKey) else {
             let unlock: HealthspanSnapshot.Unlock
             if case .unlocking(let nights, let needed) = state {
                 unlock = .init(nights: nights, needed: needed)
@@ -539,22 +555,26 @@ extension PulseSnapshotBuilder {
             }
             return HealthspanSnapshot(seq: r.seq, weeks: weeks, summary: nil, unlock: unlock, paceSeries: paceSeries,
                                       isCurrentWeek: true, daysLeftInWeek: 0, insight: nil, pillars: [],
-                                      vo2: vo2State(series: vo2Series, endKey: todayKey, nights: totalNights))
+                                      breakdownNote: nil)
         }
 
         let summary = ageSummary(for: week, in: weeks)
         let weekEndKey = PulseDisplay.dayKey(week.id, offsetBy: 6) ?? week.id
-        let endKey = min(weekEndKey, todayKey)
+        let endKey = healthspanEndKey(week, todayKey: todayKey)
         let isCurrentWeek = todayKey >= week.id && todayKey <= weekEndKey
         let daysLeft = isCurrentWeek ? Self.daysBetween(todayKey, weekEndKey) : 0
 
+        // The week's inputs as the weekly pass aggregates them, and their breakdown only when it adds up to
+        // the ZENO Age the orb shows.
         let inputs = weekInputs(r, endKey: endKey)
-        let contributions = VitalityEngine.contributions(VitalityEngine.Inputs(
+        let engineInputs = VitalityEngine.Inputs(
             chronoAge: week.chronoAge, restingHR: inputs.rhr, sleepHours: inputs.sleepHours,
             sleepConsistency: inputs.regularity, rmssd: inputs.hrv,
-            rmssdNorm: VitalityEngine.rmssdNorm(forAge: week.chronoAge), steps: inputs.steps))
-        let years = Dictionary(contributions.map { ($0.key, VitalityEngine.years(for: $0)) },
-                               uniquingKeysWith: { _, last in last })
+            rmssdNorm: VitalityEngine.rmssdNorm(forAge: week.chronoAge), steps: inputs.steps)
+        let breakdown = HealthspanBreakdown.years(engineInputs, storedBodyAge: week.zenoAge)
+        let note: String? = breakdown != nil ? nil : (isCurrentWeek
+            ? String(localized: "Breakdown updates with this week's ZENO Age.")
+            : String(localized: "This week's breakdown does not add up to its ZENO Age, so no years are shown."))
 
         // Steps for the row when the week's ZENO Age had none of its own (a WHOOP 4.0 counts no steps): the
         // app's one steps resolver, shown alongside without an effect.
@@ -567,12 +587,14 @@ extension PulseSnapshotBuilder {
             }
         }
         guard isCurrent(r) else { return nil }
-        let pillars = healthspanPillars(r, endKey: endKey, chrono: week.chronoAge, inputs: inputs, years: years,
-                                        lean: lean, resolvedSteps: resolvedSteps)
-        let insight = healthspanInsight(summary: summary, contributions: contributions)
+        let context = PillarContext(endKey: endKey, chrono: week.chronoAge, inputs: inputs, breakdown: breakdown,
+                                    isCurrentWeek: isCurrentWeek)
+        let vo2 = vo2Row(series: vo2Series, fitnessAge: fitnessAge, context: context, nights: totalNights)
+        let pillars = healthspanPillars(r, context: context, lean: lean, resolvedSteps: resolvedSteps, vo2: vo2)
+        let insight = healthspanInsight(summary: summary, breakdown: breakdown)
         return HealthspanSnapshot(seq: r.seq, weeks: weeks, summary: summary, unlock: nil, paceSeries: paceSeries,
                                   isCurrentWeek: isCurrentWeek, daysLeftInWeek: daysLeft, insight: insight,
-                                  pillars: pillars, vo2: vo2State(series: vo2Series, endKey: endKey, nights: totalNights))
+                                  pillars: pillars, breakdownNote: note)
     }
 
     /// The week's VitalityEngine inputs, aggregated exactly as the weekly pass and the classic Vitality card
@@ -583,6 +605,36 @@ extension PulseSnapshotBuilder {
         var sleepHours: Double?
         var regularity: Double?
         var steps: Double?
+    }
+
+    /// What every pillar row of one week is read against.
+    private struct PillarContext {
+        let endKey: String
+        let chrono: Double
+        let inputs: WeekInputs
+        /// The factors' years when they add up to the week's ZENO Age, else nil (withheld).
+        let breakdown: [String: Double]?
+        let isCurrentWeek: Bool
+
+        var sixFrom: String { PulseDisplay.dayKey(endKey, offsetBy: -181) ?? endKey }
+        var thirtyFrom: String { PulseDisplay.dayKey(endKey, offsetBy: -29) ?? endKey }
+
+        /// A factor's effect: its years, withheld when the breakdown does not add up, or outside the model.
+        func effect(_ key: String, inModel: Bool) -> RowEffect {
+            guard inModel else { return .outsideModel(String(localized: "This week's ZENO Age did not use it, so it is shown here without an effect.")) }
+            guard let breakdown else { return .withheld(isCurrentWeek: isCurrentWeek) }
+            return breakdown[key].map { .years($0) } ?? .withheld(isCurrentWeek: isCurrentWeek)
+        }
+    }
+
+    /// What a row says about ZENO Age.
+    private enum RowEffect {
+        /// The factor's share of this week's ZENO Age, in years.
+        case years(Double)
+        /// In the model, but the week's breakdown does not add up to its ZENO Age.
+        case withheld(isCurrentWeek: Bool)
+        /// Not one of ZENO Age's inputs this week; the reason, as a sentence.
+        case outsideModel(String)
     }
 
     private func weekInputs(_ r: PulseRequest, endKey: String) -> WeekInputs {
@@ -610,39 +662,57 @@ extension PulseSnapshotBuilder {
         return max(0, y - x)
     }
 
-    private func vo2State(series: [(day: String, value: Double)], endKey: String, nights: Int) -> HealthVO2MaxCard.State {
-        let points = series.filter { $0.day <= endKey && $0.value.isFinite && $0.value > 0 }
+    /// VO₂ MAX as a Fitness row (reviews/29: "55 mL/kg/min" on a 15–70 bar): the latest weekly estimate up
+    /// to the week's end, the 6-month and 30-day averages of the weekly estimates, and that week's Fitness
+    /// Age in the sentence (§3.23 [Z]). The weekly ZENO Age pass leaves VO₂ max to Fitness Age, so it carries
+    /// no years. Before there is an estimate, the row says what it is waiting for.
+    private func vo2Row(series: [(day: String, value: Double)], fitnessAge: [(day: String, value: Double)],
+                        context: PillarContext, nights: Int) -> HealthspanRow {
+        let points = series.filter { $0.day <= context.endKey && $0.value.isFinite && $0.value > 0 }
+        let title = String(localized: "VO₂ max")
+        let unit = String(localized: "mL/kg/min")
+        let route = PulseRoute.trendView(metric: "vo2max_est").forExistingEntryPoint
         guard let latest = points.last else {
-            if nights < 14 { return .locked(nights: nights, needed: 14) }
-            return .missing(String(localized: "ZENO estimates VO₂ max each week from your resting heart rate and activity once your profile has a waist measurement."))
+            let needed = 14
+            let sentence = nights < needed
+                ? String(localized: "Log \(needed - nights) more sleeps to unlock VO₂ max.")
+                : String(localized: "ZENO estimates VO₂ max each week once your profile has your age and biological sex and the strap has your resting heart rate on most nights of the week.")
+            return HealthspanRow(id: "vo2", title: title, valueText: nil, scale: 15...70, lowLabel: "15",
+                                 highLabel: "70", tones: [], unit: unit, sixMonth: nil, sixMonthNumber: nil,
+                                 thirtyDay: nil, thirtyDayNumber: nil, years: nil,
+                                 verdict: String(localized: "Not estimated yet"), sentence: sentence, route: nil)
         }
-        var note: String?
-        if let from = PulseDisplay.dayKey(latest.day, offsetBy: -89) {
-            let window = points.filter { $0.day >= from && $0.day < latest.day }.map(\.value)
-            if !window.isEmpty {
-                let avg = window.reduce(0, +) / Double(window.count)
-                let delta = latest.value - avg
-                let text = PulseFormat.oneDecimal(abs(delta))
-                if text == PulseFormat.oneDecimal(0) {
-                    note = String(localized: "In line with your 90-day average.")
-                } else if delta > 0 {
-                    note = String(localized: "Up \(text) on your 90-day average.")
-                } else {
-                    note = String(localized: "Down \(text) on your 90-day average.")
-                }
-            }
+        func mean(from: String) -> Double? {
+            let xs = points.filter { $0.day >= from }.map(\.value)
+            return xs.isEmpty ? nil : xs.reduce(0, +) / Double(xs.count)
         }
-        let updated = String(localized: "Estimated for the week of \(PulseFormat.dayLabel(latest.day, template: "MMMd"))")
-        return .value(latest.value, updated: updated, note: note)
+        let six = mean(from: context.sixFrom)
+        let thirty = mean(from: context.thirtyFrom)
+        var reason = String(localized: "ZENO Age leaves VO₂ max to your Fitness Age, so it is shown here without an effect.")
+        if let age = fitnessAge.last(where: { $0.day <= context.endKey && $0.value.isFinite && $0.value > 0 }) {
+            reason += " " + String(localized: "Your Fitness Age for the week of \(PulseFormat.dayLabel(age.day, template: "MMMd")) was \(PulseFormat.oneDecimal(age.value)).")
+        }
+        let valueText = PulseFormat.withUnit(PulseFormat.whole(latest.value), unit)
+        let lead = String(localized: "Your VO₂ max was \(valueText) at your last weekly estimate.")
+        return HealthspanRow(id: "vo2", title: title, valueText: valueText, scale: 15...70, lowLabel: "15",
+                             highLabel: "70", tones: [], unit: unit,
+                             sixMonth: six, sixMonthNumber: six.map(PulseFormat.whole),
+                             thirtyDay: thirty, thirtyDayNumber: thirty.map(PulseFormat.whole),
+                             years: nil, verdict: String(localized: "Tracked alongside"),
+                             sentence: lead + " " + reason, route: route)
     }
 
     // MARK: Pillars
 
-    private func healthspanPillars(_ r: PulseRequest, endKey: String, chrono: Double, inputs: WeekInputs,
-                                   years: [String: Double], lean: [(day: String, value: Double)],
-                                   resolvedSteps: [(day: String, value: Double)]) -> [HealthspanPillar] {
-        let sixFrom = PulseDisplay.dayKey(endKey, offsetBy: -181) ?? endKey
-        let thirtyFrom = PulseDisplay.dayKey(endKey, offsetBy: -29) ?? endKey
+    private func healthspanPillars(_ r: PulseRequest, context c: PillarContext,
+                                   lean: [(day: String, value: Double)],
+                                   resolvedSteps: [(day: String, value: Double)],
+                                   vo2: HealthspanRow) -> [HealthspanPillar] {
+        let sixFrom = c.sixFrom
+        let thirtyFrom = c.thirtyFrom
+        let endKey = c.endKey
+        let chrono = c.chrono
+        let inputs = c.inputs
         let rows = r.days.filter { $0.day <= endKey }
         func average(_ f: (DailyMetric) -> Double?, from: String) -> Double? {
             let xs = rows.filter { $0.day >= from }.compactMap(f).filter(\.isFinite)
@@ -672,14 +742,16 @@ extension PulseSnapshotBuilder {
         }
         let norm = VitalityEngine.rmssdNorm(forAge: chrono)
 
-        // Sleep
+        // Sleep. "Sleep regularity", not WHOOP's SLEEP CONSISTENCY: ZENO Age reads 1 − the variation of the
+        // nightly hours, which is not the timing-based Sleep Consistency the Sleep dive shows (ARCHITECTURE §9).
         let hours = row(id: "sleep", title: String(localized: "Hours of sleep"),
                         value: inputs.sleepHours, text: { PulseFormat.hoursMinutes($0 * 60) }, unit: "h",
                         scale: 5...9, low: "5h", high: "9h",
                         tones: tones(5...9) { VitalityEngine.Inputs(chronoAge: chrono, sleepHours: $0) },
                         six: average({ $0.totalSleepMin.map { $0 / 60 } }, from: sixFrom),
                         thirty: average({ $0.totalSleepMin.map { $0 / 60 } }, from: thirtyFrom),
-                        years: years["sleep"], label: String(localized: "Your nightly sleep"),
+                        effect: c.effect("sleep", inModel: inputs.sleepHours != nil),
+                        label: String(localized: "Your nightly sleep"),
                         route: PulseRoute.trendView(metric: "sleep_total_min").forExistingEntryPoint)
         let regularity = row(id: "consistency", title: String(localized: "Sleep regularity"),
                              value: inputs.regularity.map { $0 * 100 }, text: { PulseFormat.whole($0) }, unit: "%",
@@ -687,9 +759,9 @@ extension PulseSnapshotBuilder {
                              tones: tones(40...100) { VitalityEngine.Inputs(chronoAge: chrono, sleepConsistency: $0 / 100) },
                              six: regularityAverage(from: sixFrom).map { $0 * 100 },
                              thirty: regularityAverage(from: thirtyFrom).map { $0 * 100 },
-                             years: years["consistency"], label: String(localized: "Your sleep regularity"),
-                             route: nil)
-        // Strain
+                             effect: c.effect("consistency", inModel: inputs.regularity != nil),
+                             label: String(localized: "Your sleep regularity"), route: nil)
+        // Strain (the zone and strength rows join from `healthspanTracked`)
         let steps: HealthspanRow?
         if inputs.steps != nil || resolvedSteps.isEmpty {
             steps = row(id: "steps", title: String(localized: "Steps"),
@@ -698,8 +770,8 @@ extension PulseSnapshotBuilder {
                         tones: tones(2_000...14_000) { VitalityEngine.Inputs(chronoAge: chrono, steps: $0) },
                         six: average({ $0.steps.map(Double.init) }, from: sixFrom),
                         thirty: average({ $0.steps.map(Double.init) }, from: thirtyFrom),
-                        years: years["steps"], label: String(localized: "Your daily steps"),
-                        route: PulseRoute.tab(.steps(day: nil)))
+                        effect: c.effect("steps", inModel: inputs.steps != nil),
+                        label: String(localized: "Your daily steps"), route: PulseRoute.tab(.steps(day: nil)))
         } else {
             func mean(from: String) -> Double? {
                 let xs = resolvedSteps.filter { $0.day >= from && $0.day <= endKey }.map(\.value)
@@ -710,8 +782,8 @@ extension PulseSnapshotBuilder {
                         text: { PulseFormat.grouped($0) }, unit: "",
                         scale: 2_000...14_000, low: "2k", high: "14k", tones: [],
                         six: mean(from: sixFrom), thirty: mean(from: thirtyFrom),
-                        years: nil, label: String(localized: "Your daily steps"),
-                        route: PulseRoute.tab(.steps(day: nil)))
+                        effect: c.effect("steps", inModel: false),
+                        label: String(localized: "Your daily steps"), route: PulseRoute.tab(.steps(day: nil)))
         }
         // Fitness
         let rhr = row(id: "rhr", title: String(localized: "RHR"),
@@ -720,16 +792,18 @@ extension PulseSnapshotBuilder {
                       tones: tones(40...80) { VitalityEngine.Inputs(chronoAge: chrono, restingHR: $0) },
                       six: average({ $0.restingHr.map(Double.init) }, from: sixFrom),
                       thirty: average({ $0.restingHr.map(Double.init) }, from: thirtyFrom),
-                      years: years["rhr"], label: String(localized: "Your resting heart rate"),
+                      effect: c.effect("rhr", inModel: inputs.rhr != nil),
+                      label: String(localized: "Your resting heart rate"),
                       route: PulseRoute.trendView(metric: "rhr").forExistingEntryPoint)
         let hrv = row(id: "hrv", title: String(localized: "HRV"),
                       value: inputs.hrv, text: { PulseFormat.whole($0) }, unit: "ms",
                       scale: 15...105, low: "15ms", high: "105ms",
                       tones: tones(15...105) { VitalityEngine.Inputs(chronoAge: chrono, rmssd: $0, rmssdNorm: norm) },
                       six: average(\.avgHrv, from: sixFrom), thirty: average(\.avgHrv, from: thirtyFrom),
-                      years: years["hrv"], label: String(localized: "Your heart rate variability"),
+                      effect: c.effect("hrv", inModel: inputs.hrv != nil),
+                      label: String(localized: "Your heart rate variability"),
                       route: PulseRoute.trendView(metric: "hrv").forExistingEntryPoint)
-        var fitness = [rhr, hrv].compactMap { $0 }
+        var fitness = [vo2] + [rhr, hrv].compactMap { $0 }
         let leanPoints = lean.filter { $0.day <= endKey && $0.value.isFinite && $0.value > 0 }
         if let latest = leanPoints.last {
             let six = leanPoints.filter { $0.day >= sixFrom }.map(\.value)
@@ -742,7 +816,8 @@ extension PulseSnapshotBuilder {
                                  tones: [],
                                  six: six.isEmpty ? nil : six.reduce(0, +) / Double(six.count),
                                  thirty: thirty.isEmpty ? nil : thirty.reduce(0, +) / Double(thirty.count),
-                                 years: nil, label: String(localized: "Your lean body mass"), latest: true,
+                                 effect: c.effect("lean", inModel: false),
+                                 label: String(localized: "Your lean body mass"), latest: true,
                                  route: PulseRoute.tab(.metricSourced(key: "lean_mass", source: "apple-health"))) {
                 fitness.append(leanRow)
             }
@@ -759,45 +834,52 @@ extension PulseSnapshotBuilder {
     /// week's average.
     private func row(id: String, title: String, value: Double?, text: (Double) -> String, unit: String,
                      scale: ClosedRange<Double>, low: String, high: String, tones: [HealthspanRow.Tone],
-                     six: Double?, thirty: Double?, years: Double?, label: String, latest: Bool = false,
+                     six: Double?, thirty: Double?, effect: RowEffect, label: String, latest: Bool = false,
                      route: PulseRoute?) -> HealthspanRow? {
         guard value != nil || six != nil || thirty != nil else { return nil }
         let valueText = value.map { PulseFormat.withUnit(text($0), unit) }
+        var years: Double?
         let verdict: String
         let sentence: String
         if let valueText {
             let lead = latest ? String(localized: "\(label) was \(valueText) at your last reading.")
                               : String(localized: "\(label) averaged \(valueText) this week.")
-            if let years {
-                let amount = PulseFormat.oneDecimal(abs(years))
-                if years <= -0.05 {
+            switch effect {
+            case .years(let y):
+                years = y
+                let amount = PulseFormat.oneDecimal(abs(y))
+                if y <= -0.05 {
                     verdict = String(localized: "Taking years off")
                     sentence = lead + " " + String(localized: "In ZENO's model that takes \(amount) years off your ZENO Age.")
-                } else if years >= 0.05 {
+                } else if y >= 0.05 {
                     verdict = String(localized: "Adding years")
                     sentence = lead + " " + String(localized: "In ZENO's model that adds \(amount) years to your ZENO Age.")
                 } else {
                     verdict = String(localized: "Holding steady")
                     sentence = lead + " " + String(localized: "In ZENO's model that leaves your ZENO Age where it is.")
                 }
-            } else {
+            case .withheld(let isCurrentWeek):
+                verdict = String(localized: "In this week's ZENO Age")
+                sentence = lead + " " + (isCurrentWeek
+                    ? String(localized: "Its share in years shows once this week's ZENO Age is scored again.")
+                    : String(localized: "Its share in years is not shown: this week's breakdown does not add up to its ZENO Age."))
+            case .outsideModel(let reason):
                 verdict = String(localized: "Tracked alongside")
-                sentence = lead + " " + String(localized: "This week's ZENO Age did not use it, so it is shown here without an effect.")
+                sentence = lead + " " + reason
             }
         } else {
             verdict = String(localized: "No reading this week")
             sentence = String(localized: "There is no reading this week, so it is left out of this week's ZENO Age.")
         }
         return HealthspanRow(id: id, title: title, valueText: valueText, scale: scale, lowLabel: low, highLabel: high,
-                             tones: tones, sixMonth: six, sixMonthText: six.map { PulseFormat.withUnit(text($0), unit) },
-                             thirtyDay: thirty, thirtyDayText: thirty.map { PulseFormat.withUnit(text($0), unit) },
+                             tones: tones, unit: unit, sixMonth: six, sixMonthNumber: six.map(text),
+                             thirtyDay: thirty, thirtyDayNumber: thirty.map(text),
                              years: years, verdict: verdict, sentence: sentence, route: route)
     }
 
     /// The notched card under the ruler: a title from the pace and its week-on-week change, and a body
-    /// with the real numbers (the change, and the factor doing the most).
-    private func healthspanInsight(summary: HealthAgeSummary,
-                                   contributions: [VitalityEngine.Contribution]) -> HealthspanSnapshot.Insight {
+    /// with the real numbers (the change, and the factor doing the most when the breakdown adds up).
+    private func healthspanInsight(summary: HealthAgeSummary, breakdown: [String: Double]?) -> HealthspanSnapshot.Insight {
         let title: String
         var parts: [String] = []
         if let pace = summary.pace {
@@ -823,11 +905,11 @@ extension PulseSnapshotBuilder {
             title = String(localized: "Settling In")
             parts.append(String(localized: "Your Pace of Aging appears once ZENO has four weeks of ZENO Age to compare."))
         }
-        let ranked = contributions.map { ($0, VitalityEngine.years(for: $0)) }.sorted { abs($0.1) > abs($1.1) }
-        if let top = ranked.first, abs(top.1) >= 0.05 {
-            let amount = PulseFormat.oneDecimal(abs(top.1))
-            let factor = Self.factorName(top.0.key)
-            parts.append(top.1 < 0
+        let ranked = (breakdown ?? [:]).sorted { abs($0.value) > abs($1.value) || (abs($0.value) == abs($1.value) && $0.key < $1.key) }
+        if let top = ranked.first, abs(top.value) >= 0.05 {
+            let amount = PulseFormat.oneDecimal(abs(top.value))
+            let factor = Self.factorName(top.key)
+            parts.append(top.value < 0
                 ? String(localized: "\(factor) is helping most, taking \(amount) years off.")
                 : String(localized: "\(factor) is adding the most, \(amount) years."))
         }
@@ -845,6 +927,110 @@ extension PulseSnapshotBuilder {
         case "vo2max": return String(localized: "Cardio fitness")
         default: return key
         }
+    }
+
+    // MARK: Rows outside the model
+
+    /// TIME IN HR ZONES 1-3 (WEEKLY), TIME IN HR ZONES 4-5 (WEEKLY) and STRENGTH ACTIVITY TIME for the week
+    /// keyed `weekKey` (the newest when nil), from the week's workouts: a workout's imported zone split when
+    /// it has one, else its own heart rate in the profile's zones (the Strain dive's zones); strength time is
+    /// the length of the strength sessions. ZENO Age does not use them, so they carry no years. The 6-month
+    /// and 30-day markers are the weekly rate over the days the strap was worn in each window.
+    func healthspanTracked(_ r: PulseRequest, weekKey: String?, dateOfBirth: Date) async -> HealthspanTracked? {
+        begin(r.seq)
+        let weeks = await healthAgeWeeks(dateOfBirth: dateOfBirth, now: r.now)
+        guard let week = healthspanWeek(weeks, weekKey: weekKey) else {
+            return isCurrent(r) ? HealthspanTracked(weekKey: weekKey ?? "", rows: []) : nil
+        }
+        let todayKey = Repository.localDayKey(r.now)
+        let endKey = healthspanEndKey(week, todayKey: todayKey)
+        let sixFrom = PulseDisplay.dayKey(endKey, offsetBy: -181) ?? endKey
+        let thirtyFrom = PulseDisplay.dayKey(endKey, offsetBy: -29) ?? endKey
+        let isCurrentWeek = todayKey <= (PulseDisplay.dayKey(week.id, offsetBy: 6) ?? week.id)
+        let workouts = await workoutRows()
+        guard isCurrent(r) else { return nil }
+
+        // Minutes per local day: zones 1-3, zones 4-5, strength.
+        var z13: [String: Double] = [:]
+        var z45: [String: Double] = [:]
+        var strength: [String: Double] = [:]
+        for w in workouts where w.endTs > w.startTs {
+            let day = Repository.localDayKey(Date(timeIntervalSince1970: TimeInterval(w.startTs)))
+            guard day >= sixFrom && day <= endKey else { continue }
+            let minutes = (w.durationS ?? Double(w.endTs - w.startTs)) / 60
+            if Self.isStrength(w.sport) { strength[day, default: 0] += minutes }
+            let zones: [Double]?
+            if let pct = WorkoutZones.percents(w.zonesJSON) {
+                zones = pct.map { minutes * $0 / 100 }
+            } else {
+                zones = await cachedOptional("health.workoutZones.\(w.startTs).\(w.source)") { () async -> [Double]? in
+                    await repo.workoutZoneMinutes(from: w.startTs, to: w.endTs, zoneSet: r.profile.zoneSet,
+                                                  source: w.source)
+                }
+            }
+            guard isCurrent(r) else { return nil }
+            if let zones, zones.count >= 5 {
+                z13[day, default: 0] += zones[0] + zones[1] + zones[2]
+                z45[day, default: 0] += zones[3] + zones[4]
+            }
+        }
+
+        // Worn days anchor the rates, so a week off the wrist is skipped rather than read as zero.
+        let worn = Set(r.days.map(\.day).filter { $0 >= sixFrom && $0 <= endKey })
+        func weekTotal(_ byDay: [String: Double]) -> Double? {
+            let days = worn.filter { $0 >= week.id && $0 <= endKey }
+            guard !days.isEmpty else { return nil }
+            return days.reduce(0) { $0 + (byDay[$1] ?? 0) }
+        }
+        func weeklyRate(_ byDay: [String: Double], from: String) -> Double? {
+            let days = worn.filter { $0 >= from }
+            guard !days.isEmpty else { return nil }
+            return days.reduce(0) { $0 + (byDay[$1] ?? 0) } / Double(days.count) * 7
+        }
+        func trackedRow(id: String, title: String, byDay: [String: Double], floorHours: Double,
+                        lead: (String) -> String) -> HealthspanRow? {
+            let value = weekTotal(byDay)
+            let six = weeklyRate(byDay, from: sixFrom)
+            let thirty = weeklyRate(byDay, from: thirtyFrom)
+            guard value != nil || six != nil || thirty != nil else { return nil }
+            let top = max(floorHours, ceil(([value, six, thirty].compactMap { $0 }.max() ?? 0) / 60))
+            let text = { (m: Double) in PulseFormat.hoursMinutes(m) }
+            let valueText = value.map { PulseFormat.withUnit(text($0), "h") }
+            let sentence = valueText.map { lead($0) + " " + String(localized: "ZENO Age does not use it, so it is shown here without an effect.") }
+                ?? String(localized: "There is no reading this week.")
+            return HealthspanRow(id: id, title: title, valueText: valueText, scale: 0...(top * 60), lowLabel: "0h",
+                                 highLabel: "\(Int(top))h", tones: [], unit: "h",
+                                 sixMonth: six, sixMonthNumber: six.map(text),
+                                 thirtyDay: thirty, thirtyDayNumber: thirty.map(text), years: nil,
+                                 verdict: valueText == nil ? String(localized: "No reading this week")
+                                                           : String(localized: "Tracked alongside"),
+                                 sentence: sentence, route: nil)
+        }
+        let soFar = isCurrentWeek
+        let rows = [
+            trackedRow(id: "zones13", title: String(localized: "Time in HR zones 1-3 (weekly)"), byDay: z13,
+                       floorHours: 5) { v in
+                soFar ? String(localized: "Your workouts have spent \(v) in heart rate zones 1 to 3 so far this week.")
+                      : String(localized: "Your workouts spent \(v) in heart rate zones 1 to 3 this week.")
+            },
+            trackedRow(id: "zones45", title: String(localized: "Time in HR zones 4-5 (weekly)"), byDay: z45,
+                       floorHours: 2) { v in
+                soFar ? String(localized: "Your workouts have spent \(v) in heart rate zones 4 and 5 so far this week.")
+                      : String(localized: "Your workouts spent \(v) in heart rate zones 4 and 5 this week.")
+            },
+            trackedRow(id: "strength", title: String(localized: "Strength activity time"), byDay: strength,
+                       floorHours: 3) { v in
+                soFar ? String(localized: "You have logged \(v) of strength training so far this week.")
+                      : String(localized: "You logged \(v) of strength training this week.")
+            },
+        ].compactMap { $0 }
+        return HealthspanTracked(weekKey: week.id, rows: rows)
+    }
+
+    /// A strength session: Strength Trainer and Lift Log sessions, weightlifting, imported strength work.
+    static func isStrength(_ sport: String) -> Bool {
+        let s = sport.lowercased()
+        return s.contains("strength") || s.contains("weight") || s.contains("lift")
     }
 }
 #endif

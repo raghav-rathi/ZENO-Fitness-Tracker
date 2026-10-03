@@ -221,16 +221,24 @@ struct HealthspanRow: Equatable, Identifiable {
     let highLabel: String
     /// Ten tones across the bar, from the model (empty for a row the model does not use).
     let tones: [Tone]
-    /// The 6-month and 30-day averages on the bar's axis, with their printed forms.
+    /// The unit the averages print with ("bpm", "h", "mL/kg/min"; empty for steps).
+    let unit: String
+    /// The 6-month and 30-day averages on the bar's axis, with their printed numbers (no unit).
     let sixMonth: Double?
-    let sixMonthText: String?
+    let sixMonthNumber: String?
     let thirtyDay: Double?
-    let thirtyDayText: String?
-    /// Years the factor adds (+) or takes off (−) ZENO Age this week; nil when it is not in the model.
+    let thirtyDayNumber: String?
+    /// Years the factor adds (+) or takes off (−) ZENO Age this week; nil when it is not in the model or the
+    /// breakdown does not add up to the week's ZENO Age (`HealthspanSnapshot.breakdownNote`).
     let years: Double?
     let verdict: String
     let sentence: String
     let route: PulseRoute?
+
+    /// "55 mL/kg/min", "8:16 h", "84%": an average with its unit, for sentences and VoiceOver.
+    func withUnit(_ number: String?) -> String? {
+        number.map { PulseFormat.withUnit($0, unit) }
+    }
 }
 
 struct HealthspanPillar: Equatable, Identifiable {
@@ -254,7 +262,9 @@ struct HealthspanSnapshot: Equatable {
     let daysLeftInWeek: Int
     let insight: Insight?
     let pillars: [HealthspanPillar]
-    let vo2: HealthVO2MaxCard.State
+    /// Why the rows show no years, when their breakdown does not add up to this week's stored ZENO Age
+    /// (`HealthspanBreakdown`); nil when it does.
+    let breakdownNote: String?
 
     struct Unlock: Equatable {
         let nights: Int
@@ -270,5 +280,13 @@ struct HealthspanSnapshot: Equatable {
         let title: String
         let body: String
     }
+}
+
+/// Healthspan's rows outside the ZENO Age model for the week keyed `weekKey`: time in HR zones 1-3 and 4-5
+/// and strength activity time, from the week's workouts. A second pass, because a workout without imported
+/// zones reads its own heart rate.
+struct HealthspanTracked: Equatable {
+    let weekKey: String
+    let rows: [HealthspanRow]
 }
 #endif

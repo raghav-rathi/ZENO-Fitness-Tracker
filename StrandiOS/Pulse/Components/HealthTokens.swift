@@ -67,16 +67,27 @@ enum HealthPalette {
 
     // MARK: Page
 
-    /// The Health tab and Healthspan page under the glow: near-black slate (reviews/r44 #110D0A at the
-    /// top left, #0E0F11–#14181B lower down).
-    static let pageTop = Color(hex: "#0D0E10")
-    static let pageBottom = Color(hex: "#111518")
+    /// The Health tab's page under the glow (reviews/r44, health-more-2026/16): near-black #0B0B0D at the
+    /// top, opening into the standard slate by ≈450 pt (#13181C at 0.53 of the page), then DR's stops.
+    static let tabPageStops: [Gradient.Stop] = [
+        .init(color: Color(hex: "#0B0B0D"), location: 0),
+        .init(color: Color(hex: "#13181C"), location: 0.53),
+        .init(color: Color(hex: "#101518"), location: 0.76),
+        .init(color: Color(hex: "#0E1213"), location: 1),
+    ]
+    /// Healthspan's page (reviews/r119 at rest, sampled at x = 8 pt; reviews/29 scrolled): pure black behind
+    /// the orb, which scrolls away with it, over a flat slate page (#111518 from ≈0.53 of the screen down,
+    /// and to the top once scrolled).
+    static let healthspanTop = Color.black
+    static let healthspanSlate = Color(hex: "#111518")
 
     // MARK: Cards and banners
 
     /// The calibrating note's blue-tinted fill (§3.20 item 2: #67AEE6 at 20%) and its text.
     static let calibratingFill = PulseTheme.recoveryBlue.opacity(0.20)
     static let calibratingText = Color(hex: "#B5D8F5")
+    /// The HEALTH MONITOR card's footer well (reviews/r100: #212527 on the #292E31 card, black ≈20%).
+    static let monitorFooterWell = Color.black.opacity(0.2)
     /// The Health Monitor's violet "N more nights" banner (onboarding/32b: #372942) and its empty segments.
     static let monitorBannerFill = Color(hex: "#372942")
     static let monitorBannerSegment = Color.white.opacity(0.22)
@@ -101,10 +112,14 @@ enum HealthPalette {
 
     // MARK: Stress
 
-    /// TOTAL DAY's "typical" bar: the level hues at half strength (§3.22 item 6).
-    static let typicalLow = Color(hex: "#426885")
-    static let typicalMedium = Color(hex: "#0E8962")
-    static let typicalHigh = Color(hex: "#8D6423")
+    /// TOTAL DAY's bars as the 2026 device draws them (completeness-critic/14), softer than the gauge's
+    /// scale: today LOW / MEDIUM / HIGH, and the typical day under it.
+    static let totalLow = Color(hex: "#77ACE0")
+    static let totalMedium = Color(hex: "#6EEEA4")
+    static let totalHigh = Color(hex: "#F3AB45")
+    static let typicalLow = Color(hex: "#4A6582")
+    static let typicalMedium = Color(hex: "#3E8563")
+    static let typicalHigh = Color(hex: "#86652F")
     /// The stress chart's zoom button (a black rounded square, §2.7 "Stress 24 h").
     static let zoomButton = Color.black.opacity(0.85)
 
@@ -122,10 +137,135 @@ enum HealthPalette {
     /// The dark well each segment sits on.
     static let vo2SegmentWell = Color.white.opacity(0.07)
 
+    // MARK: Healthspan range bars (§2.7 "Range bars"; reviews/29 rows 370-375)
+
+    /// A range-bar segment's colour: its tone lightened at the bar's ends (end segments ≈80% colour + 20%
+    /// white, #8DE9BA / #E3AF64) and dimmed toward the middle (#5D4C38), as reviews/29 grades them.
+    /// `emphasis` runs 1 at an end segment to 0 at the middle.
+    static func rangeSegment(_ tone: HealthspanRow.Tone?, emphasis: Double) -> Color {
+        let e = min(1, max(0, emphasis))
+        switch tone {
+        case .helps?: return mix(Color(hex: "#2F5A47"), Color(hex: "#8DE9BA"), e)
+        case .hurts?: return mix(Color(hex: "#5D4C38"), Color(hex: "#E3AF64"), e)
+        case .neutral?: return mix(Color(hex: "#55585A"), Color(hex: "#8A8C8E"), e)
+        case nil: return Color.white.opacity(0.22)
+        }
+    }
+
+    /// The end label's colour: its end segment's tone at full emphasis, grey on a bar without tones.
+    static func rangeLabel(_ tone: HealthspanRow.Tone?) -> Color {
+        tone == nil || tone == .neutral ? PulseTheme.textTertiary : rangeSegment(tone, emphasis: 1)
+    }
+
+    private static func mix(_ a: Color, _ b: Color, _ t: Double) -> Color {
+        let ca = UIColor(a), cb = UIColor(b)
+        var (r1, g1, b1, a1): (CGFloat, CGFloat, CGFloat, CGFloat) = (0, 0, 0, 0)
+        var (r2, g2, b2, a2): (CGFloat, CGFloat, CGFloat, CGFloat) = (0, 0, 0, 0)
+        ca.getRed(&r1, green: &g1, blue: &b1, alpha: &a1)
+        cb.getRed(&r2, green: &g2, blue: &b2, alpha: &a2)
+        let k = CGFloat(t)
+        return Color(.sRGB, red: Double(r1 + (r2 - r1) * k), green: Double(g1 + (g2 - g1) * k),
+                     blue: Double(b1 + (b2 - b1) * k), opacity: Double(a1 + (a2 - a1) * k))
+    }
+
     // MARK: Live heart rate (§3.21 item 3)
 
     static let liveHeart = PulseTheme.strain
     static let liveLine = PulseTheme.strain
     static let liveGrid = Color.white.opacity(0.06)
+}
+
+// MARK: - Glyph sizes
+
+/// The SF Symbol sizes the health screens draw, so no screen writes a font size (ARCHITECTURE §1). A glyph
+/// that sits beside text scales with it (`@ScaledMetric` relative to `relativeTo`); one inside a fixed frame
+/// (the Health Monitor card's columns, the chart's zoom button) keeps its size.
+enum HealthGlyph {
+    /// 22 Light: the HEALTH MONITOR card's column icons and the Rhythm card's waveform.
+    case columnIcon
+    /// 15 Light: a Health Monitor tile's icon.
+    case tileIcon
+    /// 20 Light: SHARE YOUR HEALTH REPORT.
+    case rowIcon
+    /// 30 Light: the Lab Book promo's test tubes.
+    case promoArt
+    /// 18 Light: a Sessions card's glyph.
+    case sessionIcon
+    /// 13 Semibold: a pillar row's ⌄ / ⌃.
+    case disclosure
+    /// 14 Semibold: the calibrating note's ✕ and the illness card's glyph.
+    case control
+    /// 15 Semibold: the calibrating note's hourglass.
+    case noteIcon
+    /// 12 Semibold: the arrow after an inline CTA ("ADD RESULTS →").
+    case inlineArrow
+    /// 13 Regular: TOTAL DAY's gauge glyph.
+    case cardIcon
+    /// 15 Bold: a pager's ‹ ›.
+    case pagerChevron
+    /// 17 Regular: the stress chart's zoom glyph.
+    case zoom
+    /// 17 Semibold: the sleep and activity glyphs above the stress chart (completeness-critic/14 ≈17–18 pt).
+    case periodGlyph
+    /// 15 Regular: an inline ⓘ.
+    case info
+    /// 11 Heavy: a status chip's ✓ / "!".
+    case chipMark
+    /// 8 Heavy: a grey chip's ●.
+    case chipDot
+    /// 12 Heavy: the ✓ / "!" in the HEALTH MONITOR footer's 16 pt square.
+    case footerMark
+
+    fileprivate var spec: (size: CGFloat, weight: Font.Weight, relativeTo: Font.TextStyle?) {
+        switch self {
+        case .columnIcon: return (22, .light, nil)
+        case .tileIcon: return (15, .light, .subheadline)
+        case .rowIcon: return (20, .light, .title3)
+        case .promoArt: return (30, .light, nil)
+        case .sessionIcon: return (18, .light, .headline)
+        case .disclosure: return (13, .semibold, .footnote)
+        case .control: return (14, .semibold, .subheadline)
+        case .noteIcon: return (15, .semibold, .subheadline)
+        case .inlineArrow: return (12, .semibold, .caption)
+        case .cardIcon: return (13, .regular, .footnote)
+        case .pagerChevron: return (15, .bold, nil)
+        case .zoom: return (17, .regular, nil)
+        case .periodGlyph: return (17, .semibold, nil)
+        case .info: return (15, .regular, .subheadline)
+        case .chipMark: return (11, .heavy, .caption2)
+        case .chipDot: return (8, .heavy, .caption2)
+        case .footerMark: return (11, .heavy, nil)
+        }
+    }
+
+    /// The glyph's font at its base size (for a fixed frame or a Canvas annotation).
+    var font: Font {
+        let s = spec
+        return .system(size: s.size, weight: s.weight)
+    }
+}
+
+private struct HealthGlyphModifier: ViewModifier {
+    let weight: Font.Weight
+    let fixed: CGFloat?
+    @ScaledMetric private var scaled: CGFloat
+
+    init(_ glyph: HealthGlyph) {
+        let spec = glyph.spec
+        weight = spec.weight
+        fixed = spec.relativeTo == nil ? spec.size : nil
+        _scaled = ScaledMetric(wrappedValue: spec.size, relativeTo: spec.relativeTo ?? .body)
+    }
+
+    func body(content: Content) -> some View {
+        content.font(.system(size: fixed ?? scaled, weight: weight))
+    }
+}
+
+extension View {
+    /// Size an SF Symbol with a health glyph token.
+    func healthGlyph(_ glyph: HealthGlyph) -> some View {
+        modifier(HealthGlyphModifier(glyph))
+    }
 }
 #endif

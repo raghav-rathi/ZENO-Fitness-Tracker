@@ -4,13 +4,17 @@ import StrandAnalytics
 
 // MARK: - Pace of Aging ruler (WHOOP_UI_SPEC §2.5 "Pace of Aging ruler", §3.20 item 3, §3.23 item 4)
 
-/// "○ Slow … Fast ◔" over the value (17 pt Bold) centred above a white 2 × 28 pt needle, on a full-width
-/// comb of thin ticks running −1.0x to 3.0x, with "-1.0x · 1.0x · 3.0x" under it (11 pt Bold condensed,
-/// 50%). The whole-x ticks are brighter, and so are the ticks next to the needle (reviews/r44: 89 ticks,
-/// a brighter one at every 1.0x). Without a pace the comb draws with no needle and the value reads "--".
+/// "○ Slow … Fast ◔" over the value (17 pt Bold) centred above a white 2 × 28 pt needle, on a comb of thin
+/// ticks running −1.0x to 3.0x, with "-1.0x · 1.0x · 3.0x" each centred under its own tick (11 pt Bold
+/// condensed, 50%; reviews/r44: the "-1.0x" centre is the first tick's x). The whole-x ticks are brighter,
+/// and so are the ticks next to the needle (reviews/r44: 89 ticks, a brighter one at every 1.0x). Without a
+/// pace the comb draws with no needle and the value reads "--".
 struct HealthPaceRuler: View {
     /// nil while there is not enough history for a pace.
     let pace: Double?
+    /// How far the comb sits in from each side, so its end labels, centred on the end ticks, stay clear of
+    /// whatever is beside the ruler (reviews/r44: 2.5 pt inside the card's content, the label overhanging).
+    var combInset: CGFloat = 6
 
     /// 4.0x across, 22 ticks per 1.0x (reviews/r44's pitch), so every whole x lands on a tick.
     private static let ticksPerUnit = 22
@@ -23,12 +27,17 @@ struct HealthPaceRuler: View {
         return String(localized: "\(PulseFormat.oneDecimal(pace))x")
     }
 
+    /// The x of a point `f` (0…1) along the comb, on the pitch its ticks are laid on.
+    private func tickX(_ f: Double, width: CGFloat) -> CGFloat {
+        combInset + CGFloat(f) * (width - 2 * combInset - 1.5) + 0.75
+    }
+
     var body: some View {
         VStack(spacing: 6) {
             GeometryReader { geo in
                 let width = geo.size.width
                 // The needle's centre, on the same pitch the comb's ticks are laid on.
-                let x = fraction.map { CGFloat($0) * (width - 1.5) + 0.75 }
+                let x = fraction.map { tickX($0, width: width) }
                 ZStack(alignment: .topLeading) {
                     HStack(alignment: .center, spacing: 6) {
                         HealthPaceEndGlyph(fast: false)
@@ -47,21 +56,22 @@ struct HealthPaceRuler: View {
                         .foregroundStyle(PulseTheme.textPrimary)
                         .fixedSize()
                         .position(x: min(max(x ?? width / 2, 26), width - 26), y: clear ? 22 : 36)
-                    comb(needleX: x)
-                        .frame(width: width, height: 30)
-                        .offset(y: clear ? 44 : 52)
+                    comb(needleX: x.map { $0 - combInset })
+                        .frame(width: max(0, width - 2 * combInset), height: 30)
+                        .offset(x: combInset, y: clear ? 44 : 52)
                 }
             }
             .frame(height: clear ? 74 : 82)
             .dynamicTypeSize(...DynamicTypeSize.xxLarge)
             .accessibilityHidden(true)
-            HStack {
-                Text(verbatim: "-1.0x")
-                Spacer()
-                Text(verbatim: "1.0x")
-                Spacer()
-                Text(verbatim: "3.0x")
+            GeometryReader { geo in
+                ForEach(Array(["-1.0x", "1.0x", "3.0x"].enumerated()), id: \.offset) { i, label in
+                    Text(verbatim: label)
+                        .fixedSize()
+                        .position(x: tickX(Double(i) / 2, width: geo.size.width), y: geo.size.height / 2)
+                }
             }
+            .frame(height: 14)
             .font(PulseType.font(.axis))
             .foregroundStyle(PulseTheme.textTertiary)
             .accessibilityHidden(true)

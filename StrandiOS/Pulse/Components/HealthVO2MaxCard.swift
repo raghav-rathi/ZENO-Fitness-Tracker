@@ -9,11 +9,12 @@ import SwiftUI
 /// population category or percentile ([POP]); it compares the value with your own history instead.
 ///
 /// Locked: "Log N more sleeps to unlock" with a thin progress bar, or, once the sleeps are there and no
-/// estimate exists yet, what is missing. The Healthspan Fitness section and the Trends group's VO₂ Max
-/// Trend View both use it.
+/// estimate exists yet, what is missing. For the Trends group's VO₂ Max Trend View (§3.28); Healthspan shows
+/// VO₂ max as a Fitness row instead (reviews/29). The ⓘ opens what the estimate is and what it reads
+/// (onboarding/32c shows it), unless the caller handles it with `onInfo`.
 struct HealthVO2MaxCard: View {
     enum State: Equatable {
-        /// The latest value (ml/kg/min), when it was estimated, and a line comparing it with your history.
+        /// The latest value (mL/kg/min), when it was estimated, and a line comparing it with your history.
         case value(Double, updated: String?, note: String?)
         /// Fewer than `needed` sleeps logged.
         case locked(nights: Int, needed: Int)
@@ -22,25 +23,28 @@ struct HealthVO2MaxCard: View {
     }
 
     let state: State
+    /// Handles the ⓘ itself; nil opens the card's own explainer.
     var onInfo: (() -> Void)?
     var style: PulseCardStyle = .standard
+
+    @SwiftUI.State private var showsInfo = false
 
     var body: some View {
         PulseCard(style) {
             VStack(alignment: .leading, spacing: 14) {
                 HStack(alignment: .firstTextBaseline) {
                     PulseCardTitle(String(localized: "VO₂ Max"))
-                    if let onInfo {
-                        Button(action: onInfo) {
-                            Image(systemName: "info.circle")
-                                .font(.system(size: 15, weight: .regular))
-                                .foregroundStyle(PulseTheme.textTertiary)
-                                .frame(width: PulseTheme.Layout.minTapTarget, height: 24)
-                                .contentShape(Rectangle())
-                        }
-                        .buttonStyle(PulsePressStyle())
-                        .accessibilityLabel(String(localized: "About VO₂ max"))
+                    Button {
+                        if let onInfo { onInfo() } else { showsInfo = true }
+                    } label: {
+                        Image(systemName: "info.circle")
+                            .healthGlyph(.info)
+                            .foregroundStyle(PulseTheme.textTertiary)
+                            .frame(width: PulseTheme.Layout.minTapTarget, height: 24)
+                            .contentShape(Rectangle())
                     }
+                    .buttonStyle(PulsePressStyle())
+                    .accessibilityLabel(String(localized: "About VO₂ max"))
                 }
                 switch state {
                 case .value(let v, let updated, let note):
@@ -78,22 +82,31 @@ struct HealthVO2MaxCard: View {
                 }
             }
         }
+        .sheet(isPresented: $showsInfo) {
+            HealthInfoSheet(title: String(localized: "About VO₂ max"), paragraphs: Self.infoParagraphs)
+        }
     }
 
-    /// "In the 40–44 ml/kg/min band": the scale's own band, no population label.
+    static let infoParagraphs: [String] = [
+        String(localized: "VO₂ max is the most oxygen your body can use during hard exercise, in millilitres per kilogram of body weight per minute (mL/kg/min). Higher is fitter."),
+        String(localized: "ZENO estimates it once a week from the last seven days: your resting heart rate, age, biological sex and recent activity, plus your waist measurement when your profile has one (a published non-exercise formula). Without a waist it uses a simpler heart-rate ratio, which is rougher."),
+        String(localized: "It is an estimate from your own data, not a lab test, so read it as a trend. ZENO has no population data, so it compares the value with your own history rather than with other people."),
+    ]
+
+    /// "In the 40–44 mL/kg/min band": the scale's own band, no population label.
     private func bandLine(_ v: Double) -> String {
         let cuts = HealthPalette.vo2CutOffs
         let whole = Int(v.rounded())
         if let first = cuts.first, v < first {
-            return String(localized: "\(whole) ml/kg/min, under \(Int(first))")
+            return String(localized: "\(whole) mL/kg/min, under \(Int(first))")
         }
         if let last = cuts.last, v >= last {
-            return String(localized: "\(whole) ml/kg/min, \(Int(last)) and above")
+            return String(localized: "\(whole) mL/kg/min, \(Int(last)) and above")
         }
         for i in 0..<(cuts.count - 1) where v >= cuts[i] && v < cuts[i + 1] {
-            return String(localized: "\(whole) ml/kg/min, in the \(Int(cuts[i]))–\(Int(cuts[i + 1]) - 1) band")
+            return String(localized: "\(whole) mL/kg/min, in the \(Int(cuts[i]))–\(Int(cuts[i + 1]) - 1) band")
         }
-        return String(localized: "\(whole) ml/kg/min")
+        return String(localized: "\(whole) mL/kg/min")
     }
 }
 
@@ -104,7 +117,7 @@ struct HealthVO2Scale: View {
     /// The band index the value falls in (0…4) and where in it (0…1).
     private var position: (band: Int, fraction: Double) {
         let cuts = HealthPalette.vo2CutOffs
-        // The open-ended bands get a nominal 5 ml/kg/min of width so the marker still moves inside them.
+        // The open-ended bands get a nominal 5 mL/kg/min of width so the marker still moves inside them.
         let edges = [cuts[0] - 5] + cuts + [cuts[cuts.count - 1] + 5]
         for i in 0..<(edges.count - 1) where value < edges[i + 1] || i == edges.count - 2 {
             let f = (value - edges[i]) / (edges[i + 1] - edges[i])

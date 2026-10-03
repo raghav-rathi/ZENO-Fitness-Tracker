@@ -46,13 +46,18 @@ extension HealthAgeOrb where Content == EmptyView {
 }
 
 /// "34.5 / ZENO AGE / 7.2 years younger" inside the orb: the age (40 pt condensed on Healthspan, smaller
-/// in the compact header), the label at 70%, and the years line in the hue.
+/// in the compact header), the label at 70%, and the years line in the hue. `largeLabel` sets the label
+/// the size reviews/r119 prints inside the 312 pt orb (14 pt Bold caps, cap height 10 pt).
 struct HealthOrbReading: View {
     let age: String
     let yearsLine: String?
     let hue: HealthAgeHue
     var ageSize: CGFloat = PulseTextStyle.activityStrain.spec.size
     var showsLabel = true
+    var largeLabel = false
+
+    /// The big orb's label (reviews/r119 "WHOOP AGE": ≈14 pt Bold caps, tracked like the 11 pt label).
+    private static let largeLabelSize: CGFloat = 14
 
     var body: some View {
         VStack(spacing: 2) {
@@ -62,11 +67,20 @@ struct HealthOrbReading: View {
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
             if showsLabel {
-                Text(String(localized: "ZENO Age"))
-                    .pulseText(.label)
-                    .foregroundStyle(PulseTheme.textSecondary)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.8)
+                Group {
+                    if largeLabel {
+                        Text(String(localized: "ZENO Age"))
+                            .font(.system(size: Self.largeLabelSize, weight: .bold))
+                            .tracking(Self.largeLabelSize * 0.09)
+                            .textCase(.uppercase)
+                    } else {
+                        Text(String(localized: "ZENO Age"))
+                            .pulseText(.label)
+                    }
+                }
+                .foregroundStyle(PulseTheme.textSecondary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
             }
             if let yearsLine {
                 Text(yearsLine)
