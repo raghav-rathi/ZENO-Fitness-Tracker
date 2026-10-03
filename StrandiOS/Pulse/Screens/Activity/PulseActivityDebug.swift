@@ -22,6 +22,9 @@ import WhoopProtocol
 //   --activity-demo-live [min]    a live session N minutes in (default 28) fed demo heart rate
 //   --activity-live-page hr|strain|map   the live pager on that page
 //   --activity-end-dialog         the live session's END THIS ACTIVITY? card
+//   --activity-end-save           End & Save the live session once it is on screen (then Activity Details)
+//   --activity-target <value>     the Strain Target panel with a dragged target
+//   --activity-reset              discard a session an earlier launch left running
 enum PulseActivityDebug {
     static func value(_ flag: String) -> String? {
         let args = CommandLine.arguments
@@ -134,7 +137,9 @@ enum PulseActivityDebug {
     /// captured in a simulator with no strap. Never persisted: ending it saves through `endWorkout`.
     @MainActor
     static func startDemoLiveIfRequested(app: AppModel, sport: String) {
-        guard let minutes = demoLiveMinutes, app.activeWorkout == nil else { return }
+        guard let minutes = demoLiveMinutes else { return }
+        // A session left by an earlier demo launch would be rehydrated without its samples: start afresh.
+        if app.activeWorkout != nil { app.discardWorkout() }
         let now = Int(Date().timeIntervalSince1970)
         let start = now - minutes * 60
         var samples: [HRSample] = []
