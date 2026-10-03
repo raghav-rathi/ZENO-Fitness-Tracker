@@ -493,6 +493,9 @@ struct PulseAttacher: View {
     @EnvironmentObject private var repo: Repository
     @EnvironmentObject private var profile: ProfileStore
     @EnvironmentObject private var ble: BLEManager
+    /// The strap alarm's settings (on / off, time, weekdays), read live as the Sleep Planner reads them, so
+    /// any edit re-renders this view and re-plans tonight at once.
+    @EnvironmentObject private var behavior: BehaviorStore
 
     @AppStorage(UnitPrefs.systemKey) private var unitSystemRaw = UnitSystem.metric.rawValue
     @AppStorage(UnitPrefs.temperatureKey) private var temperatureRaw = ""
@@ -501,17 +504,14 @@ struct PulseAttacher: View {
     @AppStorage(PuffinExperiment.banisterEffortKey) private var banisterEffort = false
     @AppStorage(PuffinExperiment.stressPersonalBaselineKey) private var stressPersonalBaseline = false
     @AppStorage(PuffinExperiment.journalReminderKey) private var journalReminder = true
-    // What tonight's plan is resolved from, none of it read here: `prefs` reads it all at once through
-    // `PulseSleepPlanSettings.stored`. Each key is declared only so that changing it re-renders this view,
-    // `prefs` changes and Tonight's Sleep is re-planned at once: the wind-down reminder's (WindDownNudge),
-    // the strap alarm's (BehaviorStore; ALARM ON / OFF) and the WHOOP 5/MG Protocol probes, without which a
-    // 5/MG strap never arms its alarm (`BLEManager.strapAlarmWillArm`). The alarm's weekdays, a list no
-    // @AppStorage can hold, reach the plan on the next re-render.
+    // The rest of what tonight's plan is resolved from, none of it read here: `prefs` reads it all at once
+    // through `PulseSleepPlanSettings.current`, with the strap alarm's settings from `behavior`. Each key is
+    // declared only so that changing it re-renders this view, `prefs` changes and Tonight's Sleep is
+    // re-planned at once: the wind-down reminder's and My Schedule's (WindDownNudge) and the WHOOP 5/MG
+    // Protocol probes, without which a 5/MG strap never arms its alarm (`BLEManager.strapAlarmWillArm`).
     @AppStorage("windDown.enabled") private var windDownEnabled = false
     @AppStorage("windDown.wakeMinutes") private var windDownWake = 7 * 60
     @AppStorage("windDown.perDayWakeMinutes") private var windDownPerDay = Data()
-    @AppStorage("behavior.smartAlarmEnabled") private var strapAlarmOn = false
-    @AppStorage("behavior.smartAlarmMinutes") private var strapAlarmMinutes = 7 * 60
     @AppStorage(PuffinExperiment.defaultsKey) private var protocolProbes = false
     // The Sleep Planner's goal: Tonight's Sleep is planned for it, so choosing another one re-plans tonight.
     @AppStorage(PulseSleepGoal.storageKey) private var sleepGoalRaw = PulseSleepGoal.default.storageValue
@@ -525,9 +525,9 @@ struct PulseAttacher: View {
         p.effortMethod = banisterEffort ? .banister : .edwards
         p.stressPersonalBaseline = stressPersonalBaseline
         p.journalReminder = journalReminder
-        // Tonight's plan reads the Sleep Planner's own settings, with the strap's own arming rule (a WHOOP
-        // 5/MG arms its alarm only with the Protocol probes on), as the planner reads it.
-        p.sleepPlan = PulseSleepPlanSettings.stored(strapWillArm: ble.strapAlarmWillArm)
+        // Tonight's plan reads the Sleep Planner's own settings through the planner's own reader, with the
+        // strap's own arming rule (a WHOOP 5/MG arms its alarm only with the Protocol probes on).
+        p.sleepPlan = PulseSleepPlanSettings.current(behavior: behavior, strapWillArm: ble.strapAlarmWillArm)
         // It is planned for the planner's goal, with the running Weekly Plan's sleep goals for REACH MY WEEKLY
         // PLAN GOAL (read through the plan store's observation, so starting, editing or ending a plan re-plans
         // tonight too), exactly as the planner resolves it.

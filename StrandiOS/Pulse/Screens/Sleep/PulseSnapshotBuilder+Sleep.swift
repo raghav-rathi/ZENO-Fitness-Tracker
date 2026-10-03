@@ -792,7 +792,7 @@ extension PulseSnapshotBuilder {
     /// planner's own resolver (`PulseSleepPlan.resolve`): given the planner's stored goal
     /// (`PulseSleepGoal.storageKey`) and the running Weekly Plan's sleep goals, the card shows the wake and
     /// bedtime the planner it opens shows. `settings`, `goal` and `weeklyPlan` are read on the main actor
-    /// (`PulseSleepPlanSettings.stored`, `PulseSleepGoal(storageValue:)`, `PulseWeeklyPlanSleepGoals.current`)
+    /// (`PulseSleepPlanSettings.current`, `PulseSleepGoal(storageValue:)`, `PulseWeeklyPlanSleepGoals.current`)
     /// and come with the request (`PulsePrefs`).
     func tonightSleepPlan(_ r: PulseRequest, settings: PulseSleepPlanSettings, goal: PulseSleepGoal = .default,
                           weeklyPlan: PulseWeeklyPlanSleepGoals? = nil) async -> PulseSleepPlan? {

@@ -117,7 +117,9 @@ struct PulseSleepPlanSettings: Equatable {
     /// The wind-down reminder's base wake time, minutes after midnight.
     var windDownWakeMinutes = TonightSleepPlan.typicalWakeMinute
 
-    /// The settings as stored now.
+    /// The settings as they stand now: the strap alarm's from the store that arms it (`AppModel.applySmartAlarm`
+    /// reads the same), the rest from WindDownNudge. The one reader, for the planner and for the shell building
+    /// the request for Home's card (`PulseSnapshotBuilder.tonightSleepPlan`), so the two plan from one set.
     @MainActor
     static func current(behavior: BehaviorStore, strapWillArm: Bool) -> PulseSleepPlanSettings {
         PulseSleepPlanSettings(alarmEnabled: behavior.smartAlarmEnabled, alarmMinutes: behavior.smartAlarmMinutes,
@@ -125,19 +127,6 @@ struct PulseSleepPlanSettings: Equatable {
                                dayTimes: WindDownNudge.perDayWakeOverrides, strapWillArm: strapWillArm,
                                windDownEnabled: WindDownNudge.isEnabled,
                                windDownWakeMinutes: WindDownNudge.wakeMinutes)
-    }
-
-    /// The same, read straight from the stored keys (BehaviorStore's alarm keys, as `BehaviorStore.init` reads
-    /// them, and WindDownNudge's), for a caller without the store, such as the shell building the request
-    /// for Home's card (`PulseSnapshotBuilder.tonightSleepPlan`).
-    @MainActor
-    static func stored(strapWillArm: Bool = true, defaults d: UserDefaults = .standard) -> PulseSleepPlanSettings {
-        let weekdays = (d.array(forKey: "behavior.smartAlarmWeekdays") as? [Int] ?? []).filter { (1...7).contains($0) }
-        return PulseSleepPlanSettings(
-            alarmEnabled: d.object(forKey: "behavior.smartAlarmEnabled") as? Bool ?? false,
-            alarmMinutes: d.object(forKey: "behavior.smartAlarmMinutes") as? Int ?? TonightSleepPlan.typicalWakeMinute,
-            alarmWeekdays: Set(weekdays), dayTimes: WindDownNudge.perDayWakeOverrides, strapWillArm: strapWillArm,
-            windDownEnabled: WindDownNudge.isEnabled, windDownWakeMinutes: WindDownNudge.wakeMinutes)
     }
 }
 

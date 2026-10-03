@@ -32,8 +32,8 @@ struct PulsePrefs: Equatable {
     var sleepOnsetDayCycle = true
     var effortMethod: StrainScorer.Method = .edwards
     var stressPersonalBaseline = false
-    /// The strap alarm, the wind-down reminder and My Schedule's per-day times, as the Sleep Planner reads
-    /// them (`PulseSleepPlanSettings.stored`), whether the strap will arm included: what tonight's plan is
+    /// The strap alarm, the wind-down reminder and My Schedule's per-day times, read as the Sleep Planner reads
+    /// them (`PulseSleepPlanSettings.current`), whether the strap will arm included: what tonight's plan is
     /// resolved from.
     var sleepPlan = PulseSleepPlanSettings()
     /// The Sleep Planner's TOMORROW I WANT TO goal (`PulseSleepGoal.storageKey`), which tonight's plan is
