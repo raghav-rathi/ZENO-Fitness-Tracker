@@ -25,7 +25,8 @@ struct PulseSleepTimeline: View {
     private let barTop: CGFloat = 96
     private let barHeight: CGFloat = 26
 
-    /// What named the wake, under it: the wearer's own time, their usual one, or a typical guess.
+    /// What named the wake, under it: the wearer's own time (the alarm's, set with or without the alarm on,
+    /// or the reminder's), else, while none was ever set, their usual one or a typical guess.
     private var wakeCaption: String {
         switch plan.wakeSource {
         case .strapAlarm, .windDown: return String(localized: "Your wake time")
@@ -289,11 +290,11 @@ struct PulseSleepAlarmPanel: View {
             PulseButtonRow {
                 tile(title: String(localized: "Alarm set to"), value: modeText,
                      valueColor: warning == .notArmed ? PulseTheme.negative : PulseTheme.textPrimary, action: onMode)
-                // The alarm's own time for that morning; dimmed while it will not buzz then.
+                // The plan's one wake time, alarm on or off (reviews/r135: OFF beside a white 7:45 AM). It is
+                // the set time whenever one is set, and switching the alarm on arms the one shown here.
                 tile(title: String(localized: "Wake time set to"),
-                     value: plan.map { PulseFormat.clock($0.alarmTime) } ?? "--",
-                     valueColor: plan?.alarmFires == true ? PulseTheme.textPrimary : PulseTheme.textTertiary,
-                     action: onWake)
+                     value: plan.map { PulseFormat.clock($0.wake) } ?? "--",
+                     valueColor: PulseTheme.textPrimary, action: onWake)
             }
         }
         .padding(.horizontal, PulseTheme.Layout.pageMargin)
@@ -431,7 +432,8 @@ struct PulseSleepAlarmModeSheet: View {
             row(String(localized: "Exact time"),
                 String(localized: "Your strap buzzes at your wake time, even if your phone is asleep or ZENO is closed."),
                 selected: alarmOn, enabled: true) { onPick(true) }
-            row(String(localized: "Off"), String(localized: "No alarm. The plan uses your usual wake time instead."),
+            row(String(localized: "Off"),
+                String(localized: "No alarm. Tonight is still planned for your wake time, or your usual one until you set it."),
                 selected: !alarmOn, enabled: true) { onPick(false) }
             row(String(localized: "Sleep goal"),
                 String(localized: "Wakes you in a light moment once your goal is met. Needs a phone-side smart wake, on Android only for now."),

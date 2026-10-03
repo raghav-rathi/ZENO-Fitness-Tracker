@@ -9,8 +9,14 @@ import StrandAnalytics
 // too (`PulseSnapshotBuilder.tonightSleepPlan`), for the goal chosen in the planner:
 //
 //   wake      `TonightSleepPlan.wake`: the strap alarm only when it will buzz that morning (on, armed,
-//             that weekday), else the wind-down reminder's wake while it is on, else the median wake of
-//             the last 14 nights, else 07:00 as a TYPICAL wake. Every candidate is the source's next
+//             that weekday), else the wind-down reminder's wake while it is on, else the wake time the
+//             wearer set (the alarm's time, or My Schedule's for that morning) even though no alarm buzzes,
+//             as WHOOP plans for its set wake time with the alarm off; else the median wake of the last 14
+//             nights, else 07:00 as a TYPICAL wake. An unset alarm time's 07:00 default is nobody's wake
+//             time, so USUAL / TYPICAL WAKE appear only while no wake time was ever set. The silent set wake
+//             goes through `TonightSleepPlan.wake`'s wind-down slot: its source reads `.windDown` (the
+//             wearer's own time) and never `.strapAlarm`, which means "it buzzes" to the headline, the pin,
+//             the notes and Home's ALARM ON. Every candidate is the source's next
 //             occurrence (its My Schedule day time included) through `AppModel.nextSmartAlarmDate`, the
 //             function the strap alarm is armed from, so the plan and the strap cannot name different
 //             mornings. Next after now, until the main night ending today is over; from then, after the
@@ -104,9 +110,15 @@ struct PulseWeeklyPlanSleepGoals: Equatable {
 /// The alarm and wake-time settings the plan reads, captured once per render (BehaviorStore's strap alarm,
 /// WindDownNudge's reminder and My Schedule's per-day times), so one pass never sees two values.
 struct PulseSleepPlanSettings: Equatable {
+    /// `BehaviorStore`'s key for the strap alarm's base wake time (its `K.alarmTime`), written only once the
+    /// wearer sets a time (here or on the classic Alarms screen).
+    static let wakeTimeKey = "behavior.smartAlarmMinutes"
+
     var alarmEnabled = false
     /// The strap alarm's base wake time, minutes after midnight.
     var alarmMinutes = TonightSleepPlan.typicalWakeMinute
+    /// The wearer has set that wake time: until then `alarmMinutes` is the store's unset 07:00 default.
+    var wakeTimeStored = false
     /// Calendar weekdays the alarm buzzes on; empty means every day.
     var alarmWeekdays: Set<Int> = []
     /// My Schedule's per-day wake times ({weekday: minutes}), shared by the strap alarm and the reminder.
@@ -123,6 +135,7 @@ struct PulseSleepPlanSettings: Equatable {
     @MainActor
     static func current(behavior: BehaviorStore, strapWillArm: Bool) -> PulseSleepPlanSettings {
         PulseSleepPlanSettings(alarmEnabled: behavior.smartAlarmEnabled, alarmMinutes: behavior.smartAlarmMinutes,
+                               wakeTimeStored: UserDefaults.standard.object(forKey: wakeTimeKey) != nil,
                                alarmWeekdays: behavior.smartAlarmWeekdays,
                                dayTimes: WindDownNudge.perDayWakeOverrides, strapWillArm: strapWillArm,
                                windDownEnabled: WindDownNudge.isEnabled,
@@ -133,7 +146,8 @@ struct PulseSleepPlanSettings: Equatable {
 struct PulseSleepPlan: Equatable {
     /// The goal planned for (IMPROVE MY SLEEP falls back to the whole need without a consistency target).
     let goal: PulseSleepGoal
-    /// When tonight ends, and what named it.
+    /// When tonight ends, and what named it: the page's one wake time, which the panel's WAKE TIME SET TO
+    /// shows and edits too. `.windDown` also stands for a wake time set without an alarm to buzz then.
     let wake: Date
     let wakeSource: TonightSleepPlan.WakeSource
     /// The suggested time to get into bed, and the time to be asleep by.
@@ -143,9 +157,6 @@ struct PulseSleepPlan: Equatable {
     let timeInBedMin: Double
     /// Tonight's need (all of it), minutes.
     let needMin: Double
-    /// The strap alarm's own wake time on the planned morning (its My Schedule day time, else its base
-    /// time): what the panel's WAKE TIME SET TO shows and edits. Equal to `wake` when the alarm buzzes.
-    let alarmTime: Date
     /// That morning's weekday, and whether My Schedule gives it a time of its own.
     let weekday: Int
     let hasDayTime: Bool
@@ -195,18 +206,20 @@ struct PulseSleepPlan: Equatable {
             ? AppModel.nextSmartAlarmDate(minutes: s.windDownWakeMinutes, weekdays: [], overrides: s.dayTimes,
                                           from: from, calendar: cal)
             : nil
+        // The wake time the wearer set (the alarm's, or My Schedule's for that morning), alarm on or off.
+        let chosenWake = alarmNext.flatMap { next in
+            (s.wakeTimeStored || s.dayTimes[cal.component(.weekday, from: next)] != nil) ? next : nil
+        }
         let habit = TonightSleepPlan.habitualWakeMinute(recentWakeMinutes).flatMap {
             AppModel.nextSmartAlarmDate(minutes: $0, weekdays: [], from: from, calendar: cal)
         }
-        let wake = TonightSleepPlan.wake(strapAlarm: alarmBuzzes ? alarmNext : nil, windDown: windDown,
+        // A set wake that will not buzz takes the wind-down slot, after the reminder's own wake (see the header).
+        let wake = TonightSleepPlan.wake(strapAlarm: alarmBuzzes ? alarmNext : nil, windDown: windDown ?? chosenWake,
                                          habit: habit, typical: typical)
 
-        // The strap alarm's own time on that morning.
+        // That morning's own My Schedule time, if any (what WAKE TIME SET TO edits).
         let weekday = cal.component(.weekday, from: wake.date)
         let dayTime = s.dayTimes[weekday]
-        let alarmMinutes = dayTime ?? s.alarmMinutes
-        let alarmTime = cal.date(bySettingHour: alarmMinutes / 60, minute: alarmMinutes % 60, second: 0,
-                                 of: wake.date) ?? wake.date
 
         // The consistency target for the night that ends on the wake's day.
         let wakeKey = Repository.localDayKey(wake.date)
@@ -253,7 +266,7 @@ struct PulseSleepPlan: Equatable {
 
         return PulseSleepPlan(goal: planned, wake: wake.date, wakeSource: wake.source, bedtime: bed.inBed,
                               asleepBy: bed.asleepBy, timeInBedMin: wake.date.timeIntervalSince(bed.inBed) / 60,
-                              needMin: needMin, alarmTime: alarmTime, weekday: weekday, hasDayTime: dayTime != nil,
+                              needMin: needMin, weekday: weekday, hasDayTime: dayTime != nil,
                               clamped: bed.clamped, isLate: late, sleepIfNowMin: sleepIfNow, optimalBed: optimalBed,
                               optimalWake: optimalWake, consistencyPercent: consistency)
     }
