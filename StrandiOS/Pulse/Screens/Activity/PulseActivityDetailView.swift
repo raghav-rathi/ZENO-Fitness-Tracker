@@ -468,10 +468,10 @@ struct PulseActivityDetailView: View {
             }
             .pulseText(.secondary)
             .fixedSize(horizontal: false, vertical: true)
-            .onTapGesture { navigator.open(.classic(.settings)) }
+            .onTapGesture { navigator.open(PulseHeartRateSettingsRoute().route) }
             .accessibilityAddTraits(.isButton)
-            // There is no heart-rate page to open: the zones live in Settings' Profile card.
-            .accessibilityHint(String(localized: "Opens Settings, where your heart-rate zones are in the Profile card"))
+            // More's HEART RATE SETTINGS edits the max and zones this footnote names.
+            .accessibilityHint(String(localized: "Opens Heart Rate Settings"))
             .padding(.top, 8)
         }
         .id("pulse.activity-zones")

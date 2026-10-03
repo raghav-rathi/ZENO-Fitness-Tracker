@@ -738,9 +738,8 @@ Activity group (`Screens/Activity/`), deviations and what the next wave inherits
 - **Add Activity's banner** keeps "ZENO scores an activity you add from your strap's heart rate over that
   time." rather than the spec's [Z] "Your edits help ZENO recognise your activities.": the detector is a
   fixed heuristic that learns nothing from edits.
-- **"View HR settings"** still opens the classic Settings (the zones are in its Profile card). More's
-  HEART RATE SETTINGS (`PulseHeartRateSettingsRoute`) now edits the same max HR and zones; pointing the
-  link there is the activity group's change.
+- **"View HR settings"** opens More's HEART RATE SETTINGS (`PulseHeartRateSettingsRoute`), which edits
+  the max HR and zones the zone footnote names.
 - **After End & Save** Activity Details draws the live session's own samples until the strap's history
   covers 90% of the window, and `Repository.workoutRows` keeps a row saved with its own Avg / Max HR (a
   live session's) until the trace covers 90% of it (`Repository.traceCoversWorkout`).
