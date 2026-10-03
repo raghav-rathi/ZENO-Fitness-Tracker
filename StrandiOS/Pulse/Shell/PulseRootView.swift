@@ -1,5 +1,6 @@
 #if os(iOS)
 import SwiftUI
+import UIKit
 import Combine
 import StrandDesign
 import StrandAnalytics
@@ -302,13 +303,27 @@ struct PulseRootView: View {
         path(selectedTab).wrappedValue.appendPulse(route)
     }
 
+    /// Something is up over the tabs: the shell's sheet, cover or ＋ menu, or a modal another view presented
+    /// (Home's calendar and LOG CYCLE sheets, Profile's unlock modal over Home, a classic alert), which only
+    /// UIKit knows of: the window's root controller is then presenting it.
+    private var somethingIsUp: Bool {
+        if sheet != nil || cover != nil || actionMenuAnchor != nil { return true }
+        return UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .flatMap(\.windows)
+            .contains { $0.isKeyWindow && $0.rootViewController?.presentedViewController != nil }
+    }
+
     private func closeActionMenu() {
         guard actionMenuAnchor != nil else { return }
         withAnimation(PulseMotion.menu) { actionMenuAnchor = nil }
     }
 
     /// Present `route` in its own stack: full-screen routes in the cover slot, everything else as a sheet.
+    /// Tilt mode's day timeline (§3.7) only opens over the bare tabs: turning the phone with anything up
+    /// over Home leaves it alone.
     private func present(_ route: PulseRoute) {
+        if route == PulseTiltTimelineRoute().route && somethingIsUp { return }
         switch route {
         case .coach(let seed):
             openCoach(seed: seed)
