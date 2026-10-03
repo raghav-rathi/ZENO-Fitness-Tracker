@@ -8,8 +8,8 @@ import StrandAnalytics
 ///      mini ring and delta chip; the card opens the Weekly Digest, which reads the same week;
 ///   2. SLEEP · RECOVERY · STRAIN · STRESS · BODY: dashboard-style rows (the newest value with ▲▼ against
 ///      its 30-day average, the average under it, a 7-day sparkline), each opening its Trend View;
-///   3. INSIGHTS: ZENO's analysis screens (What moves you, Explore, Compare, the Weekly Digest, the report,
-///      Training load, Tomorrow's Recovery).
+///   3. INSIGHTS: ZENO's analysis screens (What moves you, Explore, Compare, the Weekly Digest, Year in
+///      Review and Challenges beside it (§3.39, §3.41), the report, Training load, Tomorrow's Recovery).
 ///
 /// The rows read the series the Trend View charts (`PulseSnapshotBuilder.trendsTab`), so a row and the page
 /// it opens agree. Owned by group "trends".
@@ -72,6 +72,9 @@ struct PulseTrendsTabView: View {
                      "rectangle.split.2x1", .classic(.compare))
                 link(String(localized: "Weekly Digest"), String(localized: "Your week, pillar by pillar"),
                      "calendar", PulseRoute.weeklyDigest.forExistingEntryPoint)
+                link(String(localized: "Year in Review"), yearInReviewSubtitle, "star.circle", .yearInReview)
+                link(String(localized: "Challenges"), String(localized: "Set a target and chase it with your own data"),
+                     "flag.checkered", .challenges)
                 Button { navigator.present(.classic(.report)) } label: {
                     PulseListRow(symbol: "doc.richtext", title: String(localized: "Report"),
                                  subtitle: String(localized: "A PDF of any range to keep or share"))
@@ -83,6 +86,16 @@ struct PulseTrendsTabView: View {
                      "brain.head.profile", .classic(.intelligence))
             }
         }
+    }
+
+    /// "Your 2026 so far, slide by slide": the year the story covers today (last year until 15 January;
+    /// outside its season, the year so far, §3.39 [Z]).
+    private var yearInReviewSubtitle: String {
+        let now = Date()
+        let year = String(PulseSnapshotBuilder.reviewYear(now: now))
+        return PulseYearInReviewView.isInSeason(now)
+            ? String(localized: "Your \(year), slide by slide")
+            : String(localized: "Your \(year) so far, slide by slide")
     }
 
     private func link(_ title: String, _ subtitle: String, _ symbol: String, _ route: PulseRoute) -> some View {
