@@ -157,6 +157,39 @@ enum AICoachError: LocalizedError {
     }
 }
 
+// MARK: - Vocabulary
+
+/// The names a request gives the three daily scores. NOOP's classic interface says Charge (0-100), Effort
+/// (0-100) and Rest; the iPhone's Pulse interface shows Recovery (%), Strain (0-21) and Sleep, and a reply
+/// or a morning brief that said "charge 62" there would contradict the screen it is read on. The data is
+/// the same either way: Strain is the stored Effort rescaled for display (`UnitFormatter.effortValue(_:
+/// scale: .whoop)`), exactly as Pulse's screens print it.
+enum CoachVocabulary: Equatable {
+    case classic
+    case pulse
+
+    /// The iPhone's interface switch (`@AppStorage("pulse.enabled")` in StrandiOSApp).
+    static let pulseEnabledKey = "pulse.enabled"
+
+    /// The vocabulary of the interface the app runs: Pulse on an iPhone while `pulse.enabled` is on, classic
+    /// otherwise, and always on the Mac, which has only the classic interface.
+    static var current: CoachVocabulary {
+        #if os(iOS)
+        return resolve(UserDefaults.standard)
+        #else
+        return .classic
+        #endif
+    }
+
+    /// The iPhone rule, on its own for tests. An unset key reads as ON, as StrandiOSApp's `@AppStorage`
+    /// defaults it: `bool(forKey:)` alone answers false for a key never written, which would give every
+    /// install that never touched the switch the classic names under the Pulse screens.
+    static func resolve(_ defaults: UserDefaults) -> CoachVocabulary {
+        guard defaults.object(forKey: pulseEnabledKey) != nil else { return .pulse }
+        return defaults.bool(forKey: pulseEnabledKey) ? .pulse : .classic
+    }
+}
+
 // MARK: - Engine
 
 /// Drives the AI Coach: holds the chat, the chosen provider/model, the secure key, and performs the
@@ -253,6 +286,20 @@ final class AICoachEngine: ObservableObject {
         didSet { UserDefaults.standard.set(multimodalChartEnabled, forKey: Self.multimodalChartKey) }
     }
 
+    /// Pins the score names for this engine's requests; nil follows the interface the app runs
+    /// (`CoachVocabulary.current`), read per request, so switching interfaces takes effect on the next one.
+    var vocabularyOverride: CoachVocabulary?
+
+    /// The score names the next request uses: the system prompt, the data summary, the brief instruction,
+    /// and through the brief the morning-brief notification.
+    var vocabulary: CoachVocabulary { vocabularyOverride ?? .current }
+
+    /// Standing context for the system prompt of every request this engine sends (a question, a brief, the
+    /// scheduled morning brief, the history summary), read per request; nil or blank adds nothing. The
+    /// Pulse Coach hands it the wearer's active My Memory items, so a memory switched off stops going at
+    /// once rather than riding a conversation's first message.
+    var systemContext: (@MainActor () -> String?)?
+
     private let repo: Repository
     private let session: URLSession
 
@@ -292,14 +339,69 @@ final class AICoachEngine: ObservableObject {
     small table only for a week-ahead plan. No code blocks.
     """
 
+    /// The built-in prompt in the Pulse interface's names (`CoachVocabulary.pulse`): the classic prompt's
+    /// method, worded as the iPhone's screens are, Strain on its 0-21 scale.
+    static let pulseSystemPrompt = """
+    You are an elite, supportive recovery and performance coach with a real training methodology. \
+    You may be given a summary of the user's own wearable data (Recovery 0-100%, Strain 0-21, sleep \
+    duration and its deep/REM/light breakdown, sleep efficiency, HRV, resting heart rate) and recent \
+    workouts. Recovery is the daily readiness score, Strain is the daily cardiovascular load on a 0-21 \
+    scale, and Sleep is the night's sleep. A dash in the data means that value was NOT MEASURED that day \
+    — say so rather than treating it as a zero. Call the scores Recovery, Strain and Sleep, give Strain on \
+    its 0-21 scale, and never call them charge, effort or rest.
+    Coach using autoregulation:
+    • Readiness → prescription: Recovery 67-100% = green light to build/push, higher Strain is fine; \
+    34-66% = maintain, quality over volume, keep it controlled; 0-33% = active recovery only \
+    (Zone 2, mobility, extra sleep) and protect against accumulating Strain.
+    • Workout optimisation: progressive overload, polarised ~80/20 intensity, space hard sessions, \
+    program deloads/periodisation, and treat sleep as the single biggest recovery lever.
+    • Always cite the user's ACTUAL numbers, give a concrete plan (today and the week ahead), and \
+    be specific, punchy and motivating - like a coach who knows them.
+    If no data is provided, coach generally and invite them to turn on data access for personalised \
+    advice. You are NOT a doctor - never diagnose; suggest a professional for genuine health concerns.
+    Format replies in simple Markdown, chat-sized: short paragraphs, **bold** for key numbers, \
+    bullet or numbered lists for plans, ### headings only when structure genuinely helps, and a \
+    small table only for a week-ahead plan. No code blocks.
+    """
+
+    /// The built-in prompt for `vocabulary`.
+    static func defaultSystemPrompt(for vocabulary: CoachVocabulary) -> String {
+        vocabulary == .pulse ? pulseSystemPrompt : defaultSystemPrompt
+    }
+
+    /// Added to an EDITED prompt in the Pulse interface, whose author may have written it in the classic
+    /// names: the data below it says Recovery / Strain / Sleep either way, so the model is told how they
+    /// map. (The built-in Pulse prompt already says so.)
+    static let pulseVocabularyNote = """
+    In this app the daily scores are called Recovery (0-100%), Strain (0-21) and Sleep, as the data names \
+    them. Use those names, give Strain on its 0-21 scale, and never call them charge, effort or rest.
+    """
+
     /// The system prompt actually sent, read FRESH from UserDefaults on every request so an edit in
     /// the settings takes effect on the next message, with no engine rebuild. A blank/absent stored
-    /// value falls back to `defaultSystemPrompt`, so a user who clears it never sends an empty prompt.
+    /// value falls back to the built-in prompt for the interface's names (`defaultSystemPrompt(for:)`), so
+    /// a user who clears it never sends an empty prompt.
     var systemPrompt: String {
         let stored = UserDefaults.standard.string(forKey: Self.systemPromptKey)?
             .trimmingCharacters(in: .whitespacesAndNewlines)
         if let stored, !stored.isEmpty { return stored }
-        return Self.defaultSystemPrompt
+        return Self.defaultSystemPrompt(for: vocabulary)
+    }
+
+    /// What a request carries as its system prompt: `systemPrompt`, the Pulse names spelled out under an
+    /// edited one (`pulseVocabularyNote`), then the standing `systemContext`.
+    var requestSystemPrompt: String {
+        var parts = [systemPrompt]
+        if vocabulary == .pulse && hasCustomSystemPrompt { parts.append(Self.pulseVocabularyNote) }
+        if let extra = systemContext?()?.trimmingCharacters(in: .whitespacesAndNewlines), !extra.isEmpty {
+            parts.append(extra)
+        }
+        return parts.joined(separator: "\n\n")
+    }
+
+    /// Either built-in prompt: storing one of them is the same as storing nothing.
+    private static func isBuiltInPrompt(_ text: String) -> Bool {
+        text == defaultSystemPrompt || text == pulseSystemPrompt
     }
 
     /// The user's stored prompt override, or the default when nothing custom is set. The UI binds its
@@ -308,7 +410,7 @@ final class AICoachEngine: ObservableObject {
         get { systemPrompt }
         set {
             let trimmed = newValue.trimmingCharacters(in: .whitespacesAndNewlines)
-            if trimmed.isEmpty || trimmed == Self.defaultSystemPrompt {
+            if trimmed.isEmpty || Self.isBuiltInPrompt(trimmed) {
                 UserDefaults.standard.removeObject(forKey: Self.systemPromptKey)
             } else {
                 UserDefaults.standard.set(newValue, forKey: Self.systemPromptKey)
@@ -322,7 +424,8 @@ final class AICoachEngine: ObservableObject {
     var hasCustomSystemPrompt: Bool {
         let stored = UserDefaults.standard.string(forKey: Self.systemPromptKey)?
             .trimmingCharacters(in: .whitespacesAndNewlines)
-        return !(stored ?? "").isEmpty && stored != Self.defaultSystemPrompt
+        guard let stored, !stored.isEmpty else { return false }
+        return !Self.isBuiltInPrompt(stored)
     }
 
     /// Restore the built-in system prompt by clearing the stored override.
@@ -354,7 +457,7 @@ final class AICoachEngine: ObservableObject {
         // Estimate the context size: system prompt + data context (rough — we don't build the
         // full context here to avoid a DB read on every keystroke). Use the last known context
         // size or a reasonable default.
-        let systemPromptTokens = systemPrompt.count / 4
+        let systemPromptTokens = requestSystemPrompt.count / 4
         // The data context is typically ~2000-4000 chars depending on the user's data.
         // Use a conservative estimate of 3000 chars (750 tokens) when consent is on.
         let contextTokens = dataConsent ? 750 : 50
@@ -869,7 +972,7 @@ final class AICoachEngine: ObservableObject {
 
         let context = await buildFullContext()
         let wire: [(role: ChatMessage.Role, content: String)] =
-            [(.user, context + "\n\n---\n\n" + Self.briefInstruction)]
+            [(.user, context + "\n\n---\n\n" + Self.briefInstruction(vocabulary))]
 
         let prefix = "Today's brief\n\n"
         let placeholder = ChatMessage(role: .assistant, text: prefix)
@@ -927,13 +1030,25 @@ final class AICoachEngine: ObservableObject {
     }
 
     /// K5: The brief instruction shared by the interactive `startBriefIfNeeded()` (streamed into the
-    /// chat) and the headless `generateBrief()` below (used by the scheduled morning-brief notification).
-    /// Kept in one place so the two paths never drift.
-    private static let briefInstruction = """
+    /// chat) and the headless `generateBrief()` below (used by the scheduled morning-brief notification,
+    /// whose body is the brief's first line). Kept in one place so the two paths never drift; in the
+    /// interface's names, so the notification says what the screens say.
+    static func briefInstruction(_ vocabulary: CoachVocabulary) -> String {
+        vocabulary == .pulse ? pulseBriefInstruction : classicBriefInstruction
+    }
+
+    private static let classicBriefInstruction = """
     Based on the data above, give me TODAY'S coaching brief in three short parts: \
     (1) my readiness in one line, citing charge, HRV and rest; \
     (2) exactly what training to do today and what to avoid; \
     (3) one specific thing to improve my charge. Be punchy and motivating.
+    """
+
+    private static let pulseBriefInstruction = """
+    Based on the data above, give me TODAY'S coaching brief in three short parts: \
+    (1) my readiness in one line, citing Recovery, HRV and Sleep; \
+    (2) exactly what training to do today and what to avoid, with a Strain to aim for on the 0-21 scale; \
+    (3) one specific thing to improve my Recovery. Be punchy and motivating.
     """
 
     /// K5: Generate today's coaching brief WITHOUT touching the visible chat transcript. Used by the
@@ -949,7 +1064,7 @@ final class AICoachEngine: ObservableObject {
         guard isConfigured, dataConsent, let key = resolvedKey else { return nil }
         let context = await buildFullContext()
         let wire: [(role: ChatMessage.Role, content: String)] =
-            [(.user, context + "\n\n---\n\n" + Self.briefInstruction)]
+            [(.user, context + "\n\n---\n\n" + Self.briefInstruction(vocabulary))]
         guard let reply = try? await callProvider(key: key, messages: wire) else { return nil }
         let clean = reply.trimmingCharacters(in: .whitespacesAndNewlines)
         return clean.isEmpty ? nil : clean
@@ -1014,7 +1129,8 @@ final class AICoachEngine: ObservableObject {
                 repo.days.compactMap { d in d.recovery.map { (d.day, $0) } },
                 uniquingKeysWith: { _, last in last })
             let ranked = EffectRanker.rank(behaviors: byBehaviour, controls: controls,
-                                           outcomeByDay: outcomeByDay, outcome: "Charge")
+                                           outcomeByDay: outcomeByDay,
+                                           outcome: vocabulary == .pulse ? "Recovery" : "Charge")
                 .filter { $0.effect.significant }
                 .prefix(3)
             if !ranked.isEmpty {
@@ -1052,7 +1168,7 @@ final class AICoachEngine: ObservableObject {
         try await provider.client.send(
             key: key,
             model: model,
-            systemPrompt: systemPrompt,
+            systemPrompt: requestSystemPrompt,
             messages: messages,
             session: session
         )
@@ -1069,7 +1185,7 @@ final class AICoachEngine: ObservableObject {
         try await provider.client.streamWithImage(
             key: key,
             model: model,
-            systemPrompt: systemPrompt,
+            systemPrompt: requestSystemPrompt,
             messages: messages,
             inlineImage: inlineImage,
             session: session,
@@ -1195,6 +1311,7 @@ final class AICoachEngine: ObservableObject {
     /// recent workouts. Kept well under ~1500 tokens. If there's no data, it says so.
     func buildContext() -> String {
         let days = repo.days // oldest → newest
+        let names = vocabulary
         var lines: [String] = ["USER BIOMETRIC SUMMARY (the user's own wearable data):"]
 
         guard !days.isEmpty else {
@@ -1208,21 +1325,35 @@ final class AICoachEngine: ObservableObject {
         // Last ~14 days, newest first for readability.
         let recent = Array(days.suffix(14)).reversed()
         lines.append("")
-        lines.append("Recent days (newest first) — charge(0-100), effort(0-100), rest/sleep(h), "
-                     + "deep/REM/light(h), eff(%), HRV(ms), RHR(bpm). A dash means NOT MEASURED, not zero:")
+        switch names {
+        case .classic:
+            lines.append("Recent days (newest first) — charge(0-100), effort(0-100), rest/sleep(h), "
+                         + "deep/REM/light(h), eff(%), HRV(ms), RHR(bpm). A dash means NOT MEASURED, not zero:")
+        case .pulse:
+            lines.append("Recent days (newest first) — Recovery(%), Strain(0-21), Sleep(h), "
+                         + "deep/REM/light(h), eff(%), HRV(ms), RHR(bpm). A dash means NOT MEASURED, not zero:")
+        }
         for d in recent {
-            lines.append("  " + dayLine(d))
+            lines.append("  " + dayLine(d, vocabulary: names))
         }
 
         // 30-day averages.
         let last30 = Array(days.suffix(30))
         lines.append("")
         lines.append("30-day averages:")
-        lines.append("  charge: \(avgInt(last30.compactMap { $0.recovery }))"
-                     + ", effort: \(avgOne(last30.compactMap { $0.strain }))"
-                     + ", sleep: \(avgSleepHours(last30))h"
-                     + ", HRV: \(avgInt(last30.compactMap { $0.avgHrv })) ms"
-                     + ", RHR: \(avgInt(last30.compactMap { $0.restingHr.map(Double.init) })) bpm")
+        let rest = ", HRV: \(avgInt(last30.compactMap { $0.avgHrv })) ms"
+            + ", RHR: \(avgInt(last30.compactMap { $0.restingHr.map(Double.init) })) bpm"
+        switch names {
+        case .classic:
+            lines.append("  charge: \(avgInt(last30.compactMap { $0.recovery }))"
+                         + ", effort: \(avgOne(last30.compactMap { $0.strain }))"
+                         + ", sleep: \(avgSleepHours(last30))h" + rest)
+        case .pulse:
+            let recovery = avgInt(last30.compactMap { $0.recovery })
+            lines.append("  Recovery: \(recovery == "—" ? recovery : recovery + "%")"
+                         + ", Strain: \(avgOne(last30.compactMap { $0.strain.map(Self.strainValue) }))"
+                         + ", Sleep: \(avgSleepHours(last30))h" + rest)
+        }
         // Additional vitals when present (#124, the coach used to see only recovery/strain/sleep/HRV/RHR).
         lines.append("  SpO2: \(avgInt(last30.compactMap { $0.spo2Pct }))%"
                      + ", respiration: \(avgOne(last30.compactMap { $0.respRateBpm }))/min"
@@ -1237,6 +1368,7 @@ final class AICoachEngine: ObservableObject {
     /// so callers that want workouts in the context can await this and feed the result to `send`'s
     /// flow via the chat, kept separate so `buildContext()` stays synchronous per the spec.
     func recentWorkoutsBlock(limit: Int = 6) async -> String {
+        let names = vocabulary
         let rows = await repo.workoutRows(days: 30) // newest first
         guard !rows.isEmpty else { return "Recent workouts: none recorded in the last 30 days." }
         let bodySystem = UnitSystem(
@@ -1248,7 +1380,10 @@ final class AICoachEngine: ObservableObject {
         for w in rows.prefix(limit) {
             var parts = ["  \(dateString(w.startTs)) \(w.sport)"]
             if let dur = w.durationS { parts.append("\(Int((dur / 60).rounded())) min") }
-            if let s = w.strain { parts.append("effort \(String(format: "%.1f", s))") }
+            if let s = w.strain {
+                parts.append(names == .pulse ? "Strain \(String(format: "%.1f", Self.strainValue(s)))"
+                                             : "effort \(String(format: "%.1f", s))")
+            }
             if let hr = w.avgHr { parts.append("avg HR \(hr)") }
             if let kcal = w.energyKcal { parts.append("\(Int(kcal.rounded())) kcal") }
             if let dist = w.distanceM {
@@ -1264,12 +1399,23 @@ final class AICoachEngine: ObservableObject {
     /// `internal`, not private, so `AICoachSleepContextTests` can assert the emitted line directly.
     /// Swift's `buildContext()` takes no arguments (it reads the repo), unlike the Kotlin twin which is
     /// handed the day list — so without this the formatter has no seam and the Swift half of a change
-    /// with fifteen Kotlin tests would ship untested.
-    func dayLine(_ d: DailyMetric) -> String {
+    /// with fifteen Kotlin tests would ship untested. In this engine's names (`vocabulary`).
+    func dayLine(_ d: DailyMetric) -> String { dayLine(d, vocabulary: vocabulary) }
+
+    /// One day's line in `names`: the classic "charge 62, effort 58.2, rest 7.5h" (byte-identical to the
+    /// Kotlin twin's), or Pulse's "Recovery 62%, Strain 12.2, Sleep 7.5h", Strain on its 0-21 scale.
+    func dayLine(_ d: DailyMetric, vocabulary names: CoachVocabulary) -> String {
         var parts: [String] = [d.day + ":"]
-        parts.append("charge " + (d.recovery.map { "\(Int($0.rounded()))" } ?? "—"))
-        parts.append("effort " + (d.strain.map { String(format: "%.1f", $0) } ?? "—"))
-        parts.append("rest " + (d.totalSleepMin.map { String(format: "%.1fh", $0 / 60) } ?? "—"))
+        switch names {
+        case .classic:
+            parts.append("charge " + (d.recovery.map { "\(Int($0.rounded()))" } ?? "—"))
+            parts.append("effort " + (d.strain.map { String(format: "%.1f", $0) } ?? "—"))
+            parts.append("rest " + (d.totalSleepMin.map { String(format: "%.1fh", $0 / 60) } ?? "—"))
+        case .pulse:
+            parts.append("Recovery " + (d.recovery.map { "\(Int($0.rounded()))%" } ?? "—"))
+            parts.append("Strain " + (d.strain.map { String(format: "%.1f", Self.strainValue($0)) } ?? "—"))
+            parts.append("Sleep " + (d.totalSleepMin.map { String(format: "%.1fh", $0 / 60) } ?? "—"))
+        }
         // The stage breakdown and efficiency, which the coach could not see at all: a user asked why it
         // said it had no access to sleep stages, and it was answering honestly — `rest 7.8h` was every
         // word it got about a night. These four sit on the SAME DailyMetric the line already reads, so
@@ -1310,6 +1456,11 @@ final class AICoachEngine: ObservableObject {
         if e > 1.5 { e /= 100 }
         guard e > 0, e <= 1 else { return "—" }
         return "\(Int((e * 100).rounded()))%"
+    }
+
+    /// A stored Effort (0-100) on the Strain axis (0-21) Pulse prints it on: one conversion, the screens'.
+    private static func strainValue(_ effort: Double) -> Double {
+        UnitFormatter.effortValue(effort, scale: .whoop)
     }
 
     private func avgOne(_ xs: [Double]) -> String {
