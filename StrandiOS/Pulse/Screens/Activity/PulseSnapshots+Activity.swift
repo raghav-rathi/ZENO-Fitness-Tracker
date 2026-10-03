@@ -244,13 +244,13 @@ enum ActivityFormat {
 
     /// "0:14:59", or "1:02:57".
     static func clock(seconds: Double) -> String {
-        let total = max(0, Int(seconds.rounded()))
+        let total = seconds.isFinite ? max(0, Int(seconds.rounded())) : 0
         return String(format: "%d:%02d:%02d", total / 3600, (total % 3600) / 60, total % 60)
     }
 
     /// The live band's "00:27:53".
     static func paddedClock(seconds: Double) -> String {
-        let total = max(0, Int(seconds))
+        let total = seconds.isFinite ? max(0, Int(seconds)) : 0
         return String(format: "%02d:%02d:%02d", total / 3600, (total % 3600) / 60, total % 60)
     }
 

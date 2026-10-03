@@ -122,8 +122,10 @@ extension PulseSnapshotBuilder {
 
         let route = Self.routeSummary(for: row, duration: duration, imperial: inputs.distanceImperial)
         let minHR = window.map(\.bpm).min()
+        let otherMinHRs = variant == .recovery ? await minHeartRates(before: row, others: others) : []
+        guard isCurrent(r) else { return nil }
         let keyStats = Self.keyStats(row: row, variant: variant, duration: duration, steps: steps, minHR: minHR,
-                                     others: others, historyMinHR: history.minHRs, inputs: inputs)
+                                     others: others, historyMinHR: otherMinHRs, inputs: inputs)
         let insight = Self.insight(row: row, variant: variant, zoneSeconds: zoneSeconds, hasZones: credited > 0,
                                    typicalHighZoneSeconds: history.typicalHighZoneSeconds,
                                    duration: duration, durationAverage: durationAverage, lift: lift)
@@ -231,13 +233,12 @@ extension PulseSnapshotBuilder {
         return String(localized: "Zones use your max heart rate of \(max) bpm.")
     }
 
-    /// This sport's typical zone shares (the middle half of up to eight recent sessions, needing three),
-    /// the typical minutes in Zones 4–5 and each session's lowest heart rate. Read once per refresh.
+    /// This sport's typical zone shares (the middle half of up to eight recent sessions, needing three) and
+    /// the typical minutes in Zones 4–5. Read once per refresh.
     struct ActivitySportHistory {
         /// Index 0…5 → the typical share as a range of the bar, or nil.
         var typicalShares: [ClosedRange<Double>?] = Array(repeating: nil, count: 6)
         var typicalHighZoneSeconds: Double?
-        var minHRs: [Int] = []
     }
 
     func sportHistory(for row: WorkoutRow, rows: [WorkoutRow], zoneSet: HRZoneSet) async -> ActivitySportHistory {
@@ -265,7 +266,6 @@ extension PulseSnapshotBuilder {
                 let ids = Repository.workoutHrDeviceIds(source: other.source, activeStrapId: activeStrap,
                                                         importedIds: imported)
                 let samples = await repo.hrSamples(deviceIds: ids, from: other.startTs, to: other.endTs, limit: 20_000)
-                if let lowest = samples.map(\.bpm).min() { out.minHRs.append(lowest) }
                 if seconds == nil, samples.count >= 2 {
                     let tiz = HRZones.timeInZone(samples, zoneSet: zoneSet)
                     seconds = [tiz.belowZone1] + tiz.seconds
@@ -283,6 +283,24 @@ extension PulseSnapshotBuilder {
                     out.typicalShares[z] = lo...max(lo, hi)
                 }
                 out.typicalHighZoneSeconds = Self.quantile(highs.sorted(), 0.5)
+            }
+            return out
+        }
+    }
+
+    /// The lowest heart rate of each of this sport's sessions over the 30 days before this one (the
+    /// recovery variant's MIN HR comparison), each from its own strap.
+    func minHeartRates(before row: WorkoutRow, others: [WorkoutRow]) async -> [Int] {
+        let key = "activity.minhr.\(row.sport.lowercased())|\(row.startTs)"
+        return await cached(key) {
+            let activeStrap = await repo.deviceId
+            let imported = await repo.importedReadIds
+            var out: [Int] = []
+            for other in others.prefix(31) {
+                let ids = Repository.workoutHrDeviceIds(source: other.source, activeStrapId: activeStrap,
+                                                        importedIds: imported)
+                let samples = await repo.hrSamples(deviceIds: ids, from: other.startTs, to: other.endTs, limit: 20_000)
+                if let lowest = samples.map(\.bpm).min() { out.append(lowest) }
             }
             return out
         }

@@ -122,8 +122,8 @@ struct PulseActivityForm: View {
                         .padding(.bottom, 16)
                 }
                 activityRow
-                if !mode.isAdd && !isSleep && heartRate.count > 1 {
-                    PulseActivityScrubber(points: heartRate, start: $start, end: $end)
+                if !mode.isAdd && !isSleep && heartRate.count > 1, let original = originalWindow {
+                    PulseActivityScrubber(points: heartRate, original: original, start: $start, end: $end)
                         .padding(.top, 22)
                 }
                 sectionHeader(String(localized: "Time"))
@@ -198,6 +198,14 @@ struct PulseActivityForm: View {
         } else {
             LinearGradient(gradient: PulseTheme.Activity.editSheet, startPoint: .top, endPoint: .bottom)
         }
+    }
+
+    /// The edited row's own span, as stored.
+    private var originalWindow: ClosedRange<Date>? {
+        guard let row = mode.original else { return nil }
+        let from = Date(timeIntervalSince1970: TimeInterval(row.startTs))
+        let to = Date(timeIntervalSince1970: TimeInterval(max(row.endTs, row.startTs + 60)))
+        return from...to
     }
 
     private var isAutoDetected: Bool {

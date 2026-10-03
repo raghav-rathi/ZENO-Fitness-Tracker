@@ -568,12 +568,16 @@ struct PulseActivityRouteCard: View {
 /// do), never closer than a minute to the other or past now.
 struct PulseActivityScrubber: View {
     let points: [PulseTimeValue]
+    /// The activity as it was stored: with the heart rate, it fixes the scrubber's time span, so a handle
+    /// moving never moves the scale under the finger.
+    let original: ClosedRange<Date>
     @Binding var start: Date
     @Binding var end: Date
 
     private var span: ClosedRange<Date> {
         let dates = points.map(\.date)
-        let lo = min(dates.min() ?? start, start), hi = max(dates.max() ?? end, end)
+        let lo = min(dates.min() ?? original.lowerBound, original.lowerBound)
+        let hi = max(dates.max() ?? original.upperBound, original.upperBound)
         return lo...max(hi, lo.addingTimeInterval(60))
     }
 
@@ -610,11 +614,13 @@ struct PulseActivityScrubber: View {
                     .chartYScale(domain: domain)
                     .chartXAxis(.hidden)
                     .chartYAxis(.hidden)
-                    handle(at: x(start), height: geo.size.height, label: String(localized: "Start")) { location in
+                    handle(at: min(max(0, x(start)), geo.size.width), height: geo.size.height,
+                           label: String(localized: "Start")) { location in
                         let date = span.lowerBound.addingTimeInterval(total * Double(max(0, min(1, location / geo.size.width))))
                         start = min(date, end.addingTimeInterval(-60))
                     }
-                    handle(at: x(end), height: geo.size.height, label: String(localized: "End")) { location in
+                    handle(at: min(max(0, x(end)), geo.size.width), height: geo.size.height,
+                           label: String(localized: "End")) { location in
                         let date = span.lowerBound.addingTimeInterval(total * Double(max(0, min(1, location / geo.size.width))))
                         end = min(Date(), max(date, start.addingTimeInterval(60)))
                     }

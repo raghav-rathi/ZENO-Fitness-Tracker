@@ -33,8 +33,9 @@ struct PulseStrainTargetPanel: View {
     private var target: Double? { targetOn ? (customTarget ?? recommended) : nil }
 
     var body: some View {
+        // The panel follows the finger while it is dragged (up grows it), then settles open or closed.
         let base = expanded ? expandedHeight : collapsedHeight
-        let height = min(expandedHeight, max(collapsedHeight, base - drag))
+        let height = min(expandedHeight, max(collapsedHeight, base + drag))
         VStack(spacing: 0) {
             header
             if expanded {

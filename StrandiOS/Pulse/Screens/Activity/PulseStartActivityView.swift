@@ -344,7 +344,8 @@ struct PulsePreStartView: View {
 
     /// Starts the engine's session for the chosen activity and keeps this screen's choices for it.
     private func start(app: AppModel) {
-        PulseStartEngine.start(app: app, sport: kind.name, target: activityTarget,
+        // A recovery activity has no Strain Target panel, so it starts with no target.
+        PulseStartEngine.start(app: app, sport: kind.name, target: isRecovery ? nil : activityTarget,
                                trackRoute: !kind.isDistanceSport || trackRoute)
     }
 }
