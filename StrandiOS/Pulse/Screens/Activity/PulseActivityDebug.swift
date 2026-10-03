@@ -26,6 +26,7 @@ import WhoopProtocol
 //   --activity-end-save           End & Save the live session once it is on screen (then Activity Details)
 //   --activity-target <value>     the Strain Target panel with a dragged target
 //   --activity-reset              discard a session an earlier launch left running
+//   --activity-recents <a,b>      the activity lists' MOST RECENT
 enum PulseActivityDebug {
     static func value(_ flag: String) -> String? {
         let args = CommandLine.arguments
@@ -36,6 +37,12 @@ enum PulseActivityDebug {
     static func has(_ flag: String) -> Bool { CommandLine.arguments.contains(flag) }
 
     static var workoutPick: String? { value("--activity-workout") }
+
+    /// `--activity-recents Running,Walking`: fold these into the pickers' MOST RECENT (oldest first).
+    static func applyRecentsIfRequested() {
+        guard let list = value("--activity-recents") else { return }
+        for name in list.split(separator: ",").reversed() { RecentSportsPrefs.recordSelection(String(name)) }
+    }
     static var sport: String? { value("--activity-sport") }
     static var panel: String? { value("--activity-panel") }
     static var livePage: String? { value("--activity-live-page") }

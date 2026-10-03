@@ -150,6 +150,9 @@ struct PulseActivityPickerList: View {
             .scrollDismissesKeyboard(.interactively)
             .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
         }
+        #if DEBUG
+        .onAppear { PulseActivityDebug.applyRecentsIfRequested() }
+        #endif
     }
 
     // MARK: Pieces
