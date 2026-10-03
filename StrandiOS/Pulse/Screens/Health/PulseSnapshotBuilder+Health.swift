@@ -680,7 +680,7 @@ extension PulseSnapshotBuilder {
                         tones: tones(5...9) { VitalityEngine.Inputs(chronoAge: chrono, sleepHours: $0) },
                         six: average({ $0.totalSleepMin.map { $0 / 60 } }, from: sixFrom),
                         thirty: average({ $0.totalSleepMin.map { $0 / 60 } }, from: thirtyFrom),
-                        years: years["sleep"], label: String(localized: "your nightly sleep"),
+                        years: years["sleep"], label: String(localized: "Your nightly sleep"),
                         route: PulseRoute.trendView(metric: "sleep_total_min").forExistingEntryPoint)
         let regularity = row(id: "consistency", title: String(localized: "Sleep regularity"),
                              value: inputs.regularity.map { $0 * 100 }, text: { PulseFormat.whole($0) }, unit: "%",
@@ -688,7 +688,7 @@ extension PulseSnapshotBuilder {
                              tones: tones(40...100) { VitalityEngine.Inputs(chronoAge: chrono, sleepConsistency: $0 / 100) },
                              six: regularityAverage(from: sixFrom).map { $0 * 100 },
                              thirty: regularityAverage(from: thirtyFrom).map { $0 * 100 },
-                             years: years["consistency"], label: String(localized: "how regular your sleep was"),
+                             years: years["consistency"], label: String(localized: "Your sleep regularity"),
                              route: nil)
         // Strain
         let steps: HealthspanRow?
@@ -699,7 +699,7 @@ extension PulseSnapshotBuilder {
                         tones: tones(2_000...14_000) { VitalityEngine.Inputs(chronoAge: chrono, steps: $0) },
                         six: average({ $0.steps.map(Double.init) }, from: sixFrom),
                         thirty: average({ $0.steps.map(Double.init) }, from: thirtyFrom),
-                        years: years["steps"], label: String(localized: "your daily steps"),
+                        years: years["steps"], label: String(localized: "Your daily steps"),
                         route: PulseRoute.tab(.steps(day: nil)))
         } else {
             func mean(from: String) -> Double? {
@@ -711,7 +711,7 @@ extension PulseSnapshotBuilder {
                         text: { PulseFormat.grouped($0) }, unit: "",
                         scale: 2_000...14_000, low: "2k", high: "14k", tones: [],
                         six: mean(from: sixFrom), thirty: mean(from: thirtyFrom),
-                        years: nil, label: String(localized: "your daily steps"),
+                        years: nil, label: String(localized: "Your daily steps"),
                         route: PulseRoute.tab(.steps(day: nil)))
         }
         // Fitness
@@ -721,14 +721,14 @@ extension PulseSnapshotBuilder {
                       tones: tones(40...80) { VitalityEngine.Inputs(chronoAge: chrono, restingHR: $0) },
                       six: average({ $0.restingHr.map(Double.init) }, from: sixFrom),
                       thirty: average({ $0.restingHr.map(Double.init) }, from: thirtyFrom),
-                      years: years["rhr"], label: String(localized: "your resting heart rate"),
+                      years: years["rhr"], label: String(localized: "Your resting heart rate"),
                       route: PulseRoute.trendView(metric: "rhr").forExistingEntryPoint)
         let hrv = row(id: "hrv", title: String(localized: "HRV"),
                       value: inputs.hrv, text: { PulseFormat.whole($0) }, unit: "ms",
                       scale: 15...105, low: "15ms", high: "105ms",
                       tones: tones(15...105) { VitalityEngine.Inputs(chronoAge: chrono, rmssd: $0, rmssdNorm: norm) },
                       six: average(\.avgHrv, from: sixFrom), thirty: average(\.avgHrv, from: thirtyFrom),
-                      years: years["hrv"], label: String(localized: "your heart rate variability"),
+                      years: years["hrv"], label: String(localized: "Your heart rate variability"),
                       route: PulseRoute.trendView(metric: "hrv").forExistingEntryPoint)
         var fitness = [rhr, hrv].compactMap { $0 }
         let leanPoints = lean.filter { $0.day <= endKey && $0.value.isFinite && $0.value > 0 }
@@ -743,7 +743,7 @@ extension PulseSnapshotBuilder {
                                  tones: [],
                                  six: six.isEmpty ? nil : six.reduce(0, +) / Double(six.count),
                                  thirty: thirty.isEmpty ? nil : thirty.reduce(0, +) / Double(thirty.count),
-                                 years: nil, label: String(localized: "your lean body mass"),
+                                 years: nil, label: String(localized: "Your lean body mass"), latest: true,
                                  route: PulseRoute.tab(.metricSourced(key: "lean_mass", source: "apple-health"))) {
                 fitness.append(leanRow)
             }
@@ -755,33 +755,39 @@ extension PulseSnapshotBuilder {
         ]
     }
 
-    /// One pillar row, or nil when there is nothing to show (no value and no averages).
+    /// One pillar row, or nil when there is nothing to show (no value and no averages). `label` names the
+    /// measure as a sentence subject ("Your resting heart rate"); `latest` reads a last reading, not a
+    /// week's average.
     private func row(id: String, title: String, value: Double?, text: (Double) -> String, unit: String,
                      scale: ClosedRange<Double>, low: String, high: String, tones: [HealthspanRow.Tone],
-                     six: Double?, thirty: Double?, years: Double?, label: String,
+                     six: Double?, thirty: Double?, years: Double?, label: String, latest: Bool = false,
                      route: PulseRoute?) -> HealthspanRow? {
         guard value != nil || six != nil || thirty != nil else { return nil }
         let valueText = value.map { PulseFormat.withUnit(text($0), unit) }
         let verdict: String
         let sentence: String
-        if let years, let valueText {
-            let amount = PulseFormat.oneDecimal(abs(years))
-            if years <= -0.05 {
-                verdict = String(localized: "Taking years off")
-                sentence = String(localized: "This week \(label) came to \(valueText). In ZENO's model that takes \(amount) years off your ZENO Age.")
-            } else if years >= 0.05 {
-                verdict = String(localized: "Adding years")
-                sentence = String(localized: "This week \(label) came to \(valueText). In ZENO's model that adds \(amount) years to your ZENO Age.")
+        if let valueText {
+            let lead = latest ? String(localized: "\(label) was \(valueText) at your last reading.")
+                              : String(localized: "\(label) averaged \(valueText) this week.")
+            if let years {
+                let amount = PulseFormat.oneDecimal(abs(years))
+                if years <= -0.05 {
+                    verdict = String(localized: "Taking years off")
+                    sentence = lead + " " + String(localized: "In ZENO's model that takes \(amount) years off your ZENO Age.")
+                } else if years >= 0.05 {
+                    verdict = String(localized: "Adding years")
+                    sentence = lead + " " + String(localized: "In ZENO's model that adds \(amount) years to your ZENO Age.")
+                } else {
+                    verdict = String(localized: "Holding steady")
+                    sentence = lead + " " + String(localized: "In ZENO's model that leaves your ZENO Age where it is.")
+                }
             } else {
-                verdict = String(localized: "Holding steady")
-                sentence = String(localized: "This week \(label) came to \(valueText), which leaves your ZENO Age where it is.")
+                verdict = String(localized: "Tracked alongside")
+                sentence = lead + " " + String(localized: "This week's ZENO Age did not use it, so it is shown here without an effect.")
             }
-        } else if let valueText {
-            verdict = String(localized: "Tracked alongside")
-            sentence = String(localized: "This week \(label) came to \(valueText). This week's ZENO Age did not use it, so it is shown here without an effect.")
         } else {
             verdict = String(localized: "No reading this week")
-            sentence = String(localized: "There is no reading for \(label) this week, so it is left out of this week's ZENO Age.")
+            sentence = String(localized: "There is no reading this week, so it is left out of this week's ZENO Age.")
         }
         return HealthspanRow(id: id, title: title, valueText: valueText, scale: scale, lowLabel: low, highLabel: high,
                              tones: tones, sixMonth: six, sixMonthText: six.map { PulseFormat.withUnit(text($0), unit) },

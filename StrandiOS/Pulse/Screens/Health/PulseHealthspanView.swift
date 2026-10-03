@@ -199,7 +199,7 @@ struct PulseHealthspanView: View {
                 PulseCard(padding: 0) {
                     VStack(spacing: 0) {
                         ForEach(Array(pillar.rows.enumerated()), id: \.element.id) { i, row in
-                            HealthspanRowView(row: row, expanded: expanded.contains(row.id)) {
+                            HealthspanRowView(row: row, expanded: expanded.contains(row.id) || Self.expandsAll) {
                                 if expanded.contains(row.id) { expanded.remove(row.id) } else { expanded.insert(row.id) }
                             }
                             if i < pillar.rows.count - 1 { PulseDivider(leadingInset: 16, trailingInset: 16) }
@@ -249,6 +249,15 @@ struct PulseHealthspanView: View {
         var text = String(localized: "Healthspan: ZENO Age \(PulseFormat.oneDecimal(summary.week.zenoAge)), \(healthYearsLine(summary.week.yearsYounger))")
         if let pace = summary.pace { text += ", " + String(localized: "Pace of Aging \(PulseFormat.oneDecimal(pace))x") }
         return text + "."
+    }
+
+    /// DEBUG `--pulse-health-expand`: every pillar row open, for captures.
+    private static var expandsAll: Bool {
+        #if DEBUG
+        return CommandLine.arguments.contains("--pulse-health-expand")
+        #else
+        return false
+        #endif
     }
 
     static let disclaimer = String(localized: "ZENO Age is a wellness estimate from your own habits, using published links between these measures and long-term health. It is not a clinical or biological age, and it cannot diagnose anything.")
