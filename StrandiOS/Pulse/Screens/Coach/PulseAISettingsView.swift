@@ -11,9 +11,16 @@ struct PulseAISettingsRoute: PulseScreenRoute {
 
 // WHOOP's page is MEMORY + a privacy card. ZENO keeps its Coach switch and adds the provider, model, key and
 // data-access rows [Z], all bound to the EXISTING engine and its keys: `noop.coachEnabled`, `ai.provider`,
-// `ai.model`, `ai.dataConsent`, the Keychain key through `AICoachEngine.setKey`, and the custom server's URL
-// and header. A provider change always goes through the form with that provider's key, because a stored key
-// is only ever sent to the provider it was saved for (`AIKeyStore.ownerProvider`).
+// `ai.model`, `ai.dataConsent`, `ai.includeOnDeviceSignals`, the Keychain key through `AICoachEngine.setKey`,
+// the custom server's URL and header, and the morning brief's schedule (`CoachBriefScheduler`). A provider
+// change always goes through the form with that provider's key, because a stored key is only ever sent to the
+// provider it was saved for (`AIKeyStore.ownerProvider`).
+//
+// The classic Coach settings screen is not linked from here: it speaks of charge, effort and rest (§0.3). Its
+// remaining controls are rows here: the second data opt-in and the morning brief. Coach instructions are
+// replaced by My Memory (a "Preferences" memory says how to answer); an edited system prompt from the classic
+// screen is still honoured, and this page says so and offers to return to the default. The Gemini chart image
+// is left out because the sheet has no chart to attach.
 struct PulseAISettingsView: View {
     @EnvironmentObject private var coach: AICoachEngine
     @AppStorage("noop.coachEnabled") private var coachEnabled = true
@@ -26,8 +33,10 @@ struct PulseAISettingsView: View {
     @State private var keyDraft = ""
     @State private var confirmDisconnect = false
     @State private var confirmDeleteHistory = false
-    @State private var showsClassicSettings = false
     @State private var customModel = ""
+    @State private var briefEnabled = CoachBriefScheduler.isEnabled
+    @State private var briefMinutes = CoachBriefScheduler.timeMinutes
+    @State private var briefStatus: String?
 
     var body: some View {
         PulseScreenScaffold(title: String(localized: "AI Settings")) {
@@ -51,12 +60,29 @@ struct PulseAISettingsView: View {
 
                 toggleBlock(title: String(localized: "Use my data"), isOn: $coach.dataConsent,
                             help: coach.dataConsent
-                                ? String(localized: "On: with each new question, Coach sends a short summary of your Recovery, Strain, Sleep, HRV, resting heart rate and recent workouts to \(coach.provider.displayName).")
-                                : String(localized: "Off: Coach answers generally and sends none of your numbers."))
+                                ? String(localized: "On: with each new question, Coach sends a short summary of your Recovery, Strain, Sleep, HRV, resting heart rate and recent workouts to \(coach.provider.displayName). A question asked from a page also carries that page's summary, such as your cycle day and phase from Menstrual Cycle Insights.")
+                                : String(localized: "Off: Coach answers generally and sends none of your numbers, not even the summary of the page you ask from."))
                     .padding(.top, 28)
+                if coach.dataConsent {
+                    toggleBlock(title: String(localized: "Also share my patterns and Lab Book"),
+                                isOn: $coach.includeOnDeviceSignals,
+                                help: coach.includeOnDeviceSignals
+                                    ? String(localized: "On: a short summary of your strongest patterns and the health numbers you logged in Lab Book is added. Summaries only, never raw readings.")
+                                    : String(localized: "Off: only your Recovery, Strain, Sleep and workout summary is shared."))
+                        .padding(.top, 22)
+                }
                 toggleBlock(title: String(localized: "Memory"), isOn: $memoryEnabled,
                             help: String(localized: "Allow Coach to use what you save in My Memory to personalise its guidance. Memories are stored only on this iPhone; active ones are sent with each new conversation to the provider you chose."))
                     .padding(.top, 22)
+
+                PulseCoachDashedRule()
+                    .padding(.vertical, 22)
+
+                morningBrief
+                if coach.hasCustomSystemPrompt {
+                    customInstructions
+                        .padding(.top, 22)
+                }
 
                 PulseCoachDashedRule()
                     .padding(.vertical, 22)
@@ -66,22 +92,12 @@ struct PulseAISettingsView: View {
                                  trailing: .none, titleColor: PulseTheme.recoveryLowText)
                 }
                 .buttonStyle(PulsePressStyle())
-                Button { showsClassicSettings = true } label: {
-                    PulseListRow(symbol: "slider.horizontal.3", title: String(localized: "More coach settings"),
-                                 subtitle: String(localized: "Instructions, morning brief, extra data sharing"))
-                }
-                .buttonStyle(PulsePressStyle())
-                .padding(.top, PulseTheme.Row.listGap)
 
                 privacyCard
                     .padding(.top, 28)
             }
         }
         .onAppear(perform: refreshConfigured)
-        .sheet(isPresented: $showsClassicSettings) {
-            CoachSettingsView()
-                .environmentObject(coach)
-        }
         .confirmationDialog(String(localized: "Disconnect \(coach.provider.displayName)?"), isPresented: $confirmDisconnect,
                             titleVisibility: .visible) {
             Button(String(localized: "Disconnect"), role: .destructive) {
@@ -106,6 +122,80 @@ struct PulseAISettingsView: View {
 
     private func refreshConfigured() {
         configured = coach.isConfigured
+    }
+
+    // MARK: Morning brief and instructions
+
+    /// MORNING BRIEF: Coach writes today's brief at about the chosen time and posts it as a notification
+    /// (`CoachBriefScheduler`, unchanged). It needs Use my data, as the brief is built from the data summary.
+    private var morningBrief: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            toggleBlock(title: String(localized: "Morning brief"), isOn: $briefEnabled,
+                        help: !coach.dataConsent
+                            ? String(localized: "Needs Use my data: the brief is written from your Recovery, Sleep and Strain.")
+                            : (briefEnabled
+                               ? String(localized: "Each morning Coach writes today's brief with your key and sends it as a notification. iOS decides exactly when a backgrounded app wakes, so it can come a little later.")
+                               : String(localized: "Off: nothing is written or sent on a schedule.")))
+                .disabled(!coach.dataConsent && !briefEnabled)
+                .onChange(of: briefEnabled) { _, on in
+                    briefStatus = nil
+                    CoachBriefScheduler.setEnabled(on, generateBrief: { await coach.generateBrief() }) { outcome in
+                        if outcome == .denied {
+                            briefEnabled = false
+                            briefStatus = String(localized: "Notifications are off for ZENO. Allow them in Settings to get a morning brief.")
+                        }
+                    }
+                }
+            if briefEnabled {
+                HStack {
+                    Text(String(localized: "Time"))
+                        .pulseText(.cardTitle)
+                        .foregroundStyle(PulseTheme.textPrimary)
+                    Spacer(minLength: 8)
+                    DatePicker(String(localized: "Morning brief time"), selection: briefTime,
+                               displayedComponents: .hourAndMinute)
+                        .labelsHidden()
+                }
+                .padding(.horizontal, 4)
+            }
+            if let briefStatus {
+                Text(briefStatus)
+                    .pulseText(.rowSubline)
+                    .foregroundStyle(PulseTheme.negative)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, 4)
+            }
+        }
+    }
+
+    private var briefTime: Binding<Date> {
+        Binding(
+            get: {
+                Calendar.current.date(from: DateComponents(hour: briefMinutes / 60, minute: briefMinutes % 60)) ?? Date()
+            },
+            set: { date in
+                let c = Calendar.current.dateComponents([.hour, .minute], from: date)
+                let minutes = (c.hour ?? 7) * 60 + (c.minute ?? 0)
+                briefMinutes = minutes
+                CoachBriefScheduler.setTimeMinutes(minutes, generateBrief: { await coach.generateBrief() })
+            })
+    }
+
+    /// An edited system prompt from the classic Coach settings still frames every reply; say so, and offer
+    /// the default back. (How Coach should answer now lives in My Memory.)
+    private var customInstructions: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(String(localized: "Coach instructions"))
+                .pulseText(.cardTitle)
+                .foregroundStyle(PulseTheme.textPrimary)
+            Text(String(localized: "Your own instructions, edited in the classic interface, frame every reply. To tell Coach how to answer here, add a Preferences memory in My Memory."))
+                .pulseText(.rowSubline)
+                .foregroundStyle(PulseTheme.textTertiary)
+                .fixedSize(horizontal: false, vertical: true)
+            Button { coach.resetSystemPrompt() } label: { Text(String(localized: "Use the default instructions")) }
+                .buttonStyle(.pulseNested)
+        }
+        .padding(.horizontal, 4)
     }
 
     // MARK: Connected
@@ -358,23 +448,45 @@ struct PulseAIProviderForm: View {
         attempted = false
     }
 
+    /// The engine saves a key for the provider set at that moment, so the provider is switched first; if the
+    /// key cannot be saved (the Keychain refused it), the provider, model and server it had are put back, so
+    /// a failed Connect leaves the working setup as it was.
     private func connect() {
         attempted = true
         let key = keyDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+        let before = Setup(provider: coach.provider, model: coach.model, baseURL: coach.customBaseURL,
+                           authHeader: coach.customAuthHeader)
         coach.provider = provider
         if provider == .custom {
             coach.customBaseURL = baseURL.trimmingCharacters(in: .whitespacesAndNewlines)
             coach.customAuthHeader = authHeader
             if !key.isEmpty { coach.setKey(key) }
-            guard coach.errorText == nil else { return }
+            guard coach.errorText == nil else { return restore(before) }
             coach.connectCustom()
         } else {
             if !model.isEmpty { coach.model = model }
             coach.setKey(key)
-            guard coach.errorText == nil else { return }
+            guard coach.errorText == nil else { return restore(before) }
         }
         keyDraft = ""
         onConnected()
+    }
+
+    private struct Setup {
+        let provider: AIProvider
+        let model: String
+        let baseURL: String
+        let authHeader: CustomAIAuthHeader
+    }
+
+    private func restore(_ setup: Setup) {
+        let error = coach.errorText
+        coach.provider = setup.provider
+        coach.model = setup.model
+        coach.customBaseURL = setup.baseURL
+        coach.customAuthHeader = setup.authHeader
+        // Switching the provider back clears the engine's error; the wearer still needs to read it.
+        coach.errorText = error
     }
 }
 
