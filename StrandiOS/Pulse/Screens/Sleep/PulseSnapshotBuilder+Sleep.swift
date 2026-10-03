@@ -369,7 +369,7 @@ extension PulseSnapshotBuilder {
     }
 
     /// Linear-interpolated quantile of an already-sorted, non-empty array (the typical-range box).
-    static func quantile(_ sorted: [Double], _ q: Double) -> Double {
+    private static func quantile(_ sorted: [Double], _ q: Double) -> Double {
         guard sorted.count > 1 else { return sorted.first ?? 0 }
         let pos = q * Double(sorted.count - 1)
         let lo = Int(pos)

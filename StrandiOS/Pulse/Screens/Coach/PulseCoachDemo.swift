@@ -32,7 +32,7 @@ enum PulseCoachDemo {
             for _ in 0..<40 where model.home == nil {
                 try? await Task.sleep(nanoseconds: 150_000_000)
             }
-            return model.home.map { PulseHomeOutlook.seed($0, evening: false) }
+            return model.home.map { PulseDailyOutlook.compose(home: $0, facts: nil, evening: false).plainText }
         case "cycle":
             let today = Repository.localDayKey(Date())
             let snapshot = await model.build(dayOffset: 0) { builder, request -> CycleInsightsSnapshot? in

@@ -99,11 +99,7 @@ struct PulseActivitySettingsRoute: PulseScreenRoute {
     var view: some View { PulseActivitySettingsView() }
 }
 
-/// App Settings › AI SETTINGS ("✕", profile-community-2026/55).
-struct PulseAISettingsRoute: PulseScreenRoute {
-    var presentation: PulsePresentation { .sheet }
-    var view: some View { PulseAISettingsView() }
-}
+// App Settings › AI SETTINGS opens `PulseAISettingsRoute`, defined with its page in Screens/Coach/.
 
 /// App Settings › DATA EXPORT ("✕", health-more-2026/25).
 struct PulseDataExportRoute: PulseScreenRoute {

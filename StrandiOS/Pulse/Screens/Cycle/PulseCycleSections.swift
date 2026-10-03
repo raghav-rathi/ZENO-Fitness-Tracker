@@ -429,7 +429,7 @@ struct PulseCyclePatternsSection: View {
             Text(row.range)
                 .pulseText(.secondary)
                 .foregroundStyle(PulseTheme.textTertiary)
-            PulseCycleDotStrip(dots: row.dots)
+            PulseCyclePatternDotStrip(dots: row.dots)
                 .frame(height: 8)
                 .padding(.top, 6)
             if let note = row.note {
@@ -444,7 +444,7 @@ struct PulseCyclePatternsSection: View {
 }
 
 /// One dot per cycle day in its phase colour; days still to come dimmed, days without a phase grey.
-struct PulseCycleDotStrip: View {
+struct PulseCyclePatternDotStrip: View {
     let dots: [CycleInsightsSnapshot.Patterns.Dot]
 
     var body: some View {

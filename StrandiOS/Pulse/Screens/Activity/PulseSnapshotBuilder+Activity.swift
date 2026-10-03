@@ -499,7 +499,7 @@ extension PulseSnapshotBuilder {
         }
     }
 
-    static func quantile(_ sorted: [Double], _ q: Double) -> Double {
+    private static func quantile(_ sorted: [Double], _ q: Double) -> Double {
         guard !sorted.isEmpty else { return 0 }
         let position = q * Double(sorted.count - 1)
         let lower = Int(position)
