@@ -96,4 +96,23 @@ final class PulseChallengeStore {
     }
     #endif
 }
+
+/// What another screen needs to show a running challenge (§3.41: "while one runs, a Home coaching card"):
+/// the running challenges, measured through the same builder as the Challenges pages, so a card and the
+/// page it opens (`PulseChallengeDetailRoute(id:)`) cannot disagree.
+///
+///     let running = await PulseChallengeFeed.running(model)
+///     // "Great start!": PulseChallengeText.headline(running[0]), PulseChallengeText.detail(running[0])
+@MainActor
+enum PulseChallengeFeed {
+    static func running(_ model: PulseModel) async -> [ChallengeSnapshot] {
+        let today = Repository.localDayKey(Date())
+        let stored = PulseChallengeStore.shared.challenges.filter { $0.leftOn == nil && $0.definition.endDay >= today }
+        guard !stored.isEmpty,
+              let snapshot = await model.build(dayOffset: 0, { builder, request in
+                  await builder.challenges(request, stored: stored)
+              }) else { return [] }
+        return snapshot.items.filter { $0.status.phase == .running }
+    }
+}
 #endif

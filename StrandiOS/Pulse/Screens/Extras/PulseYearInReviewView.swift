@@ -39,6 +39,18 @@ struct PulseYearInReviewView: View {
 
     private var reviewYear: Int { year ?? PulseSnapshotBuilder.reviewYear(now: Date()) }
 
+    /// Whether Home's "Your 2026 in Review ›" card is in season (§3.39 [Z]: 1 December to 15 January). The
+    /// Trends INSIGHTS row can open the story any time (a "so far" review outside the season).
+    static func isInSeason(_ now: Date = Date(), calendar: Calendar = .current) -> Bool {
+        let c = calendar.dateComponents([.month, .day], from: now)
+        return c.month == 12 || (c.month == 1 && (c.day ?? 1) <= 15)
+    }
+
+    /// The card's title: "Your 2025 in Review".
+    static func seasonTitle(_ now: Date = Date()) -> String {
+        String(localized: "Your \(String(PulseSnapshotBuilder.reviewYear(now: now))) in Review")
+    }
+
     private var slides: [YearReviewSlide] {
         snapshot.map(YearReviewSlide.slides(for:)) ?? []
     }
