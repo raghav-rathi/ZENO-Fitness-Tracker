@@ -4,10 +4,10 @@ import StrandDesign
 
 // MARK: - Header (WHOOP_UI_SPEC §1.4)
 
-/// The header row: a 32 pt row starting at the safe-area top. At the left the avatar (→ Profile) with the
-/// day-streak pill tucked under it (→ Day Streak; today only), the "‹ TODAY ›" pager in the centre (its
-/// label opens the calendar), the strap's battery and status at the right (→ Device Settings), its glyph
-/// 23 pt from the screen edge. Hit areas stay 44 pt; they overflow the row.
+/// The header row: a 32 pt row starting at the safe-area top. At the left the avatar (→ Profile, pushed)
+/// with the day-streak pill tucked under it (→ Day Streak, pushed; today only), the "‹ TODAY ›" pager in
+/// the centre (its label opens the calendar), the strap's battery and status at the right (→ Device
+/// Settings), its glyph 23 pt from the screen edge. Hit areas stay 44 pt; they overflow the row.
 struct PulseHomeHeader: View {
     @Environment(PulseModel.self) private var model
     @Environment(\.pulseNavigator) private var navigator
@@ -18,7 +18,7 @@ struct PulseHomeHeader: View {
             HStack(spacing: 0) {
                 ZStack(alignment: .leading) {
                     if let streak = model.home?.streak, model.home?.day.isToday == true, streak > 0 {
-                        Button { openKeepingClassicModal(PulseRoute.dayStreak.forExistingEntryPoint) } label: {
+                        Button { navigator.open(.dayStreak) } label: {
                             PulseStreakPill(days: streak)
                                 .contentShape(Rectangle())
                         }
@@ -27,7 +27,7 @@ struct PulseHomeHeader: View {
                         .accessibilityHint(String(localized: "Opens your day streak"))
                         .transition(.opacity)
                     }
-                    PulseAvatarButton { openKeepingClassicModal(PulseRoute.profile.forExistingEntryPoint) }
+                    PulseAvatarButton { navigator.open(.profile) }
                 }
                 Spacer(minLength: 0)
                 // Device Settings is a full-screen modal (§1.6); its classic stand-in opens as a sheet.
@@ -47,23 +47,22 @@ struct PulseHomeHeader: View {
             PulseCalendarSheet()
         }
     }
-
-    /// Opens a rebuilt Pulse screen the way the spec presents it (Profile and Day Streak push), and its
-    /// classic stand-in modally with "Done", as the header always opened it.
-    private func openKeepingClassicModal(_ route: PulseRoute) {
-        if route.isClassic { navigator.present(route) } else { navigator.open(route) }
-    }
 }
 
-/// The wearer's avatar (31 pt; the photo, else a person outline on white 10%), ringed in the page colour
-/// so it reads apart from the streak pill under it.
+/// The wearer's avatar (31 pt): the photo, else the initials of the name Edit Profile stores on their
+/// colour disc, else a person outline on white 10%, exactly as Profile draws it. Ringed in the page
+/// colour so it reads apart from the streak pill under it.
 struct PulseAvatarButton: View {
     let action: () -> Void
     @EnvironmentObject private var profile: ProfileStore
+    /// Observed so the initials follow an edit; read through `PulseProfileIdentity.storedName`, the
+    /// trimmed name Profile shows.
+    @AppStorage(PulseProfileIdentity.nameKey) private var storedName = ""
 
     var body: some View {
         Button(action: action) {
-            PulseAvatar(imageData: profile.avatarImageData, name: nil, size: PulseTheme.Header.avatar)
+            PulseAvatar(imageData: profile.avatarImageData, name: PulseProfileIdentity.storedName,
+                        size: PulseTheme.Header.avatar)
                 .background(Circle().fill(PulseTheme.pageTop).padding(-1.5))
                 .padding((PulseTheme.Layout.minTapTarget - PulseTheme.Header.avatar) / 2)
                 .contentShape(Rectangle())
