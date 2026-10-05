@@ -740,7 +740,7 @@ actor PulseSnapshotBuilder {
     func stressSummary(_ r: PulseRequest) async -> PulseStressSummary? {
         guard let day = await stressDay(r) else { return nil }
         return PulseStressSummary(score: day.gaugeLevel?.level, at: day.latest?.at, dayKey: day.dayKey,
-                                  points: day.points, chartEnd: day.chartEnd, hours: day.hours,
+                                  points: day.points, chartEnd: day.chartEnd, window: day.window, hours: day.hours,
                                   maskedHours: day.maskedHours, isToday: day.isToday)
     }
 

@@ -138,8 +138,20 @@ enum PulseDashboardViews {
                                     .foregroundStyle(PulseTheme.textPrimary)
                             }
                         }
-                        PulseStressChart(points: points, periods: periods, now: stress?.chartEnd,
-                                         currentLevel: stress?.shown, xLabels: xLabels)
+                        if let stress {
+                            // The Stress Monitor's own chart over its own window, so the card and the screen it
+                            // opens draw the same span, times and gridlines (completeness-critic/13).
+                            HealthStressDayChart(points: points, periods: periods, window: stress.window,
+                                                 now: stress.chartEnd, height: 150,
+                                                 emptyMessage: stress.isToday
+                                                    ? String(localized: "The day fills in as your strap records heart rate.")
+                                                    : String(localized: "No stress readings for this day."),
+                                                 showsZoom: false, grid: PulseTheme.gridOnCard)
+                        } else {
+                            Text(String(localized: "No stress readings for this day."))
+                                .pulseText(.secondary)
+                                .foregroundStyle(PulseTheme.textSecondary)
+                        }
                     }
                 }
                 .contentShape(Rectangle())
@@ -166,17 +178,6 @@ enum PulseDashboardViews {
             }
             return out
         }
-
-        /// The chart's x labels: four times across the span it draws (its points, periods and end), the last
-        /// one where the curve ends.
-        private var xLabels: [String] {
-            let end = stress?.chartEnd.map { [$0] } ?? []
-            let dates = points.map(\.date) + periods.flatMap { [$0.start, $0.end] } + end
-            guard let lo = dates.min(), let hi = dates.max(), hi > lo else { return [] }
-            let step = hi.timeIntervalSince(lo) / 3
-            return (0...3).map { PulseFormat.clock(lo.addingTimeInterval(step * Double($0))) }
-        }
-
     }
 
     /// STRAIN & RECOVERY ⓘ: the seven days ending on the selected one, Strain against Recovery, on a

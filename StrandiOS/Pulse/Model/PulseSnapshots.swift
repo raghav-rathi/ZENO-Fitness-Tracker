@@ -293,6 +293,9 @@ struct PulseStressSummary: Equatable {
     /// they end (now today, the last reading on a past day, nil on a past day without one).
     let points: [PulseTimeValue]
     let chartEnd: Date?
+    /// The Stress Monitor chart's window (the 24 h ending on the day's latest reading), so Home's card draws
+    /// the same span with the same times as the screen it opens.
+    let window: ClosedRange<Date>
     /// The day's own scored hours.
     let hours: [DaytimeStress.HourPoint]
     let maskedHours: Int
