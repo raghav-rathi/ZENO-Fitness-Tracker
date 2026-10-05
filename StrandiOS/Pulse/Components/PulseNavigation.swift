@@ -70,14 +70,18 @@ struct PulseInfoButton: View {
     }
 }
 
-/// "✕", white, for a modal flow's root.
+/// "✕", white, for a modal flow's root: WHOOP's bold cross, ≈17 pt across with a ≈2.5 pt stroke
+/// (reviews/r134, profile-community-2026/55: 51–52 px at 3x), in a 44 pt frame. A `compact` one keeps the
+/// lighter 17 pt Regular cross (≈13 pt across) for a dialog card's corner, where WHOOP's is smaller still
+/// (onboarding/41).
 struct PulseCloseButton: View {
+    var compact = false
     let action: () -> Void
 
     var body: some View {
         Button(action: action) {
             Image(systemName: "xmark")
-                .font(.system(size: 17, weight: .regular))
+                .font(compact ? .system(size: 17, weight: .regular) : .system(size: 22, weight: .semibold))
                 .foregroundStyle(PulseTheme.textPrimary)
                 .frame(width: PulseTheme.Layout.minTapTarget, height: PulseTheme.Layout.minTapTarget)
                 .contentShape(Rectangle())

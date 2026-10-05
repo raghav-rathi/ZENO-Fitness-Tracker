@@ -485,8 +485,16 @@ enum PulseFormat {
         return "[\(weekday)] \(clock(start))"
     }
 
-    /// A clock time for a real instant, in the device zone, honouring the Clock format setting.
-    static func clock(_ date: Date) -> String { AppClock.hourMinute(date) }
+    /// A clock time for a real instant, in the device zone, honouring the Clock format setting, with a full
+    /// space before AM / PM as WHOOP prints it ("6:21 AM", help-center/91, deep-dives-2026/12).
+    static func clock(_ date: Date) -> String { wordSpaced(AppClock.hourMinute(date)) }
+
+    /// `time` with the narrow no-break space iOS puts before AM / PM (U+202F, which reads "6:21AM" in the
+    /// condensed numerals) widened to a full one (U+00A0), so a time still never wraps before its AM / PM.
+    /// `AppClock` keeps the narrow space for the classic and macOS screens.
+    static func wordSpaced(_ time: String) -> String {
+        time.replacingOccurrences(of: "\u{202F}", with: "\u{00A0}")
+    }
 
     /// The same clock time without its AM / PM ("9:32", "23:32"), for the big Tonight's Sleep times
     /// (WHOOP prints none; VoiceOver still hears `clock(_:)`).

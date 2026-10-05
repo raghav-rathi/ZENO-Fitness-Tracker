@@ -124,10 +124,18 @@ enum PulseTheme {
     /// The typical-range band behind a Trend View line and its legend swatch.
     static let typicalBand = Color.white.opacity(0.08)
     static let typicalSwatch = Color.white.opacity(0.25)
-    /// The hatched track's stripes (the empty part of zone, stage and impact bars).
-    static let hatch = Color.white.opacity(0.07)
+    /// The typical-range box over a zone, stage or level bar: a white 10% veil over bar and track alike
+    /// (help-center/82: #479AC2 → #5AA4C7 on the bar; deep-dives-2026/15: the stripes show through).
+    static let typicalBox = Color.white.opacity(0.10)
+    /// The hatched track's stripes (the empty part of zone, stage and stress-level bars): white 10% over the
+    /// card, as WHOOP's #35393B stripes on its #1E2326 card (deep-dives-2026/14, /15), not the spec's 7%.
+    static let hatch = Color.white.opacity(0.10)
     /// A chart's dashed average line and the "AVG." pill.
     static let averageLine = Color.white.opacity(0.8)
+    /// The dark navy core inside a chart's ringed point, far darker than the card and the area under the
+    /// line (WHOOP's cores sample #0D1D25–#0C202A on deep-dives-2026/16 and /19d, and the same in the
+    /// Strain & Recovery chart on completeness-critic/13).
+    static let lineMarkerCore = Color(hex: "#0C202A")
     /// The contributor callout's radial glow at its pointer and its top-lit 1 pt rim.
     static let calloutGlow = Color.white.opacity(0.10)
     static let calloutRim = Color.white.opacity(0.08)

@@ -99,7 +99,10 @@ struct PulseSectionHeader: View {
     }
 }
 
-/// "CUSTOMIZE ✎" / "EDIT ✎" / "VIEW ALL →": 11 pt Bold caps plus a 12 pt glyph, white.
+/// "CUSTOMIZE ✎" / "EDIT ✎" / "VIEW ALL →": 11 pt Bold caps plus a white glyph. The pencil takes the size
+/// of WHOOP's, ≈15 pt and ≈10 pt after the word (deep-dives-2026/56, journal-plan-2026/32: 47 × 45 px at
+/// 3x), where a 12 pt Semibold one read as a short slash; SF Symbols has no open-outline pencil, so it stays
+/// the solid one. The arrow stays 12 pt Semibold.
 struct PulseTextAccessory: View {
     let title: String
     let symbol: String
@@ -109,7 +112,8 @@ struct PulseTextAccessory: View {
         Button(action: action) {
             HStack(spacing: 6) {
                 Text(title).pulseText(.label)
-                Image(systemName: symbol).font(.system(size: 12, weight: .semibold))
+                Image(systemName: symbol)
+                    .font(isPencil ? .system(size: 20, weight: .regular) : .system(size: 12, weight: .semibold))
             }
             .foregroundStyle(PulseTheme.textPrimary)
             .frame(minHeight: PulseTheme.Layout.minTapTarget)
@@ -117,6 +121,9 @@ struct PulseTextAccessory: View {
         }
         .buttonStyle(PulsePressStyle())
     }
+
+    /// The ✎ accessories (CUSTOMIZE, EDIT, Plan's EDIT PLAN) draw the larger pencil.
+    private var isPencil: Bool { symbol == "pencil" }
 }
 
 /// The white rounded "+" square on the right of "My Day" (§1.3): black glyph, radius 12, 36 pt at the

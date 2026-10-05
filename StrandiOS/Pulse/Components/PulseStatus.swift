@@ -153,7 +153,9 @@ struct PulseMiniSegments: View {
 }
 
 /// The deep dives' achievement chip: a 30 pt capsule holding a pillar's mini badge and a count
-/// (§1.5, §2.6 item 23). ZENO draws the badge with SF Symbols (no WHOOP badge art).
+/// (§1.5, §2.6 item 23). ZENO draws the badge with SF Symbols (no WHOOP badge art), scaled to fill a 22 pt
+/// box as WHOOP's badges do (deep-dives-2026/17b: shield ≈19 × 22 pt beside "38"; /57: diamond ≈22 × 22 pt
+/// beside "6"), so the badge, not the count, leads the chip.
 struct PulseAchievementChip: View {
     /// The badge glyph: "hexagon.fill" (sleep), "shield.fill" (recovery), "diamond.fill" (strain).
     let symbol: String
@@ -163,9 +165,10 @@ struct PulseAchievementChip: View {
     var body: some View {
         HStack(spacing: 6) {
             Image(systemName: symbol)
-                .font(.system(size: 14, weight: .semibold))
+                .resizable()
+                .scaledToFit()
                 .foregroundStyle(tint)
-                .frame(width: 18, height: 18)
+                .frame(width: 22, height: 22)
             Text(verbatim: "\(count)")
                 .font(PulseType.numeral(15, hero: true))
                 .foregroundStyle(PulseTheme.textPrimary)

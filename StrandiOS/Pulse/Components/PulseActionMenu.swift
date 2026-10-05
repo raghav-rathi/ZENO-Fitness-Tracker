@@ -41,11 +41,14 @@ enum PulseActionMenuItem: String, CaseIterable, Identifiable {
         }
     }
 
+    /// The spec's stopwatch, bare plus, weight-lifter, notebook-and-pencil and camera (§1.3, reviews/03).
+    /// SF Symbols has no notebook with a pencil; the journal keeps the page-and-pencil Pulse uses for it
+    /// everywhere else.
     var symbol: String {
         switch self {
         case .startActivity: return "stopwatch"
-        case .addActivity: return "plus.circle"
-        case .strengthTrainer: return "dumbbell"
+        case .addActivity: return "plus"
+        case .strengthTrainer: return "figure.strengthtraining.traditional"
         case .journal: return "square.and.pencil"
         case .zenoLive: return "camera"
         case .breathe: return "wind"
