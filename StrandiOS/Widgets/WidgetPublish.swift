@@ -23,6 +23,13 @@ extension WidgetSnapshot {
         )
     }
 
+    /// The Effort / Strain number as the glance surfaces print it (#313): one decimal on WHOOP's 0–21 axis, a
+    /// whole number on the native 0–100 one. Shared by this publish and the live-HR Live Activity, so the two
+    /// can never print the same day's score differently.
+    static func glanceEffortText(_ stored: Double, scale: EffortScale) -> String {
+        scale == .whoop ? UnitFormatter.effortDisplay(stored, scale: .whoop) : "\(Int(stored.rounded()))"
+    }
+
     /// Build a glance snapshot from the live app state and publish it to the shared App Group, then
     /// ask WidgetKit to refresh. Called when the app becomes active and after a Health sync.
     ///
@@ -69,17 +76,13 @@ extension WidgetSnapshot {
         // #313: honour the user's Effort scale at publish time. The widget extension cannot read the
         // app's plain `@AppStorage(UnitPrefs.effortScaleKey)` (it is not in the App Group), so we
         // pre-format the display string here and keep the 0–100 int for the ring fill (the fill
-        // fraction is scale-independent: 38/100 == 8.0/21).
+        // fraction is scale-independent: 38/100 == 8.0/21). The resolved scale is WHOOP's 0–21 under
+        // Pulse, whatever the setting says, and so are the names published below.
         let effortScale = UnitPrefs.resolveEffortScale(
             UserDefaults.standard.string(forKey: UnitPrefs.effortScaleKey) ?? ""
         )
         let strain = day?.strain
-        let effortDisplay: String? = strain.map { stored in
-            if effortScale == .whoop {
-                return String(format: "%.1f", UnitFormatter.effortValue(stored, scale: .whoop))
-            }
-            return "\(Int(stored.rounded()))"
-        }
+        let effortDisplay: String? = strain.map { glanceEffortText($0, scale: effortScale) }
         // #2040: today's stress curve. Self-gating on a cheap heart-rate fingerprint, so a publish that
         // changed nothing costs one indexed COUNT and no rows. Only the FULL path scores it; the live
         // fast path below reuses the previous snapshot and so carries the curve forward untouched.
@@ -111,6 +114,8 @@ extension WidgetSnapshot {
             restingHr: day?.restingHr,
             effortDisplay: effortDisplay,
             effortWhoop: effortScale == .whoop,
+            // The ring names follow the interface the app runs, like everything else on the Pulse path.
+            pulseVocabulary: ScoreVocabulary.current == .pulse,
             // nil when the curve could not be scored at all, which must not blank a widget that already
             // has one: carry the stored values forward instead of publishing an absence.
             stressSeries: stressPoints ?? storedStress?.stressSeries,
@@ -125,11 +130,14 @@ extension WidgetSnapshot {
     /// though none of the score fields could have changed. Reusing the last full snapshot keeps every score
     /// byte-identical and changes only the three live fields. A cold start with no snapshot falls back to a
     /// full build so this fast path can never publish an incomplete first glance. The first live update
-    /// after a local-day rollover also takes the full path so the score anchor advances with Today.
+    /// after a local-day rollover also takes the full path so the score anchor advances with Today, and so
+    /// does the first one after a switch between the Pulse and classic interfaces: the score names and the
+    /// Effort scale both follow the interface, and only the full build re-derives them.
     @MainActor
     static func publishLive(from model: AppModel) async {
         let now = Date()
-        guard var snap = load(), !liveUpdateRequiresFullBuild(previous: snap, now: now) else {
+        guard var snap = load(), !liveUpdateRequiresFullBuild(previous: snap, now: now),
+              snap.pulseVocabulary == (ScoreVocabulary.current == .pulse) else {
             await publish(from: model)
             return
         }
