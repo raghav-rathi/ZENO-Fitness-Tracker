@@ -13,13 +13,26 @@ public struct NOOPActivityAttributes: ActivityAttributes {
         // Effort / strain on NOOP's 0–100 axis (#446) — one more stat in the Dynamic Island expanded
         // region. OPTIONAL with a nil default so an activity started by an older build still decodes.
         public var effort: Int?
+        /// `effort` as the banner prints it, on the resolved Effort scale (WHOOP's 0–21 under Pulse), formatted
+        /// by the app like the widget's `effortDisplay`. Nil from an older build: the banner falls back to `effort`.
+        public var effortDisplay: String?
+        /// Which names the banner gives the scores (`GlanceScoreNames`): true under the iPhone's Pulse interface,
+        /// false in the classic one, nil (an older build) read as Pulse. Published for the same reason as the
+        /// widget's `pulseVocabulary`.
+        public var pulseVocabulary: Bool?
 
-        public init(bpm: Int?, recovery: Int?, bonded: Bool, effort: Int? = nil) {
+        public init(bpm: Int?, recovery: Int?, bonded: Bool, effort: Int? = nil,
+                    effortDisplay: String? = nil, pulseVocabulary: Bool? = nil) {
             self.bpm = bpm
             self.recovery = recovery
             self.bonded = bonded
             self.effort = effort
+            self.effortDisplay = effortDisplay
+            self.pulseVocabulary = pulseVocabulary
         }
+
+        /// The names to give the scores on the banner.
+        public var scoreNames: GlanceScoreNames { GlanceScoreNames(pulse: pulseVocabulary) }
     }
 
     /// Static title shown for the session.

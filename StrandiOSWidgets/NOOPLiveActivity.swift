@@ -13,6 +13,12 @@ struct NOOPLiveActivity: Widget {
         context.isStale ? nil : context.state.bpm
     }
 
+    /// The day's Effort / Strain as the app formatted it on the resolved scale (0–21 under Pulse), or the
+    /// whole 0–100 number an older build sent; nil when the day has none.
+    static func shownEffort(_ context: ActivityViewContext<NOOPActivityAttributes>) -> String? {
+        context.state.effortDisplay ?? context.state.effort.map { "\($0)" }
+    }
+
     var body: some WidgetConfiguration {
         ActivityConfiguration(for: NOOPActivityAttributes.self) { context in
             // Lock Screen / banner presentation.
@@ -28,13 +34,14 @@ struct NOOPLiveActivity: Widget {
                         .foregroundStyle(StrandPalette.textPrimary)
                 }
                 Spacer()
-                // Charge + Effort (#446) on the banner, mirroring the Dynamic Island expanded stats.
+                // Recovery + Strain (#446) on the banner, mirroring the Dynamic Island expanded stats, named
+                // as the app's interface names them (`GlanceScoreNames`).
                 HStack(spacing: 12) {
                     if let r = context.state.recovery {
-                        bannerStat(label: "Charge", value: "\(r)%")
+                        bannerStat(label: context.state.scoreNames.recovery, value: "\(r)%")
                     }
-                    if let e = context.state.effort {
-                        bannerStat(label: "Effort", value: "\(e)")
+                    if let e = Self.shownEffort(context) {
+                        bannerStat(label: context.state.scoreNames.strain, value: e)
                     }
                 }
             }
@@ -48,13 +55,13 @@ struct NOOPLiveActivity: Widget {
                         .foregroundStyle(StrandPalette.statusCritical)
                 }
                 DynamicIslandExpandedRegion(.trailing) {
-                    // Charge + Effort (#446) — one more stat alongside the leading live HR.
+                    // Recovery + Strain (#446) — one more stat alongside the leading live HR.
                     HStack(spacing: 10) {
                         if let r = context.state.recovery {
-                            statColumn(label: "Charge", value: "\(r)%")
+                            statColumn(label: context.state.scoreNames.recovery, value: "\(r)%")
                         }
-                        if let e = context.state.effort {
-                            statColumn(label: "Effort", value: "\(e)")
+                        if let e = Self.shownEffort(context) {
+                            statColumn(label: context.state.scoreNames.strain, value: e)
                         }
                     }
                 }

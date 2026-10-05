@@ -4,7 +4,7 @@ import Foundation
 /// via an App Group. The app writes it; the widget reads it. Keeping it tiny avoids any cross-process
 /// database access — the widget never opens SQLite.
 public struct WidgetSnapshot: Codable, Equatable {
-    public var recovery: Int?    // Charge (0–100)
+    public var recovery: Int?    // Charge / Recovery (0–100)
     public var bpm: Int?
     public var batteryPct: Int?
     public var bonded: Bool
@@ -21,6 +21,11 @@ public struct WidgetSnapshot: Codable, Equatable {
     public var effortDisplay: String?
     /// True when `effortDisplay` is on WHOOP's 0–21 axis; false/nil means 0–100. Accessibility only.
     public var effortWhoop: Bool?
+    /// Which names the glance gives the three scores, published for the same reason as `effortDisplay`: the
+    /// extension cannot read the app's `pulse.enabled` switch (it lives outside the App Group). True under the
+    /// iPhone's Pulse interface (Recovery / Strain / Sleep), false in the classic one (Charge / Effort / Rest);
+    /// nil, from an older build, reads as Pulse (`GlanceScoreNames`).
+    public var pulseVocabulary: Bool?
     /// The last `HrTrace.windowSec` of heart rate, one point per minute, for the trace widget (#1957).
     ///
     /// Folded in by `save()` rather than by the callers that build a snapshot, which is the twin of the
@@ -43,7 +48,7 @@ public struct WidgetSnapshot: Codable, Equatable {
 
     public init(recovery: Int?, bpm: Int?, batteryPct: Int?, bonded: Bool, updated: Date,
                 effort: Int? = nil, rest: Int? = nil, hrv: Int? = nil, restingHr: Int? = nil,
-                effortDisplay: String? = nil, effortWhoop: Bool? = nil,
+                effortDisplay: String? = nil, effortWhoop: Bool? = nil, pulseVocabulary: Bool? = nil,
                 hrSeries: [HrPoint]? = nil, stressSeries: [StressPoint]? = nil,
                 stressDay: Int? = nil) {
         self.recovery = recovery
@@ -57,10 +62,14 @@ public struct WidgetSnapshot: Codable, Equatable {
         self.restingHr = restingHr
         self.effortDisplay = effortDisplay
         self.effortWhoop = effortWhoop
+        self.pulseVocabulary = pulseVocabulary
         self.hrSeries = hrSeries
         self.stressSeries = stressSeries
         self.stressDay = stressDay
     }
+
+    /// The names to give the three scores (see `pulseVocabulary`).
+    public var scoreNames: GlanceScoreNames { GlanceScoreNames(pulse: pulseVocabulary) }
 
     /// The curve to DRAW: what was published, unless it belongs to a day that is over.
     ///
@@ -142,11 +151,12 @@ public struct WidgetSnapshot: Codable, Equatable {
     }
 
     public static var placeholder: WidgetSnapshot {
-        // Gallery / pre-publish stand-in: realistic Charge · Effort · Rest on the 0–100 axis so the
-        // three-ring Home Screen layouts (and the large grid) preview with filled arcs, not dashes.
+        // Gallery / pre-publish stand-in: realistic Recovery · Strain · Sleep so the three-ring Home Screen
+        // layouts (and the large grid) preview with filled arcs, not dashes. With no vocabulary published it
+        // speaks the iPhone app's default, Pulse, so Strain reads on its 0–21 axis (38/100 is 8.0/21).
         WidgetSnapshot(recovery: 72, bpm: 58, batteryPct: 84, bonded: true, updated: Date(),
                        effort: 38, rest: 81, hrv: 64, restingHr: 52,
-                       effortDisplay: "38", effortWhoop: false)
+                       effortDisplay: "8.0", effortWhoop: true)
     }
 
     /// Honest runtime state when the app has not published a readable snapshot yet. Unlike
@@ -223,6 +233,8 @@ public struct WidgetSnapshot: Codable, Equatable {
             || previous.restingHr != next.restingHr
             || previous.effortDisplay != next.effortDisplay
             || previous.effortWhoop != next.effortWhoop
+            // Switching interfaces renames every ring, so it must reach WidgetKit like a score change.
+            || previous.pulseVocabulary != next.pulseVocabulary
             // The curve joins the comparison (#2040): a publish that scored a fresh hour and changed
             // nothing else would otherwise be deduped away, and the widget would sit an hour behind
             // until some unrelated field moved. The DAY joins it too, so the first publish after
@@ -239,5 +251,31 @@ public struct WidgetSnapshot: Codable, Equatable {
                                             calendar: Calendar = .current) -> Bool {
         guard let previous else { return true }
         return !calendar.isDate(previous.updated, inSameDayAs: now)
+    }
+}
+
+/// The names the glance surfaces (the Home and Lock Screen widget, the live-HR Live Activity) give the three
+/// daily scores, following the interface the app runs (`ScoreVocabulary` in the app, spec §0.3): Recovery,
+/// Strain and Sleep under the iPhone's Pulse interface, Charge, Effort and Rest in the classic one. The app
+/// publishes which applies (`WidgetSnapshot.pulseVocabulary`, `NOOPActivityAttributes.ContentState`), since
+/// the extension cannot read the switch. Plain English: the extension carries no string catalog yet.
+public struct GlanceScoreNames: Equatable {
+    public let recovery: String
+    public let strain: String
+    public let sleep: String
+
+    /// `pulse` as published. Nil (a snapshot from an older build, or none at all, as on a build signed
+    /// without the App Group) reads as Pulse: the iPhone app's default interface, as the app itself reads
+    /// a switch that was never set.
+    public init(pulse: Bool?) {
+        if pulse ?? true {
+            recovery = "Recovery"
+            strain = "Strain"
+            sleep = "Sleep"
+        } else {
+            recovery = "Charge"
+            strain = "Effort"
+            sleep = "Rest"
+        }
     }
 }

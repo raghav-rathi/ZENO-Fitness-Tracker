@@ -59,6 +59,15 @@ enum DataBackup {
         case failure(String)
     }
 
+    /// The store's file could not be located. Names the app as the running interface does: ZENO under the
+    /// iPhone's Pulse interface (its Data Export and Privacy pages show this), NOOP in the classic one and on
+    /// the Mac, whose localized wording stays exactly as it was (`ScoreVocabulary.pick`).
+    private static func cannotLocateDatabase(_ error: Error) -> BackupResult {
+        .failure(ScoreVocabulary.current.pick(
+            classic: String(localized: "Couldn't locate the NOOP database. \(error.localizedDescription)"),
+            pulse: String(localized: "Couldn't locate the ZENO database. \(error.localizedDescription)")))
+    }
+
     // MARK: - Export
 
     /// Checkpoint the store and write the live database as a compressed `.noopbak` (single-entry
@@ -72,11 +81,13 @@ enum DataBackup {
     static func runExport(checkpoint: @escaping () async -> Bool) async -> BackupResult {
         let dbPath: String
         do { dbPath = try StorePaths.defaultDatabasePath() }
-        catch { return .failure(String(localized: "Couldn't locate the NOOP database. \(error.localizedDescription)")) }
+        catch { return cannotLocateDatabase(error) }
 
         let dbURL = URL(fileURLWithPath: dbPath)
         guard FileManager.default.fileExists(atPath: dbPath) else {
-            return .failure(String(localized: "There's no NOOP data to export yet. Import or record some first."))
+            return .failure(ScoreVocabulary.current.pick(
+                classic: String(localized: "There's no NOOP data to export yet. Import or record some first."),
+                pulse: String(localized: "There's no ZENO data to export yet. Import or record some first.")))
         }
 
         // Flush the WAL so the single .sqlite carries everything. Required for ZIP (no sidecar
@@ -138,7 +149,9 @@ enum DataBackup {
     private struct ExportIntegrityFailure: LocalizedError {
         let complaint: String
         var errorDescription: String? {
-            String(localized: "the NOOP database failed its integrity check (SQLite reports: \(DatabaseIntegrity.readableComplaint(complaint))). A backup of it would not restore. Export the WHOOP-format CSV (Settings → Export data) to save what's still readable.")
+            ScoreVocabulary.current.pick(
+                classic: String(localized: "the NOOP database failed its integrity check (SQLite reports: \(DatabaseIntegrity.readableComplaint(complaint))). A backup of it would not restore. Export the WHOOP-format CSV (Settings → Export data) to save what's still readable."),
+                pulse: String(localized: "the ZENO database failed its integrity check (SQLite reports: \(DatabaseIntegrity.readableComplaint(complaint))). A backup of it would not restore. Export the WHOOP-format CSV (Settings → Export data) to save what's still readable."))
         }
     }
 
@@ -306,11 +319,13 @@ enum DataBackup {
     static func writeBackup(checkpoint: @escaping () async -> Bool, to dest: URL) async -> BackupResult {
         let dbPath: String
         do { dbPath = try StorePaths.defaultDatabasePath() }
-        catch { return .failure(String(localized: "Couldn't locate the NOOP database. \(error.localizedDescription)")) }
+        catch { return cannotLocateDatabase(error) }
 
         let dbURL = URL(fileURLWithPath: dbPath)
         guard FileManager.default.fileExists(atPath: dbPath) else {
-            return .failure(String(localized: "There's no NOOP data to export yet."))
+            return .failure(ScoreVocabulary.current.pick(
+                classic: String(localized: "There's no NOOP data to export yet."),
+                pulse: String(localized: "There's no ZENO data to export yet.")))
         }
         // Flush the WAL into the single file (same requirement as the interactive export: a single-file
         // ZIP has no sidecar fallback, so committed pages still in the WAL would otherwise be absent).
@@ -351,7 +366,7 @@ enum DataBackup {
     static func runImport(allowOversize: Bool = false) async -> BackupResult {
         let dbPath: String
         do { dbPath = try StorePaths.defaultDatabasePath() }
-        catch { return .failure(String(localized: "Couldn't locate the NOOP database. \(error.localizedDescription)")) }
+        catch { return cannotLocateDatabase(error) }
 
         #if os(macOS)
         let panel = NSOpenPanel()
@@ -395,7 +410,7 @@ enum DataBackup {
     static func restore(from pickedSource: URL) -> BackupResult {
         let dbPath: String
         do { dbPath = try StorePaths.defaultDatabasePath() }
-        catch { return .failure(String(localized: "Couldn't locate the NOOP database. \(error.localizedDescription)")) }
+        catch { return cannotLocateDatabase(error) }
         return restore(from: pickedSource, toDatabaseAt: dbPath)
     }
 
@@ -447,7 +462,9 @@ enum DataBackup {
 
         // Validate: must be a real SQLite database (magic header "SQLite format 3\0").
         guard isSQLiteFile(at: source) else {
-            return .failure(String(localized: "That file isn't a NOOP backup. It doesn't look like a SQLite database."))
+            return .failure(ScoreVocabulary.current.pick(
+                classic: String(localized: "That file isn't a NOOP backup. It doesn't look like a SQLite database."),
+                pulse: String(localized: "That file isn't a ZENO backup. It doesn't look like a SQLite database.")))
         }
 
         // Reject any backup that isn't a clean GRDB (this-app) backup. The magic check passes for ANY
@@ -459,7 +476,9 @@ enum DataBackup {
         let origin = backupOrigin(of: backupTables)
         let holdsData = backupTables.contains("device") || backupTables.contains("hrSample")
         if origin == .android || (origin == .unknown && holdsData) {
-            return .failure(String(localized: "This isn't a NOOP backup from this app. It's missing the migration bookkeeping a NOOP backup carries (it looks like an Android backup or another app's database), and restoring it would strand your store. To move your history across platforms, export the WHOOP-format CSV on the other device (Settings → Export data) and import that here, or import your original WHOOP / Apple Health export."))
+            return .failure(ScoreVocabulary.current.pick(
+                classic: String(localized: "This isn't a NOOP backup from this app. It's missing the migration bookkeeping a NOOP backup carries (it looks like an Android backup or another app's database), and restoring it would strand your store. To move your history across platforms, export the WHOOP-format CSV on the other device (Settings → Export data) and import that here, or import your original WHOOP / Apple Health export."),
+                pulse: String(localized: "This isn't a ZENO backup from this app. It's missing the migration bookkeeping a ZENO backup carries (it looks like an Android backup or another app's database), and restoring it would strand your store. To move your history across platforms, export the WHOOP-format CSV on the other device (Settings → Export data) and import that here, or import your original WHOOP / Apple Health export.")))
         }
 
         // #1014 defence-in-depth: both gates above read only the FIRST pages of the file — the

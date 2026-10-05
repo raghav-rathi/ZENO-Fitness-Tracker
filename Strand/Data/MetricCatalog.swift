@@ -5,17 +5,59 @@ import StrandAnalytics
 /// higher is better (drives delta tinting). The Metric Explorer + Compare are built from this list.
 struct MetricDescriptor: Identifiable, Hashable {
     let key: String
-    let title: String
+    /// The title as the catalog stores it, which for the three headline scores is the classic
+    /// interface's name (Charge / Effort / Rest). Screens show `title`.
+    let classicTitle: String
+    /// The Pulse interface's title where it differs (the headline scores: Recovery / Strain / Sleep
+    /// Performance, spec §0.3); nil for every other metric.
+    let pulseTitle: String?
+    /// A raw identifier (`inCategory`, the colour-world switches, Pulse's trend pillars compare it), never
+    /// copy: render it through `MetricCatalog.categoryDisplayName`.
     let category: String
+    /// The stored unit. The Effort metric's "/100" is the native axis; screens show
+    /// `displayUnit(effortScale:)`, which follows the resolved scale ("/21" under Pulse).
     let unit: String
     let source: String       // "my-whoop" or "apple-health"
     let icon: String
     let decimals: Int
     let higherIsBetter: Bool?
-    /// A short, plain-English one-liner for the metric (tile subtitle / catalog blurb). Optional —
-    /// only the three headline scores (Charge / Effort / Rest) carry one today; everything else is nil.
-    var description: String? = nil
+    /// A short, plain-English one-liner for the metric (tile subtitle / catalog blurb), classic wording.
+    /// Optional: only the three headline scores carry one today; everything else is nil.
+    let classicDescription: String?
+    /// The Pulse wording of the one-liner where it differs (the Effort blurb names the scale); nil otherwise.
+    let pulseDescription: String?
     var id: String { source + ":" + key }
+
+    init(key: String, title: String, category: String, unit: String, source: String, icon: String,
+         decimals: Int, higherIsBetter: Bool?, description: String? = nil,
+         pulseTitle: String? = nil, pulseDescription: String? = nil) {
+        self.key = key
+        self.classicTitle = title
+        self.pulseTitle = pulseTitle
+        self.category = category
+        self.unit = unit
+        self.source = source
+        self.icon = icon
+        self.decimals = decimals
+        self.higherIsBetter = higherIsBetter
+        self.classicDescription = description
+        self.pulseDescription = pulseDescription
+    }
+
+    /// The metric's name as the running interface says it, resolved when it is READ rather than baked
+    /// into `MetricCatalog.all` (a static, built once): Pulse names the headline scores Recovery, Strain
+    /// and Sleep Performance, the classic interface and the Mac Charge, Effort and Rest (`ScoreVocabulary`).
+    /// Display only. Match metrics on `key` / `source` / `id`, never on this.
+    var title: String {
+        guard let pulseTitle else { return classicTitle }
+        return ScoreVocabulary.current.pick(classic: classicTitle, pulse: pulseTitle)
+    }
+
+    /// The one-liner in the running interface's wording (see `title`).
+    var description: String? {
+        guard let pulseDescription else { return classicDescription }
+        return ScoreVocabulary.current.pick(classic: classicDescription, pulse: pulseDescription)
+    }
 
     /// Human label for the metric's source partition (catalog row caption / detail subtitle).
     var sourceLabel: String {
@@ -128,18 +170,20 @@ enum MetricCatalog {
         d("vitality", String(localized: "Vitality"), "Heart", "", "my-whoop", "sparkles", 0, true),
         d("body_age", String(localized: "Body Age"), "Heart", "yrs", "my-whoop", "figure.stand", 0, false),
 
-        // ── Charge (was Recovery)
+        // ── Charge (was Recovery; Recovery again under Pulse, `pulseTitle`)
         d("recovery", String(localized: "Charge"), "Charge", "%", "my-whoop", "heart.circle", 0, true,
-          String(localized: "How recovered you are, led by HRV versus your personal baseline.")),
+          String(localized: "How recovered you are, led by HRV versus your personal baseline."),
+          pulseTitle: String(localized: "Recovery")),
         d("hrv", String(localized: "Heart Rate Variability"), "Charge", "ms", "my-whoop", "waveform.path.ecg", 0, true),
         d("rhr", String(localized: "Resting Heart Rate"), "Charge", "bpm", "my-whoop", "heart", 0, false),
         d("resp_rate", String(localized: "Respiratory Rate"), "Charge", "rpm", "my-whoop", "lungs", 1, nil),
         d("spo2", String(localized: "Blood Oxygen"), "Charge", "%", "my-whoop", "drop", 0, true),
         d("skin_temp", String(localized: "Skin Temperature"), "Charge", "°C", "my-whoop", "thermometer", 1, nil),
 
-        // ── Rest (was Sleep)
+        // ── Rest (was Sleep; Sleep Performance again under Pulse, `pulseTitle`)
         d("sleep_performance", String(localized: "Rest"), "Rest", "%", "my-whoop", "moon.stars", 0, true,
-          String(localized: "How restorative your sleep was: duration, efficiency, deep+REM, timing.")),
+          String(localized: "How restorative your sleep was: duration, efficiency, deep+REM, timing."),
+          pulseTitle: String(localized: "Sleep Performance")),
         d("in_bed_min", String(localized: "Time in Bed"), "Rest", "min", "my-whoop", "bed.double", 0, nil),
         d("sleep_total_min", String(localized: "Asleep Time"), "Rest", "min", "my-whoop", "moon.zzz", 0, true),
         d("hours_vs_needed_pct", String(localized: "Hours vs Needed"), "Rest", "%", "my-whoop", "gauge.medium", 0, true),
@@ -153,9 +197,12 @@ enum MetricCatalog {
         d("sleep_need_min", String(localized: "Sleep Need"), "Rest", "min", "my-whoop", "gauge", 0, nil),
         d("sleep_debt_min", String(localized: "Sleep Debt"), "Rest", "min", "my-whoop", "exclamationmark.circle", 0, false),
 
-        // ── Effort (was Strain)
+        // ── Effort (was Strain; Strain on 0-21 again under Pulse, `pulseTitle` / `pulseDescription`. The
+        //    stored unit stays "/100": screens show `displayUnit(effortScale:)`, "/21" on the resolved scale.)
         d("strain", String(localized: "Effort"), "Effort", "/100", "my-whoop", "flame", 1, nil,
-          String(localized: "Cardiovascular load for the day, on a 0-100 scale (was 0-21).")),
+          String(localized: "Cardiovascular load for the day, on a 0-100 scale (was 0-21)."),
+          pulseTitle: String(localized: "Strain"),
+          pulseDescription: String(localized: "Cardiovascular load for the day, on a 0-21 scale.")),
         d("steps", String(localized: "Steps"), "Effort", "", "apple-health", "figure.walk", 0, true),
         // WHOOP 5.0 / MG exposes a measured daily step count. Declared AFTER apple-health on purpose:
         // the bare-key `first { key == "steps" }` resolvers (LabBookView, CompareView, the TabRoute
@@ -238,12 +285,14 @@ enum MetricCatalog {
     /// catalog's `category` VALUES stay English identifiers on purpose (`inCategory` and the
     /// colour-world / gradient switches compare them raw), so screens must never feed this
     /// function's output back into matching logic. Unknown values pass through untranslated.
+    /// The three score categories follow the running interface (`ScoreVocabulary`): Recovery, Sleep
+    /// and Strain under Pulse, Charge, Rest and Effort in the classic interface and on the Mac.
     static func categoryDisplayName(_ category: String) -> String {
         switch category {
         case "Heart":     return String(localized: "Heart")
-        case "Charge":    return String(localized: "Charge")
-        case "Rest":      return String(localized: "Rest")
-        case "Effort":    return String(localized: "Effort")
+        case "Charge":    return ScoreVocabulary.current.recovery
+        case "Rest":      return ScoreVocabulary.current.sleep
+        case "Effort":    return ScoreVocabulary.current.strain
         case "Health":    return String(localized: "Health")
         case "Nutrition": return String(localized: "Nutrition")
         case "Mind":      return String(localized: "Mind")
@@ -253,9 +302,10 @@ enum MetricCatalog {
 
     private static func d(_ key: String, _ title: String, _ category: String, _ unit: String,
                           _ source: String, _ icon: String, _ decimals: Int,
-                          _ higherIsBetter: Bool?, _ description: String? = nil) -> MetricDescriptor {
+                          _ higherIsBetter: Bool?, _ description: String? = nil,
+                          pulseTitle: String? = nil, pulseDescription: String? = nil) -> MetricDescriptor {
         MetricDescriptor(key: key, title: title, category: category, unit: unit,
                          source: source, icon: icon, decimals: decimals, higherIsBetter: higherIsBetter,
-                         description: description)
+                         description: description, pulseTitle: pulseTitle, pulseDescription: pulseDescription)
     }
 }

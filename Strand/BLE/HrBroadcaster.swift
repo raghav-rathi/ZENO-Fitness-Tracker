@@ -216,7 +216,11 @@ extension HrBroadcaster: @preconcurrency CBPeripheralManagerDelegate {
             log("HR-out: Bluetooth is off, cannot broadcast")
         case .unauthorized:
             advertising = false
-            statusNote = "NOOP needs Bluetooth permission to broadcast your heart rate."
+            // Shown by Pulse's Device Settings as well as the classic Data Sources, so it names the app as the
+            // running interface does (`ScoreVocabulary`).
+            statusNote = ScoreVocabulary.current.pick(
+                classic: "NOOP needs Bluetooth permission to broadcast your heart rate.",
+                pulse: "ZENO needs Bluetooth permission to broadcast your heart rate.")
             log("HR-out: Bluetooth permission not granted, cannot broadcast")
         case .unsupported:
             advertising = false

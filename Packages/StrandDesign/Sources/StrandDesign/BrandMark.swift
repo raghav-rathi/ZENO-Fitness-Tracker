@@ -26,6 +26,9 @@ public struct BrandMark: View {
     /// Edge length of the square mark; everything scales from this.
     public var size: CGFloat
 
+    /// The app's name, which is what VoiceOver says for the mark (`EnvironmentValues.brandName`).
+    @Environment(\.brandName) private var brandName
+
     public init(size: CGFloat = 120) {
         self.size = size
     }
@@ -51,7 +54,7 @@ public struct BrandMark: View {
         }
         .frame(width: size, height: size)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(Text("NOOP"))
+        .accessibilityLabel(Text(verbatim: brandName))
         .accessibilityAddTraits(.isImage)
     }
 
@@ -114,6 +117,22 @@ public struct BrandMark: View {
         Circle()
             .fill(Color.white)
             .frame(width: coreDiameter, height: coreDiameter)
+    }
+}
+
+// MARK: - The app's name
+
+private struct BrandNameKey: EnvironmentKey {
+    static let defaultValue = "NOOP"
+}
+
+public extension EnvironmentValues {
+    /// The app's name as `BrandMark` speaks it to VoiceOver. StrandDesign cannot tell which app it is drawn
+    /// in, and the name differs (NOOP on the Mac, ZENO on the iPhone's Pulse interface), so the app sets it
+    /// at its root; unset, the mark says "NOOP", as it always has. A brand name, so never translated.
+    var brandName: String {
+        get { self[BrandNameKey.self] }
+        set { self[BrandNameKey.self] = newValue }
     }
 }
 

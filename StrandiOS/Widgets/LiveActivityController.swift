@@ -78,15 +78,20 @@ final class LiveActivityController {
 
     /// #911: recovery and effort come from the SAME shared `Repository.widgetAnchor` the widget and the watch use, so
     /// the banner cannot name a different day at the rollover; memoized, because this runs on every heart-rate tick
-    /// (re-deriving it once scanned the whole history, #1051).
+    /// (re-deriving it once scanned the whole history, #1051). The effort goes out formatted on the resolved scale
+    /// (WHOOP's 0–21 under Pulse), with the interface's score names, exactly as the widget publish sends them.
     private func refreshBanner(appActive: Bool? = nil) {
         guard let model else { return }
         let connected = model.live.connected
         let day = model.repo.cachedWidgetAnchor()
+        let effortScale = UnitPrefs.resolveEffortScale(
+            UserDefaults.standard.string(forKey: UnitPrefs.effortScaleKey) ?? "")
         update(bpm: connected ? (model.bpm ?? model.live.heartRate) : nil,
                recovery: day?.recovery.map { Int($0.rounded()) }, connected: connected, standsAside: standsAside(),
                appActive: appActive ?? (UIApplication.shared.applicationState == .active),
-               effort: day?.strain.map { Int($0.rounded()) })
+               effort: day?.strain.map { Int($0.rounded()) },
+               effortDisplay: day?.strain.map { WidgetSnapshot.glanceEffortText($0, scale: effortScale) },
+               pulseVocabulary: ScoreVocabulary.current == .pulse)
     }
 
     /// Drive the activity from the latest live values (`LiveHRBannerLifecycle` decides start / push / end). Starts
@@ -96,7 +101,7 @@ final class LiveActivityController {
     /// (`standsAside`). Pushed when what it shows changes, and often enough to stay fresh (`LiveHRBannerPushPolicy`,
     /// `staleAfter`).
     private func update(bpm: Int?, recovery: Int?, connected: Bool, standsAside: Bool, appActive: Bool,
-                        effort: Int?) {
+                        effort: Int?, effortDisplay: String?, pulseVocabulary: Bool) {
         guard authInfo.areActivitiesEnabled else { return }
 
         // A banner iOS ended (after about eight hours) or the user swiped away is gone: forget it, so the next time
@@ -142,7 +147,9 @@ final class LiveActivityController {
         // left a fabricated "live" HR standing). No timed end: a timer in a suspended app fires at its next wake,
         // which is typically the strap coming back — exactly when the banner should stay.
         let state = NOOPActivityAttributes.ContentState(bpm: connected ? bpm : nil, recovery: recovery,
-                                                        bonded: connected, effort: effort)
+                                                        bonded: connected, effort: effort,
+                                                        effortDisplay: effortDisplay,
+                                                        pulseVocabulary: pulseVocabulary)
 
         if step == .renew, let old = activity {
             // The fresh banner first, then the old one goes, so the Lock Screen is never without one; if iOS refuses

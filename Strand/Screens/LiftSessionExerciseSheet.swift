@@ -62,7 +62,9 @@ struct LiftSessionExerciseSheet: View {
             primary = known.primaryMuscle
             secondaries = Set(known.secondaryMuscles)
         }
-        .alert("You've saved the most exercises NOOP remembers",
+        .alert(ScoreVocabulary.current.pick(
+                   classic: LocalizedStringKey("You've saved the most exercises NOOP remembers"),
+                   pulse: LocalizedStringKey("You've saved the most exercises ZENO remembers")),
                isPresented: Binding(get: { vocabularyFullLimit != nil },
                                     set: { if !$0 { vocabularyFullLimit = nil } })) {
             Button("OK", role: .cancel) { vocabularyFullLimit = nil }

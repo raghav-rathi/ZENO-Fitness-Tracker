@@ -268,6 +268,9 @@ struct StrandiOSApp: App {
                 // v5 L3: the shared stress check-in nudge surface, so the Breathe screen's passive
                 // card observes the SAME instance the central detector (AppModel.evaluateStress) posts to.
                 .environment(\.stressNudgeCenter, model.stressNudgeCenter)
+                // The logo mark's VoiceOver name (StrandDesign cannot see `ScoreVocabulary`): ZENO under Pulse,
+                // NOOP in the classic tabs, like the rest of each interface's copy. Re-read when the switch flips.
+                .environment(\.brandName, ScoreVocabulary.current.pick(classic: "NOOP", pulse: ScoreVocabulary.appName))
                 .preferredColorScheme(windowColorScheme)
                 // Match SwiftUI format styles to the localization selected by the app's bundles. Language
                 // changes are process-wide on Apple and are applied after the documented reopen.

@@ -238,8 +238,14 @@ enum FolderBackup {
     /// Names iCloud explicitly (#52): the picker can already point anywhere, iCloud Drive included, so
     /// the gap was never the choosing — it was that the result was unidentifiable afterwards. A user on
     /// the internal fallback saw a bare "Backups" and could not tell their backups were on-device only.
+    /// The internal folder is named as the running interface names the app: ZENO under the iPhone's Pulse
+    /// interface (it links to Backup & Sync, which shows this label), NOOP in the classic one
+    /// (`ScoreVocabulary.pick`).
     static func folderLabel() -> String? {
-        if useInternalFolder { return String(localized: "NOOP (in Files)") }
+        if useInternalFolder {
+            return ScoreVocabulary.current.pick(classic: String(localized: "NOOP (in Files)"),
+                                                pulse: String(localized: "ZENO (in Files)"))
+        }
         guard let path = resolveFolder()?.path else { return nil }
         let trail = folderTrail(path: path)
         if isICloudPath(path) {

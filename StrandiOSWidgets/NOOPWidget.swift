@@ -29,8 +29,9 @@ struct NOOPProvider: TimelineProvider {
 }
 
 /// The glanceable widget — the iOS analogue of the macOS menu-bar extra.
-/// Home Screen families mirror Today's hero trio (Charge · Effort · Rest) as score rings. Lock Screen
-/// accessories are compact: a single line, a gauge, or the rectangular glyph-over-value trio.
+/// Home Screen families mirror the hero trio as score rings, named as the app's interface names them
+/// (Recovery · Strain · Sleep under Pulse, Charge · Effort · Rest in the classic tabs: `GlanceScoreNames`).
+/// Lock Screen accessories are compact: a single line, a gauge, or the rectangular glyph-over-value trio.
 struct NOOPWidgetView: View {
     @Environment(\.widgetFamily) private var family
     /// `.fullColor` on the home screen and in the gallery; `.vibrant` or `.accented` on the lock screen,
@@ -40,6 +41,8 @@ struct NOOPWidgetView: View {
     let entry: NOOPEntry
 
     private var snap: WidgetSnapshot { entry.snapshot }
+    /// The three score names, as the app published them with the snapshot.
+    private var names: GlanceScoreNames { snap.scoreNames }
 
     var body: some View {
         switch family {
@@ -82,9 +85,9 @@ struct NOOPWidgetView: View {
 
     private var inlineText: String {
         var parts: [String] = []
-        if let r = snap.recovery { parts.append("Charge \(r)%") }
+        if let r = snap.recovery { parts.append("\(names.recovery) \(r)%") }
         if let b = snap.bpm { parts.append("\(b) bpm") }
-        return parts.isEmpty ? "NOOP" : parts.joined(separator: " · ")
+        return parts.isEmpty ? "ZENO" : parts.joined(separator: " · ")
     }
 
     // MARK: - Lock Screen accessories
@@ -99,7 +102,7 @@ struct NOOPWidgetView: View {
         .tint(chargeColor)
     }
 
-    /// Lock-Screen rectangular accessory: Charge · Effort · Rest, same trio as the Home Screen rings.
+    /// Lock-Screen rectangular accessory: the same score trio as the Home Screen rings.
     private var rectangular: some View {
         // The lock screen gives this family roughly 72pt of height for everything. A "NOOP" title spent
         // a whole row of that restating which widget the user chose to add, leaving the three scores —
@@ -113,11 +116,11 @@ struct NOOPWidgetView: View {
                     .frame(maxWidth: .infinity, alignment: .trailing)
             }
             HStack(alignment: .top, spacing: 0) {
-                accessoryScore("Charge", symbol: "figure.mind.and.body",
+                accessoryScore(names.recovery, symbol: "figure.mind.and.body",
                                text: snap.recovery.map { "\($0)%" }, tint: chargeColor)
-                accessoryScore("Effort", symbol: "figure.strengthtraining.traditional",
+                accessoryScore(names.strain, symbol: "figure.strengthtraining.traditional",
                                text: effortText, tint: effortColor)
-                accessoryScore("Rest", symbol: "moon.fill",
+                accessoryScore(names.sleep, symbol: "moon.fill",
                                text: snap.rest.map { "\($0)%" }, tint: restColor)
             }
         }
@@ -151,7 +154,7 @@ struct NOOPWidgetView: View {
         }
         .frame(maxWidth: .infinity)
         // An icon says nothing to VoiceOver, and the word it replaced was the only thing naming this
-        // metric. Collapse the cell to one element that still speaks "Charge, 68 percent".
+        // metric. Collapse the cell to one element that still speaks "Recovery, 68 percent".
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(Text(label))
         // Plain literal, not String(localized:). This extension's sources are StrandiOSWidgets +
@@ -231,7 +234,8 @@ struct NOOPWidgetView: View {
 
     private var headerRow: some View {
         HStack {
-            Text("NOOP")
+            // The app's name, never translated (and this extension has no string catalog anyway).
+            Text(verbatim: "ZENO")
                 .font(.system(size: 13, weight: .bold))
                 .foregroundStyle(StrandPalette.textSecondary)
             Spacer()
@@ -243,13 +247,14 @@ struct NOOPWidgetView: View {
     }
 
     /// The Today hero trio as static score rings (widget-safe: no draw-in animation / onAppear race).
-    /// Order matches TodayView: Charge · Effort · Rest. Each cell is honest-null ("–") until scored.
+    /// Order matches TodayView: recovery · strain · sleep, named by `names`. Each cell is honest-null ("–")
+    /// until scored.
     private func scoreRings(diameter: CGFloat, lineWidth: CGFloat, labelFont: Font) -> some View {
         HStack(alignment: .top, spacing: 0) {
             WidgetScoreRing(
                 text: snap.recovery.map(String.init),
                 fraction: snap.recovery.map { Double($0) / 100 },
-                label: "Charge",
+                label: names.recovery,
                 color: chargeColor,
                 diameter: diameter,
                 lineWidth: lineWidth,
@@ -260,7 +265,7 @@ struct NOOPWidgetView: View {
                 text: effortText,
                 // Fill is always the stored 0–100 axis so WHOOP 0–21 and native 0–100 agree on arc length.
                 fraction: snap.effort.map { Double($0) / 100 },
-                label: "Effort",
+                label: names.strain,
                 color: effortColor,
                 diameter: diameter,
                 lineWidth: lineWidth,
@@ -270,7 +275,7 @@ struct NOOPWidgetView: View {
             WidgetScoreRing(
                 text: snap.rest.map(String.init),
                 fraction: snap.rest.map { Double($0) / 100 },
-                label: "Rest",
+                label: names.sleep,
                 color: restColor,
                 diameter: diameter,
                 lineWidth: lineWidth,
@@ -419,6 +424,13 @@ private struct WidgetScoreRing: View {
 struct NOOPWidget: Widget {
     let kind = "NOOPWidget"
 
+    /// The gallery blurb, in the score names the app last published (`GlanceScoreNames`; Pulse's when it has
+    /// published none). Read whenever WidgetKit asks for the configuration.
+    private var galleryDescription: String {
+        let names = GlanceScoreNames(pulse: WidgetSnapshot.load()?.pulseVocabulary)
+        return "\(names.recovery), \(names.strain) and \(names.sleep) as score rings, plus live HR and strap battery at a glance."
+    }
+
     var body: some WidgetConfiguration {
         StaticConfiguration(kind: kind, provider: NOOPProvider()) { entry in
             if #available(iOS 17.0, *) {
@@ -430,8 +442,8 @@ struct NOOPWidget: Widget {
                     .background(StrandPalette.surfaceBase)
             }
         }
-        .configurationDisplayName("NOOP")
-        .description("Charge, Effort and Rest as score rings, plus live HR and strap battery at a glance.")
+        .configurationDisplayName("ZENO")
+        .description(galleryDescription)
         .supportedFamilies([
             .systemSmall, .systemMedium, .systemLarge,
             .accessoryCircular, .accessoryInline, .accessoryRectangular
