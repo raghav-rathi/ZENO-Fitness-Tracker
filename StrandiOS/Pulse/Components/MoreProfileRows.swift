@@ -99,7 +99,7 @@ struct MoreSectionHeader: View {
     }
 }
 
-/// A More / settings row: its own rounded card (56 pt, 64 with a sub-line), a 24 pt outline icon in grey,
+/// A More / settings row: its own rounded card (56 pt with or without a sub-line), a 24 pt outline icon in grey,
 /// the UPPERCASE label, an optional sub-line, and at the right nothing (WHOOP's list rows carry no "›"),
 /// a value, a toggle or a tag. Wrap it in a link or button; the whole card is the hit area.
 ///
@@ -160,7 +160,7 @@ struct MoreListRow: View {
             trailingView
         }
         .padding(.trailing, 16)
-        .frame(maxWidth: .infinity, minHeight: subtitle == nil ? PulseTheme.Row.list : PulseTheme.Row.listWithSubline,
+        .frame(maxWidth: .infinity, minHeight: PulseTheme.Row.list,
                alignment: .leading)
         .pulseCardBackground(.rowCard, radius: cornerRadius)
         .contentShape(Rectangle())
