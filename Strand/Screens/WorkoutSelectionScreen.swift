@@ -20,7 +20,8 @@ struct StartWorkoutSheet: View {
         self.onStart = onStart
         self.heading = title ?? String(localized: "Choose a workout")
         self.explainer = subtitle
-            ?? String(localized: "Pick an activity to begin recording heart rate, effort, peak, and average.")
+            ?? ScoreVocabulary.pick(classic: String(localized: "Pick an activity to begin recording heart rate, effort, peak, and average."),
+                                    pulse: String(localized: "Pick an activity to begin recording heart rate, strain, peak, and average."))
         self.actionVerb = actionVerb ?? String(localized: "Start")
     }
 
