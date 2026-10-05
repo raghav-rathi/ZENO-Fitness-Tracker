@@ -1,7 +1,38 @@
-> **ZENO Fitness Tracker** is a personal fork of [NOOP](https://github.com/ryanbr/noop) for a WHOOP 4.0 on
-> iPhone, adding a WHOOP-style interface, a steps tracker and scoring fixes. All credit for the original work
-> belongs to the NOOP project; this fork keeps its [PolyForm Noncommercial 1.0.0](LICENSE) license and notices.
-> Not affiliated with WHOOP, Inc. The original NOOP README follows.
+# ZENO Fitness Tracker
+
+**ZENO** is a personal fork of [NOOP](https://github.com/ryanbr/noop) for a WHOOP 4.0 strap and an iPhone. It keeps
+NOOP's offline, on-device engine (no account, no cloud) and adds:
+
+- **A WHOOP-style iPhone interface.** ZENO is laid out the way the current WHOOP app is: Home, Health, Trends and More
+  in a floating tab bar, with the Coach button beside it. On Home, the Sleep, Recovery and Strain dials open their deep
+  dives, followed by the coaching cards, the Health and Stress monitors, My Day, My Plan and My Dashboard. The Sleep
+  Planner, Trend Views, Health Monitor, Stress Monitor, Healthspan, Journal, Behavior Insights, Weekly Plan, Strength
+  Trainer, the activity flows, Profile (Levels, Achievements, Day Streak), Menstrual Cycle Insights, Year in Review,
+  Challenges and ZENO Live are built on the same design. Recovery, Strain (on 0-21) and Sleep keep the same names on
+  every screen, including the older NOOP screens the interface still links to.
+- **A Steps tracker**, from the iPhone's motion sensor and the strap, with a Steps screen and a Home card.
+- **Steadier scores**: one sleep-need model on every screen, WHOOP-style sleep consistency, stress against your own
+  baseline, and figures that agree wherever they appear.
+
+The classic NOOP interface is one switch away (More › Interface).
+
+<p align="center">
+  <img src="docs/zeno/zeno-overview.jpg" alt="ZENO's Home, deep dives, Health, Trends and More screens" width="820">
+</p>
+<p align="center"><sub>Simulator captures of ZENO with its built-in demo data.</sub></p>
+
+**Build and run:** Xcode 16.1 or later, iOS 17 or later. Run `xcodegen generate`, open `Strand.xcodeproj` and run the
+**NOOPiOS** scheme ([docs/BUILD.md](docs/BUILD.md) covers signing; a free Apple ID works, with 7-day profiles).
+[Tools/zeno/shoot.sh](Tools/zeno/shoot.sh) captures any screen on demo data in the simulator, and
+[Tools/zeno/flows](Tools/zeno/flows) runs the end-to-end flow tests. [docs/zeno/](docs/zeno/) is the WHOOP interface
+research behind the design, and [StrandiOS/Pulse/ARCHITECTURE.md](StrandiOS/Pulse/ARCHITECTURE.md) explains how it
+is built.
+
+ZENO is not affiliated with WHOOP, Inc. It uses SF Pro and SF Symbols, none of WHOOP's logos, artwork or fonts, and its
+scores are its own on-device estimates, not WHOOP's. All credit for the original work belongs to the NOOP project;
+this fork keeps its [PolyForm Noncommercial 1.0.0](LICENSE) license and notices. The original NOOP README follows.
+
+---
 
 <p align="center">
   <img src="docs/assets/logo-v3.png" alt="NOOP" width="72">
