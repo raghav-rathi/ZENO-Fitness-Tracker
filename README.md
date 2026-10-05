@@ -23,11 +23,11 @@ The classic NOOP interface is one switch away (More › Interface).
 
 **Build and run:** Xcode 16.1 or later, iOS 17 or later. Run `xcodegen generate`, open `Strand.xcodeproj` and run the
 **NOOPiOS** scheme ([docs/BUILD.md](docs/BUILD.md) covers signing; a free Apple ID works, with 7-day profiles).
-[Tools/zeno/shoot.sh](Tools/zeno/shoot.sh) captures any screen on demo data in the simulator, and
+[Tools/zeno/shoot.sh](Tools/zeno/shoot.sh) captures any screen on demo data in the simulator,
 [Tools/zeno/flows](Tools/zeno/flows) runs the end-to-end flow tests, and [Tools/zeno/resign](Tools/zeno/resign)
-re-signs the app on your iPhone automatically before a free Apple ID's 7-day signature runs out. [docs/zeno/](docs/zeno/) is the WHOOP interface
-research behind the design, and [StrandiOS/Pulse/ARCHITECTURE.md](StrandiOS/Pulse/ARCHITECTURE.md) explains how it
-is built.
+re-signs the app on your iPhone automatically before a free Apple ID's 7-day signature runs out.
+[docs/zeno/](docs/zeno/) is the WHOOP interface research behind the design, and
+[StrandiOS/Pulse/ARCHITECTURE.md](StrandiOS/Pulse/ARCHITECTURE.md) explains how it is built.
 
 ZENO is not affiliated with WHOOP, Inc. It uses SF Pro and SF Symbols, none of WHOOP's logos, artwork or fonts, and its
 scores are its own on-device estimates, not WHOOP's. All credit for the original work belongs to the NOOP project;
