@@ -51,6 +51,8 @@ enum PulseActivityStyle {
 
     /// The current activity's row in the pre-start list (completeness-critic/05: white ≈8%).
     static let selectedRow = Color.white.opacity(0.08)
+    /// The card lists' search field rim while it is not focused (c03: #33383C over the field's fill).
+    static let searchBorder = Color.white.opacity(0.13)
     /// The pre-start list's backdrop over the map.
     static let pickerBackdrop = Color.black.opacity(0.92)
     /// The Track Route switch's track on the dark header.
@@ -102,7 +104,9 @@ enum PulseActivityStyle {
     enum Glyph {
         static let header: CGFloat = 22
         static let preStartHeader: CGFloat = 24
-        static let close: CGFloat = 19
+        /// The pre-start "✕", Semibold: ≈17 pt across with ≈2.5 pt strokes, as a01, a04 and WHOOP's other
+        /// modal roots draw it (g01, journal-plan-2026/07), not the spec's "thin" ✕.
+        static let close: CGFloat = 22
         static let headerChevron: CGFloat = 17
         static let chip: CGFloat = 12
         static let tile: CGFloat = 17
@@ -167,6 +171,8 @@ enum PulseActivityTextStyle {
     case trackRoute
     /// The activity search field.
     case searchField
+    /// An activity's name in the card lists (SELECT ACTIVITY, SELECT YOUR ACTIVITY; c03: caps ≈8 pt).
+    case listRow
     /// The amber banner's "!".
     case bannerBang
     /// "ACTIVITY STRAIN" inside the live ring.
@@ -213,6 +219,7 @@ enum PulseActivityTextStyle {
         case .panelHelpGlyph: return Spec(size: 15, weight: .medium, uppercase: false, tracking: 0, relativeTo: nil, maxScale: 1)
         case .trackRoute: return Spec(size: 13, weight: .medium, uppercase: false, tracking: 0.6, relativeTo: .footnote, maxScale: 1.4)
         case .searchField: return Spec(size: 17, weight: .regular, uppercase: false, tracking: 0, relativeTo: .body, maxScale: 1.8)
+        case .listRow: return Spec(size: 11.5, weight: .bold, uppercase: true, tracking: 1.1, relativeTo: .footnote, maxScale: 1.6)
         case .bannerBang: return Spec(size: 17, weight: .heavy, uppercase: false, tracking: 0, relativeTo: .body, maxScale: 2.0)
         case .liveRingLabel: return Spec(size: 15, weight: .bold, uppercase: true, tracking: 1.2, relativeTo: .subheadline, maxScale: 1.25)
         case .liveRingState: return Spec(size: 13, weight: .bold, uppercase: true, tracking: 1.3, relativeTo: .footnote, maxScale: 1.25)

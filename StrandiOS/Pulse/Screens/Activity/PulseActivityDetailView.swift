@@ -210,8 +210,9 @@ struct PulseActivityDetailView: View {
             headline(s, scrub: panes.scrub)
             hrChart(s, color: PulseTheme.strain)
                 .padding(.top, 26)
+            // h01, f09, g16: the zone legend ≈25 pt under the chart's start / end times.
             zonesSection(s)
-                .padding(.top, 26)
+                .padding(.top, 16)
             statistics(s)
         case .recovery:
             recoveryHeadline(s, scrub: panes.scrub)
@@ -262,7 +263,7 @@ struct PulseActivityDetailView: View {
                     .padding(.top, 26)
             } else {
                 zonesSection(s)
-                    .padding(.top, 26)
+                    .padding(.top, 16)
             }
             statistics(s)
         }

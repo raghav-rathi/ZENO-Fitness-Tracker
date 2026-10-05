@@ -188,8 +188,10 @@ struct PulseActivityZoneRow: View {
     let row: ActivityZoneRow
     var showsShare = true
 
-    @ScaledMetric(relativeTo: .body) private var timeSize: CGFloat = 19
-    @ScaledMetric(relativeTo: .footnote) private var secondsSize: CGFloat = 13
+    /// The time's h:mm and its smaller ":ss": caps ≈1.45× the zone label's and ≈0.72 of each other, as h01,
+    /// f09 and hc82 measure them.
+    @ScaledMetric(relativeTo: .body) private var timeSize: CGFloat = 16
+    @ScaledMetric(relativeTo: .footnote) private var secondsSize: CGFloat = 12
 
     private var color: Color { PulseTheme.Zone.color(row.zone) }
 
@@ -241,10 +243,11 @@ struct PulseActivityZoneRow: View {
         }
         // Zero zones dim their content to 40% (§2.6.18); the card keeps its fill (hc82).
         .opacity(row.seconds > 0 ? 1 : 0.4)
-        // 66 pt with its bar and 44 pt without, as the 2026 captures measure (h01, 82).
+        // ≈65 pt with its bar (h01 66, f09 65.5, g16 64) and ≈43 pt without (hc82's empty card is 0.64 of
+        // its full one), the time's digits ≈13 pt under the card's top edge, as the 2026 captures draw them.
         .padding(.horizontal, 14)
-        .padding(.top, 9)
-        .padding(.bottom, 12)
+        .padding(.top, 10.5)
+        .padding(.bottom, 16)
         .frame(maxWidth: .infinity, alignment: .leading)
         .pulseCardBackground()
         .accessibilityElement(children: .ignore)
@@ -258,7 +261,7 @@ struct PulseActivityZoneRow: View {
         let clock = ActivityFormat.clock(seconds: row.seconds)
         let head = String(clock.dropLast(3))
         let tail = String(clock.suffix(3))
-        let big = min(timeSize, 19 * 1.5), small = min(secondsSize, 13 * 1.5)
+        let big = min(timeSize, 16 * 1.5), small = min(secondsSize, 12 * 1.5)
         return (Text(head).font(PulseType.numeral(big)).foregroundColor(PulseTheme.textPrimary)
                 + Text(tail).font(PulseType.numeral(small)).foregroundColor(PulseTheme.textSecondary))
     }
@@ -314,16 +317,18 @@ struct PulseActivityHRChart: View {
     var height: CGFloat = 186
     @Binding var scrub: PulseActivityScrub?
 
-    /// The y range and its gridlines: 25 bpm steps over a wide range, finer over a narrow one.
+    /// The y range and its gridlines: 25 bpm steps over a wide range, finer over a narrow one. Every gridline
+    /// is labelled, the lowest included, so the plot runs a little below it to a base of its own, which the
+    /// fill and the edge dots stand on (g24: 100 / 80 / 60 / 40 over an empty chart; h01, f09).
     private var axis: (domain: ClosedRange<Double>, ticks: [Double]) {
         let values = points.compactMap(\.value)
-        guard let lo = values.min(), let hi = values.max() else { return (40...100, [40, 60, 80, 100]) }
+        guard let lo = values.min(), let hi = values.max() else { return (32...100, [40, 60, 80, 100]) }
         let range = hi - lo
         let step: Double = range > 70 ? 25 : (range > 30 ? 20 : 10)
         let bottom = floor((lo - 4) / step) * step
         let top = max(bottom + step * 2, ceil((hi + 4) / step) * step)
         let ticks = stride(from: bottom, through: top, by: step).map { $0 }
-        return (bottom...top, ticks)
+        return ((bottom - step * 0.4)...top, ticks)
     }
 
     private var runs: [(Int, [PulseTimeValue])] {
@@ -391,8 +396,8 @@ struct PulseActivityHRChart: View {
                     if let plotAnchor = proxy.plotFrame {
                         let plot = geo[plotAnchor]
                         ZStack(alignment: .topLeading) {
-                            // y labels inside the plot at the left (h01, 82).
-                            ForEach(axis.ticks.dropFirst(), id: \.self) { tick in
+                            // y labels inside the plot at the left (h01, 82), one on every gridline.
+                            ForEach(axis.ticks, id: \.self) { tick in
                                 if let y = proxy.position(forY: tick) {
                                     Text("\(Int(tick))")
                                         .font(PulseType.font(.axis))

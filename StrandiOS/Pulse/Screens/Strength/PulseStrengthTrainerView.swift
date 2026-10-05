@@ -60,16 +60,22 @@ struct PulseStrengthTrainerView: View {
                             coach: .button,
                             coachSeed: String(localized: "My strength training"),
                             spacing: 20,
-                            topPadding: 4,
+                            topPadding: 9,
                             ready: snapshot != nil) {
+            // g01: the tabs, BUILD MANUALLY and the workout cards ≈20 pt in from the screen's edges; g02's
+            // PROGRESS keeps its charts and records at the page margin.
             PulseStrengthTabs(tabs: [Tab.progress, Tab.workouts], selection: $tab) { tab in
                 tab == .progress ? String(localized: "Progress") : String(localized: "My Workouts")
             }
+            .padding(.horizontal, 4)
             PulseLoadingGate(isLoading: snapshot == nil) {
                 if let snapshot {
                     switch tab {
-                    case .workouts: workouts(snapshot)
-                    case .progress: progress(snapshot)
+                    case .workouts:
+                        workouts(snapshot)
+                            .padding(.horizontal, 4)
+                    case .progress:
+                        progress(snapshot)
                     }
                 }
             } skeleton: {

@@ -24,7 +24,7 @@ struct PulseActivityPickerView: View {
 
     var body: some View {
         PulseActivityPickerList(style: .cards, tabs: PulseActivityPickerList.Tab.allCases, selected: selected,
-                                searchPlaceholder: String(localized: "Search")) { kind in
+                                searchPlaceholder: String(localized: "Search for Activities")) { kind in
             if let onPick {
                 onPick(kind)
                 dismiss()
@@ -57,9 +57,9 @@ struct PulseActivityFormRoute: PulseScreenRoute, Identifiable {
 // MARK: - The list
 
 /// Every activity list in Pulse (§3.8 picker, §3.9 SELECT ACTIVITY / SELECT YOUR ACTIVITY): search, the
-/// category tabs, MOST RECENT (the last five picked) and ALL A-Z. `.borderless` rows are the pre-start
-/// dropdown's (white glyph and caps name on a 62 pt pitch, completeness-critic/05; the current one on a
-/// white-8% card); `.cards` rows are the add and edit flows' rounded dark cards.
+/// category tabs, MOST RECENT (the last five sports picked or logged) and ALL A-Z. `.borderless` rows are
+/// the pre-start dropdown's (white glyph and caps name on a 62 pt pitch, completeness-critic/05; the current
+/// one on a white-8% card); `.cards` rows are the add and edit flows' rounded dark cards.
 struct PulseActivityPickerList: View {
     enum Style { case borderless, cards }
 
@@ -87,6 +87,10 @@ struct PulseActivityPickerList: View {
     @State private var query = ""
     @State private var tab: Tab = .all
     @FocusState private var searchFocused: Bool
+    /// The sports most recently logged (`PulseSnapshotBuilder.recentActivitySports`), read as the list
+    /// appears. Optional: a list shown without the shell's model still offers the picks.
+    @Environment(PulseModel.self) private var model: PulseModel?
+    @State private var historySports: [String] = []
 
     private var catalogue: [PulseActivityKind] {
         tabs.contains(.sleep) ? PulseActivityCatalog.all + PulseActivityCatalog.sleepKinds : PulseActivityCatalog.all
@@ -101,8 +105,16 @@ struct PulseActivityPickerList: View {
         }
     }
 
+    /// MOST RECENT: the sports picked in Start, Add and Edit (newest first), then the ones most recently
+    /// logged, so imported and synced history counts too; one entry per sport, five at most (s01, s04:
+    /// WHOOP's "5 most recent activity types"), then filtered to the tab, with sleep only where it is offered.
     private var recent: [PulseActivityKind] {
-        PulseActivityCatalog.recent().filter { kind in inTab(kind) && (tabs.contains(.sleep) || kind.category != .sleep) }
+        var seen = Set<String>()
+        let names = (RecentSportsPrefs.recent() + historySports)
+            .filter { seen.insert(WorkoutSource.sportKey($0)).inserted }
+        return names.prefix(RecentSportsPrefs.maxCount)
+            .map { PulseActivityCatalog.kind(named: $0) }
+            .filter { kind in inTab(kind) && (tabs.contains(.sleep) || kind.category != .sleep) }
     }
 
     private var alphabetical: [PulseActivityKind] {
@@ -150,6 +162,9 @@ struct PulseActivityPickerList: View {
             .scrollDismissesKeyboard(.interactively)
             .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
         }
+        .task {
+            historySports = await model?.build(dayOffset: 0) { builder, _ in await builder.recentActivitySports() } ?? []
+        }
         #if DEBUG
         .onAppear { PulseActivityDebug.applyRecentsIfRequested() }
         #endif
@@ -185,17 +200,21 @@ struct PulseActivityPickerList: View {
         .frame(minHeight: 44)
         .background(RoundedRectangle(cornerRadius: PulseTheme.Radius.control, style: .circular)
             .fill(style == .cards ? PulseTheme.Activity.searchField : PulseTheme.card))
+        // The card lists' field keeps a 1 pt rim, lighter while focused (c03); the pre-start one has none.
         .overlay(RoundedRectangle(cornerRadius: PulseTheme.Radius.control, style: .circular)
-            .strokeBorder(searchFocused && style == .cards ? PulseTheme.Activity.searchFocusBorder : .clear,
+            .strokeBorder(style == .cards
+                          ? (searchFocused ? PulseTheme.Activity.searchFocusBorder : PulseActivityStyle.searchBorder)
+                          : .clear,
                           lineWidth: 1))
     }
 
-    /// The underlined tabs. Four (ALL · STRAIN · RECOVERY · SLEEP) take four equal columns with their labels
-    /// centred (completeness-critic/05); three (the reclassify sheet's ALL · STRAIN · RECOVERY) sit at the
-    /// left with fixed gaps (c03). The underline is the label's width.
+    /// The underlined tabs. The card lists' sit at the left at their own widths, 30 pt apart (c03; the add
+    /// flow's four on s01 and s04 end about 70% across); the pre-start dropdown's three sit at the left too,
+    /// and four there would take four equal columns with their labels centred (completeness-critic/05). The
+    /// underline is the label's width.
     @ViewBuilder
     private var tabBar: some View {
-        if tabs.count > 3 {
+        if style == .borderless && tabs.count > 3 {
             HStack(spacing: 0) {
                 ForEach(tabs, id: \.self) { t in
                     tabButton(t)
@@ -203,7 +222,7 @@ struct PulseActivityPickerList: View {
                 }
             }
         } else {
-            HStack(spacing: 32) {
+            HStack(spacing: style == .cards ? 30 : 32) {
                 ForEach(tabs, id: \.self) { t in
                     tabButton(t)
                 }
@@ -255,8 +274,7 @@ struct PulseActivityPickerList: View {
                     .foregroundStyle(style == .cards ? PulseTheme.textSecondary : PulseTheme.textPrimary)
                     .frame(width: 30)
                     .accessibilityHidden(true)
-                Text(kind.displayName)
-                    .pulseText(.menuLabel)
+                rowName(kind.displayName)
                     .foregroundStyle(PulseTheme.textPrimary)
                     .lineLimit(2)
                     .multilineTextAlignment(.leading)
@@ -278,6 +296,17 @@ struct PulseActivityPickerList: View {
         .buttonStyle(PulsePressStyle())
         .accessibilityAddTraits(isSelected ? .isSelected : [])
         .accessibilityHint(kind.category == .recovery ? String(localized: "Recovery activity") : "")
+    }
+
+    /// A row's name: the card lists' smaller caps (c03), the pre-start dropdown's menu caps
+    /// (completeness-critic/05).
+    @ViewBuilder
+    private func rowName(_ name: String) -> some View {
+        if style == .cards {
+            Text(name).activityText(.listRow)
+        } else {
+            Text(name).pulseText(.menuLabel)
+        }
     }
 }
 #endif

@@ -83,7 +83,7 @@ struct PulseStrainTargetPanel: View {
                 .fill(PulseTheme.Activity.panelGrabber)
                 .frame(width: 36, height: 5)
                 .padding(.top, 8)
-            HStack(spacing: 0) {
+            PulsePanelHeaderRow(spacing: 8) {
                 if expanded {
                     Button { showsHelp = true } label: {
                         Text(verbatim: "?")
@@ -96,19 +96,15 @@ struct PulseStrainTargetPanel: View {
                     }
                     .buttonStyle(PulsePressStyle())
                     .accessibilityLabel(String(localized: "About Strain Target"))
-                    Spacer(minLength: 8)
-                    title
-                    Spacer(minLength: 8)
                 } else {
-                    PulseTargetGlyph(fraction: target.map { $0 / 21 })
-                        .padding(.leading, 6)
-                    collapsedValue
-                        .padding(.leading, 18)
-                        .frame(minWidth: 56, alignment: .leading)
-                    Spacer(minLength: 8)
-                    title
-                    Spacer(minLength: 8)
+                    HStack(spacing: 0) {
+                        PulseTargetGlyph(fraction: target.map { $0 / 21 })
+                            .padding(.leading, 6)
+                        collapsedValue
+                            .padding(.leading, 18)
+                    }
                 }
+                title
                 PulseLightToggle(isOn: $targetOn, disabled: !available)
                     .accessibilityLabel(String(localized: "Strain Target"))
             }
@@ -142,6 +138,7 @@ struct PulseStrainTargetPanel: View {
             Text(PulseFormat.oneDecimal(target))
                 .font(PulseType.numeral(22))
                 .foregroundStyle(PulseActivityStyle.panelInk)
+                .fixedSize()
         } else if targetOn && reached {
             Image(systemName: "checkmark")
                 .font(.system(size: PulseActivityStyle.Glyph.panelCheck, weight: .bold))
@@ -152,12 +149,14 @@ struct PulseStrainTargetPanel: View {
                 Text(verbatim: "---")
                     .font(PulseType.numeral(22))
                     .foregroundStyle(PulseActivityStyle.panelInk)
+                    .fixedSize()
                     .accessibilityLabel(String(localized: "No target"))
                 if snapshot != nil && !available {
+                    // Wraps inside the value's slot rather than pushing STRAIN TARGET off centre.
                     Text(String(localized: "After today's Recovery"))
                         .activityText(.panelFootnote)
                         .foregroundStyle(PulseActivityStyle.panelInkMuted)
-                        .lineLimit(1)
+                        .lineLimit(2)
                         .minimumScaleFactor(0.8)
                 }
             }
@@ -327,6 +326,46 @@ struct PulseStrainTargetPanel: View {
         default:
             return String(localized: "A \(shown) Activity Strain would take today to \(after), inside your optimal range.")
         }
+    }
+}
+
+// MARK: - The header row
+
+/// The panel's header row: the leading piece (the target glyph and value, or "?"), STRAIN TARGET and the
+/// switch. The title sits on the row's centre, as on a01 and a04 (within a point of the screen's), with
+/// equal room either side of it: the leading piece is laid out in the room left of the title, so a long
+/// value (the "After today's Recovery" footnote) wraps there instead of pushing the title off centre. A
+/// title too wide for the row (large text) shrinks first, so each side keeps at least its narrowest width.
+private struct PulsePanelHeaderRow: Layout {
+    var spacing: CGFloat = 8
+
+    /// The width each side and the title get in a row `width` wide.
+    private func widths(_ width: CGFloat, _ subviews: Subviews) -> (side: CGFloat, title: CGFloat) {
+        let leading = subviews[0].sizeThatFits(ProposedViewSize(width: 0, height: nil)).width
+        let trailing = subviews[2].sizeThatFits(.unspecified).width
+        let room = max(0, width - 2 * (max(leading, trailing) + spacing))
+        let title = min(subviews[1].sizeThatFits(.unspecified).width, room)
+        return (max(0, (width - title) / 2 - spacing), title)
+    }
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        guard subviews.count == 3 else { return .zero }
+        let width = proposal.width ?? subviews.reduce(2 * spacing) { $0 + $1.sizeThatFits(.unspecified).width }
+        let (side, title) = widths(width, subviews)
+        let height = max(subviews[0].sizeThatFits(ProposedViewSize(width: side, height: nil)).height,
+                         subviews[1].sizeThatFits(ProposedViewSize(width: title, height: nil)).height,
+                         subviews[2].sizeThatFits(.unspecified).height)
+        return CGSize(width: width, height: height)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        guard subviews.count == 3 else { return }
+        let (side, title) = widths(bounds.width, subviews)
+        subviews[0].place(at: CGPoint(x: bounds.minX, y: bounds.midY), anchor: .leading,
+                          proposal: ProposedViewSize(width: side, height: nil))
+        subviews[1].place(at: CGPoint(x: bounds.midX, y: bounds.midY), anchor: .center,
+                          proposal: ProposedViewSize(width: title, height: nil))
+        subviews[2].place(at: CGPoint(x: bounds.maxX, y: bounds.midY), anchor: .trailing, proposal: .unspecified)
     }
 }
 

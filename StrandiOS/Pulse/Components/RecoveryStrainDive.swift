@@ -37,26 +37,32 @@ struct PulseDiveContributor: Identifiable, Equatable {
 /// pointer's tip, a 66 pt pitch with the inset dividers drawn over the row boundary rather than between
 /// rows, values and arrows ending 24 pt inside the callout's edge, and the legend 58 pt under the last
 /// row. The legend only when some row has an average to compare with (calibrating, or the oldest days,
-/// show values alone). A row with a route opens its Trend View.
+/// show values alone). While some rows carry a trend glyph, a row without one keeps its value in the same
+/// column, the glyph's slot left empty, so the values end on one edge (deep-dives-2026/57, help-center/72).
+/// A row with a route opens its Trend View.
 struct PulseDiveCallout: View {
     let rows: [PulseDiveContributor]
     /// The night the values are from: "Today", the day itself on a past day ("Wed, Aug 19"), or a carried
     /// night's date.
     let dayLabel: String
 
+    /// The trend glyph's slot in `PulseCalloutRow`: its 6 pt frame and its 6 pt leading gap.
+    private static let glyphSlot: CGFloat = 12
+
     var body: some View {
+        let anyTrend = rows.contains { $0.trend != nil }
         PulseCallout {
             Color.clear.frame(height: 12)
             ForEach(Array(rows.enumerated()), id: \.element.id) { index, row in
                 link(row)
-                    .padding(.trailing, 6)
+                    .padding(.trailing, row.trend == nil && anyTrend ? 6 + Self.glyphSlot : 6)
                     .overlay(alignment: .bottom) {
                         if index < rows.count - 1 {
                             PulseDivider(leadingInset: 16, trailingInset: 16)
                         }
                     }
             }
-            if rows.contains(where: { $0.trend != nil }) {
+            if anyTrend {
                 PulseLegendWell {
                     PulseDiveLegend(dayLabel: dayLabel)
                 }
@@ -449,26 +455,21 @@ struct PulseConfidenceChip: View {
 
 // MARK: Insight
 
-/// The dive's inline insight (§2.6 item 10). With the Coach on it is the coach card (AI border, the CTA in
-/// the AI gradient); with the Coach switched off it is the same sentence on a plain card with no CTA, so
-/// the explanation survives without dressing local copy as the Coach's.
+/// A dive's insight sentence while the Coach is switched off (§1.2 [Z], §3.4 item 4 [Z]): a plain card with
+/// no CTA, so the explanation survives without dressing local copy as the Coach's. With the Coach on the
+/// floating coach summary pill takes its place, so the dives show it only when `coach.availability` is
+/// `.off` and a page never carries two insight surfaces. Its lines keep the inline insight card's ≈20 pt
+/// pitch (deep-dives-2026/57).
 struct PulseDiveInsight: View {
     let text: String
-    let cta: String
-    let seed: String
-
-    @Environment(\.pulseCoach) private var coach
 
     var body: some View {
-        if coach.availability == .off {
-            PulseCard {
-                Text(text)
-                    .pulseText(.body)
-                    .foregroundStyle(PulseTheme.textPrimary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-        } else {
-            PulseInsightCard(text: text, cta: cta) { coach.open(seed) }
+        PulseCard {
+            Text(text)
+                .pulseText(.body)
+                .lineSpacing(3.5)
+                .foregroundStyle(PulseTheme.textPrimary)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 }

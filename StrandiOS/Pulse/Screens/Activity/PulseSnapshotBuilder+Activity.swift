@@ -269,16 +269,23 @@ extension PulseSnapshotBuilder {
 
     /// "162-171 BPM", "172+ BPM" for Zone 5, "<118 BPM" below Zone 1: the bounds the zone set bins by.
     static func zoneRange(_ zone: Int, zoneSet: HRZoneSet) -> String {
-        let bpm = String(localized: "BPM")
         if zone == 0 {
             guard let z1 = zoneSet.zones.first(where: { $0.number == 1 }) else { return "" }
-            return "<\(Int(z1.lower.rounded(.up))) \(bpm)"
+            return "<\(Int(z1.lower.rounded(.up))) \(String(localized: "BPM"))"
         }
         guard let z = zoneSet.zones.first(where: { $0.number == zone }) else { return "" }
-        let lower = Int(z.lower.rounded(.up))
-        if zone == 5 { return "\(lower)+ \(bpm)" }
-        let upper = max(lower, Int(z.upper.rounded(.up)) - 1)
-        return "\(lower)-\(upper) \(bpm)"
+        return zoneRange(zone, lower: z.lower, upper: z.upper)
+    }
+
+    /// Zone 1–5's whole beats as `HRZoneSet.zoneNumber(forBPM:)` bins them (lower bound in, upper bound
+    /// out, Zone 5 open-ended), so neighbouring zones never share a beat: "162-171 BPM", "172+ BPM" (h01,
+    /// g16, help-center/82). Activity Details and the Strain dive's TIME IN ZONES both label their zone
+    /// rows through here, so one day's zones read the same on both.
+    static func zoneRange(_ zone: Int, lower: Double, upper: Double) -> String {
+        let bpm = String(localized: "BPM")
+        let low = Int(lower.rounded(.up))
+        if zone == 5 { return "\(low)+ \(bpm)" }
+        return "\(low)-\(max(low, Int(upper.rounded(.up)) - 1)) \(bpm)"
     }
 
     /// An import's zones are its own (% of max heart rate), so they keep its percentages, not ZENO's bpm.
@@ -738,6 +745,28 @@ extension PulseSnapshotBuilder {
             recoveryBand: percent.map { PulseDisplay.recoveryBand(percent: Double($0)) },
             recoveryCarried: carried, dayStrain: strain, optimalRange: target?.range, targetDayStrain: midpoint,
             denominator: StrainScorer.logMapDenominator(method: r.prefs.effortMethod, sex: r.profile.sex))
+    }
+
+    // MARK: - The activity lists (§3.9)
+
+    /// The sports most recently logged, newest first, one entry per sport, at most `limit`: MOST RECENT's
+    /// history half ("your 5 most recent activity types", §3.9 ZENO data). Every stored workout counts
+    /// (WHOOP and Apple Health imports, live sessions, added activities), not only the picks made in Start or
+    /// Add. Auto-detected bouts and "Other" name no sport, so they are left out.
+    /// Names come back in their editable form ("Traditional Strength Training" for WHOOP's camelCase token).
+    func recentActivitySports(limit: Int = RecentSportsPrefs.maxCount) async -> [String] {
+        let rows = await workoutRows()
+        var seen = Set<String>()
+        var out: [String] = []
+        for row in rows.sorted(by: { $0.startTs > $1.startTs }) {
+            if out.count >= limit { break }
+            guard WorkoutSource.classify(row.source) != .detected, row.sport != "detected",
+                  row.sport.caseInsensitiveCompare(WorkoutCatalog.defaultSportName) != .orderedSame else { continue }
+            let key = WorkoutSource.sportKey(row.sport)
+            guard !key.isEmpty, seen.insert(key).inserted else { continue }
+            out.append(WorkoutSource.editableSport(row.sport))
+        }
+        return out
     }
 }
 #endif

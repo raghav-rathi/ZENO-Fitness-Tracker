@@ -305,6 +305,7 @@ struct PulseActivityForm: View {
                             ?? String(localized: "Select activity"))
     }
 
+    /// "TIME" / "LOCATION" and their hairline, on the cards' edges (d04, c01).
     private func sectionHeader(_ title: String) -> some View {
         HStack(spacing: 10) {
             Text(title)
@@ -313,7 +314,6 @@ struct PulseActivityForm: View {
                 .fixedSize()
             Rectangle().fill(PulseTheme.divider).frame(height: 1)
         }
-        .padding(.horizontal, -4)
         .accessibilityAddTraits(.isHeader)
     }
 
