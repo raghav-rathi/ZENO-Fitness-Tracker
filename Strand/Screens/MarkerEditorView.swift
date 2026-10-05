@@ -248,7 +248,9 @@ struct MarkerEditorView: View {
                             .overlay(inputShape.strokeBorder(StrandPalette.hairline, lineWidth: 1))
                             .accessibilityLabel("Reference range from your own report, optional")
                     }
-                    Text("NOOP never fills this in. It only shows back exactly what you type from your own report.")
+                    Text(ScoreVocabulary.pick(
+                        classic: LocalizedStringKey("NOOP never fills this in. It only shows back exactly what you type from your own report."),
+                        pulse: LocalizedStringKey("ZENO never fills this in. It only shows back exactly what you type from your own report.")))
                         .font(StrandFont.footnote)
                         .foregroundStyle(StrandPalette.textTertiary)
                         .fixedSize(horizontal: false, vertical: true)

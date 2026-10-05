@@ -242,7 +242,9 @@ struct DataSourcesView: View {
     private var liftingCard: some View {
         card(title: String(localized: "Lifting log (Hevy / Liftosaur)"), icon: "dumbbell.fill",
              tint: DomainTheme.effort.color,
-             subtitle: String(localized: "Import your strength-training history from a Hevy CSV export or a Liftosaur JSON export. Each workout becomes a Strength session with a training-volume estimate (weight × reps). It's a volume figure, not a measured strain. It never changes your Effort.")) {
+             subtitle: ScoreVocabulary.pick(
+                classic: String(localized: "Import your strength-training history from a Hevy CSV export or a Liftosaur JSON export. Each workout becomes a Strength session with a training-volume estimate (weight × reps). It's a volume figure, not a measured strain. It never changes your Effort."),
+                pulse: String(localized: "Import your strength-training history from a Hevy CSV export or a Liftosaur JSON export. Each workout becomes a Strength session with a training-volume estimate (weight × reps). It's a volume figure, not a heart-rate load, so it never changes your Strain."))) {
             HStack(spacing: NoopMetrics.space3) {
                 Button { presentImporter(.lifting) } label: {
                     Label(liftingImporting ? "Importing…" : "Choose export…", systemImage: "tray.and.arrow.down")
@@ -832,7 +834,11 @@ struct DataSourcesView: View {
             .onChangeCompat(of: broadcastHrEnabled) { on in
                 if on { hrBroadcaster.start() } else { hrBroadcaster.stop() }
             }
-            Text("Acts as a standard Bluetooth heart-rate strap. Pair NOOP from your treadmill, bike or app to see your strap's heart rate there.")
+            // The sensor advertises as "NOOP HR" (HrBroadcaster; the BLE name is not renamed), so the Pulse
+            // form names what a treadmill actually lists rather than the app.
+            Text(ScoreVocabulary.pick(
+                classic: LocalizedStringKey("Acts as a standard Bluetooth heart-rate strap. Pair NOOP from your treadmill, bike or app to see your strap's heart rate there."),
+                pulse: LocalizedStringKey("Acts as a standard Bluetooth heart-rate strap. Pair \u{201C}NOOP HR\u{201D} from your treadmill, bike or app to see your strap's heart rate there.")))
                 .font(StrandFont.footnote)
                 .foregroundStyle(StrandPalette.textTertiary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -881,7 +887,9 @@ struct DataSourcesView: View {
             generationRow(title: "WHOOP 4.0",
                           detail: String(localized: "Broadcasts the strap's own live heart rate over Bluetooth."))
             generationRow(title: "WHOOP 5.0 & MG",
-                          detail: String(localized: "Broadcasts the live heart rate NOOP derives from the strap once connected."))
+                          detail: ScoreVocabulary.pick(
+                            classic: String(localized: "Broadcasts the live heart rate NOOP derives from the strap once connected."),
+                            pulse: String(localized: "Broadcasts the live heart rate ZENO derives from the strap once connected.")))
         }
         .padding(.top, 2)
         .padding(.horizontal, 10).padding(.vertical, 8)

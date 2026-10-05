@@ -19,7 +19,9 @@ struct StorageView: View {
 
     var body: some View {
         ScreenScaffold(title: "Storage",
-                       subtitle: "Where NOOP's on-device space is going, and a one-tap clean-up.") {
+                       subtitle: ScoreVocabulary.pick(
+                        classic: LocalizedStringKey("Where NOOP's on-device space is going, and a one-tap clean-up."),
+                        pulse: LocalizedStringKey("Where ZENO's on-device space is going, and a one-tap clean-up."))) {
             VStack(alignment: .leading, spacing: NoopMetrics.sectionSpacing) {
                 if loading && report == nil {
                     StatePill("Measuring…", tone: .accent, pulsing: true)
@@ -77,7 +79,9 @@ struct StorageView: View {
                     .foregroundStyle(StrandPalette.textPrimary)
                 Text(reclaimable > 0
                      ? "There's about \(Self.format(reclaimable)) of leftover import scratch space to reclaim. This never removes your imported data."
-                     : "Nothing to reclaim right now. NOOP already cleans up import scratch space automatically.")
+                     : ScoreVocabulary.pick(
+                        classic: LocalizedStringKey("Nothing to reclaim right now. NOOP already cleans up import scratch space automatically."),
+                        pulse: LocalizedStringKey("Nothing to reclaim right now. ZENO already cleans up import scratch space automatically.")))
                     .font(StrandFont.subhead)
                     .foregroundStyle(StrandPalette.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -106,7 +110,9 @@ struct StorageView: View {
     private var explainerCard: some View {
         DataPendingNote(
             title: "Why does this grow?",
-            message: "When you import an Apple Health or WHOOP export, iOS hands NOOP a private copy of the file. NOOP reads it, saves your data into the health database, then deletes the copy. Older builds didn't delete every copy. This screen reclaims any that were left behind.",
+            message: ScoreVocabulary.pick(
+                classic: LocalizedStringKey("When you import an Apple Health or WHOOP export, iOS hands NOOP a private copy of the file. NOOP reads it, saves your data into the health database, then deletes the copy. Older builds didn't delete every copy. This screen reclaims any that were left behind."),
+                pulse: LocalizedStringKey("When you import an Apple Health or WHOOP export, iOS hands ZENO a private copy of the file. ZENO reads it, saves your data into the health database, then deletes the copy. Older builds didn't delete every copy. This screen reclaims any that were left behind.")),
             symbol: "questionmark.circle")
     }
 
