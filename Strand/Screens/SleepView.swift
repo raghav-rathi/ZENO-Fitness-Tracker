@@ -964,7 +964,11 @@ struct SleepView: View {
         // Label above the trace, plot inset 10pt to line up with the stage-timeline rows' strips
         // (the old 44+12 gutter matched the removed Hypnogram's y-axis column). (ryanAtriumAi #988)
         VStack(alignment: .leading, spacing: 2) {
-            Text("Move")
+            // "Move" alone did not say what the height means. The trace is normalised to THIS night's
+            // peak, so the tallest spike is full height whatever its absolute size and heights do not
+            // compare between nights. The strap calibrates no absolute magnitude, so naming the scale
+            // is the honest axis label rather than a number. Twin of the Kotlin `MotionStrip` label.
+            Text("Move, relative to tonight")
                 .font(StrandFont.footnote)
                 .foregroundStyle(StrandPalette.textTertiary)
             if night.motionEpochs.count >= 2 {
@@ -1961,7 +1965,8 @@ struct SleepView: View {
     }
 
     /// Soft nap-duration hint retained for callers/tests; the nap CLASSIFICATION is now purely "not the
-    /// chosen main block" (see `isNap`), never an independent duration/onset test. (#518/#547)
+    /// chosen main block" (see `isNap`), never an independent duration/onset test. (#518/#547) ZENO's Pulse
+    /// Home reads it to keep a nap row nap-sized (`PulseSnapshotBuilder`), so it stays in this fork.
     nonisolated static let napMaxHours: Double = 3.0
     /// Classify a block as a nap: it's a nap exactly when it is NOT the day's chosen main block. Derived
     /// from the pick (never an independent onset/duration gate), so the label can't contradict the

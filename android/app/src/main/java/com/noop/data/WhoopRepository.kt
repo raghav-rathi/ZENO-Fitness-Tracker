@@ -397,8 +397,6 @@ data class DataFreshness(
     val earliestDay: String? = null,
     val latestDay: String? = null,
 ) {
-    val hasAnyHistory: Boolean get() = importedDays > 0 || computedDays > 0 || appleDays > 0
-
     companion object {
         val EMPTY = DataFreshness()
     }
@@ -808,6 +806,12 @@ class WhoopRepository(
 
     fun computedDailyUnionFlow(activeStrapId: String, from: String, to: String): Flow<List<DailyMetric>> =
         unionDaysFlow(computedSourceIds(activeStrapId).map { dao.dailyMetricsRangeFlow(it, from, to) })
+
+    /** Imported-only daily rows over the same active-and-canonical union, the twin of
+     *  [computedDailyUnionFlow]. The Charge baselines (#2525) read the two buckets apart, because their rule
+     *  needs to know which nights are imported; [daysMergedFlow] has already blended them. */
+    fun importedDailyUnionFlow(activeStrapId: String, from: String, to: String): Flow<List<DailyMetric>> =
+        unionDaysFlow(importedSourceIds(activeStrapId).map { dao.dailyMetricsRangeFlow(it, from, to) })
 
     fun metricSeriesComputedUnionFlow(
         activeStrapId: String,
