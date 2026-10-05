@@ -2493,22 +2493,69 @@ enum AppChangelog {
         var id: String { title }
     }
 
-    static let expectations: [Expectation] = [
+    /// Built at render, so the app is named after the interface that shows it: ZENO under the iPhone's
+    /// Pulse interface (`ScoreVocabulary`, spec §0.3), NOOP in the classic one and on the Mac.
+    static var expectations: [Expectation] { [
         Expectation(
             icon: "flask",
             title: String(localized: "Independent, and experimental"),
-            body: String(localized: "NOOP is a personal, open project: not the WHOOP app, and not affiliated with WHOOP. It reads a strap you own, on your own device. Treat it as a capable work-in-progress rather than a finished product.")),
+            body: ScoreVocabulary.pick(
+                classic: String(localized: "NOOP is a personal, open project: not the WHOOP app, and not affiliated with WHOOP. It reads a strap you own, on your own device. Treat it as a capable work-in-progress rather than a finished product."),
+                pulse: String(localized: "ZENO is a personal app built on NOOP, an open, independent project: not the WHOOP app, and not affiliated with WHOOP. It reads a strap you own, on your own device. Treat it as a capable work-in-progress rather than a finished product."))),
         Expectation(
             icon: "checkmark.seal",
             title: String(localized: "WHOOP 4.0 is the supported path"),
-            body: String(localized: "WHOOP 4.0 is tested and works end to end. WHOOP 5.0/MG is newer: live heart rate works today, but deeper metrics (recovery, strain, sleep) for 5/MG are still being figured out. NOOP always tells you what's live versus still building.")),
+            body: ScoreVocabulary.pick(
+                classic: String(localized: "WHOOP 4.0 is tested and works end to end. WHOOP 5.0/MG is newer: live heart rate works today, but deeper metrics (recovery, strain, sleep) for 5/MG are still being figured out. NOOP always tells you what's live versus still building."),
+                pulse: String(localized: "WHOOP 4.0 is tested and works end to end. WHOOP 5.0/MG is newer: live heart rate works today, but deeper metrics (recovery, strain, sleep) for 5/MG are still being figured out. ZENO always tells you what's live versus still building."))),
         Expectation(
             icon: "hourglass",
             title: String(localized: "Your scores build over a few nights"),
-            body: String(localized: "Live heart rate is instant. Recovery, strain and sleep sharpen as NOOP learns your baseline over your first nights of wear. Want your history now? Import your WHOOP export in Data Sources and it backfills in about a minute.")),
+            body: ScoreVocabulary.pick(
+                classic: String(localized: "Live heart rate is instant. Recovery, strain and sleep sharpen as NOOP learns your baseline over your first nights of wear. Want your history now? Import your WHOOP export in Data Sources and it backfills in about a minute."),
+                pulse: String(localized: "Live heart rate is instant. Recovery, strain and sleep sharpen as ZENO learns your baseline over your first nights of wear. Want your history now? Import your WHOOP export in Data Sources and it backfills in about a minute."))),
         Expectation(
             icon: "lock.shield",
             title: String(localized: "Everything stays on your device"),
-            body: String(localized: "No account, no cloud, no sync. NOOP talks only to your strap and keeps everything local. Your data is yours alone.")),
-    ]
+            body: ScoreVocabulary.pick(
+                classic: String(localized: "No account, no cloud, no sync. NOOP talks only to your strap and keeps everything local. Your data is yours alone."),
+                pulse: String(localized: "No account, no cloud, no sync. ZENO talks only to your strap and keeps everything local. Your data is yours alone."))),
+    ] }
+
+    // MARK: - ZENO
+
+    /// What ZENO adds to the NOOP it is built from: the entry "What's New" leads with under the iPhone's
+    /// Pulse interface, above NOOP's own history. Deliberately NOT a `Release` in `releases`: that list is
+    /// NOOP's history (mirrored by the Android app and CHANGELOG.md, written by Tools/appchangelog-gen.py,
+    /// read by the Home "What's new" card), so its text stays NOOP's. The Mac and the classic iPhone
+    /// shell never show this entry.
+    enum Zeno {
+        /// One line of the entry: a short bold lead and the plain sentences after it.
+        struct Highlight: Identifiable {
+            let lead: String
+            let body: String
+            var id: String { lead }
+        }
+
+        static var title: String {
+            String(localized: "A WHOOP-style iPhone app, a Steps tracker and steadier scores")
+        }
+
+        static var date: String { String(localized: "October 2026") }
+
+        static var highlights: [Highlight] { [
+            Highlight(
+                lead: String(localized: "A WHOOP-style interface."),
+                body: String(localized: "Home, Health, Trends and More are laid out the way the WHOOP app lays them out, with Sleep, Recovery and Strain dials and a deep dive behind each. Strain reads on WHOOP's 0-21 scale, and the scores keep the same names on every screen. The classic NOOP interface is still a switch away in More.")),
+            Highlight(
+                lead: String(localized: "A Steps tracker."),
+                body: String(localized: "A Steps screen and a Home card count your steps from the iPhone's motion sensor and your strap, check the strap's estimate against the phone, and chart your day hour by hour against a goal you set.")),
+            Highlight(
+                lead: String(localized: "Steadier scores."),
+                body: String(localized: "One sleep-need model feeds every screen, sleep consistency compares your bed and wake times with the nights before, and each night keeps one sleep score wherever it appears. Stress is judged against your own recent baseline, heart-rate zones follow your heart-rate reserve, and a behaviour only shows up in your insights once there are enough days with and without it to test.")),
+            Highlight(
+                lead: String(localized: "Still yours alone."),
+                body: String(localized: "Everything is still computed on your iPhone from your own strap, with no account and no cloud. ZENO's scores are its own estimates, not WHOOP's.")),
+        ] }
+    }
 }

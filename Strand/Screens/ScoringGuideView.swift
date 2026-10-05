@@ -13,6 +13,13 @@ import StrandDesign
 // macOS / iOS / Android. Each score section is tinted with the SAME Reset accent the
 // rest of the app uses for that score's hero ring (Charge = green, Effort = blue
 // accent, Rest = restColor slate), so a glance maps a section to its Today ring.
+//
+// The iPhone's Pulse interface opens this guide as "How ZENO works" and from the dives'
+// HOW IT'S CALCULATED, so it carries a second form of its copy (`ScoreVocabulary.pulse`):
+// Recovery, Strain on WHOOP's 0-21 scale and Sleep, explained in WHOOP's terms as ZENO's
+// own on-device estimates (spec §0.3). It is a rewrite, not a word swap: the classic text
+// explains NOOP's 0-100 model and how it differs from WHOOP, which the Pulse path no longer
+// shows. The classic copy is untouched, so the Mac and the classic iPhone shell read as before.
 
 /// The three score sections the guide can deep-link to. The raw value is used as the
 /// ScrollViewReader anchor id. The Android port mirrors these case names exactly.
@@ -49,6 +56,19 @@ enum ScoreSection: String, CaseIterable, Identifiable {
         "\(Int((sampleFraction * 100).rounded()))"
     }
 
+    /// The sample gauge's read-out for a 0-100 `value` in `vocabulary`: the bare 0-100 number in the
+    /// classic guide; under Pulse, Recovery and Sleep as percentages and Strain on WHOOP's 0-21 axis,
+    /// through the same resolver and formatter every Strain read-out uses.
+    func sampleText(_ value: Double, vocabulary: ScoreVocabulary) -> String {
+        guard vocabulary == .pulse else { return "\(Int(value.rounded()))" }
+        switch self {
+        case .effort:
+            return UnitFormatter.effortDisplay(value, scale: UnitPrefs.resolveEffortScale("", vocabulary: vocabulary))
+        case .charge, .rest:
+            return "\(Int(value.rounded()))%"
+        }
+    }
+
     /// The SF Symbol for the section header (heart/spark · flame · moon).
     var icon: String {
         switch self {
@@ -58,12 +78,16 @@ enum ScoreSection: String, CaseIterable, Identifiable {
         }
     }
 
-    /// Localized display name for the section (the raw value stays the stable anchor id).
-    var displayName: String {
+    /// Localized display name for the section (the raw value stays the stable anchor id), in the
+    /// vocabulary of the interface the app runs.
+    var displayName: String { displayName(.current) }
+
+    /// The section's name in `vocabulary`: Charge / Effort / Rest, or Recovery / Strain / Sleep under Pulse.
+    func displayName(_ vocabulary: ScoreVocabulary) -> String {
         switch self {
-        case .charge: return String(localized: "Charge")
-        case .effort: return String(localized: "Effort")
-        case .rest:   return String(localized: "Rest")
+        case .charge: return vocabulary.pick(classic: String(localized: "Charge"), pulse: String(localized: "Recovery"))
+        case .effort: return vocabulary.pick(classic: String(localized: "Effort"), pulse: String(localized: "Strain"))
+        case .rest:   return vocabulary.pick(classic: String(localized: "Rest"), pulse: String(localized: "Sleep"))
         }
     }
 }
@@ -77,6 +101,9 @@ struct ScoringGuideView: View {
     /// Drives the brief highlight pulse on the deep-linked section.
     @State private var highlighted: ScoreSection? = nil
 
+    /// The interface's vocabulary, read at render: the classic guide, or its Pulse form (see the header).
+    private var vocabulary: ScoreVocabulary { .current }
+
     var body: some View {
         VStack(spacing: 0) {
             header
@@ -89,17 +116,35 @@ struct ScoringGuideView: View {
                     VStack(alignment: .leading, spacing: NoopMetrics.sectionGap) {
                         introCard
                         scoreCard(.charge,
-                                  headline: String(localized: "Charge: how recovered are you?"),
-                                  body: String(localized: "Led by your heart-rate variability (HRV) measured against your own personal baseline, plus resting heart rate, last night's Rest, breathing rate, and a skin-temperature signal (an early illness or overreach flag). Higher HRV versus your baseline means more Charge. NOOP needs a few nights to learn your baseline first. Until then you'll see “Calibrating”."),
-                                  vsWhoop: String(localized: "Same core idea as WHOOP's Recovery % (HRV-led recovery), but our weighting and baseline maths are our own, and openly documented."))
+                                  headline: vocabulary.pick(
+                                    classic: String(localized: "Charge: how recovered are you?"),
+                                    pulse: String(localized: "Recovery: how ready is your body today?")),
+                                  body: vocabulary.pick(
+                                    classic: String(localized: "Led by your heart-rate variability (HRV) measured against your own personal baseline, plus resting heart rate, last night's Rest, breathing rate, and a skin-temperature signal (an early illness or overreach flag). Higher HRV versus your baseline means more Charge. NOOP needs a few nights to learn your baseline first. Until then you'll see “Calibrating”."),
+                                    pulse: String(localized: "A daily percentage of how prepared your body is to take on Strain. It is led by your heart-rate variability (HRV) measured against your own baseline, plus resting heart rate, respiratory rate, last night's sleep and a skin-temperature signal (an early illness or overreach flag). HRV above your baseline lifts Recovery. Green is 67% and up, yellow 34 to 66%, red 33% and below. ZENO needs a few nights to learn your baseline first. Until then you'll see “Calibrating”.")),
+                                  vsWhoop: vocabulary.pick(
+                                    classic: String(localized: "Same core idea as WHOOP's Recovery % (HRV-led recovery), but our weighting and baseline maths are our own, and openly documented."),
+                                    pulse: String(localized: "WHOOP's Recovery reads the same kinds of signals, but its weighting is private. ZENO's weighting and baseline maths are its own and openly documented, so the two should agree in direction, not to the percent.")))
                         scoreCard(.effort,
-                                  headline: String(localized: "Effort: how hard did your heart work?"),
-                                  body: String(localized: "Your cardiovascular load. NOOP turns every second of heart rate into a training-impulse using heart-rate-reserve zones (Karvonen), weights time in harder zones more heavily (Edwards by default, or Banister if you choose it in Settings), and places it on a logarithmic 0-100 scale, so easy days sit low and an all-out day approaches 100, which stays genuinely rare. Under the default, time below half your heart-rate reserve adds nothing, so a gentle walk scores little; Banister also credits lighter work."),
-                                  vsWhoop: String(localized: "Same cardiovascular-load idea as WHOOP's Day Strain (0-21). We rescaled the top of the ladder from 21 to 100 so all three scores share one scale. The rungs didn't move, so a 100 is as rare as a 21.0 was."))
+                                  headline: vocabulary.pick(
+                                    classic: String(localized: "Effort: how hard did your heart work?"),
+                                    pulse: String(localized: "Strain: how much load did your heart take on?")),
+                                  body: vocabulary.pick(
+                                    classic: String(localized: "Your cardiovascular load. NOOP turns every second of heart rate into a training-impulse using heart-rate-reserve zones (Karvonen), weights time in harder zones more heavily (Edwards by default, or Banister if you choose it in Settings), and places it on a logarithmic 0-100 scale, so easy days sit low and an all-out day approaches 100, which stays genuinely rare. Under the default, time below half your heart-rate reserve adds nothing, so a gentle walk scores little; Banister also credits lighter work."),
+                                    pulse: String(localized: "Your cardiovascular load for the day, on WHOOP's 0-21 scale. ZENO turns every second of heart rate into a training impulse using heart-rate-reserve zones (Karvonen), weights time in harder zones more heavily (Edwards by default, or Banister if you choose it in Settings), and places the total on a logarithmic scale, so easy days sit low and an all-out day approaches 21, which stays genuinely rare. Under the default, time below half your heart-rate reserve adds nothing, so a gentle walk scores little; Banister also credits lighter work.")),
+                                  vsWhoop: vocabulary.pick(
+                                    classic: String(localized: "Same cardiovascular-load idea as WHOOP's Day Strain (0-21). We rescaled the top of the ladder from 21 to 100 so all three scores share one scale. The rungs didn't move, so a 100 is as rare as a 21.0 was."),
+                                    pulse: String(localized: "The same cardiovascular-load idea and the same 0-21 scale as WHOOP's Day Strain. ZENO works the load out itself from your heart rate, so its Strain sits close to WHOOP's, not on top of it.")))
                         scoreCard(.rest,
-                                  headline: String(localized: "Rest: how restorative was your sleep?"),
-                                  body: String(localized: "A blend of how long you slept versus your sleep need (the biggest factor: your personal baseline, plus extra after a hard day or while you carry sleep debt, less any naps), how efficiently (asleep versus in bed), how much was restorative (deep + REM sleep), and how consistent your sleep and wake timing is (last night's bed and wake times against the four nights before)."),
-                                  vsWhoop: String(localized: "Similar in spirit to WHOOP's Sleep Performance %; our composite is our own."))
+                                  headline: vocabulary.pick(
+                                    classic: String(localized: "Rest: how restorative was your sleep?"),
+                                    pulse: String(localized: "Sleep: did you get the sleep you needed?")),
+                                  body: vocabulary.pick(
+                                    classic: String(localized: "A blend of how long you slept versus your sleep need (the biggest factor: your personal baseline, plus extra after a hard day or while you carry sleep debt, less any naps), how efficiently (asleep versus in bed), how much was restorative (deep + REM sleep), and how consistent your sleep and wake timing is (last night's bed and wake times against the four nights before)."),
+                                    pulse: String(localized: "Your Sleep Performance, as a percentage. The biggest factor is how long you slept against how much you needed: your personal baseline, plus extra after a high-Strain day or while you carry sleep debt, less any naps. It also counts how efficiently you slept (asleep versus in bed), how much was restorative (deep + REM sleep), and how consistent your sleep and wake timing is (last night's bed and wake times against the four nights before).")),
+                                  vsWhoop: vocabulary.pick(
+                                    classic: String(localized: "Similar in spirit to WHOOP's Sleep Performance %; our composite is our own."),
+                                    pulse: String(localized: "WHOOP's Sleep Performance centres on the hours you slept against the hours you needed. ZENO's starts from that same comparison and folds in efficiency, restorative sleep and consistency, so it is its own number.")))
                         confidenceCard
                         footerNote
                     }
@@ -136,7 +181,9 @@ struct ScoringGuideView: View {
                     .foregroundStyle(StrandPalette.textTertiary)
                 Text("How your scores work").font(StrandFont.rounded(26, weight: .bold))
                     .foregroundStyle(StrandPalette.textPrimary)
-                Text("Charge · Effort · Rest").font(StrandFont.caption)
+                Text(vocabulary.pick(classic: LocalizedStringKey("Charge · Effort · Rest"),
+                                     pulse: LocalizedStringKey("Recovery · Strain · Sleep")))
+                    .font(StrandFont.caption)
                     .foregroundStyle(StrandPalette.textSecondary)
             }
             Spacer()
@@ -172,15 +219,17 @@ struct ScoringGuideView: View {
                 Text("THE THREE SCORES").font(StrandFont.overline)
                     .tracking(StrandFont.overlineTracking)
                     .foregroundStyle(StrandPalette.textSecondary)
-                Text("NOOP gives you three daily scores (Charge, Effort and Rest), each on a 0-100 scale. They're built from your strap's raw signals using published, peer-reviewed sport science, and computed entirely on your device. They are NOT WHOOP's scores: we don't have WHOOP's private algorithms and don't pretend to. They aim at the same three questions using open science, so they'll usually track WHOOP's in direction, but won't match number-for-number. And that's the point.")
+                Text(vocabulary.pick(
+                    classic: LocalizedStringKey("NOOP gives you three daily scores (Charge, Effort and Rest), each on a 0-100 scale. They're built from your strap's raw signals using published, peer-reviewed sport science, and computed entirely on your device. They are NOT WHOOP's scores: we don't have WHOOP's private algorithms and don't pretend to. They aim at the same three questions using open science, so they'll usually track WHOOP's in direction, but won't match number-for-number. And that's the point."),
+                    pulse: LocalizedStringKey("ZENO gives you three daily scores the way WHOOP does: Recovery (a percentage), Strain (0-21) and Sleep (your Sleep Performance, a percentage). It works all three out itself, on your phone, from your strap's raw signals, using published, peer-reviewed sport science. They are ZENO's own estimates, not WHOOP's numbers: WHOOP's algorithms are private, so ZENO answers the same three questions with open methods. Expect them to move the way WHOOP's would, not to match them number for number.")))
                     .font(StrandFont.subhead)
                     .foregroundStyle(StrandPalette.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
                 // The three accents as a quick legend, echoing the section colours below.
                 HStack(spacing: 16) {
-                    legendDot(.charge, String(localized: "Charge"))
-                    legendDot(.effort, String(localized: "Effort"))
-                    legendDot(.rest, String(localized: "Rest"))
+                    legendDot(.charge, ScoreSection.charge.displayName(vocabulary))
+                    legendDot(.effort, ScoreSection.effort.displayName(vocabulary))
+                    legendDot(.rest, ScoreSection.rest.displayName(vocabulary))
                 }
                 .padding(.top, 2)
             }
@@ -216,7 +265,7 @@ struct ScoringGuideView: View {
                                 .font(.system(size: 16))
                                 .foregroundStyle(section.accent)
                                 .accessibilityHidden(true)
-                            Text(section.displayName)
+                            Text(section.displayName(vocabulary))
                                 .font(StrandFont.overline)
                                 .tracking(StrandFont.overlineTracking)
                                 .textCase(.uppercase)
@@ -267,12 +316,13 @@ struct ScoringGuideView: View {
             GlowRing(
                 fraction: section.sampleFraction,
                 value: section.sampleFraction * 100,
-                format: { "\(Int($0.rounded()))" },
+                // The classic guide's bare 0-100 number; under Pulse a percentage, or Strain on 0-21.
+                format: { [vocabulary] in section.sampleText($0, vocabulary: vocabulary) },
                 color: section.accent,
                 diameter: 76,
                 lineWidth: 8
             )
-            Text(section.displayName)
+            Text(section.displayName(vocabulary))
                 .font(StrandFont.overline)
                 .tracking(StrandFont.overlineTracking)
                 .textCase(.uppercase)
@@ -283,7 +333,8 @@ struct ScoringGuideView: View {
     private var confidenceCard: some View {
         NoopCard {
             VStack(alignment: .leading, spacing: 12) {
-                Text("How sure is NOOP?  ·  Solid · Building · Calibrating")
+                Text(vocabulary.pick(classic: LocalizedStringKey("How sure is NOOP?  ·  Solid · Building · Calibrating"),
+                                     pulse: LocalizedStringKey("How sure is ZENO?  ·  Solid · Building · Calibrating")))
                     .font(StrandFont.headline)
                     .foregroundStyle(StrandPalette.textPrimary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -293,7 +344,9 @@ struct ScoringGuideView: View {
                     StatePill("Building", tone: .warning, showsDot: true)
                     StatePill("Calibrating", tone: .neutral, showsDot: true)
                 }
-                Text("Every score carries a small honesty label. Calibrating means NOOP is still learning your baseline, or doesn't have enough data yet. Building means there's enough to show, but it's thin. Solid means full inputs are present. When NOOP can't compute a score honestly, it shows nothing rather than a fake number.")
+                Text(vocabulary.pick(
+                    classic: LocalizedStringKey("Every score carries a small honesty label. Calibrating means NOOP is still learning your baseline, or doesn't have enough data yet. Building means there's enough to show, but it's thin. Solid means full inputs are present. When NOOP can't compute a score honestly, it shows nothing rather than a fake number."),
+                    pulse: LocalizedStringKey("Every score carries a small honesty label. Calibrating means ZENO is still learning your baseline, or doesn't have enough data yet. Building means there's enough to show, but it's thin. Solid means full inputs are present. When ZENO can't compute a score honestly, it shows nothing rather than a fake number.")))
                     .font(StrandFont.subhead)
                     .foregroundStyle(StrandPalette.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)

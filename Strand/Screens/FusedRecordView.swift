@@ -22,6 +22,19 @@ import StrandAnalytics
 // Wellness framing only: a source is "higher-trust for this metric" with a plain reason; we never say
 // a number is accurate / correct / clinical, never flag a value as concerning. "Everything stays on
 // this device."
+//
+// VOCABULARY: under the iPhone's Pulse interface the app is ZENO (spec §0.3), in this screen's copy and
+// in the name of its own computed source. The engine's `FusionSource.displayName` stays "NOOP"; the
+// mapping is `fusedDisplayName`, at render.
+
+extension FusionSource {
+    /// The source's name as this screen shows it: the engine's `displayName`, except that the app's own
+    /// on-device scores are named after the app the interface calls itself (ZENO under Pulse).
+    var fusedDisplayName: String {
+        guard self == .noopComputed else { return displayName }
+        return ScoreVocabulary.pick(classic: displayName, pulse: ScoreVocabulary.appName)
+    }
+}
 
 // MARK: - Presentation model (the read-model this screen consumes)
 
@@ -152,7 +165,7 @@ struct FusedRecordView: View {
                 .foregroundStyle(StrandPalette.accent)
                 .accessibilityHidden(true)
             if let owner = record.dayOwner {
-                Text("Today's scores owned by \(owner.displayName)")
+                Text("Today's scores owned by \(owner.fusedDisplayName)")
                     .font(StrandFont.footnote)
                     .foregroundStyle(StrandPalette.textSecondary)
             } else {
@@ -184,7 +197,9 @@ struct FusedRecordView: View {
 
     /// The pillar's standing non-clinical line (umbrella §4.1). Kept inline + plain — wellness only.
     private var disclaimerNote: some View {
-        Text("NOOP picks the best-sourced number and shows you where each came from. It's for wellness and curiosity. It doesn't diagnose or replace medical advice.")
+        Text(ScoreVocabulary.pick(
+            classic: LocalizedStringKey("NOOP picks the best-sourced number and shows you where each came from. It's for wellness and curiosity. It doesn't diagnose or replace medical advice."),
+            pulse: LocalizedStringKey("ZENO picks the best-sourced number and shows you where each came from. It's for wellness and curiosity. It doesn't diagnose or replace medical advice.")))
             .font(StrandFont.footnote)
             .foregroundStyle(StrandPalette.textTertiary)
             .fixedSize(horizontal: false, vertical: true)
@@ -237,7 +252,7 @@ private struct FusedMetricRowView: View {
                 // Provenance line: a source badge + the published one-line reason. The literal goes to
                 // SourceBadge's LocalizedStringKey directly so the "from %@" key is catalogued.
                 HStack(spacing: 8) {
-                    SourceBadge("from \(point.winningSource.displayName)",
+                    SourceBadge("from \(point.winningSource.fusedDisplayName)",
                                 tint: StrandPalette.accent)
                     if let reason = winnerReason {
                         Text(reason)
@@ -277,7 +292,7 @@ private struct FusedMetricRowView: View {
 
         case .agree:
             if let other = point.contributors.dropFirst().first {
-                Text("\(other.source.displayName) agrees: \(FusionFormat.value(other.value, metricKey: point.metric, temperature: temperatureUnit))")
+                Text("\(other.source.fusedDisplayName) agrees: \(FusionFormat.value(other.value, metricKey: point.metric, temperature: temperatureUnit))")
                     .font(StrandFont.footnote)
                     .foregroundStyle(StrandPalette.textTertiary)
             }
@@ -286,7 +301,7 @@ private struct FusedMetricRowView: View {
             if let other = point.contributors.dropFirst().first {
                 HStack(spacing: 6) {
                     StatePill("Differs slightly", tone: .neutral, showsDot: false)
-                    Text("\(other.source.displayName): \(FusionFormat.value(other.value, metricKey: point.metric, temperature: temperatureUnit))")
+                    Text("\(other.source.fusedDisplayName): \(FusionFormat.value(other.value, metricKey: point.metric, temperature: temperatureUnit))")
                         .font(StrandFont.footnote)
                         .foregroundStyle(StrandPalette.textSecondary)
                     Spacer(minLength: 0)
@@ -315,7 +330,7 @@ private struct FusedMetricRowView: View {
     /// "Apple Health says 6h 40m. Tap to compare" style line for a conflict.
     private var conflictSummary: String {
         guard let other = point.contributors.dropFirst().first else { return String(localized: "Tap to compare") }
-        return String(localized: "\(other.source.displayName) says \(FusionFormat.value(other.value, metricKey: point.metric, temperature: temperatureUnit)). Tap to compare")
+        return String(localized: "\(other.source.fusedDisplayName) says \(FusionFormat.value(other.value, metricKey: point.metric, temperature: temperatureUnit)). Tap to compare")
     }
 }
 
@@ -331,7 +346,10 @@ private struct ConflictCompareSheet: View {
     private var point: FusedMetricPoint { row.point }
 
     var body: some View {
-        ScreenScaffold(title: LocalizedStringKey(row.label), subtitle: "Your bands report different numbers. Here's every source, and the one NOOP is using.") {
+        ScreenScaffold(title: LocalizedStringKey(row.label),
+                       subtitle: ScoreVocabulary.pick(
+                        classic: LocalizedStringKey("Your bands report different numbers. Here's every source, and the one NOOP is using."),
+                        pulse: LocalizedStringKey("Your bands report different numbers. Here's every source, and the one ZENO is using."))) {
             VStack(alignment: .leading, spacing: NoopMetrics.gap) {
                 NoopCard {
                     VStack(spacing: 0) {
@@ -355,7 +373,9 @@ private struct ConflictCompareSheet: View {
                             .font(StrandFont.subhead)
                             .foregroundStyle(StrandPalette.accent)
                             .accessibilityHidden(true)
-                        Text("NOOP shows the \(winner.source.displayName) reading because it \(winner.reason) for this metric: a higher-trust source here, not a verdict that the others are wrong.")
+                        Text(ScoreVocabulary.pick(
+                            classic: LocalizedStringKey("NOOP shows the \(winner.source.fusedDisplayName) reading because it \(winner.reason) for this metric: a higher-trust source here, not a verdict that the others are wrong."),
+                            pulse: LocalizedStringKey("ZENO shows the \(winner.source.fusedDisplayName) reading because it \(winner.reason) for this metric: a higher-trust source here, not a verdict that the others are wrong.")))
                             .font(StrandFont.subhead)
                             .foregroundStyle(StrandPalette.textSecondary)
                             .fixedSize(horizontal: false, vertical: true)
@@ -391,7 +411,7 @@ private struct ContributorRow: View {
         HStack(alignment: .center, spacing: 12) {
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 8) {
-                    SourceBadge(LocalizedStringKey(contrib.source.displayName),
+                    SourceBadge(LocalizedStringKey(contrib.source.fusedDisplayName),
                                 tint: isWinner ? StrandPalette.accent : StrandPalette.textTertiary)
                     if isWinner {
                         StatePill("Using", tone: .accent, showsDot: true)
@@ -412,8 +432,8 @@ private struct ContributorRow: View {
         .accessibilityElement(children: .combine)
         // Whole-string key per variant (never a concatenated localized tail on an a11y label).
         .accessibilityLabel(isWinner
-            ? "\(contrib.source.displayName), \(FusionFormat.value(contrib.value, metricKey: metricKey, temperature: temperatureUnit)), in use"
-            : "\(contrib.source.displayName), \(FusionFormat.value(contrib.value, metricKey: metricKey, temperature: temperatureUnit))")
+            ? "\(contrib.source.fusedDisplayName), \(FusionFormat.value(contrib.value, metricKey: metricKey, temperature: temperatureUnit)), in use"
+            : "\(contrib.source.fusedDisplayName), \(FusionFormat.value(contrib.value, metricKey: metricKey, temperature: temperatureUnit))")
     }
 }
 

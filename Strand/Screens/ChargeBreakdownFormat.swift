@@ -14,6 +14,10 @@ import StrandAnalytics
 // No fabricated numbers, no em-dashes. Design-system tokens only (StrandPalette / StrandFont /
 // NoopMetrics); the +N/-N chip uses the recovery ramp endpoints (green peak / red depleted) so a
 // supporting term reads green and a limiting term reads red, matching the Charge colour world.
+//
+// Under the iPhone's Pulse interface (`ScoreVocabulary.pulse`) the copy that names the score says
+// Recovery and the app ZENO (spec §0.3). The engine's verdicts are catalog keys that other surfaces
+// read too, so a verdict naming the score is mapped here at render (`pulseVerdict`), never at its source.
 
 enum ChargeBreakdownFormat {
 
@@ -47,7 +51,7 @@ enum ChargeBreakdownFormat {
 
     /// VoiceOver phrasing of one driver row: label, signed points, value vs baseline, verdict.
     /// Built from the engine row verbatim (no recompute). Pure.
-    static func driverAccessibilityLabel(_ d: ChargeDriver) -> String {
+    static func driverAccessibilityLabel(_ d: ChargeDriver, vocabulary: ScoreVocabulary = .current) -> String {
         // Whole-phrase variants (direction x count, and with/without baseline) so translators see
         // complete sentences, never stitched direction/plural fragments.
         let pts: String
@@ -67,11 +71,32 @@ enum ChargeBreakdownFormat {
         // template is the lookup key, its substitutions are not re-localized), so look each up first
         // and interpolate the already-localized text. valueText/baselineText are numeric read-outs.
         let label = String(localized: String.LocalizationValue(d.label))
-        let verdict = String(localized: String.LocalizationValue(d.verdict))
+        let verdict = verdictText(d.verdict, vocabulary: vocabulary)
         if d.baselineText.isEmpty {
             return String(localized: "\(label): \(pts). \(d.valueText). \(verdict).")
         }
         return String(localized: "\(label): \(pts). \(d.valueText), \(d.baselineText). \(verdict).")
+    }
+
+    /// An engine verdict as read: its catalog entry, or under Pulse the Recovery wording of a verdict that
+    /// names the score (`pulseVerdict`). Pure.
+    static func verdictText(_ verdict: String, vocabulary: ScoreVocabulary = .current) -> String {
+        if vocabulary == .pulse, let pulse = pulseVerdict(verdict) { return pulse }
+        return String(localized: String.LocalizationValue(verdict))
+    }
+
+    /// The Pulse wording of a `ChargeDrivers` verdict that names the score, or nil for the verdicts that
+    /// read the same in both vocabularies. The engine's two "too small to change Charge" keys are matched
+    /// verbatim (pinned against the engine source by `InsightScreensVocabularyTests`). Pure.
+    static func pulseVerdict(_ verdict: String) -> String? {
+        switch verdict {
+        case "above baseline, too small to change Charge":
+            return String(localized: "above baseline, too small to change Recovery")
+        case "below baseline, too small to change Charge":
+            return String(localized: "below baseline, too small to change Recovery")
+        default:
+            return nil
+        }
     }
 
     // MARK: - Score-confidence tier chip (A3)
@@ -196,8 +221,13 @@ enum ChargeBreakdownFormat {
     static let chargeDeepWindowGapTitle = String(localized: "No deep sleep detected")
 
     /// The explanatory detail + next step: names the cause (Deep window, no deep sleep that night) and
-    /// the two ways out, rather than leaving an unexplained blank ring.
-    static let chargeDeepWindowGapDetail = String(localized: "The Deep sleep HRV window needs a night with deep-stage sleep to score Charge. Switch to Whole night in Settings, or wait for a night with more deep sleep.")
+    /// the two ways out, rather than leaving an unexplained blank ring. Read at render, in the
+    /// interface's vocabulary.
+    static var chargeDeepWindowGapDetail: String {
+        ScoreVocabulary.pick(
+            classic: String(localized: "The Deep sleep HRV window needs a night with deep-stage sleep to score Charge. Switch to Whole night in Settings, or wait for a night with more deep sleep."),
+            pulse: String(localized: "The Deep sleep HRV window needs a night with deep-stage sleep to score Recovery. Switch to Whole night in Settings, or wait for a night with more deep sleep."))
+    }
 
     /// VoiceOver plain string (title + detail).
     static var chargeDeepWindowGapAccessibility: String {
@@ -213,7 +243,11 @@ enum ChargeBreakdownFormat {
     /// on the phone and the strap has long since trimmed that night from its own flash, so there is no
     /// honest "do this and it comes back" step to offer. What it CAN promise is that the night is not
     /// lost from history and that the problem does not continue, and it says both.
-    static let chargeLegacyRRGapDetail = String(localized: "This night was recorded before NOOP labelled which WHOOP 5 transport each heartbeat came from, so its intervals mix two different units with nothing stored to tell them apart. The night stays in your history, and nights recorded from now on score normally.")
+    static var chargeLegacyRRGapDetail: String {
+        ScoreVocabulary.pick(
+            classic: String(localized: "This night was recorded before NOOP labelled which WHOOP 5 transport each heartbeat came from, so its intervals mix two different units with nothing stored to tell them apart. The night stays in your history, and nights recorded from now on score normally."),
+            pulse: String(localized: "This night was recorded before the app began labelling which WHOOP 5 transport each heartbeat came from, so its intervals mix two different units with nothing stored to tell them apart. The night stays in your history, and nights recorded from now on score normally."))
+    }
 
     /// VoiceOver plain string (title + detail).
     static var chargeLegacyRRGapAccessibility: String {
@@ -342,13 +376,22 @@ struct ChargeDriverRow: View {
             // A thin magnitude bar tinted to the chip hue, reading the term's share of the biggest mover.
             PipBar(value: magnitude, range: 0...barMax, segments: 16, tint: chipHue, height: 6)
                 .accessibilityHidden(true)
-            Text(LocalizedStringKey(driver.verdict))
+            verdictText
                 .font(StrandFont.footnote)
                 .foregroundStyle(StrandPalette.textTertiary)
                 .fixedSize(horizontal: false, vertical: true)
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(ChargeBreakdownFormat.driverAccessibilityLabel(driver))
+    }
+
+    /// The engine's verdict, looked up as its catalog key; under Pulse a verdict that names the score
+    /// reads in Recovery terms (`ChargeBreakdownFormat.pulseVerdict`).
+    private var verdictText: Text {
+        if ScoreVocabulary.current == .pulse, let pulse = ChargeBreakdownFormat.pulseVerdict(driver.verdict) {
+            return Text(pulse)
+        }
+        return Text(LocalizedStringKey(driver.verdict))
     }
 }
 

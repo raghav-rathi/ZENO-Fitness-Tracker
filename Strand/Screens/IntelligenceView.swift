@@ -9,6 +9,11 @@ import StrandAnalytics
 /// looked up via `String(localized:)` so non-English locales (e.g. German, issue #1020) actually
 /// translate them instead of rendering the English literal. pt-PT catalog strings adopted from
 /// tigercraft4's PR #1018 (marked needs_review — machine ES→PT conversion pending native review).
+///
+/// The iPhone's Pulse interface links here as "Tomorrow's Recovery", so under `ScoreVocabulary.pulse`
+/// every line that names a score or the app has a second form beside the classic one: Recovery, Strain
+/// (on 0-21, through the resolved Effort scale) and Sleep, and ZENO (spec §0.3). The engine's own
+/// empty-state note is mapped here at render, never changed at its source.
 struct IntelligenceView: View {
     @EnvironmentObject var intelligence: IntelligenceEngine
     // NOTE: IntelligenceView deliberately does NOT observe `LiveState`. A connected strap publishes at
@@ -28,7 +33,9 @@ struct IntelligenceView: View {
         // imported history, an eager VStack built every card up-front on the main thread and froze
         // the app when ALL was tapped (#345); LazyVStack only materialises what's on screen.
         ScreenScaffold(title: "Intelligence",
-                       subtitle: "NOOP scores your charge, effort and rest itself: on-device, no cloud.",
+                       subtitle: ScoreVocabulary.pick(
+                        classic: LocalizedStringKey("NOOP scores your charge, effort and rest itself: on-device, no cloud."),
+                        pulse: LocalizedStringKey("ZENO scores your recovery, strain and sleep itself: on-device, no cloud.")),
                        lazy: true,
                        // Liquid finish: the same full-bleed day-of-sky backdrop Today + the other liquid
                        // tabs carry, so Intelligence sits in one atmosphere. Static + non-interactive; the
@@ -49,7 +56,7 @@ struct IntelligenceView: View {
                     HStack(alignment: .top, spacing: NoopMetrics.rowSpacing) {
                         Image(systemName: "moon.zzz.fill").foregroundStyle(StrandPalette.chargeColor)
                             .accessibilityHidden(true)
-                        Text(note).font(StrandFont.subhead).foregroundStyle(StrandPalette.textSecondary)
+                        Text(Self.noteText(note)).font(StrandFont.subhead).foregroundStyle(StrandPalette.textSecondary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 }
@@ -60,7 +67,9 @@ struct IntelligenceView: View {
                 IntelSyncingNote()
                 DataPendingNote(
                     title: "Building from your strap",
-                    message: "This builds from the strap as it syncs. Effort and rest appear after you have worn it and slept a night. Charge needs about four nights of sleep to learn your baseline (you'll see \"Calibrating\" until then), and keeps sharpening over your first couple of weeks. On a WHOOP 5 or MG the strap banks little history, so the night count can climb slowly or sit at 0 of 4 until you have worn it across a few nights. That's its sync limit, not a fault. Import your WHOOP export to skip the wait.",
+                    message: ScoreVocabulary.pick(
+                        classic: LocalizedStringKey("This builds from the strap as it syncs. Effort and rest appear after you have worn it and slept a night. Charge needs about four nights of sleep to learn your baseline (you'll see \"Calibrating\" until then), and keeps sharpening over your first couple of weeks. On a WHOOP 5 or MG the strap banks little history, so the night count can climb slowly or sit at 0 of 4 until you have worn it across a few nights. That's its sync limit, not a fault. Import your WHOOP export to skip the wait."),
+                        pulse: LocalizedStringKey("This builds from the strap as it syncs. Strain and sleep appear after you have worn it and slept a night. Recovery needs about four nights of sleep to learn your baseline (you'll see \"Calibrating\" until then), and keeps sharpening over your first couple of weeks. On a WHOOP 5 or MG the strap banks little history, so the night count can climb slowly or sit at 0 of 4 until you have worn it across a few nights. That's its sync limit, not a fault. Import your WHOOP export to skip the wait.")),
                     symbol: "brain.head.profile"
                 )
             } else {
@@ -111,6 +120,20 @@ struct IntelligenceView: View {
         return intelligence.results.filter { $0.day >= cutoff }
     }
 
+    /// The engine's empty-state note in the interface's vocabulary. `IntelligenceEngine` writes one fixed
+    /// English sentence when a pass scores no nights (the Recovery dive reads the engine's strings, so they
+    /// stay as they are); under Pulse that sentence is shown in Recovery / Strain / Sleep and ZENO terms.
+    /// Any other note, and every note in the classic interface, is shown exactly as the engine wrote it.
+    nonisolated static func noteText(_ note: String, vocabulary: ScoreVocabulary = .current) -> String {
+        guard vocabulary == .pulse, note == engineNoNightsNote else { return note }
+        return String(localized: "No scored nights yet. Wear the strap with ZENO connected overnight and the engine will score your recovery, strain and sleep itself, no WHOOP cloud required.")
+    }
+
+    /// `IntelligenceEngine`'s note for a pass that scored no nights, verbatim (pinned by
+    /// `InsightScreensVocabularyTests` against the engine source, so a reworded engine note fails loudly
+    /// instead of slipping past the mapping).
+    nonisolated static let engineNoNightsNote = "No scored nights yet. Wear the strap with NOOP connected overnight and the engine will score your charge, effort and rest itself, no WHOOP cloud required."
+
     private static let dayFmt: DateFormatter = {
         let f = DateFormatter()
         f.calendar = Calendar(identifier: .gregorian)
@@ -145,7 +168,9 @@ struct IntelligenceView: View {
     private func forecastCard(_ f: RecoveryForecast) -> some View {
         let frac = min(max(f.charge / 100.0, 0), 1)
         return VStack(alignment: .leading, spacing: NoopMetrics.gap) {
-            SectionHeader("Tomorrow's Charge", overline: "Evening forecast", trailing: String(localized: "Estimate"))
+            SectionHeader(ScoreVocabulary.pick(classic: LocalizedStringKey("Tomorrow's Charge"),
+                                               pulse: LocalizedStringKey("Tomorrow's Recovery")),
+                          overline: "Evening forecast", trailing: String(localized: "Estimate"))
             NoopCard(padding: 20, tint: StrandPalette.chargeColor) {
                 VStack(spacing: 14) {
                     // The signature liquid gauge: a filling vessel tinted to the forecast Charge, with the
@@ -157,7 +182,9 @@ struct IntelligenceView: View {
                         VStack(spacing: 0) {
                             CountUpText(
                                 value: f.charge,
-                                format: { "\(Int($0.rounded()))" },
+                                // Recovery reads as a percentage under Pulse, as every Pulse surface prints it.
+                                format: ScoreVocabulary.current == .pulse ? { "\(Int($0.rounded()))%" }
+                                                                          : { "\(Int($0.rounded()))" },
                                 font: StrandFont.rounded(52),
                                 color: StrandPalette.textPrimary
                             )
@@ -171,13 +198,19 @@ struct IntelligenceView: View {
                     .padding(.top, 4)
                     .padding(.bottom, 6)
                     .accessibilityElement(children: .ignore)
-                    .accessibilityLabel("Tomorrow's Charge estimate \(Int(f.charge.rounded())) plus or minus \(Int(f.band.rounded()))")
+                    .accessibilityLabel(ScoreVocabulary.pick(
+                        classic: LocalizedStringKey("Tomorrow's Charge estimate \(Int(f.charge.rounded())) plus or minus \(Int(f.band.rounded()))"),
+                        pulse: LocalizedStringKey("Tomorrow's Recovery estimate \(Int(f.charge.rounded())) percent, plus or minus \(Int(f.band.rounded()))")))
                     VStack(alignment: .leading, spacing: 10) {
-                        Text("You'll likely wake around \(Int(f.charge.rounded())) ± \(Int(f.band.rounded())) Charge if you sleep about \(sleepHoursLabel(f.plannedSleepHours)) tonight.")
+                        Text(ScoreVocabulary.pick(
+                            classic: LocalizedStringKey("You'll likely wake around \(Int(f.charge.rounded())) ± \(Int(f.band.rounded())) Charge if you sleep about \(sleepHoursLabel(f.plannedSleepHours)) tonight."),
+                            pulse: LocalizedStringKey("You'll likely wake to a Recovery of about \(Int(f.charge.rounded()))% (± \(Int(f.band.rounded()))) if you sleep about \(sleepHoursLabel(f.plannedSleepHours)) tonight.")))
                             .font(StrandFont.subhead).foregroundStyle(StrandPalette.textSecondary)
                             .fixedSize(horizontal: false, vertical: true)
                             .frame(maxWidth: .infinity, alignment: .leading)
-                        Text("Estimate from today's effort, your typical sleep and your \(f.nights)-night recovery baseline, not a measurement. Your real Charge is scored from tomorrow's HRV when you wake.")
+                        Text(ScoreVocabulary.pick(
+                            classic: LocalizedStringKey("Estimate from today's effort, your typical sleep and your \(f.nights)-night recovery baseline, not a measurement. Your real Charge is scored from tomorrow's HRV when you wake."),
+                            pulse: LocalizedStringKey("Estimate from today's Strain, your typical sleep and your \(f.nights)-night recovery baseline, not a measurement. Your real Recovery is scored from tomorrow's HRV when you wake.")))
                             .font(StrandFont.footnote).foregroundStyle(StrandPalette.textTertiary)
                             .fixedSize(horizontal: false, vertical: true)
                             .frame(maxWidth: .infinity, alignment: .leading)
@@ -203,19 +236,25 @@ struct IntelligenceView: View {
                         .accessibilityHidden(true)
                     Text("How this works").font(StrandFont.headline).foregroundStyle(StrandPalette.textPrimary)
                 }
-                Text("Charge weighs your HRV against your personal baseline (~55%), resting heart rate (~20%), rest quality (~15%), respiration (~5%) and skin-temperature deviation (~5%). Effort is a 0-\(UnitFormatter.effortScaleMax(effortScale)) cardiovascular load from time in heart-rate zones. Rest is staged from movement and heart rate. Everything is computed here from the strap's raw data. It works for any day NOOP collected raw streams.")
+                Text(ScoreVocabulary.pick(
+                    classic: LocalizedStringKey("Charge weighs your HRV against your personal baseline (~55%), resting heart rate (~20%), rest quality (~15%), respiration (~5%) and skin-temperature deviation (~5%). Effort is a 0-\(UnitFormatter.effortScaleMax(effortScale)) cardiovascular load from time in heart-rate zones. Rest is staged from movement and heart rate. Everything is computed here from the strap's raw data. It works for any day NOOP collected raw streams."),
+                    pulse: LocalizedStringKey("Recovery weighs your HRV against your personal baseline (~55%), resting heart rate (~20%), sleep quality (~15%), respiration (~5%) and skin-temperature deviation (~5%). Strain is a 0-\(UnitFormatter.effortScaleMax(effortScale)) cardiovascular load from time in heart-rate zones. Sleep is staged from movement and heart rate. Everything is computed here from the strap's raw data. It works for any day ZENO collected raw streams.")))
                     .font(StrandFont.subhead).foregroundStyle(StrandPalette.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
                 // The Charge model made concrete — the five weighted inputs, each its own metric accent.
                 VStack(alignment: .leading, spacing: NoopMetrics.cardInnerSpacing) {
-                    Text("Charge model").strandOverline()
+                    Text(ScoreVocabulary.pick(classic: LocalizedStringKey("Charge model"),
+                                              pulse: LocalizedStringKey("Recovery model"))).strandOverline()
                     weightRow(String(localized: "Heart-rate variability"), "~55%", fraction: 0.55, color: StrandPalette.metricPurple)
                     weightRow(String(localized: "Resting heart rate"), "~20%", fraction: 0.20, color: StrandPalette.metricRose)
-                    weightRow(String(localized: "Rest quality"), "~15%", fraction: 0.15, color: StrandPalette.metricCyan)
+                    weightRow(ScoreVocabulary.pick(classic: String(localized: "Rest quality"),
+                                                   pulse: String(localized: "Sleep quality")),
+                              "~15%", fraction: 0.15, color: StrandPalette.metricCyan)
                     weightRow(String(localized: "Respiration"), "~5%", fraction: 0.05, color: StrandPalette.accent)
                     weightRow(String(localized: "Skin-temperature deviation"), "~5%", fraction: 0.05, color: StrandPalette.metricAmber)
                     HStack {
-                        Text(String(localized: "Effort")).font(StrandFont.subhead).foregroundStyle(StrandPalette.textSecondary)
+                        Text(ScoreVocabulary.pick(classic: String(localized: "Effort"), pulse: String(localized: "Strain")))
+                            .font(StrandFont.subhead).foregroundStyle(StrandPalette.textSecondary)
                         Spacer()
                         Text("0-\(UnitFormatter.effortScaleMax(effortScale)) scale")
                             .font(StrandFont.captionNumber).foregroundStyle(StrandPalette.effortColor)
@@ -242,7 +281,8 @@ struct IntelligenceView: View {
             LiquidTube(frac: min(1, max(0, fraction / 0.55)), tint: color, height: 8, animated: false)
         }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(label): \(percent) of Charge")
+        .accessibilityLabel(ScoreVocabulary.pick(classic: LocalizedStringKey("\(label): \(percent) of Charge"),
+                                                 pulse: LocalizedStringKey("\(label): \(percent) of Recovery")))
     }
 
     private func dayCard(_ d: IntelligenceEngine.Computed) -> some View {
@@ -276,11 +316,15 @@ struct IntelligenceView: View {
                                 tint: d.source == .computed ? StrandPalette.chargeColor : StrandPalette.accent)
                 }
                 HStack(spacing: 0) {
-                    stat(String(localized: "Charge"), d.recovery.map { "\(Int($0.rounded()))%" } ?? "—",
+                    stat(ScoreVocabulary.pick(classic: String(localized: "Charge"), pulse: String(localized: "Recovery")),
+                         d.recovery.map { "\(Int($0.rounded()))%" } ?? "—",
                          d.recovery.map { StrandPalette.recoveryColor($0) } ?? StrandPalette.textSecondary)
-                    stat(String(localized: "Effort"), d.strain.map { UnitFormatter.effortDisplay($0, scale: effortScale) } ?? "—",
+                    stat(ScoreVocabulary.pick(classic: String(localized: "Effort"), pulse: String(localized: "Strain")),
+                         d.strain.map { UnitFormatter.effortDisplay($0, scale: effortScale) } ?? "—",
                          d.strain.map { StrandPalette.strainColor($0) } ?? StrandPalette.textSecondary)
-                    stat(String(localized: "Rest"), d.sleepMin.map { "\(Int($0 / 60))h \(Int($0.truncatingRemainder(dividingBy: 60)))m" } ?? "—", StrandPalette.restColor)
+                    stat(ScoreVocabulary.pick(classic: String(localized: "Rest"), pulse: String(localized: "Sleep")),
+                         d.sleepMin.map { "\(Int($0 / 60))h \(Int($0.truncatingRemainder(dividingBy: 60)))m" } ?? "—",
+                         StrandPalette.restColor)
                     stat(String(localized: "HRV"), d.hrv.map { "\(Int($0.rounded()))" } ?? "—", StrandPalette.metricPurple)
                     stat(String(localized: "RHR"), d.rhr.map { "\($0)" } ?? "—", StrandPalette.metricRose)
                 }

@@ -5,6 +5,9 @@ import StrandDesign
 /// folder, turn on daily auto-backup (an on-launch catch-up), back up now, or restore from a snapshot
 /// already in that folder. Snapshots are the existing `.noopbak` whole-DB format. Point the folder at
 /// Google Drive / iCloud / Dropbox for off-device sync with no in-app cloud account.
+///
+/// Under the iPhone's Pulse interface the copy names the app ZENO, as Files does (`ScoreVocabulary`,
+/// spec §0.3); the `.noopbak` format and the folder's storage are unchanged.
 struct BackupSyncView: View {
     @EnvironmentObject var model: AppModel
 
@@ -68,7 +71,7 @@ struct BackupSyncView: View {
             VStack(alignment: .leading, spacing: 10) {
                 Text("Backup folder")
                     .font(StrandFont.headline).foregroundStyle(StrandPalette.textPrimary)
-                Text(folderLabel.map { String(localized: "Saving to: \($0)") }
+                Text(shownFolderLabel.map { String(localized: "Saving to: \($0)") }
                      ?? String(localized: "No folder chosen yet. Pick one your cloud app already syncs, or any local folder."))
                     .font(StrandFont.footnote).foregroundStyle(StrandPalette.textTertiary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -94,7 +97,8 @@ struct BackupSyncView: View {
                 // #52: some iOS 26 users can't select a folder in the system picker (its "Open" button
                 // never fires). This backs up inside NOOP's own Files-visible folder instead — no picker.
                 if !FolderBackup.useInternalFolder {
-                    NoopButton("Use NOOP's own folder (browse in Files)",
+                    NoopButton(ScoreVocabulary.pick(classic: LocalizedStringKey("Use NOOP's own folder (browse in Files)"),
+                                                    pulse: LocalizedStringKey("Use ZENO's own folder (browse in Files)")),
                                systemImage: "iphone", kind: .tertiary) { useNoopFolder() }
                         .disabled(busy)
                 }
@@ -110,7 +114,9 @@ struct BackupSyncView: View {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Daily auto-backup")
                             .font(StrandFont.body).foregroundStyle(StrandPalette.textPrimary)
-                        Text("Backs up to your folder about once a day and keeps the latest \(keep). On this platform it runs when you next open NOOP.")
+                        Text(ScoreVocabulary.pick(
+                            classic: LocalizedStringKey("Backs up to your folder about once a day and keeps the latest \(keep). On this platform it runs when you next open NOOP."),
+                            pulse: LocalizedStringKey("Backs up to your folder about once a day and keeps the latest \(keep). On this platform it runs when you next open ZENO.")))
                             .font(StrandFont.footnote).foregroundStyle(StrandPalette.textTertiary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
@@ -209,7 +215,9 @@ struct BackupSyncView: View {
                 // active, a cancelled picker changed nothing — and the button the message points at is
                 // hidden, so alerting here would send the user chasing a control that isn't shown.
                 alertTitle = String(localized: "No folder selected")
-                alertMessage = String(localized: "NOOP didn't get a folder back from the picker. If the Open button won't do anything, tap \"Use NOOP's own folder\" below to back up inside NOOP instead — you can read those backups from the Files app.")
+                alertMessage = ScoreVocabulary.pick(
+                    classic: String(localized: "NOOP didn't get a folder back from the picker. If the Open button won't do anything, tap \"Use NOOP's own folder\" below to back up inside NOOP instead — you can read those backups from the Files app."),
+                    pulse: String(localized: "ZENO didn't get a folder back from the picker. If the Open button won't do anything, tap \"Use ZENO's own folder\" below to back up inside ZENO instead — you can read those backups from the Files app."))
                 showAlert = true
             }
         }
@@ -222,8 +230,11 @@ struct BackupSyncView: View {
     private func useNoopFolder() {
         FolderBackup.useNoopFolder()
         folderLabel = FolderBackup.folderLabel()
-        alertTitle = String(localized: "Using NOOP's folder")
-        alertMessage = String(localized: "Backups will be saved inside NOOP. Open the Files app → On My iPhone → NOOP → Backups to see them, or drag that folder into iCloud Drive to read it on your Mac. To use a different folder later, tap Change folder.")
+        alertTitle = ScoreVocabulary.pick(classic: String(localized: "Using NOOP's folder"),
+                                          pulse: String(localized: "Using ZENO's folder"))
+        alertMessage = ScoreVocabulary.pick(
+            classic: String(localized: "Backups will be saved inside NOOP. Open the Files app → On My iPhone → NOOP → Backups to see them, or drag that folder into iCloud Drive to read it on your Mac. To use a different folder later, tap Change folder."),
+            pulse: String(localized: "Backups will be saved inside ZENO. Open the Files app → On My iPhone → ZENO → Backups to see them, or drag that folder into iCloud Drive to read it on your Mac. To use a different folder later, tap Change folder."))
         showAlert = true
     }
     #endif
@@ -248,7 +259,9 @@ struct BackupSyncView: View {
         snapshots = FolderBackup.listSnapshots()
         if snapshots.isEmpty {
             alertTitle = String(localized: "No backups found")
-            alertMessage = String(localized: "There are no NOOP backups in your folder yet. Use Back up now first.")
+            alertMessage = ScoreVocabulary.pick(
+                classic: String(localized: "There are no NOOP backups in your folder yet. Use Back up now first."),
+                pulse: String(localized: "There are no ZENO backups in your folder yet. Use Back up now first."))
             showAlert = true
         } else {
             showRestoreSheet = true
@@ -269,7 +282,8 @@ struct BackupSyncView: View {
                 switch result {
                 case .imported:
                     alertTitle = String(localized: "Restored")
-                    alertMessage = String(localized: "Fully quit and reopen NOOP to load it.")
+                    alertMessage = ScoreVocabulary.pick(classic: String(localized: "Fully quit and reopen NOOP to load it."),
+                                                        pulse: String(localized: "Fully quit and reopen ZENO to load it."))
                 case .failure(let m):
                     alertTitle = String(localized: "Restore problem"); alertMessage = m
                 case .restoreTooLarge(let name, let limit):
@@ -278,13 +292,24 @@ struct BackupSyncView: View {
                     // than leaving the user with a refusal and nowhere to go.
                     let cap = ByteCountFormatter.string(fromByteCount: limit, countStyle: .file)
                     alertTitle = String(localized: "Backup problem")
-                    alertMessage = String(localized: "\(name) is larger than the \(cap) NOOP restores without asking. You can still restore it from Settings → Backup & restore → Import, which will ask you to confirm.")
+                    // Pulse names its own route to the confirming restore (More › Privacy & data).
+                    alertMessage = ScoreVocabulary.pick(
+                        classic: String(localized: "\(name) is larger than the \(cap) NOOP restores without asking. You can still restore it from Settings → Backup & restore → Import, which will ask you to confirm."),
+                        pulse: String(localized: "\(name) is larger than the \(cap) ZENO restores without asking. You can still restore it from More → Privacy & data → Restore from a backup, which will ask you to confirm."))
                 case .cancelled, .exported, .exportedOversize:
                     alertTitle = String(localized: "Restore problem"); alertMessage = String(localized: "Couldn't restore that backup.")
                 }
                 showAlert = true
             }
         }
+    }
+
+    /// The destination as shown: `FolderBackup.folderLabel()`, except that the app's own Files folder is
+    /// named as Files names it, after the app (ZENO under Pulse; the label's source keeps "NOOP").
+    private var shownFolderLabel: String? {
+        guard let folderLabel else { return nil }
+        guard FolderBackup.useInternalFolder else { return folderLabel }
+        return ScoreVocabulary.pick(classic: folderLabel, pulse: String(localized: "ZENO (in Files)"))
     }
 
     // MARK: - Formatting

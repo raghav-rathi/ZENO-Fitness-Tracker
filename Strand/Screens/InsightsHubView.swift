@@ -29,6 +29,11 @@ import WhoopStore
 //
 // All maths lives in StrandAnalytics (EffectRanker / DoseResponseEngine / DoseResponsePriors);
 // this view loads the series, shapes the engine inputs, and presents honestly.
+//
+// VOCABULARY: Pulse links here as "What moves you", so under `ScoreVocabulary.pulse` the outcomes read
+// Recovery / HRV / Sleep / RHR and the app ZENO (spec §0.3). Only display names follow the vocabulary:
+// the metricSeries keys, the Outcome raw values and the DoseResponsePriors outcome ids ("Charge", "HRV")
+// stay as they are, and an engine sentence naming an outcome id is mapped at render.
 
 struct InsightsHubView: View {
     @EnvironmentObject private var repo: Repository
@@ -72,7 +77,9 @@ struct InsightsHubView: View {
 
             if model.ranked.isEmpty {
                 NoopCard {
-                    Text(String(localized: "Not enough overlap between your journal answers and \(outcome.outcomeName.lowercased()) yet. Keep logging. Each behaviour needs days both with and without it before NOOP can read its effect."))
+                    Text(ScoreVocabulary.pick(
+                        classic: String(localized: "Not enough overlap between your journal answers and \(outcome.outcomeName.lowercased()) yet. Keep logging. Each behaviour needs days both with and without it before NOOP can read its effect."),
+                        pulse: String(localized: "Not enough overlap between your journal answers and \(outcome.outcomeName.lowercased()) yet. Keep logging. Each behaviour needs days both with and without it before ZENO can read its effect.")))
                         .font(StrandFont.subhead)
                         .foregroundStyle(StrandPalette.textTertiary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -171,7 +178,9 @@ struct InsightsHubView: View {
             SectionHeader("Dose-response", overline: "Personal curve · prior-shrunk")
             if model.doseCards.isEmpty {
                 NoopCard {
-                    Text(String(localized: "Log alcohol or late caffeine with an amount and NOOP fits a personal dose curve: how much each extra unit tends to move your numbers. Until then it shows typical patterns, clearly labelled as not yet yours."))
+                    Text(ScoreVocabulary.pick(
+                        classic: String(localized: "Log alcohol or late caffeine with an amount and NOOP fits a personal dose curve: how much each extra unit tends to move your numbers. Until then it shows typical patterns, clearly labelled as not yet yours."),
+                        pulse: String(localized: "Log alcohol or late caffeine with an amount and ZENO fits a personal dose curve: how much each extra unit tends to move your numbers. Until then it shows typical patterns, clearly labelled as not yet yours.")))
                         .font(StrandFont.subhead)
                         .foregroundStyle(StrandPalette.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -267,15 +276,16 @@ private struct DoseResponseCardView: View {
             VStack(alignment: .leading, spacing: NoopMetrics.gap) {
                 header(r)
 
-                // The engine's honest read sentence (prior / yours / contradicts-prior).
-                Text(r.sentence())
+                // The engine's honest read sentence (prior / yours / contradicts-prior), its outcome id
+                // shown in the interface's vocabulary.
+                Text(InsightsHubViewModel.displaySentence(r.sentence(), outcomeId: card.outcomeName))
                     .font(StrandFont.body)
                     .foregroundStyle(StrandPalette.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
 
                 // The prior-shrunk curve (dose on x, modelled outcome Δ on y).
                 DoseCurveChart(points: r.curve, accent: domain.color,
-                               unitLabel: card.unitLabel, outcomeName: card.outcomeName)
+                               unitLabel: card.unitLabel, outcomeName: card.outcomeDisplayName)
                     .frame(height: 132)
                     .accessibilityLabel(curveAccessibilityLabel(r))
 
@@ -283,7 +293,7 @@ private struct DoseResponseCardView: View {
                     honestyBanner(String(localized: "Based mostly on typical patterns, not yet yours. Log a few more \(card.unitLabel.lowercased()) days and this becomes yours."),
                         tone: .neutral)
                 } else if r.contradictsPrior {
-                    honestyBanner(String(localized: "In your data so far, this doesn\u{2019}t move your \(card.outcomeName) the way it typically does."), tone: .positive)
+                    honestyBanner(String(localized: "In your data so far, this doesn\u{2019}t move your \(card.outcomeDisplayName) the way it typically does."), tone: .positive)
                 }
 
                 if card.timingProxy {
@@ -349,7 +359,7 @@ private struct DoseResponseCardView: View {
                          value: signed(r.perUnit, suffix: card.outcomeSuffix),
                          caption: r.priorDominated ? String(localized: "typical") : String(localized: "your data"),
                          accent: r.perUnit < 0 ? StrandPalette.statusCritical : StrandPalette.statusPositive)
-                StatTile(label: "Tomorrow\u{2019}s \(card.outcomeName)",
+                StatTile(label: "Tomorrow\u{2019}s \(card.outcomeDisplayName)",
                          value: projected.map { "\(Int($0.rounded()))\(card.outcomeSuffix)" } ?? "—",
                          caption: projected != nil ? String(localized: "projected · \(stepLabel)") : String(localized: "needs a recent day"),
                          accent: domain.color)
@@ -361,18 +371,18 @@ private struct DoseResponseCardView: View {
     /// lower/higher or basis fragments.
     private func forecastSentence(delta: Double, projected: Double?, stepLabel: String) -> String {
         if previewDose <= 1 {
-            return String(localized: "No extra tonight. Your \(card.outcomeName.lowercased()) forecast stays where it is.")
+            return String(localized: "No extra tonight. Your \(card.outcomeDisplayName.lowercased()) forecast stays where it is.")
         }
         let magText = "\(Int(abs(delta).rounded()))\(card.outcomeSuffix)"
         let lower = delta <= 0
         if card.response.priorDominated {
             return lower
-                ? String(localized: "A \(stepLabel) tonight tends to line up with about \(magText) lower on tomorrow\u{2019}s \(card.outcomeName.lowercased()) for you, based on typical patterns.")
-                : String(localized: "A \(stepLabel) tonight tends to line up with about \(magText) higher on tomorrow\u{2019}s \(card.outcomeName.lowercased()) for you, based on typical patterns.")
+                ? String(localized: "A \(stepLabel) tonight tends to line up with about \(magText) lower on tomorrow\u{2019}s \(card.outcomeDisplayName.lowercased()) for you, based on typical patterns.")
+                : String(localized: "A \(stepLabel) tonight tends to line up with about \(magText) higher on tomorrow\u{2019}s \(card.outcomeDisplayName.lowercased()) for you, based on typical patterns.")
         }
         return lower
-            ? String(localized: "A \(stepLabel) tonight tends to line up with about \(magText) lower on tomorrow\u{2019}s \(card.outcomeName.lowercased()) for you, based on \(card.response.nUser) of your \(card.unitLabel.lowercased()) days.")
-            : String(localized: "A \(stepLabel) tonight tends to line up with about \(magText) higher on tomorrow\u{2019}s \(card.outcomeName.lowercased()) for you, based on \(card.response.nUser) of your \(card.unitLabel.lowercased()) days.")
+            ? String(localized: "A \(stepLabel) tonight tends to line up with about \(magText) lower on tomorrow\u{2019}s \(card.outcomeDisplayName.lowercased()) for you, based on \(card.response.nUser) of your \(card.unitLabel.lowercased()) days.")
+            : String(localized: "A \(stepLabel) tonight tends to line up with about \(magText) higher on tomorrow\u{2019}s \(card.outcomeDisplayName.lowercased()) for you, based on \(card.response.nUser) of your \(card.unitLabel.lowercased()) days.")
     }
 
     // MARK: Bits
@@ -404,8 +414,8 @@ private struct DoseResponseCardView: View {
     /// Whole-string key per variant (never a concatenated localized tail on an a11y label).
     private func curveAccessibilityLabel(_ r: DoseResponse) -> String {
         r.priorDominated
-            ? String(localized: "Dose-response curve. Each extra \(card.unitNoun) lines up with about \(signed(r.perUnit, suffix: card.outcomeSuffix)) on \(card.outcomeName), typical patterns.")
-            : String(localized: "Dose-response curve. Each extra \(card.unitNoun) lines up with about \(signed(r.perUnit, suffix: card.outcomeSuffix)) on \(card.outcomeName), your own data.")
+            ? String(localized: "Dose-response curve. Each extra \(card.unitNoun) lines up with about \(signed(r.perUnit, suffix: card.outcomeSuffix)) on \(card.outcomeDisplayName), typical patterns.")
+            : String(localized: "Dose-response curve. Each extra \(card.unitNoun) lines up with about \(signed(r.perUnit, suffix: card.outcomeSuffix)) on \(card.outcomeDisplayName), your own data.")
     }
 }
 
@@ -494,11 +504,14 @@ final class InsightsHubViewModel: ObservableObject {
     enum Outcome: String, CaseIterable, Identifiable {
         case recovery, hrv, sleep, rhr
         var id: String { rawValue }
+        /// The segment label, in the interface's vocabulary.
         var label: String {
             switch self {
-            case .recovery: return String(localized: "Charge")
+            case .recovery: return ScoreVocabulary.pick(classic: String(localized: "Charge"),
+                                                        pulse: String(localized: "Recovery"))
             case .hrv:      return "HRV"
-            case .sleep:    return String(localized: "Rest")
+            case .sleep:    return ScoreVocabulary.pick(classic: String(localized: "Rest"),
+                                                        pulse: String(localized: "Sleep"))
             case .rhr:      return "RHR"
             }
         }
@@ -511,12 +524,15 @@ final class InsightsHubViewModel: ObservableObject {
             case .rhr:      return "rhr"
             }
         }
-        /// The engine's outcome label (carried onto each RankedEffect).
+        /// The engine's outcome label (carried onto each RankedEffect, and into its sentence), in the
+        /// interface's vocabulary. A display label, never stored: the key that loads the series is `key`.
         var outcomeName: String {
             switch self {
-            case .recovery: return String(localized: "Charge")
+            case .recovery: return ScoreVocabulary.pick(classic: String(localized: "Charge"),
+                                                        pulse: String(localized: "Recovery"))
             case .hrv:      return "HRV"
-            case .sleep:    return String(localized: "Rest")
+            case .sleep:    return ScoreVocabulary.pick(classic: String(localized: "Rest"),
+                                                        pulse: String(localized: "Sleep"))
             case .rhr:      return String(localized: "Resting HR")
             }
         }
@@ -661,6 +677,29 @@ final class InsightsHubViewModel: ObservableObject {
         }
     }
 
+    /// A DoseResponsePriors outcome id ("Charge", "HRV", ...) as the interface names it: the id itself in
+    /// the classic interface (as the cards always printed it), Recovery / Sleep under Pulse. The id stays
+    /// the identifier everywhere else (`outcomeKey(forEngineName:)`, the HRV checks). Pure.
+    nonisolated static func outcomeDisplayName(_ engineName: String,
+                                               vocabulary: ScoreVocabulary = .current) -> String {
+        guard vocabulary == .pulse else { return engineName }
+        switch engineName {
+        case "Charge": return String(localized: "Recovery")
+        case "Rest":   return String(localized: "Sleep")
+        default:       return engineName
+        }
+    }
+
+    /// The engine's dose-response sentence in the interface's vocabulary. `DoseResponse.sentence()` names
+    /// its outcome by the prior's id as a word of its own (" Charge "); under Pulse that word is swapped
+    /// for the display name and the rest of the sentence is the engine's, verbatim. Pure.
+    nonisolated static func displaySentence(_ sentence: String, outcomeId: String,
+                                            vocabulary: ScoreVocabulary = .current) -> String {
+        let shown = outcomeDisplayName(outcomeId, vocabulary: vocabulary)
+        guard shown != outcomeId else { return sentence }
+        return sentence.replacingOccurrences(of: " \(outcomeId) ", with: " \(shown) ")
+    }
+
     /// The dose storage key for a behaviour (its raw enum value — the stable, cross-platform key).
     static func doseKey(for behavior: DosedBehavior) -> String { "dose_\(behavior.rawValue)" }
 
@@ -682,7 +721,11 @@ final class InsightsHubViewModel: ObservableObject {
         let latestOutcome: Double?
 
         var id: String { behavior.rawValue }
+        /// The prior's outcome id ("Charge" / "HRV"): an identifier, compared and mapped, never shown raw
+        /// under Pulse (`outcomeDisplayName`).
         var outcomeName: String { response.outcome }
+        /// The outcome as the card names it, in the interface's vocabulary.
+        var outcomeDisplayName: String { InsightsHubViewModel.outcomeDisplayName(outcomeName) }
 
         var title: String {
             switch behavior {
