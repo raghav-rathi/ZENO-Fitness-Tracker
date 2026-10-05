@@ -181,19 +181,22 @@ struct TestCentreView: View {
         .sheet(item: $report.pending) { _ in
             ReportReviewSheet(report: report)
         }
-        .confirmationDialog("Recalibrate your Charge baseline?",
+        .confirmationDialog(ScoreVocabulary.pick(classic: LocalizedStringKey("Recalibrate your Charge baseline?"),
+                                                 pulse: LocalizedStringKey("Recalibrate your Recovery baseline?")),
                             isPresented: $showRecalibrateConfirm, titleVisibility: .visible) {
             Button("Recalibrate") { recalibrateCharge() }
             Button("Cancel", role: .cancel) { }
         } message: {
-            Text("This restarts the roughly 4-night build-up for Charge and your HRV baseline. Your history stays.")
+            Text(ScoreVocabulary.pick(classic: LocalizedStringKey("This restarts the roughly 4-night build-up for Charge and your HRV baseline. Your history stays."),
+                                      pulse: LocalizedStringKey("This restarts the roughly 4-night build-up for Recovery and your HRV baseline. Your history stays.")))
         }
         .confirmationDialog("Clear scheduled exports?",
                             isPresented: $showClearExportsConfirm, titleVisibility: .visible) {
             Button("Clear", role: .destructive) { clearScheduledExports() }
             Button("Cancel", role: .cancel) { }
         } message: {
-            Text("This deletes every scheduled strap-log and raw-capture file NOOP has saved. This can't be undone.")
+            Text(ScoreVocabulary.pick(classic: LocalizedStringKey("This deletes every scheduled strap-log and raw-capture file NOOP has saved. This can't be undone."),
+                                      pulse: LocalizedStringKey("This deletes every scheduled strap-log and raw-capture file ZENO has saved. This can't be undone.")))
         }
         .alert(infoTitle, isPresented: $showInfo) {
             Button("OK", role: .cancel) { }
@@ -271,7 +274,8 @@ struct TestCentreView: View {
                 Divider().overlay(StrandPalette.hairline)
                 Toggle("Legacy R22 feature-flag experiment", isOn: $deepDataEnabled)
                     .toggleStyle(.switch).tint(StrandPalette.accent)
-                Text("The strap accepts these writes, but NOOP has not observed them enabling a separate live stream. This is not the Raw Data Collector.")
+                Text(ScoreVocabulary.pick(classic: LocalizedStringKey("The strap accepts these writes, but NOOP has not observed them enabling a separate live stream. This is not the Raw Data Collector."),
+                                          pulse: LocalizedStringKey("The strap accepts these writes, but ZENO has not observed them enabling a separate live stream. This is not the Raw Data Collector.")))
                     .font(StrandFont.caption).foregroundStyle(StrandPalette.textTertiary)
                 if deepDataEnabled {
                     NoopButton("Send legacy R22 enable sequence", systemImage: "bolt.badge.automatic", kind: .secondary) {
@@ -349,10 +353,13 @@ struct TestCentreView: View {
 
                 // Recalibrate Charge baseline: the same Baselines.recalibrateRecoveryBaselines call the
                 // Settings Recovery card uses.
-                NoopButton("Recalibrate Charge baseline", systemImage: "arrow.triangle.2.circlepath", kind: .secondary) {
+                NoopButton(ScoreVocabulary.pick(classic: LocalizedStringKey("Recalibrate Charge baseline"),
+                                                pulse: LocalizedStringKey("Recalibrate Recovery baseline")),
+                           systemImage: "arrow.triangle.2.circlepath", kind: .secondary) {
                     showRecalibrateConfirm = true
                 }
-                Text("Re-anchors every baseline that feeds Charge to your recent nights. No stored day is deleted.")
+                Text(ScoreVocabulary.pick(classic: LocalizedStringKey("Re-anchors every baseline that feeds Charge to your recent nights. No stored day is deleted."),
+                                          pulse: LocalizedStringKey("Re-anchors every baseline that feeds Recovery to your recent nights. No stored day is deleted.")))
                     .font(StrandFont.caption).foregroundStyle(StrandPalette.textTertiary)
                     .fixedSize(horizontal: false, vertical: true)
 
@@ -390,7 +397,8 @@ struct TestCentreView: View {
                     Toggle(isOn: $polarDebugLogging) {
                         VStack(alignment: .leading, spacing: 2) {
                             Text("Polar debug logging").font(StrandFont.body)
-                            Text("\(identity). Logs this to the strap log on each connect, so a Polar bug report shows the model NOOP resolved your strap to.")
+                            Text(ScoreVocabulary.pick(classic: LocalizedStringKey("\(identity). Logs this to the strap log on each connect, so a Polar bug report shows the model NOOP resolved your strap to."),
+                                                      pulse: LocalizedStringKey("\(identity). Logs this to the strap log on each connect, so a Polar bug report shows the model ZENO resolved your strap to.")))
                                 .font(StrandFont.caption).foregroundStyle(StrandPalette.textTertiary)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
@@ -426,7 +434,8 @@ struct TestCentreView: View {
                 Toggle(isOn: $ouraNotifyMaskFull) {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Oura notification mask ff (experimental)").font(StrandFont.body)
-                        Text("Sends the official app\u{2019}s SetNotification mask (1c 01 ff) instead of NOOP\u{2019}s 3f at the next connect. The ring packs ~10 packets per notification for the official app and one for NOOP (9\u{00D7} slower drains); this is the first candidate switch. Off by default; the next connect after turning it off is back on 3f. Watch the strap log for \u{201C}-> notify_all(ff)\u{201D} and compare notification sizes in the raw capture.")
+                        Text(ScoreVocabulary.pick(classic: LocalizedStringKey("Sends the official app\u{2019}s SetNotification mask (1c 01 ff) instead of NOOP\u{2019}s 3f at the next connect. The ring packs ~10 packets per notification for the official app and one for NOOP (9\u{00D7} slower drains); this is the first candidate switch. Off by default; the next connect after turning it off is back on 3f. Watch the strap log for \u{201C}-> notify_all(ff)\u{201D} and compare notification sizes in the raw capture."),
+                                                  pulse: LocalizedStringKey("Sends the official app\u{2019}s SetNotification mask (1c 01 ff) instead of ZENO\u{2019}s 3f at the next connect. The ring packs ~10 packets per notification for the official app and one for ZENO (9\u{00D7} slower drains); this is the first candidate switch. Off by default; the next connect after turning it off is back on 3f. Watch the strap log for \u{201C}-> notify_all(ff)\u{201D} and compare notification sizes in the raw capture.")))
                             .font(StrandFont.caption).foregroundStyle(StrandPalette.textTertiary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
@@ -522,7 +531,8 @@ struct TestCentreView: View {
     private var ouraEnableFeatureBlock: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("Oura feature enable (experimental)").font(StrandFont.body)
-            Text("Enables or disables SpO2, real-steps, exercise HR, or the CVA PPG sampler directly via SetFeatureMode, then re-reads the feature's status. Unvalidated on NOOP's own hardware (OURA_PROTOCOL.md \u{00A7}7.5) — a third-party report is what these buttons exist to test. Daytime HR and resting HR are deliberately not offered here: daytime HR has its own dedicated live-HR path, and resting HR has no app-level toggle at all.")
+            Text(ScoreVocabulary.pick(classic: LocalizedStringKey("Enables or disables SpO2, real-steps, exercise HR, or the CVA PPG sampler directly via SetFeatureMode, then re-reads the feature's status. Unvalidated on NOOP's own hardware (OURA_PROTOCOL.md \u{00A7}7.5) — a third-party report is what these buttons exist to test. Daytime HR and resting HR are deliberately not offered here: daytime HR has its own dedicated live-HR path, and resting HR has no app-level toggle at all."),
+                                      pulse: LocalizedStringKey("Enables or disables SpO2, real-steps, exercise HR, or the CVA PPG sampler directly via SetFeatureMode, then re-reads the feature's status. Unvalidated on ZENO's own hardware (OURA_PROTOCOL.md \u{00A7}7.5) — a third-party report is what these buttons exist to test. Daytime HR and resting HR are deliberately not offered here: daytime HR has its own dedicated live-HR path, and resting HR has no app-level toggle at all.")))
                 .font(StrandFont.caption).foregroundStyle(StrandPalette.textTertiary)
                 .fixedSize(horizontal: false, vertical: true)
 
@@ -544,7 +554,8 @@ struct TestCentreView: View {
                 }
             }
         } message: { pending in
-            Text("Sends \(pending.framePreview) to the ring. Unvalidated on NOOP's own hardware (OURA_PROTOCOL.md \u{00A7}7.5). Watch the strap log for the follow-up feature-status read.")
+            Text(ScoreVocabulary.pick(classic: LocalizedStringKey("Sends \(pending.framePreview) to the ring. Unvalidated on NOOP's own hardware (OURA_PROTOCOL.md \u{00A7}7.5). Watch the strap log for the follow-up feature-status read."),
+                                      pulse: LocalizedStringKey("Sends \(pending.framePreview) to the ring. Unvalidated on ZENO's own hardware (OURA_PROTOCOL.md \u{00A7}7.5). Watch the strap log for the follow-up feature-status read.")))
         }
     }
 
@@ -721,7 +732,8 @@ struct TestCentreView: View {
                         .font(StrandFont.subhead).foregroundStyle(StrandPalette.textPrimary)
                 }
                 .toggleStyle(.switch).tint(StrandPalette.accent)
-                Text("When NOOP reconstructs heart rate from the WHOOP 5/MG v26 optical waveform (the seconds the strap stored no HR), refine the autocorrelation peak with a parabolic sub-lag fit so the estimate is not quantized to roughly 16 bpm steps near a high HR. It only fills seconds the strap never reported; it never overrides a stored HR. 5/MG only, off by default.")
+                Text(ScoreVocabulary.pick(classic: LocalizedStringKey("When NOOP reconstructs heart rate from the WHOOP 5/MG v26 optical waveform (the seconds the strap stored no HR), refine the autocorrelation peak with a parabolic sub-lag fit so the estimate is not quantized to roughly 16 bpm steps near a high HR. It only fills seconds the strap never reported; it never overrides a stored HR. 5/MG only, off by default."),
+                                          pulse: LocalizedStringKey("When ZENO reconstructs heart rate from the WHOOP 5/MG v26 optical waveform (the seconds the strap stored no HR), refine the autocorrelation peak with a parabolic sub-lag fit so the estimate is not quantized to roughly 16 bpm steps near a high HR. It only fills seconds the strap never reported; it never overrides a stored HR. 5/MG only, off by default.")))
                     .font(StrandFont.caption).foregroundStyle(StrandPalette.textTertiary)
                     .fixedSize(horizontal: false, vertical: true)
 
@@ -732,7 +744,8 @@ struct TestCentreView: View {
                         .font(StrandFont.subhead).foregroundStyle(StrandPalette.textPrimary)
                 }
                 .toggleStyle(.switch).tint(StrandPalette.accent)
-                Text("A read-only Plews/Altini smallest-worthwhile-change reading of your nightly HRV: it shows whether your 7-night HRV baseline sits above, inside, or below your personal normal band. It changes nothing else - the Charge ring is identical whether this is on or off. This is rough / early testing, not yet validated against varying real data (n=1).")
+                Text(ScoreVocabulary.pick(classic: LocalizedStringKey("A read-only Plews/Altini smallest-worthwhile-change reading of your nightly HRV: it shows whether your 7-night HRV baseline sits above, inside, or below your personal normal band. It changes nothing else - the Charge ring is identical whether this is on or off. This is rough / early testing, not yet validated against varying real data (n=1)."),
+                                          pulse: LocalizedStringKey("A read-only Plews/Altini smallest-worthwhile-change reading of your nightly HRV: it shows whether your 7-night HRV baseline sits above, inside, or below your personal normal band. It changes nothing else - the Recovery ring is identical whether this is on or off. This is rough / early testing, not yet validated against varying real data (n=1).")))
                     .font(StrandFont.caption).foregroundStyle(StrandPalette.textTertiary)
                     .fixedSize(horizontal: false, vertical: true)
 
@@ -802,8 +815,10 @@ struct TestCentreView: View {
             await model.intelligence.analyzeRecent()
             await model.repo.refresh()
         }
-        infoTitle = String(localized: "Charge baseline recalibrating")
-        infoMessage = String(localized: "NOOP will re-learn your baseline from tonight's data onward. Your history is kept, and it takes a few nights to settle.")
+        infoTitle = ScoreVocabulary.pick(classic: String(localized: "Charge baseline recalibrating"),
+                                         pulse: String(localized: "Recovery baseline recalibrating"))
+        infoMessage = ScoreVocabulary.pick(classic: String(localized: "NOOP will re-learn your baseline from tonight's data onward. Your history is kept, and it takes a few nights to settle."),
+                                           pulse: String(localized: "ZENO will re-learn your baseline from tonight's data onward. Your history is kept, and it takes a few nights to settle."))
         showInfo = true
     }
 
@@ -874,7 +889,8 @@ struct TestCentreView: View {
             if let url {
                 infoTitle = String(localized: "Strap log exported")
                 #if os(iOS)
-                infoMessage = String(localized: "Saved \(url.lastPathComponent) to NOOP's folder in the Files app.")
+                infoMessage = ScoreVocabulary.pick(classic: String(localized: "Saved \(url.lastPathComponent) to NOOP's folder in the Files app."),
+                                                   pulse: String(localized: "Saved \(url.lastPathComponent) to ZENO's folder in the Files app."))
                 #else
                 infoMessage = String(localized: "Saved \(url.lastPathComponent) to your Documents folder.")
                 #endif
@@ -912,13 +928,31 @@ private struct TestModeRow: View {
                                                tzOffsetSeconds: TimeZone.current.secondsFromGMT())
     }
 
+    /// The registry's title, with the score named the way the running interface names it. The registry
+    /// strings are engine values (byte-aligned with the Kotlin twin and pinned by its tests), so the Pulse
+    /// interface's names go in here, at render: "Sleep & Rest" reads "Sleep", "Recovery (Charge)" "Recovery".
+    private var title: String {
+        switch mode.domain {
+        case .sleep: return ScoreVocabulary.pick(classic: mode.title, pulse: "Sleep")
+        case .recovery: return ScoreVocabulary.pick(classic: mode.title, pulse: "Recovery")
+        default: return mode.title
+        }
+    }
+
+    /// The registry's blurb, mapped at render the same way as `title`.
+    private var blurb: String {
+        guard mode.domain == .recovery else { return mode.blurb }
+        return ScoreVocabulary.pick(classic: mode.blurb,
+                                    pulse: "Turn this on if Recovery looks wrong, to see which term moved it.")
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 12) {
                 Image(systemName: mode.icon)
                     .foregroundStyle(StrandPalette.accent).frame(width: 24)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(mode.title).font(StrandFont.body).foregroundStyle(StrandPalette.textPrimary)
+                    Text(title).font(StrandFont.body).foregroundStyle(StrandPalette.textPrimary)
                     Text(TestCentreLayout.statusText(for: mode, active: on, elapsedSeconds: elapsed,
                                                      capturedUnits: capturedUnits))
                         .font(StrandFont.caption).foregroundStyle(StrandPalette.textSecondary)
@@ -927,7 +961,7 @@ private struct TestModeRow: View {
                 Toggle("", isOn: $on)
                     .labelsHidden()
                     .tint(StrandPalette.accent)
-                    .accessibilityLabel("\(mode.title) test mode")
+                    .accessibilityLabel("\(title) test mode")
                     .onChangeCompat(of: on) { isOn in
                         if isOn { TestCentre.activate(mode.domain) } else { TestCentre.deactivate(mode.domain) }
                         // Display & Performance owns a live frame monitor. It must run ONLY while the mode
@@ -938,7 +972,7 @@ private struct TestModeRow: View {
                         }
                     }
             }
-            Text(mode.blurb)
+            Text(blurb)
                 .font(StrandFont.caption).foregroundStyle(StrandPalette.textTertiary)
                 .fixedSize(horizontal: false, vertical: true)
             // Live readout (Group E/F): the per-mode panel binding the registry's liveReadout ids. Shown
@@ -1118,7 +1152,9 @@ private struct RecoveryReadoutPanel: View {
     var body: some View {
         let last = TestReadout.lastChargeBreakdown(taggedTail: live.taggedTail(domain: .recovery))
         VStack(alignment: .leading, spacing: 4) {
-            ReadoutRow(label: String(localized: "Last Charge breakdown"), value: last ?? String(localized: "no night scored yet"))
+            ReadoutRow(label: ScoreVocabulary.pick(classic: String(localized: "Last Charge breakdown"),
+                                                   pulse: String(localized: "Last Recovery breakdown")),
+                       value: last ?? String(localized: "no night scored yet"))
         }
         .padding(.top, 2)
     }

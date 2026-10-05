@@ -72,7 +72,8 @@ struct AppleWatchSetupView: View {
                 Text("APPLE WATCH").font(StrandFont.overline)
                     .tracking(StrandFont.overlineTracking)
                     .foregroundStyle(StrandPalette.textTertiary)
-                Text("Use NOOP with your watch").font(StrandFont.rounded(26, weight: .bold))
+                Text(ScoreVocabulary.pick(classic: LocalizedStringKey("Use NOOP with your watch"),
+                                          pulse: LocalizedStringKey("Use ZENO with your watch"))).font(StrandFont.rounded(26, weight: .bold))
                     .foregroundStyle(StrandPalette.textPrimary)
                 Text(step == .intro ? "What to expect" : "Connect Apple Health")
                     .font(StrandFont.caption)
@@ -153,12 +154,14 @@ struct AppleWatchSetupView: View {
                             .background(StrandPalette.accent.opacity(0.14),
                                         in: RoundedRectangle(cornerRadius: 10, style: .continuous))
                             .accessibilityHidden(true)
-                        Text("Your watch, NOOP's brain")
+                        Text(ScoreVocabulary.pick(classic: LocalizedStringKey("Your watch, NOOP's brain"),
+                                                  pulse: LocalizedStringKey("Your watch, ZENO's brain")))
                             .font(StrandFont.headline)
                             .foregroundStyle(StrandPalette.textPrimary)
                         Spacer(minLength: 0)
                     }
-                    Text("No chest strap? No problem. NOOP can run off only your Apple Watch. It reads your watch's data through Apple Health and works out your Charge, Rest, Effort and Fitness Age right here on your phone. Everything stays on the device.")
+                    Text(ScoreVocabulary.pick(classic: LocalizedStringKey("No chest strap? No problem. NOOP can run off only your Apple Watch. It reads your watch's data through Apple Health and works out your Charge, Rest, Effort and Fitness Age right here on your phone. Everything stays on the device."),
+                                              pulse: LocalizedStringKey("No chest strap? No problem. ZENO can run off only your Apple Watch. It reads your watch's data through Apple Health and works out your Recovery, Sleep, Strain and Fitness Age right here on your phone. Everything stays on the device.")))
                         .font(StrandFont.subhead)
                         .foregroundStyle(StrandPalette.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -169,7 +172,8 @@ struct AppleWatchSetupView: View {
             goodAtCard
             lighterCard
 
-            Text("Want the full breakdown of every metric and how sure NOOP is about each one? The \u{201C}About Apple Watch data\u{201D} page in Settings has the honest table.")
+            Text(ScoreVocabulary.pick(classic: LocalizedStringKey("Want the full breakdown of every metric and how sure NOOP is about each one? The \u{201C}About Apple Watch data\u{201D} page in Settings has the honest table."),
+                                      pulse: LocalizedStringKey("Want the full breakdown of every metric and how sure ZENO is about each one? The \u{201C}About Apple Watch data\u{201D} page in Settings has the honest table.")))
                 .font(StrandFont.footnote)
                 .foregroundStyle(StrandPalette.textTertiary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -183,10 +187,13 @@ struct AppleWatchSetupView: View {
                 Text("WHAT IT'S GREAT AT").font(StrandFont.overline)
                     .tracking(StrandFont.overlineTracking)
                     .foregroundStyle(StrandPalette.statusPositive)
-                bullet("bed.double.fill", String(localized: "Sleep & Rest"),
-                       String(localized: "Apple's sleep stages are strong, and they drive your Rest score directly."))
+                bullet("bed.double.fill", ScoreVocabulary.pick(classic: String(localized: "Sleep & Rest"),
+                                                               pulse: String(localized: "Sleep")),
+                       ScoreVocabulary.pick(classic: String(localized: "Apple's sleep stages are strong, and they drive your Rest score directly."),
+                                            pulse: String(localized: "Apple's sleep stages are strong, and they drive your Sleep score directly.")))
                 bullet("figure.walk", String(localized: "Steps & workouts"),
-                       String(localized: "Steps, active energy and logged workouts feed your Effort. Dense and reliable."))
+                       ScoreVocabulary.pick(classic: String(localized: "Steps, active energy and logged workouts feed your Effort. Dense and reliable."),
+                                            pulse: String(localized: "Steps, active energy and logged workouts feed your Strain. Dense and reliable.")))
                 bullet("bolt.heart.fill", String(localized: "Fitness Age"),
                        String(localized: "Built from the watch's cardio-fitness VO₂ max, the same number the Fitness app shows."))
             }
@@ -201,9 +208,11 @@ struct AppleWatchSetupView: View {
                     .tracking(StrandFont.overlineTracking)
                     .foregroundStyle(StrandPalette.statusWarning)
                 bullet("heart.fill", String(localized: "Recovery takes about a week"),
-                       String(localized: "A watch samples your heart-rate variability rather than streaming it all night, so your Charge score needs roughly seven nights to calibrate. Until then NOOP shows \u{201C}needs more data\u{201D}, never a guessed number."))
+                       ScoreVocabulary.pick(classic: String(localized: "A watch samples your heart-rate variability rather than streaming it all night, so your Charge score needs roughly seven nights to calibrate. Until then NOOP shows \u{201C}needs more data\u{201D}, never a guessed number."),
+                                            pulse: String(localized: "A watch samples your heart-rate variability rather than streaming it all night, so your Recovery score needs roughly seven nights to calibrate. Until then ZENO shows \u{201C}needs more data\u{201D}, never a guessed number.")))
                 bullet("drop.degreesign", String(localized: "A couple of metrics depend on your model"),
-                       String(localized: "Wrist temperature needs Series 8 or later, and the newest US units dropped the blood-oxygen sensor. Where a sensor isn't there, NOOP reads \u{201C}not available\u{201D} instead of zero."))
+                       ScoreVocabulary.pick(classic: String(localized: "Wrist temperature needs Series 8 or later, and the newest US units dropped the blood-oxygen sensor. Where a sensor isn't there, NOOP reads \u{201C}not available\u{201D} instead of zero."),
+                                            pulse: String(localized: "Wrist temperature needs Series 8 or later, and the newest US units dropped the blood-oxygen sensor. Where a sensor isn't there, ZENO reads \u{201C}not available\u{201D} instead of zero.")))
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
@@ -277,7 +286,8 @@ struct AppleWatchSetupView: View {
                         .fixedSize(horizontal: false, vertical: true)
 
                 case .unknown, .denied:
-                    Text("NOOP reads your heart rate, HRV, resting heart rate, sleep, steps, energy and VO₂ max from Apple Health to compute your scores. It all stays on this iPhone, and you pick exactly what to share on the next screen.")
+                    Text(ScoreVocabulary.pick(classic: LocalizedStringKey("NOOP reads your heart rate, HRV, resting heart rate, sleep, steps, energy and VO₂ max from Apple Health to compute your scores. It all stays on this iPhone, and you pick exactly what to share on the next screen."),
+                                              pulse: LocalizedStringKey("ZENO reads your heart rate, HRV, resting heart rate, sleep, steps, energy and VO₂ max from Apple Health to compute your scores. It all stays on this iPhone, and you pick exactly what to share on the next screen.")))
                         .font(StrandFont.subhead)
                         .foregroundStyle(StrandPalette.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -291,14 +301,16 @@ struct AppleWatchSetupView: View {
                     .buttonStyle(NoopButtonStyle(.primary, fullWidth: true))
                     .accessibilityHint("Shows the Apple Health permission sheet")
                     if health.auth == .denied {
-                        Text("If you don't see the prompt, turn NOOP on under Settings › Health › Data Access & Devices.")
+                        Text(ScoreVocabulary.pick(classic: LocalizedStringKey("If you don't see the prompt, turn NOOP on under Settings › Health › Data Access & Devices."),
+                                                  pulse: LocalizedStringKey("If you don't see the prompt, turn ZENO on under Settings › Health › Data Access & Devices.")))
                             .font(StrandFont.footnote)
                             .foregroundStyle(StrandPalette.textTertiary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
 
                 case .authorized:
-                    Text("You're connected. NOOP is reading your Apple Watch data now. Your Charge score will spend its first week or so calibrating, then settle in.")
+                    Text(ScoreVocabulary.pick(classic: LocalizedStringKey("You're connected. NOOP is reading your Apple Watch data now. Your Charge score will spend its first week or so calibrating, then settle in."),
+                                              pulse: LocalizedStringKey("You're connected. ZENO is reading your Apple Watch data now. Your Recovery score will spend its first week or so calibrating, then settle in.")))
                         .font(StrandFont.subhead)
                         .foregroundStyle(StrandPalette.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)

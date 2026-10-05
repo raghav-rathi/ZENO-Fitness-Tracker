@@ -22,7 +22,8 @@ struct DevicesView: View {
 
     var body: some View {
         ScreenScaffold(title: "Devices",
-                       subtitle: "Pair and manage the bands NOOP reads from.",
+                       subtitle: ScoreVocabulary.pick(classic: LocalizedStringKey("Pair and manage the bands NOOP reads from."),
+                                                      pulse: LocalizedStringKey("Pair and manage the bands ZENO reads from.")),
                        // The day-of-sky liquid backdrop, matching Today / Health / Sleep / Trends: a fixed,
                        // full-bleed time-of-day sky behind the scroll content (it does not scroll).
                        topBackground: liquidScaffoldSky()) {
@@ -33,7 +34,8 @@ struct DevicesView: View {
                 // calm pending note rather than an empty screen in that brief window.
                 DataPendingNote(
                     title: "Getting your devices ready",
-                    message: "NOOP is opening your on-device data. Your paired bands will appear here in a moment.",
+                    message: ScoreVocabulary.pick(classic: LocalizedStringKey("NOOP is opening your on-device data. Your paired bands will appear here in a moment."),
+                                                  pulse: LocalizedStringKey("ZENO is opening your on-device data. Your paired bands will appear here in a moment.")),
                     symbol: "badge.plus.radiowaves.right")
             }
         }
@@ -322,7 +324,8 @@ private struct DevicesContent: View {
             Button("Cancel", role: .cancel) { removeTarget = nil }
             Button("Remove", role: .destructive) { confirmRemove(device) }
         } message: { device in
-            Text("Remove \(device.displayName)? NOOP will stop connecting to it. Its recorded data is kept and you can re-add it any time.")
+            Text(ScoreVocabulary.pick(classic: LocalizedStringKey("Remove \(device.displayName)? NOOP will stop connecting to it. Its recorded data is kept and you can re-add it any time."),
+                                      pulse: LocalizedStringKey("Remove \(device.displayName)? ZENO will stop connecting to it. Its recorded data is kept and you can re-add it any time.")))
         }
         // Restart strap confirm (#166)
         .alert("Restart this strap?",
@@ -452,7 +455,8 @@ private struct DevicesContent: View {
             Image(systemName: "info.circle")
                 .foregroundStyle(StrandPalette.textTertiary)
                 .accessibilityHidden(true)
-            Text("WHOOP is NOOP's primary, fully-supported band. Other heart-rate straps are an early, in-development addition: they stream live heart rate and HRV, but not WHOOP's deeper sleep and recovery data.")
+            Text(ScoreVocabulary.pick(classic: LocalizedStringKey("WHOOP is NOOP's primary, fully-supported band. Other heart-rate straps are an early, in-development addition: they stream live heart rate and HRV, but not WHOOP's deeper sleep and recovery data."),
+                                      pulse: LocalizedStringKey("WHOOP is ZENO's primary, fully-supported band. Other heart-rate straps are an early, in-development addition: they stream live heart rate and HRV, but not WHOOP's deeper sleep and recovery data.")))
                 .font(StrandFont.footnote)
                 .foregroundStyle(StrandPalette.textTertiary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -1129,7 +1133,8 @@ private struct DeviceCard: View {
                 .foregroundStyle(StrandPalette.statusWarning)
                 .frame(width: 14)
                 .accessibilityHidden(true)
-            Text("Paired locally. NOOP owns this ring while it holds the key. If you reset it again or set it up in the Oura app, NOOP no longer owns it and you would re-add it to take it over.")
+            Text(ScoreVocabulary.pick(classic: LocalizedStringKey("Paired locally. NOOP owns this ring while it holds the key. If you reset it again or set it up in the Oura app, NOOP no longer owns it and you would re-add it to take it over."),
+                                      pulse: LocalizedStringKey("Paired locally. ZENO owns this ring while it holds the key. If you reset it again or set it up in the Oura app, ZENO no longer owns it and you would re-add it to take it over.")))
                 .font(StrandFont.caption)
                 .foregroundStyle(StrandPalette.statusWarning)
                 .fixedSize(horizontal: false, vertical: true)
@@ -1173,16 +1178,20 @@ struct DeviceCapabilityProfile {
             return DeviceCapabilityProfile(
                 displayModel: String(localized: "Gym equipment (FTMS)"),
                 captures: String(localized: "Speed · Cadence · Power · Distance · Energy · Heart rate (if the machine sends it)"),
-                powers: String(localized: "Records a live machine workout, Effort-scored from HR when the machine reports it"),
-                footnote: String(localized: "Live machine data over Bluetooth FTMS. No sleep, recovery, skin temp or SpO₂. Effort needs the machine's heart rate; without it the session logs the machine metrics only."))
+                powers: ScoreVocabulary.pick(classic: String(localized: "Records a live machine workout, Effort-scored from HR when the machine reports it"),
+                                             pulse: String(localized: "Records a live machine workout, Strain-scored from HR when the machine reports it")),
+                footnote: ScoreVocabulary.pick(classic: String(localized: "Live machine data over Bluetooth FTMS. No sleep, recovery, skin temp or SpO₂. Effort needs the machine's heart rate; without it the session logs the machine metrics only."),
+                                               pulse: String(localized: "Live machine data over Bluetooth FTMS. No sleep, recovery, skin temp or SpO₂. Strain needs the machine's heart rate; without it the session logs the machine metrics only.")))
         }
         // EXPERIMENTAL Huami device (Amazfit / Zepp / Mi Band): best-effort live HR only, honest about it.
         if d.sourceKind == .huami {
             return DeviceCapabilityProfile(
                 displayModel: String(localized: "\(d.brand) (experimental)"),
                 captures: String(localized: "Heart rate (live, best-effort)"),
-                powers: String(localized: "Powers the live console + Effort. No Charge, Rest or Sleep"),
-                footnote: String(localized: "Experimental: live heart rate where the band exposes it. Some bands need a pairing we can't do yet. NOOP will say so honestly and never show a made-up number. No sleep, recovery, skin temp, SpO₂ or steps."))
+                powers: ScoreVocabulary.pick(classic: String(localized: "Powers the live console + Effort. No Charge, Rest or Sleep"),
+                                             pulse: String(localized: "Powers the live console + Strain. No Recovery or Sleep")),
+                footnote: ScoreVocabulary.pick(classic: String(localized: "Experimental: live heart rate where the band exposes it. Some bands need a pairing we can't do yet. NOOP will say so honestly and never show a made-up number. No sleep, recovery, skin temp, SpO₂ or steps."),
+                                               pulse: String(localized: "Experimental: live heart rate where the band exposes it. Some bands need a pairing we can't do yet. ZENO will say so honestly and never show a made-up number. No sleep, recovery, skin temp, SpO₂ or steps.")))
         }
         // EXPERIMENTAL locally-adopted Oura ring (gen 3/4/5). The gen is carried on `model` ("Oura Ring
         // 3/4/5") and recovered with OuraRingGen.from(model:). NOOP reads the ring's OWN raw signals + open
@@ -1198,8 +1207,10 @@ struct DeviceCapabilityProfile {
                 ? String(localized: "Heart rate* · HRV* · Sleep* · Resting HR* · Skin temp* · Battery*")
                 : String(localized: "Heart rate · HRV* · Sleep · Resting HR · Skin temp* · Battery")
             let powers = newer
-                ? String(localized: "Powers Effort now; Charge and Rest once enough nights and decode are confirmed")
-                : String(localized: "Powers Charge, Effort, Rest and Sleep")
+                ? ScoreVocabulary.pick(classic: String(localized: "Powers Effort now; Charge and Rest once enough nights and decode are confirmed"),
+                                       pulse: String(localized: "Powers Strain now; Recovery and Sleep once enough nights and decode are confirmed"))
+                : ScoreVocabulary.pick(classic: String(localized: "Powers Charge, Effort, Rest and Sleep"),
+                                       pulse: String(localized: "Powers Recovery, Strain and Sleep"))
             return DeviceCapabilityProfile(
                 displayModel: String(localized: "\(gen.displayName) (Beta)"),
                 captures: captures,
@@ -1220,7 +1231,8 @@ struct DeviceCapabilityProfile {
             return DeviceCapabilityProfile(
                 displayModel: "Apple Watch",
                 captures: captures.isEmpty ? String(localized: "Calibrating, no data yet") : captures,
-                powers: String(localized: "Powers Rest, Effort, Fitness Age and steps, plus Charge once recovery calibrates"),
+                powers: ScoreVocabulary.pick(classic: String(localized: "Powers Rest, Effort, Fitness Age and steps, plus Charge once recovery calibrates"),
+                                             pulse: String(localized: "Powers Sleep, Strain, Fitness Age and steps, plus Recovery once it calibrates")),
                 footnote: String(localized: "Computed live from your Apple Watch via Health. Recovery needs about a week of nights to calibrate, and every watch-derived score is labelled with its confidence. Only the metrics your watch actually records are listed above."))
         }
         // Generic heart-rate strap: live HR + R-R only; drives the live console + Effort, nothing nightly.
@@ -1230,10 +1242,12 @@ struct DeviceCapabilityProfile {
             return DeviceCapabilityProfile(
                 displayModel: String(localized: "Heart-rate strap"),
                 captures: String(localized: "Heart rate · HRV (live)* · Strain"),
-                powers: String(localized: "Powers the live console + Effort. No Charge, Rest or Sleep"),
+                powers: ScoreVocabulary.pick(classic: String(localized: "Powers the live console + Effort. No Charge, Rest or Sleep"),
+                                             pulse: String(localized: "Powers the live console + Strain. No Recovery or Sleep")),
                 footnote: String(localized: "Live HR + R-R only · no sleep, recovery, skin temp, SpO₂, steps or battery (those are WHOOP-only)."))
         }
-        let whoopPowers = String(localized: "Powers Charge, Effort, Rest, Sleep + Health Monitor")
+        let whoopPowers = ScoreVocabulary.pick(classic: String(localized: "Powers Charge, Effort, Rest, Sleep + Health Monitor"),
+                                               pulse: String(localized: "Powers Recovery, Strain, Sleep + Health Monitor"))
         let model = d.model.lowercased()
         // WHOOP 5.0 / MG — adds a (raw) step count the 4.0 can't read over BLE.
         if model.contains("5") || model.contains("mg") {
@@ -1365,7 +1379,8 @@ private struct ForgetDeviceSheet: ViewModifier {
                     target = nil
                 }
             } message: { _ in
-                Text("NOOP removes this device from your list and deletes its recorded data here. You can re-pair the strap to pull its recent history back.")
+                Text(ScoreVocabulary.pick(classic: LocalizedStringKey("NOOP removes this device from your list and deletes its recorded data here. You can re-pair the strap to pull its recent history back."),
+                                          pulse: LocalizedStringKey("ZENO removes this device from your list and deletes its recorded data here. You can re-pair the strap to pull its recent history back.")))
             }
     }
 }
@@ -1498,7 +1513,8 @@ private struct EcgProbeSheets: ViewModifier {
                 Button("Set which wrist you wear it on…") { target = nil; wristTarget = device }
                 Button("Cancel", role: .cancel) { target = nil }
             } message: { _ in
-                Text("NOOP is not a medical device and this is not an ECG test. It asks your MG to start its ECG subsystem and logs whatever comes back — unvalidated instrumentation for protocol research, never a measurement or a diagnosis, including any heart-rhythm classification the strap happens to send. Don't use it to make a health decision; see a doctor if you have symptoms.\n\nHold the two indents on the clasp with the fingers of your other hand for the whole capture. The MG measures across your wrist AND that clasp, so until you hold it the circuit is open, the strap has nothing to record, and you would see zero packets whatever the firmware did.\n\nNobody has confirmed a strap honours these commands, so the likely outcome is that nothing happens. Everything here is reversible: “Stop” turns the streams back off. Results land in the strap log.")
+                Text(ScoreVocabulary.pick(classic: LocalizedStringKey("NOOP is not a medical device and this is not an ECG test. It asks your MG to start its ECG subsystem and logs whatever comes back — unvalidated instrumentation for protocol research, never a measurement or a diagnosis, including any heart-rhythm classification the strap happens to send. Don't use it to make a health decision; see a doctor if you have symptoms.\n\nHold the two indents on the clasp with the fingers of your other hand for the whole capture. The MG measures across your wrist AND that clasp, so until you hold it the circuit is open, the strap has nothing to record, and you would see zero packets whatever the firmware did.\n\nNobody has confirmed a strap honours these commands, so the likely outcome is that nothing happens. Everything here is reversible: “Stop” turns the streams back off. Results land in the strap log."),
+                                          pulse: LocalizedStringKey("ZENO is not a medical device and this is not an ECG test. It asks your MG to start its ECG subsystem and logs whatever comes back — unvalidated instrumentation for protocol research, never a measurement or a diagnosis, including any heart-rhythm classification the strap happens to send. Don't use it to make a health decision; see a doctor if you have symptoms.\n\nHold the two indents on the clasp with the fingers of your other hand for the whole capture. The MG measures across your wrist AND that clasp, so until you hold it the circuit is open, the strap has nothing to record, and you would see zero packets whatever the firmware did.\n\nNobody has confirmed a strap honours these commands, so the likely outcome is that nothing happens. Everything here is reversible: “Stop” turns the streams back off. Results land in the strap log.")))
             }
             // Wrist selection: its own step, with its own confirmation and its own warning.
             //
@@ -1581,7 +1597,8 @@ private struct EcgWristSheet: View {
                 .font(StrandFont.subhead)
                 .foregroundStyle(StrandPalette.statusWarning)
                 .fixedSize(horizontal: false, vertical: true)
-            Text("Which value means “left” and which means “right” comes from WHOOP's own app and the strap firmware, not from a strap NOOP has tested. You can send it again with the other choice at any time, and it changes nothing about your recorded data.")
+            Text(ScoreVocabulary.pick(classic: LocalizedStringKey("Which value means “left” and which means “right” comes from WHOOP's own app and the strap firmware, not from a strap NOOP has tested. You can send it again with the other choice at any time, and it changes nothing about your recorded data."),
+                                      pulse: LocalizedStringKey("Which value means “left” and which means “right” comes from WHOOP's own app and the strap firmware, not from a strap ZENO has tested. You can send it again with the other choice at any time, and it changes nothing about your recorded data.")))
                 .font(StrandFont.caption)
                 .foregroundStyle(StrandPalette.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
