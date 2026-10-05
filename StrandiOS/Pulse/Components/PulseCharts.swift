@@ -85,7 +85,8 @@ enum PulseChartAxis {
         return (lo - span * padding)...(hi + span * padding * 1.6)
     }
 
-    /// The two-line x label, white for the highlighted column and 50% otherwise.
+    /// The two-line x label (weekday over date) in WHOOP's light 11 pt Medium face: grey, and semibold
+    /// white for the highlighted column (deep-dives-2026/13, 16).
     @ViewBuilder
     static func xLabel(_ datum: (label: String, sublabel: String?)?, highlighted: Bool) -> some View {
         if let datum {
@@ -93,7 +94,8 @@ enum PulseChartAxis {
                 Text(datum.label)
                 if let sub = datum.sublabel { Text(sub) }
             }
-            .font(PulseType.font(.axis))
+            .font(PulseType.font(.tabLabel))
+            .fontWeight(highlighted ? .semibold : nil)
             .foregroundStyle(highlighted ? PulseTheme.textPrimary : PulseTheme.textTertiary)
         }
     }
