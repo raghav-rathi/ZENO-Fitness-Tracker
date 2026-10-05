@@ -51,7 +51,8 @@ struct NightDetailCard: View {
             LazyVGrid(columns: tileColumns, alignment: .leading, spacing: NoopMetrics.gap) {
 
                 StatTile(
-                    label: "Rest",
+                    label: ScoreVocabulary.pick(classic: LocalizedStringKey("Rest"),
+                                                pulse: LocalizedStringKey("Sleep Performance")),
                     value: pctValue(perf.latest),
                     caption: tileCaption(latestDay: perf.latestDay, latest: perf.latest,
                                          typical: perf.typical, suffix: "%"),
