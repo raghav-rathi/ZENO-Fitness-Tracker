@@ -113,7 +113,9 @@ struct LiftProgramEditorSheet: View {
 
             if items.isEmpty {
                 NoopCard {
-                    Text("No exercises yet. Add the first one below — you can type any name you like; NOOP remembers it for next time.")
+                    Text(ScoreVocabulary.current.pick(
+                        classic: LocalizedStringKey("No exercises yet. Add the first one below — you can type any name you like; NOOP remembers it for next time."),
+                        pulse: LocalizedStringKey("No exercises yet. Add the first one below — you can type any name you like; ZENO remembers it for next time.")))
                         .font(StrandFont.footnote)
                         .foregroundStyle(StrandPalette.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)

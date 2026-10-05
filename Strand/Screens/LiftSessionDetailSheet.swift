@@ -38,6 +38,10 @@ struct LiftSessionDetailSheet: View {
 
     @AppStorage(UnitPrefs.systemKey) private var unitSystemRaw = UnitSystem.metric.rawValue
     private var unitSystem: UnitSystem { UnitSystem(rawValue: unitSystemRaw) ?? .metric }
+    /// The Effort scale (#268), resolved like every other Effort read-out: WHOOP's 0-21 under Pulse, the
+    /// setting in the classic interface. The workout's strain is stored on the native 0-100 axis.
+    @AppStorage(UnitPrefs.effortScaleKey) private var effortScaleRaw = EffortScale.hundred.rawValue
+    private var effortScale: EffortScale { UnitPrefs.resolveEffortScale(effortScaleRaw) }
 
     private var durationSec: Int {
         guard let end = session.endTs else { return 0 }
@@ -152,8 +156,8 @@ struct LiftSessionDetailSheet: View {
                      sessionLoadText,
                      sessionLoadCaption)
 
-                tile(String(localized: "Effort"),
-                     workout?.strain.map { LiftFormat.trim($0) } ?? "—",
+                tile(ScoreVocabulary.current.strain,
+                     workout?.strain.map { UnitFormatter.effortDisplay($0, scale: effortScale) } ?? "—",
                      String(localized: "measured from heart rate"))
             }
         }
@@ -420,7 +424,9 @@ struct LiftSessionDetailSheet: View {
     }
 
     private var footnote: some View {
-        Text("Lifting figures are worked out from the sets above. Effort stays measured from heart rate and is never derived from weights and reps.")
+        Text(ScoreVocabulary.current.pick(
+            classic: LocalizedStringKey("Lifting figures are worked out from the sets above. Effort stays measured from heart rate and is never derived from weights and reps."),
+            pulse: LocalizedStringKey("Lifting figures are worked out from the sets above. Strain stays measured from heart rate and is never derived from weights and reps.")))
             .font(StrandFont.footnote)
             .foregroundStyle(StrandPalette.textTertiary)
             .fixedSize(horizontal: false, vertical: true)
