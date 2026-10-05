@@ -1725,7 +1725,9 @@ struct SettingsView: View {
                     .fixedSize(horizontal: false, vertical: true)
 
                 #if os(iOS)
-                Text("Also imports water from Apple Health when connected and allowed to read water data. Drinks logged in NOOP are not written to Apple Health.")
+                Text(ScoreVocabulary.current.pick(
+                    classic: LocalizedStringKey("Also imports water from Apple Health when connected and allowed to read water data. Drinks logged in NOOP are not written to Apple Health."),
+                    pulse: LocalizedStringKey("Also imports water from Apple Health when connected and allowed to read water data. Drinks logged in ZENO are not written to Apple Health.")))
                     .font(StrandFont.caption)
                     .foregroundStyle(StrandPalette.textTertiary)
                     .fixedSize(horizontal: false, vertical: true)
