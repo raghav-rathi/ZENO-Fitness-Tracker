@@ -806,7 +806,9 @@ private struct DeviceInfoSheet: View {
 private enum DeviceInfoGlyph {
     private static let ring: CGFloat = 30
     private static let stroke: CGFloat = 2
+    /// The "i" at 14 pt Bold stands 11 pt on its baseline.
     private static let mark = Font.system(size: 14, weight: .bold)
+    private static let markHeight: CGFloat = 11
 
     /// Paints into the bar's 44 pt slot with `.foreground`, the bar's white.
     static func draw(_ context: inout GraphicsContext, size: CGSize) {
@@ -816,7 +818,11 @@ private enum DeviceInfoGlyph {
                        lineWidth: stroke)
         var glyph = context.resolve(Text(Image(systemName: "info")).font(mark))
         glyph.shading = .foreground
-        context.draw(glyph, at: CGPoint(x: size.width / 2, y: size.height / 2))
+        // Centre the glyph's ink, not its line box (which sits it ≈1 pt high): its baseline goes half the
+        // "i" below the ring's centre.
+        let line = glyph.measure(in: size)
+        let anchor = UnitPoint(x: 0.5, y: glyph.firstBaseline(in: size) / max(line.height, 1))
+        context.draw(glyph, at: CGPoint(x: size.width / 2, y: size.height / 2 + markHeight / 2), anchor: anchor)
     }
 }
 #endif
