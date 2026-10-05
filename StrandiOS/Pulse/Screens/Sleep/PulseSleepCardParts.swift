@@ -31,12 +31,14 @@ struct SleepCardHeader: View {
 }
 
 /// A figure with its trend glyph beside it and the prior-30-night baseline under it ("60% ▼" over "73%").
-/// `compactBaseline` sets the baseline at 12 pt, as HOURS OF SLEEP's is (§2.2: "8:44" 24 pt, baseline 12).
+/// Every card prints it at HOURS OF SLEEP's size (§2.2: "8:44" 24 pt, baseline 12): WHOOP's "60%", "100%" and
+/// "87%" have the same ≈17 pt caps as its "5:27" (deep-dives-2026/14, 15, 19c), not the spec's 34 pt.
+/// `compactBaseline` false sets the baseline at 13 pt instead of 12.
 struct SleepFigureView: View {
     let figure: SleepFigure
-    var style: PulseTextStyle = .largeValue
-    var glyphSize: CGFloat = 7
-    var compactBaseline = false
+    var style: PulseTextStyle = .mediumValue
+    var glyphSize: CGFloat = 6
+    var compactBaseline = true
 
     var body: some View {
         VStack(alignment: .leading, spacing: 1) {
@@ -69,7 +71,8 @@ struct SleepFigureView: View {
     }
 }
 
-/// A Last Night's Sleep detail card: the dimmer detail fill and 16 pt padding, title + ⓘ on top.
+/// A Last Night's Sleep detail card: the dimmer detail fill and 16 pt padding, title + ⓘ on top, the content
+/// 7 pt under it: title caps to value caps 24 pt, WHOOP's 23–24.4 on deep-dives-2026/03, 15, 19, 19b and 19c.
 struct SleepDetailCard<Content: View>: View {
     let title: String
     var onInfo: (() -> Void)?
@@ -83,9 +86,12 @@ struct SleepDetailCard<Content: View>: View {
 
     var body: some View {
         PulseCard(.detail) {
-            VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: 0) {
                 SleepCardHeader(title: title, onInfo: onInfo)
-                content()
+                VStack(alignment: .leading, spacing: 14) {
+                    content()
+                }
+                .padding(.top, 7)
             }
         }
     }
@@ -96,7 +102,6 @@ struct SleepLabelValueRow: View {
     let label: String
     let value: String
     var labelColor: Color = PulseTheme.textSecondary
-    var valueStyle: PulseTextStyle = .rowValue
 
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
@@ -105,10 +110,27 @@ struct SleepLabelValueRow: View {
                 .foregroundStyle(labelColor)
             Spacer(minLength: 8)
             Text(value)
-                .pulseText(valueStyle)
+                .sleepRowValue()
                 .foregroundStyle(PulseTheme.textPrimary)
         }
         .accessibilityElement(children: .combine)
+    }
+}
+
+/// A row figure on the dive's cards (`PulseTheme.SleepDive.rowValueSize`), Bold condensed with tabular digits,
+/// following Dynamic Type from the size `.subheadline` starts at, as `.rowValue` follows `.headline`.
+struct SleepRowValueText: ViewModifier {
+    @ScaledMetric(relativeTo: .subheadline) private var size: CGFloat = PulseTheme.SleepDive.rowValueSize
+
+    func body(content: Content) -> some View {
+        content.font(PulseType.numeral(max(11, size)))
+    }
+}
+
+extension View {
+    /// Style a figure in a Sleep dive card's row (`SleepRowValueText`).
+    func sleepRowValue() -> some View {
+        modifier(SleepRowValueText())
     }
 }
 
@@ -236,13 +258,14 @@ struct SleepBarcode: View {
     }
 }
 
-/// The "no data" body of an empty Last Night's Sleep card: the dash WHOOP prints (deep-dives-2026/01).
+/// The "no data" body of an empty Last Night's Sleep card: the dash WHOOP prints (deep-dives-2026/01), at a
+/// figure's size.
 struct SleepEmptyFigure: View {
     let text: String
 
     var body: some View {
         Text(text)
-            .pulseText(.largeValue)
+            .pulseText(.mediumValue)
             .foregroundStyle(PulseTheme.textPrimary)
             .accessibilityLabel(String(localized: "No data"))
     }

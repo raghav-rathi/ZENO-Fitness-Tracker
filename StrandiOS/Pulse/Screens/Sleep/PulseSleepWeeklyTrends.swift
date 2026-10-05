@@ -10,7 +10,9 @@ import StrandAnalytics
 // once rebuilt, else the classic page when it has data, else the classic Sleep screen), in WHOOP's order:
 // SLEEP PERFORMANCE, HOURS VS. NEEDED (HOURS), HOURS VS. NEEDED (%), RESTORATIVE SLEEP (HOURS), SLEEP
 // CONSISTENCY, TIME IN BED, SLEEP EFFICIENCY. Each plots the seven days ending on the night shown (the
-// latest highlighted); a day without a night is a gap, never a zero.
+// latest highlighted); a day without a night is a gap, never a zero. Every chart is `PulseWeeklyChart.height`
+// tall, a ≈197 pt plot over its two-line day labels as the Recovery and Strain dives draw it (WHOOP's
+// gridlines run 202 pt on deep-dives-2026/13).
 
 struct PulseSleepWeeklyTrends: View {
     let week: [SleepWeekNight]
@@ -23,7 +25,7 @@ struct PulseSleepWeeklyTrends: View {
         VStack(alignment: .leading, spacing: PulseTheme.Layout.stackGap) {
             card(String(localized: "Sleep performance"), metric: "sleep_performance") {
                 PulseBarChart(data: percentData(\.performance), yDomain: 0...100, gridValues: [0, 25, 50, 75, 100],
-                              highlightID: highlightID)
+                              highlightID: highlightID, height: PulseWeeklyChart.height)
                     .padding(.top, 10)
             }
             card(String(localized: "Hours vs. needed (hours)"), metric: "sleep_total_min", legend: AnyView(hoursNeedLegend)) {
@@ -31,7 +33,7 @@ struct PulseSleepWeeklyTrends: View {
             }
             card(String(localized: "Hours vs. needed (%)"), metric: "hours_vs_needed_pct") {
                 PulseBarChart(data: percentData(\.hoursPct), yDomain: 0...100, gridValues: [0, 25, 50, 75, 100],
-                              highlightID: highlightID)
+                              highlightID: highlightID, height: PulseWeeklyChart.height)
                     .padding(.top, 10)
             }
             .id("pulse.trend-hours-pct")
@@ -43,7 +45,7 @@ struct PulseSleepWeeklyTrends: View {
             .id("pulse.trend-restorative")
             card(String(localized: "Sleep consistency"), metric: "sleep_consistency") {
                 PulseBarChart(data: percentData(\.consistency), yDomain: 0...100, gridValues: [0, 25, 50, 75, 100],
-                              highlightID: highlightID)
+                              highlightID: highlightID, height: PulseWeeklyChart.height)
                     .padding(.top, 10)
             }
             card(String(localized: "Time in bed"), metric: "in_bed_min") {
@@ -52,7 +54,7 @@ struct PulseSleepWeeklyTrends: View {
             .id("pulse.trend-time-in-bed")
             card(String(localized: "Sleep efficiency"), metric: "sleep_efficiency") {
                 PulseLineChart(data: percentData(\.efficiency), color: PulseTheme.sleep, highlightID: highlightID,
-                               showsArea: true)
+                               showsArea: true, height: PulseWeeklyChart.height)
                     .padding(.top, 6)
             }
             .id("pulse.trend-efficiency")
@@ -153,14 +155,10 @@ private struct SleepChartHighlight: View {
     }
 }
 
-/// The two-line x label under a column ("Wed" over "5"), white for the newest day.
+/// The two-line x label under a column ("Wed" over "5"), white for the newest day: the shared charts' own
+/// label (`PulseChartAxis.xLabel`), so the cards drawn here and the shared bar and line cards print one face.
 private func sleepXLabel(_ day: SleepWeekNight?, highlighted: Bool) -> some View {
-    VStack(spacing: 1) {
-        Text(day?.label ?? "")
-        Text(day?.sublabel ?? "")
-    }
-    .font(PulseType.font(.axis))
-    .foregroundStyle(highlighted ? PulseTheme.textPrimary : PulseTheme.textTertiary)
+    PulseChartAxis.xLabel(day.map { (label: $0.label, sublabel: Optional($0.sublabel)) }, highlighted: highlighted)
 }
 
 // MARK: - HOURS VS. NEEDED (HOURS): two lines
@@ -170,7 +168,7 @@ private func sleepXLabel(_ day: SleepWeekNight?, highlighted: Bool) -> some View
 struct PulseSleepHoursNeedChart: View {
     let week: [SleepWeekNight]
     let highlightID: String?
-    var height: CGFloat = 197
+    var height: CGFloat = PulseWeeklyChart.height
 
     /// 0–12 h, as WHOOP fixes it (deep-dives-2026/07, 13), in two-hour steps past it.
     private var top: Double {
@@ -263,7 +261,7 @@ struct PulseSleepHoursNeedChart: View {
 struct PulseSleepRestorativeChart: View {
     let week: [SleepWeekNight]
     let highlightID: String?
-    var height: CGFloat = 197
+    var height: CGFloat = PulseWeeklyChart.height
 
     private var nights: [SleepWeekNight] { week.filter { $0.remMin != nil || $0.deepMin != nil } }
 
@@ -333,7 +331,7 @@ struct PulseSleepRestorativeChart: View {
 struct PulseSleepTimeInBedChart: View {
     let week: [SleepWeekNight]
     let highlightID: String?
-    var height: CGFloat = 197
+    var height: CGFloat = PulseWeeklyChart.height
 
     private var nights: [SleepWeekNight] { week.filter { $0.bed != nil && $0.wake != nil } }
 

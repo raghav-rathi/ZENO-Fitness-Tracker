@@ -12,9 +12,21 @@ import StrandDesign
 extension PulseTheme {
     /// The Sleep Planner (§3.11).
     enum Planner {
-        /// The upper zone's lighter slate over the page gradient: #2F3C44 at the top and #242B33 lower down
-        /// on reviews/r134 and r135, the page's own #2A3139 / #22282F plus ≈2.5% white.
-        static let upperZone = Color.white.opacity(0.025)
+        /// The upper zone, a top-lit blue slate from the very top of the screen down to its 1 pt edge, where it
+        /// meets the page: sampled on reviews/r134 at 0, 60, 100, 150, 200, 250, 300 and 350 pt of its ≈402
+        /// (r135 runs close) and placed by share of the zone. Opaque, in place of the page gradient, where the
+        /// spec's ≈white 6% over it reads flat and grey.
+        static let upperZone = LinearGradient(stops: [
+            .init(color: Color(hex: "#3B4952"), location: 0),
+            .init(color: Color(hex: "#36434C"), location: 0.15),
+            .init(color: Color(hex: "#313E47"), location: 0.25),
+            .init(color: Color(hex: "#2E3841"), location: 0.37),
+            .init(color: Color(hex: "#2A353B"), location: 0.5),
+            .init(color: Color(hex: "#282F37"), location: 0.62),
+            .init(color: Color(hex: "#232A32"), location: 0.75),
+            .init(color: Color(hex: "#1E252D"), location: 0.87),
+            .init(color: Color(hex: "#1D222A"), location: 1)
+        ], startPoint: .top, endPoint: .bottom)
         /// The goal capsule's fill, opaque so the zone's edge does not show through it (#1D2528 inside the
         /// capsule on reviews/r134, the zone's own colour at that height).
         static let capsuleFill = Color(hex: "#1D2528")
@@ -27,10 +39,14 @@ extension PulseTheme {
         static let timeCapsule = Color.black
         /// The drop lines from the two times to the bar, and the optimal bracket.
         static let dropLine = Color.white.opacity(0.5)
-        /// "OPTIMAL": recovery blue, greyed (§3.11 item 7).
-        static let optimalLabel = PulseTheme.recoveryBlue.opacity(0.8)
-        /// My Schedule's ON / OFF chip: white 20% in both states (§3.11 item 1).
-        static let scheduleChip = Color.white.opacity(0.20)
+        /// "OPTIMAL": a greyed steel blue (#93ADBF on reviews/r134, where recovery blue reads saturated), and the
+        /// window's times under it in a darker blue-grey (#6F8292 there).
+        static let optimalLabel = Color(hex: "#93ADBF")
+        static let optimalWindow = Color(hex: "#6F8292")
+        /// My Schedule's ON / OFF chip: white 10% (#444F55 on the zone's #2F3B43 at reviews/r134, where the spec's
+        /// white 20% reads bright), and its OFF word a dim grey (#838E94 there).
+        static let scheduleChip = Color.white.opacity(0.10)
+        static let scheduleChipText = Color(hex: "#838E94")
         /// The pinned alarm panel, a blue-grey slate lighter at its top (sampled #3A454B → #303B41 on
         /// reviews/r134 and r135); opaque, so the page scrolls under it cleanly.
         static let panelTop = Color(hex: "#38434A")
@@ -63,6 +79,16 @@ extension PulseTheme {
         /// Where the stress chart's plot starts, past its 0.0–3.0 labels (the shared chart's own label row
         /// starts there too), for the times placed along it.
         static let stressPlotInset: CGFloat = 28
+        /// The cards' row figures (stage durations, DURATION, RESTORATIVE, HOURS OF SLEEP / SLEEP NEEDED and the
+        /// need's parts, ASLEEP / AWAKE, the stress levels' durations): 15 pt Bold condensed, WHOOP's 30–32 px
+        /// caps at 3x on deep-dives-2026/14, 15, 19, 19b and 19c (§2.6 item 19, §3.3 item 6), where
+        /// `.rowValue`'s 17 pt reads heavier.
+        static let rowValueSize: CGFloat = 15
+        /// A stage row's radio: 78 px at 3x on deep-dives-2026/14 and 15 (the spec's 22 pt measures small).
+        static let stageRadio: CGFloat = 26
+        /// SLEEP CONSISTENCY's night-to-night pitch, centred in the plot (§2.7; 146–147 px at 3x on
+        /// deep-dives-2026/03, 18 and 19c).
+        static let consistencyPitch: CGFloat = 49
     }
 }
 #endif

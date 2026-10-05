@@ -38,6 +38,17 @@ struct SleepFigure: Equatable {
 struct SleepContributorRow: Equatable, Identifiable {
     enum Kind: String, Equatable {
         case hours, consistency, efficiency, stress
+
+        /// The metric's name inside a sentence, in Title Case as WHOOP writes metric names in its prose
+        /// ("…Sleep Consistency could use attention…", appstore/ios69-02); the row's `title` is sentence case.
+        var sentenceName: String {
+            switch self {
+            case .hours: return String(localized: "Hours vs. Needed")
+            case .consistency: return String(localized: "Sleep Consistency")
+            case .efficiency: return String(localized: "Sleep Efficiency")
+            case .stress: return String(localized: "High Sleep Stress")
+            }
+        }
     }
 
     let kind: Kind
@@ -261,6 +272,8 @@ struct SleepStressSnapshot: Equatable {
 
     /// A time under the stress chart: its start, two half hours, and its end (bold).
     struct XTick: Equatable {
+        /// The time itself, where the chart draws a faint vertical rule at the middle times (19b).
+        let date: Date
         /// 0…1 along the chart's span.
         let fraction: Double
         let text: String

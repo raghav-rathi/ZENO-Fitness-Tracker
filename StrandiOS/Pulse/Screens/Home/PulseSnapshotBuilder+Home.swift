@@ -413,7 +413,7 @@ extension PulseSnapshotBuilder {
         let judged = vitals.filter { $0.status != .noData }
         let out = judged.compactMap { vital -> PulseMonitorGrades.Flag? in
             guard case .outside(let severe) = vital.status else { return nil }
-            return .init(name: vital.name, strong: severe,
+            return .init(name: PulseMonitorGrades.tileName(vital.id) ?? vital.name, strong: severe,
                          high: vital.direction == 0 ? nil : vital.direction > 0)
         }
         return PulseMonitorGrades(judged: judged.count, out: out)

@@ -12,7 +12,8 @@ import StrandAnalytics
 ///
 /// Every figure comes from ONE resolver (`PulseSleepPlan`), the one Home's TONIGHT'S SLEEP card reads too,
 /// for the goal chosen here: the wake is the strap alarm only when it will buzz that morning, else the
-/// wind-down wake, else the wearer's usual wake, else a typical 07:00 that says so. The panel drives the
+/// wind-down wake, else the wake time set here with the alarm off, else (no wake time ever set) the wearer's
+/// usual wake, else a typical 07:00 that says so; WAKE TIME SET TO shows that same wake. The panel drives the
 /// EXISTING alarm: its toggle and times write `BehaviorStore`'s smart-alarm settings and then call
 /// `AppModel.applySmartAlarm()`, exactly as the classic Alarms screen does, so the strap is armed or cleared
 /// by the code that always did it (no new commands).
@@ -39,6 +40,8 @@ struct PulseSleepPlannerView: View {
     @State private var actions = SleepAlarmActions()
     @State private var sheet: PulseSleepPlannerSheet?
     @State private var choosingGoal = false
+    /// The status bar's height: the upper zone runs up behind it, where the scroll content does not reach.
+    @State private var topInset: CGFloat = 0
     #if DEBUG
     @State private var debugApplied = false
     #endif
@@ -62,9 +65,10 @@ struct PulseSleepPlannerView: View {
         }
         .scrollBounceBehavior(.basedOnSize)
         .background(PulseBackground())
+        .onGeometryChange(for: CGFloat.self) { $0.safeAreaInsets.top } action: { topInset = $0 }
         .safeAreaInset(edge: .bottom, spacing: 0) {
             PulseSleepAlarmPanel(plan: plan, alarmOn: settings.alarmEnabled, warning: warning(settings),
-                                 onToggle: { setAlarm($0) },
+                                 onToggle: { setAlarm($0, plan: plan, settings: settings) },
                                  onMode: { sheet = .alarmMode },
                                  onWake: { sheet = .wakeTime })
         }
@@ -113,8 +117,9 @@ struct PulseSleepPlannerView: View {
     private func upperZone(_ plan: PulseSleepPlan?, scheduleOn: Bool) -> some View {
         VStack(spacing: 0) {
             header(scheduleOn: scheduleOn)
+            // The mark's top ≈149 pt down, as on reviews/r134, 5 pt under the schedule chip.
             PulseSleepPlannerMark()
-                .padding(.top, 16)
+                .padding(.top, 5)
             PulseLoadingGate(isLoading: snapshot == nil) {
                 PulseWordWrapHeadline(text: plan.map(headline)
                                       ?? String(localized: "Sleep a few nights with your strap to get a plan for tonight."))
@@ -134,12 +139,13 @@ struct PulseSleepPlannerView: View {
         }
         .frame(maxWidth: .infinity)
         .background(alignment: .bottom) {
-            // The lighter slate of the upper zone, up to its 1 pt edge behind the capsule's centre line.
+            // The upper zone's slate, from the top of the screen (behind the status bar, which the scroll
+            // content starts under) down to its 1 pt edge behind the capsule's centre line.
             VStack(spacing: 0) {
                 PulseTheme.Planner.upperZone
                 PulseTheme.divider.frame(height: 1)
             }
-            .ignoresSafeArea(edges: .top)
+            .padding(.top, -topInset)
         }
         .overlay(alignment: .bottom) {
             PulseSleepGoalCapsule(title: (plan?.goal ?? goal).title) { choosingGoal = true }
@@ -184,13 +190,14 @@ struct PulseSleepPlannerView: View {
         .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
     }
 
-    /// My Schedule: a 40 pt outlined circle with a calendar-moon glyph, and the ON / OFF chip under it
-    /// (11 pt Bold caps on white 20% in both states, §3.11 item 1 at DR's 11 pt floor).
+    /// My Schedule: a 40 pt outlined circle with a calendar-moon glyph, and 11 pt under it the ON / OFF chip,
+    /// 11 pt Bold caps on white 10%, ≈21 pt tall, OFF in a dim grey (reviews/r134; §3.11 item 1 at DR's 11 pt
+    /// floor).
     private func scheduleButton(on: Bool) -> some View {
         Button {
             navigator.open(PulseSleepScheduleRoute().route)
         } label: {
-            VStack(spacing: 6) {
+            VStack(spacing: 11) {
                 ZStack {
                     Circle().strokeBorder(Color.white, lineWidth: 1.5)
                     PulseSleepScheduleGlyph()
@@ -198,9 +205,9 @@ struct PulseSleepPlannerView: View {
                 .frame(width: 40, height: 40)
                 Text(on ? String(localized: "On") : String(localized: "Off"))
                     .pulseText(.label)
-                    .foregroundStyle(on ? PulseTheme.textPrimary : PulseTheme.textSecondary)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 1)
+                    .foregroundStyle(on ? PulseTheme.textPrimary : PulseTheme.Planner.scheduleChipText)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
                     .background(RoundedRectangle(cornerRadius: PulseTheme.Radius.badge, style: .circular)
                         .fill(PulseTheme.Planner.scheduleChip))
             }
@@ -235,10 +242,11 @@ struct PulseSleepPlannerView: View {
             if plan.clamped {
                 return String(localized: "Get to bed by \(bed), the earliest ZENO suggests, to reach \(plan.coveragePercent)% of your Sleep Need by \(wake).")
             }
+            // WHOOP's words (reviews/r133); without an alarm the wake is left to YOUR WAKE TIME (r135).
             if plan.alarmFires {
-                return String(localized: "Your alarm will go off at \(wake). Get to bed by \(bed) to achieve \(share)% of your Sleep Need.")
+                return String(localized: "Your alarm will go off at \(wake). Get to bed by \(bed) to achieve \(share)% Sleep Need.")
             }
-            return String(localized: "Get to bed by \(bed) to achieve \(share)% of your Sleep Need by \(wake).")
+            return String(localized: "Get to bed by \(bed) to achieve \(share)% Sleep Need.")
         }
     }
 
@@ -275,10 +283,21 @@ struct PulseSleepPlannerView: View {
         return nil
     }
 
-    private func setAlarm(_ on: Bool) {
+    /// Switched on while no wake time was ever set, the alarm arms at the wake on screen (the usual or typical
+    /// one the plan assumed) rather than at the store's unset 07:00.
+    private func setAlarm(_ on: Bool, plan: PulseSleepPlan?, settings: PulseSleepPlanSettings) {
         guard behavior.smartAlarmEnabled != on else { return }
+        if on, !settings.wakeTimeStored, let plan, plan.wakeSource == .habit || plan.wakeSource == .typical {
+            behavior.smartAlarmMinutes = Self.minuteOfDay(plan.wake)
+        }
         behavior.smartAlarmEnabled = on
         actions.apply()
+    }
+
+    /// The clock minute of `date`, minutes after midnight.
+    private static func minuteOfDay(_ date: Date) -> Int {
+        let c = Calendar.current.dateComponents([.hour, .minute], from: date)
+        return (c.hour ?? 0) * 60 + (c.minute ?? 0)
     }
 
     /// WAKE TIME SET TO edits the alarm's time for the morning the plan is for (that day's own time when
@@ -301,13 +320,12 @@ struct PulseSleepPlannerView: View {
         switch which {
         case .alarmMode:
             PulseSleepAlarmModeSheet(alarmOn: settings.alarmEnabled) { on in
-                setAlarm(on)
+                setAlarm(on, plan: plan, settings: settings)
                 sheet = nil
             }
         case .wakeTime:
-            let minutes = plan.map { p in
-                Calendar.current.component(.hour, from: p.alarmTime) * 60 + Calendar.current.component(.minute, from: p.alarmTime)
-            } ?? settings.alarmMinutes
+            // Opens on the wake the page shows.
+            let minutes = plan.map { Self.minuteOfDay($0.wake) } ?? settings.alarmMinutes
             PulseSleepTimeSheet(title: String(localized: "Wake time"), minutes: minutes,
                                 confirmTitle: String(localized: "Save & set alarm"),
                                 onConfirm: { minutes in

@@ -38,6 +38,8 @@ struct PulseSleepHoursVsNeededCard: View {
                 }
             }
             .padding(.horizontal, 8)
+            // HOURS OF SLEEP's caps ≈14.5 pt under the baseline (deep-dives-2026/15: 14.7).
+            .padding(.top, -8)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(GeometryReader { geo in
                 Color.clear.preference(key: SleepWidthKey.self, value: geo.size.width - 16)
@@ -67,7 +69,7 @@ struct PulseSleepHoursVsNeededCard: View {
                 .foregroundStyle(PulseTheme.textSecondary)
                 .padding(.bottom, 2)
             Text(value)
-                .pulseText(.rowValue)
+                .sleepRowValue()
                 .foregroundStyle(PulseTheme.textPrimary)
                 .fixedSize()
                 .frame(width: max(width, PulseTextMetrics.width(label, style: .label) + 56), alignment: .trailing)
@@ -114,7 +116,7 @@ struct PulseSleepHoursVsNeededCard: View {
                         .foregroundStyle(row.dimmed ? PulseTheme.textSecondary : PulseTheme.textPrimary)
                     Spacer(minLength: 8)
                     Text(row.value)
-                        .pulseText(.rowValue)
+                        .sleepRowValue()
                         .foregroundStyle(row.dimmed ? PulseTheme.textSecondary : PulseTheme.textPrimary)
                 }
                 // 23 pt from row to row with the well's own 4 pt spacing (deep-dives-2026/18).
@@ -152,9 +154,10 @@ struct PulseSleepConsistencyCard: View {
                     legend
                 }
             }
+            // The first gridline's time ≈14 pt under the baseline (deep-dives-2026/03: 14.0).
             if !card.nights.isEmpty {
                 PulseSleepConsistencyChart(card: card)
-                    .padding(.top, 4)
+                    .padding(.top, 1)
             }
         }
     }
@@ -194,13 +197,23 @@ struct PulseSleepConsistencyCard: View {
 }
 
 /// Five nights on an inverted clock (earlier at the top): past nights grey, last night sleep blue with its
-/// bed and wake times in pills, and the dashed optimal bed and wake curves across the whole plot.
+/// bed and wake times in pills, and the dashed optimal bed and wake curves across the whole plot. The nights
+/// sit on a fixed 49 pt pitch centred in the plot, empty plot either side, as WHOOP spaces them.
 struct PulseSleepConsistencyChart: View {
     let card: SleepConsistencyCard
+
+    /// The plot's width, measured (padding the night scale does not change it).
+    @State private var plotWidth: CGFloat = 0
 
     /// The PLOT, 40 pt per four-hour gridline step as WHOOP spaces them (deep-dives-2026/03, 18); the
     /// weekday labels under it add their own height.
     private var plotHeight: CGFloat { CGFloat(max(card.lines.count - 1, 2)) * 40 }
+
+    /// The space left either side of the nights so they keep the pitch.
+    private var sidePadding: CGFloat {
+        let nights = CGFloat(max(card.nights.count, 1)) * PulseTheme.SleepDive.consistencyPitch
+        return max(0, (plotWidth - nights) / 2)
+    }
 
     var body: some View {
         // Positions are minutes after noon; the y axis is drawn negated so the evening sits on top.
@@ -213,7 +226,8 @@ struct PulseSleepConsistencyChart: View {
                     .cornerRadius(PulseTheme.SleepDive.rangeBarRadius)
             }
         }
-        .chartXScale(domain: card.nights.map(\.id))
+        .chartXScale(domain: card.nights.map(\.id),
+                     range: .plotDimension(startPadding: sidePadding, endPadding: sidePadding))
         .chartYScale(domain: domain)
         .chartYAxis {
             AxisMarks(position: .leading, values: card.lines.map { -$0.position }) { value in
@@ -248,6 +262,10 @@ struct PulseSleepConsistencyChart: View {
                     optimalCurve(proxy: proxy, plot: plot, keyPath: \.bed)
                     optimalCurve(proxy: proxy, plot: plot, keyPath: \.wake)
                     pills(proxy: proxy, plot: plot)
+                    Color.clear
+                        .onAppear { plotWidth = plot.width }
+                        .onChange(of: plot.width) { _, width in plotWidth = width }
+                        .accessibilityHidden(true)
                 }
             }
         }
@@ -294,11 +312,9 @@ struct PulseSleepConsistencyChart: View {
     }
 
     private func pill(_ text: String) -> some View {
+        // 13 pt Bold condensed: 28 px caps at 3x on deep-dives-2026/19c (the spec's 15 pt reads large).
         Text(text)
-            .font(PulseType.font(.filter))
-            .fontWeight(.bold)
-            .fontWidth(.condensed)
-            .monospacedDigit()
+            .font(PulseType.font(.baseline))
             .foregroundStyle(PulseTheme.sleep)
             .lineLimit(1)
             .fixedSize()
@@ -327,7 +343,8 @@ struct PulseSleepEfficiencyCard: View {
                 SleepLabelValueRow(label: String(localized: "Awake"), value: card.awakeText)
             }
             .padding(.horizontal, 8)
-            .padding(.top, 2)
+            // ASLEEP's caps ≈15.5 pt under the baseline (deep-dives-2026/19, 19c: 15.6).
+            .padding(.top, -8)
             if let events = card.wakeEvents {
                 PulseDivider()
                     .padding(.horizontal, -4)
@@ -339,7 +356,7 @@ struct PulseSleepEfficiencyCard: View {
                         .foregroundStyle(PulseTheme.textPrimary)
                     Spacer(minLength: 8)
                     Text("\(events)")
-                        .pulseText(.calloutValue)
+                        .pulseText(.rowValue)
                         .foregroundStyle(PulseTheme.textPrimary)
                 }
                 .padding(.top, 4)
@@ -429,6 +446,8 @@ struct PulseSleepStressCard: View {
                              now: s.chartEnd, currentLevel: s.lastLevel, xLabels: [], height: 150)
             PulseSleepStressTicks(ticks: s.xTicks)
         }
+        // The plot's top line ≈13.6 pt under the baseline, the moon level with it (deep-dives-2026/19b, 19c).
+        .padding(.top, -15)
         VStack(spacing: 16) {
             ForEach(s.levels) { level in
                 VStack(alignment: .leading, spacing: 9) {
@@ -441,7 +460,7 @@ struct PulseSleepStressCard: View {
                             .foregroundStyle(color(level.band))
                         Spacer(minLength: 8)
                         Text(level.durationText)
-                            .pulseText(.rowValue)
+                            .sleepRowValue()
                             .foregroundStyle(PulseTheme.textPrimary)
                     }
                     SleepShareBar(fraction: level.share, color: color(level.band))
@@ -473,7 +492,8 @@ struct PulseSleepStressCard: View {
 }
 
 /// The stress chart's times, each at its own place along the plot (the chart's own label row spaces its
-/// labels evenly): the start at the left, two half hours, and the end in bold white at the right.
+/// labels evenly): the start at the left and two half hours in a light grey face, and the end in bold white
+/// at the right (deep-dives-2026/19b; §3.3 7d).
 struct PulseSleepStressTicks: View {
     let ticks: [SleepStressSnapshot.XTick]
 
@@ -484,7 +504,7 @@ struct PulseSleepStressTicks: View {
             ForEach(Array(ticks.enumerated()), id: \.offset) { _, tick in
                 let x = inset + width * CGFloat(tick.fraction)
                 Text(tick.text)
-                    .font(PulseType.font(.axis))
+                    .font(PulseType.font(tick.isEnd ? .axis : .tabLabel))
                     .foregroundStyle(tick.isEnd ? PulseTheme.textPrimary : PulseTheme.textTertiary)
                     .fixedSize()
                     .alignmentGuide(.leading) { d in
