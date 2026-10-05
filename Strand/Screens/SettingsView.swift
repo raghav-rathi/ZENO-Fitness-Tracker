@@ -254,7 +254,8 @@ struct SettingsView: View {
 
     var body: some View {
         ScreenScaffold(title: "Settings",
-                       subtitle: "Your numbers, your strap, and how NOOP works. All on \(Platform.deviceNounPhrase).",
+                       subtitle: ScoreVocabulary.pick(classic: LocalizedStringKey("Your numbers, your strap, and how NOOP works. All on \(Platform.deviceNounPhrase)."),
+                                                      pulse: LocalizedStringKey("Your numbers, your strap, and how ZENO works. All on \(Platform.deviceNounPhrase).")),
                        // The day-of-sky liquid backdrop, matching Today / Health / Sleep / Trends / Devices:
                        // a fixed, full-bleed time-of-day sky behind the scroll content (it does not scroll).
                        // Settings' own frosted cards sit on the dark canvas below the sky band, unchanged.
@@ -313,12 +314,14 @@ struct SettingsView: View {
         } message: {
             Text(oversizeRestoreMessage)
         }
-        .confirmationDialog("Recalibrate your Charge baseline?",
+        .confirmationDialog(ScoreVocabulary.pick(classic: LocalizedStringKey("Recalibrate your Charge baseline?"),
+                                                 pulse: LocalizedStringKey("Recalibrate your Recovery baseline?")),
                             isPresented: $showRecalibrateConfirm, titleVisibility: .visible) {
             Button("Recalibrate") { recalibrateHrvBaseline() }
             Button("Cancel", role: .cancel) { }
         } message: {
-            Text("This restarts the roughly 4-night build-up for Charge and your HRV baseline. Your history stays. Use it if a bad first week, like wearing it while sick, set your baseline off.")
+            Text(ScoreVocabulary.pick(classic: LocalizedStringKey("This restarts the roughly 4-night build-up for Charge and your HRV baseline. Your history stays. Use it if a bad first week, like wearing it while sick, set your baseline off."),
+                                      pulse: LocalizedStringKey("This restarts the roughly 4-night build-up for Recovery and your HRV baseline. Your history stays. Use it if a bad first week, like wearing it while sick, set your baseline off.")))
         }
         // #174: the switch going OFF is the moment to offer the undo. Declining leaves the flags set and
         // says so — which is still an improvement on the old behaviour, where the same tap silently left
@@ -328,7 +331,8 @@ struct SettingsView: View {
             Button("Clear flags on strap") { model.ble.disableWhoop5DeepData() }
             Button("Just stop sending", role: .cancel) { }
         } message: {
-            Text("Turning this switch off only stops NOOP sending the unlock. The flags it already wrote stay on the strap until something clears them. NOOP can write the off value to all 16 now and read each one back so you can see what the strap actually stores. Needs the strap connected and bonded.")
+            Text(ScoreVocabulary.pick(classic: LocalizedStringKey("Turning this switch off only stops NOOP sending the unlock. The flags it already wrote stay on the strap until something clears them. NOOP can write the off value to all 16 now and read each one back so you can see what the strap actually stores. Needs the strap connected and bonded."),
+                                      pulse: LocalizedStringKey("Turning this switch off only stops ZENO sending the unlock. The flags it already wrote stay on the strap until something clears them. ZENO can write the off value to all 16 now and read each one back so you can see what the strap actually stores. Needs the strap connected and bonded.")))
         }
         .confirmationDialog("Mark optical experiment phase",
                             isPresented: $showOpticalPhasePicker, titleVisibility: .visible) {
@@ -498,7 +502,8 @@ struct SettingsView: View {
                 }
                 Text(dayCycleModeRaw == DayCycleMode.midnight.rawValue
                      ? "Uses a conventional local calendar day from 00:00 to 00:00."
-                     : "Default. Steps and in-progress Effort restart at the beginning of detected main sleep. Naps do not start a new day; missing sleep falls back to local midnight.")
+                     : ScoreVocabulary.pick(classic: LocalizedStringKey("Default. Steps and in-progress Effort restart at the beginning of detected main sleep. Naps do not start a new day; missing sleep falls back to local midnight."),
+                                            pulse: LocalizedStringKey("Default. Steps and in-progress Strain restart at the beginning of detected main sleep. Naps do not start a new day; missing sleep falls back to local midnight.")))
                     .font(StrandFont.footnote)
                     .foregroundStyle(StrandPalette.textTertiary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -522,7 +527,8 @@ struct SettingsView: View {
                             .accessibilityLabel("Step calibration, \(String(format: "%.1f", profile.stepTicksPerStep)) counter ticks per step")
                     }
                 }
-                Text("Counter ticks per step. Leave at 1.0 unless your steps run high. On a WHOOP 5/MG they can run very high (10× or more), so this goes up to 30. Walk a known 1,000 steps and divide NOOP's count by the real count to get your value.")
+                Text(ScoreVocabulary.pick(classic: LocalizedStringKey("Counter ticks per step. Leave at 1.0 unless your steps run high. On a WHOOP 5/MG they can run very high (10× or more), so this goes up to 30. Walk a known 1,000 steps and divide NOOP's count by the real count to get your value."),
+                                          pulse: LocalizedStringKey("Counter ticks per step. Leave at 1.0 unless your steps run high. On a WHOOP 5/MG they can run very high (10× or more), so this goes up to 30. Walk a known 1,000 steps and divide ZENO's count by the real count to get your value.")))
                     .font(StrandFont.footnote)
                     .foregroundStyle(StrandPalette.textTertiary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -549,7 +555,8 @@ struct SettingsView: View {
                 }
                 .buttonStyle(LiquidPressStyle())
                 .accessibilityLabel("Steps estimate calibration. \(stepsCalibrationSummary). Opens the calibration screen.")
-                Text("For a WHOOP 4.0, which sends no step count: NOOP estimates steps from motion, calibrated to your phone. Tap to see how close it is and adjust it.")
+                Text(ScoreVocabulary.pick(classic: LocalizedStringKey("For a WHOOP 4.0, which sends no step count: NOOP estimates steps from motion, calibrated to your phone. Tap to see how close it is and adjust it."),
+                                          pulse: LocalizedStringKey("For a WHOOP 4.0, which sends no step count: ZENO estimates steps from motion, calibrated to your phone. Tap to see how close it is and adjust it.")))
                     .font(StrandFont.footnote)
                     .foregroundStyle(StrandPalette.textTertiary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -987,15 +994,26 @@ struct SettingsView: View {
                 rowDivider
                 // Effort scale (#268) — show NOOP's native 0–100 Effort or WHOOP's 0–21 Day Strain axis.
                 // Display-only; the stored value never changes, so a flip just re-labels every Effort read-out.
-                FormRow(label: "Effort scale") {
-                    Picker("Effort scale", selection: $effortScaleRaw) {
-                        Text("0-100").tag(EffortScale.hundred.rawValue)
-                        Text("0-21").tag(EffortScale.whoop.rawValue)
+                // The Pulse interface pins the axis to 0-21 (ScoreVocabulary.forcedEffortScale), where a picker
+                // would change nothing on screen, so it gets one line saying so; the stored choice stays for
+                // the classic interface.
+                if ScoreVocabulary.current == .pulse {
+                    Text("\(ScoreVocabulary.appName) always shows Strain on WHOOP's 0-21 scale.")
+                        .font(StrandFont.body)
+                        .foregroundStyle(StrandPalette.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: .infinity, minHeight: 32, alignment: .leading)
+                } else {
+                    FormRow(label: "Effort scale") {
+                        Picker("Effort scale", selection: $effortScaleRaw) {
+                            Text("0-100").tag(EffortScale.hundred.rawValue)
+                            Text("0-21").tag(EffortScale.whoop.rawValue)
+                        }
+                        .labelsHidden()
+                        .pickerStyle(.menu)
+                        .tint(StrandPalette.accent)
+                        .accessibilityLabel("Effort scale")
                     }
-                    .labelsHidden()
-                    .pickerStyle(.menu)
-                    .tint(StrandPalette.accent)
-                    .accessibilityLabel("Effort scale")
                 }
 
                 // #1545: directly under the Effort SCALE row on purpose. It shipped in the experimental
@@ -1007,7 +1025,8 @@ struct SettingsView: View {
                 Divider().overlay(StrandPalette.hairline)
 
                 Toggle(isOn: $banisterEffortEnabled) {
-                    Text("Effort: exponential intensity scale")
+                    Text(ScoreVocabulary.pick(classic: LocalizedStringKey("Effort: exponential intensity scale"),
+                                              pulse: LocalizedStringKey("Strain: exponential intensity scale")))
                         .font(StrandFont.subhead)
                         .foregroundStyle(StrandPalette.textPrimary)
                 }
@@ -1021,7 +1040,8 @@ struct SettingsView: View {
                     // candidate and HRV-window toggles (analyzeRecent → refresh).
                     Task { await model.intelligence.analyzeRecent(); await model.repo.refresh() }
                 }
-                Text("Scores Effort on an exponential intensity curve (Banister TRIMP) instead of the default heart-rate zones (Edwards). The default earns nothing below half of your heart-rate reserve, so an hour of lifting — where hard sets average out against the rests — can score close to zero. The exponential curve has no floor and weights short, hard efforts far more heavily. Re-scores your history, and both scales reach the same maximum. Off by default.")
+                Text(ScoreVocabulary.pick(classic: LocalizedStringKey("Scores Effort on an exponential intensity curve (Banister TRIMP) instead of the default heart-rate zones (Edwards). The default earns nothing below half of your heart-rate reserve, so an hour of lifting — where hard sets average out against the rests — can score close to zero. The exponential curve has no floor and weights short, hard efforts far more heavily. Re-scores your history, and both scales reach the same maximum. Off by default."),
+                                          pulse: LocalizedStringKey("Scores Strain on an exponential intensity curve (Banister TRIMP) instead of the default heart-rate zones (Edwards). The default earns nothing below half of your heart-rate reserve, so an hour of lifting — where hard sets average out against the rests — can score close to zero. The exponential curve has no floor and weights short, hard efforts far more heavily. Re-scores your history, and both scales reach the same maximum. Off by default.")))
                     .font(StrandFont.caption)
                     .foregroundStyle(StrandPalette.textTertiary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -1114,7 +1134,8 @@ struct SettingsView: View {
                     .accessibilityLabel("Language")
                     .onChangeCompat(of: appLanguageRaw) { AppLanguage.apply($0) }
                 }
-                Text("Language changes take effect after you reopen NOOP.")
+                Text(ScoreVocabulary.pick(classic: LocalizedStringKey("Language changes take effect after you reopen NOOP."),
+                                          pulse: LocalizedStringKey("Language changes take effect after you reopen ZENO.")))
                     .font(StrandFont.footnote)
                     .foregroundStyle(StrandPalette.textTertiary)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -1284,7 +1305,8 @@ struct SettingsView: View {
                 // sensor, WITHOUT requiring system Low Power Mode. Off by default; system Reduce Motion
                 // and Low Power Mode already force the same behaviour, this is the third, in-app signal.
                 Toggle(isOn: $quietMotion) {
-                    Text("Reduce motion in NOOP")
+                    Text(ScoreVocabulary.pick(classic: LocalizedStringKey("Reduce motion in NOOP"),
+                                              pulse: LocalizedStringKey("Reduce motion in ZENO")))
                         .font(StrandFont.subhead)
                         .foregroundStyle(StrandPalette.textPrimary)
                 }
@@ -1410,7 +1432,8 @@ struct SettingsView: View {
         SettingsSection(
             icon: "antenna.radiowaves.left.and.right",
             title: "Strap",
-            blurb: "NOOP pairs directly with your WHOOP over Bluetooth: no WHOOP app, no cloud."
+            blurb: ScoreVocabulary.pick(classic: LocalizedStringKey("NOOP pairs directly with your WHOOP over Bluetooth: no WHOOP app, no cloud."),
+                                        pulse: LocalizedStringKey("ZENO pairs directly with your WHOOP over Bluetooth: no WHOOP app, no cloud."))
         ) {
             VStack(alignment: .leading, spacing: 16) {
                 HStack(spacing: 12) {
@@ -1571,7 +1594,8 @@ struct SettingsView: View {
         SettingsSection(
             icon: "bell.badge",
             title: "Live notifications",
-            blurb: "Shown on the Lock Screen and in the Dynamic Island. A switch only hides one: NOOP still measures and records everything."
+            blurb: ScoreVocabulary.pick(classic: LocalizedStringKey("Shown on the Lock Screen and in the Dynamic Island. A switch only hides one: NOOP still measures and records everything."),
+                                        pulse: LocalizedStringKey("Shown on the Lock Screen and in the Dynamic Island. A switch only hides one: ZENO still measures and records everything."))
         ) {
             VStack(alignment: .leading, spacing: NoopMetrics.rowSpacing) {
                 liveNotificationSwitch("Live heart rate", isOn: $liveActivityEnabled,
@@ -1581,7 +1605,8 @@ struct SettingsView: View {
                                        detail: "Your set, rest and heart rate, and the Lock Screen light-up on a double-tap.")
                 rowDivider
                 liveNotificationSwitch("Strap sync", isOn: $syncLiveActivityEnabled,
-                                       detail: "Progress while NOOP pulls history from the strap.")
+                                       detail: ScoreVocabulary.pick(classic: LocalizedStringKey("Progress while NOOP pulls history from the strap."),
+                                                                    pulse: LocalizedStringKey("Progress while ZENO pulls history from the strap.")))
             }
         }
     }
@@ -1608,14 +1633,18 @@ struct SettingsView: View {
         SettingsSection(
             icon: "heart.text.square",
             title: "Recovery",
-            blurb: "Your Charge score learns a personal baseline from your heart-rate variability, resting heart rate and more over time. If a bad first week set it off, you can re-learn it from tonight. Your history stays."
+            blurb: ScoreVocabulary.pick(classic: LocalizedStringKey("Your Charge score learns a personal baseline from your heart-rate variability, resting heart rate and more over time. If a bad first week set it off, you can re-learn it from tonight. Your history stays."),
+                                        pulse: LocalizedStringKey("Your Recovery score learns a personal baseline from your heart-rate variability, resting heart rate and more over time. If a bad first week set it off, you can re-learn it from tonight. Your history stays."))
         ) {
             VStack(alignment: .leading, spacing: NoopMetrics.rowSpacing) {
-                NoopButton("Recalibrate Charge baseline", systemImage: "arrow.triangle.2.circlepath", kind: .secondary) {
+                NoopButton(ScoreVocabulary.pick(classic: LocalizedStringKey("Recalibrate Charge baseline"),
+                                                pulse: LocalizedStringKey("Recalibrate Recovery baseline")),
+                           systemImage: "arrow.triangle.2.circlepath", kind: .secondary) {
                     showRecalibrateConfirm = true
                 }
 
-                Text("Restarts the roughly 4-night build-up for Charge and your HRV baseline from tonight. Use it if a bad first week set your baseline off. Your history stays.")
+                Text(ScoreVocabulary.pick(classic: LocalizedStringKey("Restarts the roughly 4-night build-up for Charge and your HRV baseline from tonight. Use it if a bad first week set your baseline off. Your history stays."),
+                                          pulse: LocalizedStringKey("Restarts the roughly 4-night build-up for Recovery and your HRV baseline from tonight. Use it if a bad first week set your baseline off. Your history stays.")))
                     .font(StrandFont.caption)
                     .foregroundStyle(StrandPalette.textTertiary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -1635,8 +1664,10 @@ struct SettingsView: View {
             await model.intelligence.analyzeRecent()
             await model.repo.refresh()
         }
-        backupAlertTitle = String(localized: "Charge baseline recalibrating")
-        backupAlertMessage = String(localized: "NOOP will re-learn your baseline from tonight's data onward. Your history is kept, and it takes a few nights to settle.")
+        backupAlertTitle = ScoreVocabulary.pick(classic: String(localized: "Charge baseline recalibrating"),
+                                                pulse: String(localized: "Recovery baseline recalibrating"))
+        backupAlertMessage = ScoreVocabulary.pick(classic: String(localized: "NOOP will re-learn your baseline from tonight's data onward. Your history is kept, and it takes a few nights to settle."),
+                                                  pulse: String(localized: "ZENO will re-learn your baseline from tonight's data onward. Your history is kept, and it takes a few nights to settle."))
         showBackupAlert = true
     }
 
@@ -1704,7 +1735,8 @@ struct SettingsView: View {
                 .tint(StrandPalette.accent)
                 .accessibilityHint("Offers to save a workout when it spots sustained elevated heart rate")
 
-                Text("After a sync, NOOP looks over your recent heart rate for a sustained, raised stretch that looks like exercise and offers to save it. It only ever suggests. Nothing is saved until you tap Save, and you can dismiss any suggestion. Turning this off stops future suggestions but keeps your existing workout history. Deliberately conservative, so the odd workout may be missed. On \(Platform.deviceNounPhrase) only.")
+                Text(ScoreVocabulary.pick(classic: LocalizedStringKey("After a sync, NOOP looks over your recent heart rate for a sustained, raised stretch that looks like exercise and offers to save it. It only ever suggests. Nothing is saved until you tap Save, and you can dismiss any suggestion. Turning this off stops future suggestions but keeps your existing workout history. Deliberately conservative, so the odd workout may be missed. On \(Platform.deviceNounPhrase) only."),
+                                          pulse: LocalizedStringKey("After a sync, ZENO looks over your recent heart rate for a sustained, raised stretch that looks like exercise and offers to save it. It only ever suggests. Nothing is saved until you tap Save, and you can dismiss any suggestion. Turning this off stops future suggestions but keeps your existing workout history. Deliberately conservative, so the odd workout may be missed. On \(Platform.deviceNounPhrase) only.")))
                     .font(StrandFont.caption)
                     .foregroundStyle(StrandPalette.textTertiary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -1753,7 +1785,8 @@ struct SettingsView: View {
         SettingsSection(
             icon: "arrow.triangle.2.circlepath",
             title: "Sync",
-            blurb: "How NOOP behaves while it pulls stored history from your strap."
+            blurb: ScoreVocabulary.pick(classic: LocalizedStringKey("How NOOP behaves while it pulls stored history from your strap."),
+                                        pulse: LocalizedStringKey("How ZENO behaves while it pulls stored history from your strap."))
         ) {
             VStack(alignment: .leading, spacing: NoopMetrics.space2 + 2) {
                 Toggle(isOn: $syncKeepScreenOn) {
@@ -1765,7 +1798,8 @@ struct SettingsView: View {
                 .tint(StrandPalette.accent)
                 .accessibilityHint("Stops the screen locking while your strap's history syncs")
 
-                Text("Holds the screen awake while NOOP pulls stored history from your strap, so you can watch a long sync finish without the phone locking. Only applies while a sync is running and NOOP is open. The screen sleeps normally the rest of the time. It uses a bit more battery while the screen stays on.")
+                Text(ScoreVocabulary.pick(classic: LocalizedStringKey("Holds the screen awake while NOOP pulls stored history from your strap, so you can watch a long sync finish without the phone locking. Only applies while a sync is running and NOOP is open. The screen sleeps normally the rest of the time. It uses a bit more battery while the screen stays on."),
+                                          pulse: LocalizedStringKey("Holds the screen awake while ZENO pulls stored history from your strap, so you can watch a long sync finish without the phone locking. Only applies while a sync is running and ZENO is open. The screen sleeps normally the rest of the time. It uses a bit more battery while the screen stays on.")))
                     .font(StrandFont.caption)
                     .foregroundStyle(StrandPalette.textTertiary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -1784,7 +1818,8 @@ struct SettingsView: View {
         SettingsSection(
             icon: "waveform.path.ecg",
             title: "HRV",
-            blurb: "Tune how NOOP captures and windows your heart-rate-variability reading."
+            blurb: ScoreVocabulary.pick(classic: LocalizedStringKey("Tune how NOOP captures and windows your heart-rate-variability reading."),
+                                        pulse: LocalizedStringKey("Tune how ZENO captures and windows your heart-rate-variability reading."))
         ) {
             VStack(alignment: .leading, spacing: NoopMetrics.rowSpacing) {
                 // MARK: Continuous HRV capture — keep the dense beat-to-beat (R-R) stream armed 24/7.
@@ -1796,7 +1831,8 @@ struct SettingsView: View {
                 .toggleStyle(.switch)
                 .tint(StrandPalette.accent)
                 .onChangeCompat(of: continuousHrvEnabled) { on in model.ble.setKeepRealtimeForData(on) }
-                Text("Keeps the detailed beat-to-beat heart-rate stream running all day and night, not just while a live screen is open, so NOOP captures much more for overnight HRV, recovery and sleep. Uses more battery: your strap streams heart rate continuously while connected.")
+                Text(ScoreVocabulary.pick(classic: LocalizedStringKey("Keeps the detailed beat-to-beat heart-rate stream running all day and night, not just while a live screen is open, so NOOP captures much more for overnight HRV, recovery and sleep. Uses more battery: your strap streams heart rate continuously while connected."),
+                                          pulse: LocalizedStringKey("Keeps the detailed beat-to-beat heart-rate stream running all day and night, not just while a live screen is open, so ZENO captures much more for overnight HRV, recovery and sleep. Uses more battery: your strap streams heart rate continuously while connected.")))
                     .font(StrandFont.caption)
                     .foregroundStyle(StrandPalette.textTertiary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -1840,7 +1876,8 @@ struct SettingsView: View {
                         Task { await model.intelligence.analyzeRecent(); await model.repo.refresh() }
                     }
                 }
-                Text("Whole night is NOOP's default measure; Deep sleep pools HRV over slow-wave sleep only, reading lower and matching WHOOP. Switching re-scores your recent nights over the new window and takes effect right away once you have a few nights of data.")
+                Text(ScoreVocabulary.pick(classic: LocalizedStringKey("Whole night is NOOP's default measure; Deep sleep pools HRV over slow-wave sleep only, reading lower and matching WHOOP. Switching re-scores your recent nights over the new window and takes effect right away once you have a few nights of data."),
+                                          pulse: LocalizedStringKey("Whole night is ZENO's default measure; Deep sleep pools HRV over slow-wave sleep only, reading lower and matching WHOOP. Switching re-scores your recent nights over the new window and takes effect right away once you have a few nights of data.")))
                     .font(StrandFont.caption)
                     .foregroundStyle(StrandPalette.textTertiary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -1896,7 +1933,8 @@ struct SettingsView: View {
         SettingsSection(
             icon: "shield.lefthalf.filled",
             title: "Experimental · Live Sessions",
-            blurb: "A one-tap guarded workout: the strap watches your heart rate against a band gated on today's Charge, and only ever buzzes to correct course. Silence means you're on track."
+            blurb: ScoreVocabulary.pick(classic: LocalizedStringKey("A one-tap guarded workout: the strap watches your heart rate against a band gated on today's Charge, and only ever buzzes to correct course. Silence means you're on track."),
+                                        pulse: LocalizedStringKey("A one-tap guarded workout: the strap watches your heart rate against a band gated on today's Recovery, and only ever buzzes to correct course. Silence means you're on track."))
         ) {
             VStack(alignment: .leading, spacing: NoopMetrics.rowSpacing) {
                 Toggle(isOn: $liveSessionsBeta) {
@@ -1922,7 +1960,8 @@ struct SettingsView: View {
         SettingsSection(
             icon: "bed.double.fill",
             title: "Sleep staging",
-            blurb: "How NOOP splits a night into light / deep / REM. The V2 recipe is the default; turn it off to fall back to the older V1 staging."
+            blurb: ScoreVocabulary.pick(classic: LocalizedStringKey("How NOOP splits a night into light / deep / REM. The V2 recipe is the default; turn it off to fall back to the older V1 staging."),
+                                        pulse: LocalizedStringKey("How ZENO splits a night into light / deep / REM. The V2 recipe is the default; turn it off to fall back to the older V1 staging."))
         ) {
             VStack(alignment: .leading, spacing: NoopMetrics.rowSpacing) {
                 Toggle(isOn: $experimentalSleepV2Enabled) {
@@ -2011,7 +2050,8 @@ struct SettingsView: View {
                 }
                 .toggleStyle(.switch)
                 .tint(StrandPalette.accent)
-                Text("Your Oura ring only measures daytime heart rate while NOOP keeps it in that mode, and NOOP stops asking whenever the screen has been off for five minutes — which protects the ring's own sleep tracking at night, but also leaves a pocketed phone's day blank on the Heart Rate and HRV charts. On, NOOP keeps asking through the day and stops only for your usual night, learned from your sleep history (an hour before your typical bedtime to an hour after your usual wake), so the night is unchanged. Costs ring battery: the ring runs its own optical sensor all day. Until enough nights are learned it behaves as if off. Off by default.")
+                Text(ScoreVocabulary.pick(classic: LocalizedStringKey("Your Oura ring only measures daytime heart rate while NOOP keeps it in that mode, and NOOP stops asking whenever the screen has been off for five minutes — which protects the ring's own sleep tracking at night, but also leaves a pocketed phone's day blank on the Heart Rate and HRV charts. On, NOOP keeps asking through the day and stops only for your usual night, learned from your sleep history (an hour before your typical bedtime to an hour after your usual wake), so the night is unchanged. Costs ring battery: the ring runs its own optical sensor all day. Until enough nights are learned it behaves as if off. Off by default."),
+                                          pulse: LocalizedStringKey("Your Oura ring only measures daytime heart rate while ZENO keeps it in that mode, and ZENO stops asking whenever the screen has been off for five minutes — which protects the ring's own sleep tracking at night, but also leaves a pocketed phone's day blank on the Heart Rate and HRV charts. On, ZENO keeps asking through the day and stops only for your usual night, learned from your sleep history (an hour before your typical bedtime to an hour after your usual wake), so the night is unchanged. Costs ring battery: the ring runs its own optical sensor all day. Until enough nights are learned it behaves as if off. Off by default.")))
                     .font(StrandFont.caption)
                     .foregroundStyle(StrandPalette.textTertiary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -2028,7 +2068,8 @@ struct SettingsView: View {
         SettingsSection(
             icon: "doc.text.magnifyingglass",
             title: "Diagnostics",
-            blurb: "A read-only export of the decoded sensor streams NOOP already stores. Works on any strap. Nothing is written to your device, and nothing is uploaded."
+            blurb: ScoreVocabulary.pick(classic: LocalizedStringKey("A read-only export of the decoded sensor streams NOOP already stores. Works on any strap. Nothing is written to your device, and nothing is uploaded."),
+                                        pulse: LocalizedStringKey("A read-only export of the decoded sensor streams ZENO already stores. Works on any strap. Nothing is written to your device, and nothing is uploaded."))
         ) {
             VStack(alignment: .leading, spacing: NoopMetrics.rowSpacing) {
                 // MARK: Export raw sensor data (CSV) — a read-only diagnostic over the decoded streams
@@ -2141,7 +2182,8 @@ struct SettingsView: View {
         SettingsSection(
             icon: "externaldrive.fill",
             title: "Backup & restore",
-            blurb: "Move all your NOOP data to another machine. Export saves everything (history, sleeps, workouts, settings) to a single file you can copy across; import replaces \(Platform.deviceNounPhrase)'s data with a backup."
+            blurb: ScoreVocabulary.pick(classic: LocalizedStringKey("Move all your NOOP data to another machine. Export saves everything (history, sleeps, workouts, settings) to a single file you can copy across; import replaces \(Platform.deviceNounPhrase)'s data with a backup."),
+                                        pulse: LocalizedStringKey("Move all your ZENO data to another machine. Export saves everything (history, sleeps, workouts, settings) to a single file you can copy across; import replaces \(Platform.deviceNounPhrase)'s data with a backup."))
         ) {
             VStack(alignment: .leading, spacing: NoopMetrics.space4) {
                 // Three labelled buttons must share a narrow iPhone row without wrapping mid-word
@@ -2190,7 +2232,8 @@ struct SettingsView: View {
                         .foregroundStyle(StrandPalette.textTertiary)
                         .font(.system(size: 13))
                         .accessibilityHidden(true)
-                    Text("Importing overwrites everything currently on \(Platform.deviceNounPhrase). Your old data is kept in a side file just in case. NOOP needs a relaunch for an import to take effect. Export CSV writes a WHOOP-format zip of your days, sleeps, workouts and journal that re-imports into NOOP on Mac, iPhone, or Android. On-device computed rows are marked APPROXIMATE in its Source column; the full backup stays the lossless restore path.")
+                    Text(ScoreVocabulary.pick(classic: LocalizedStringKey("Importing overwrites everything currently on \(Platform.deviceNounPhrase). Your old data is kept in a side file just in case. NOOP needs a relaunch for an import to take effect. Export CSV writes a WHOOP-format zip of your days, sleeps, workouts and journal that re-imports into NOOP on Mac, iPhone, or Android. On-device computed rows are marked APPROXIMATE in its Source column; the full backup stays the lossless restore path."),
+                                              pulse: LocalizedStringKey("Importing overwrites everything currently on \(Platform.deviceNounPhrase). Your old data is kept in a side file just in case. ZENO needs a relaunch for an import to take effect. Export CSV writes a WHOOP-format zip of your days, sleeps, workouts and journal that re-imports into ZENO, or into NOOP on Mac, iPhone, or Android. On-device computed rows are marked APPROXIMATE in its Source column; the full backup stays the lossless restore path.")))
                         .font(StrandFont.footnote)
                         .foregroundStyle(StrandPalette.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -2276,7 +2319,8 @@ struct SettingsView: View {
                 return
             case .exported(let url):
                 backupAlertTitle = String(localized: "CSV exported")
-                backupAlertMessage = String(localized: "Saved to \(url.lastPathComponent). The zip re-imports into NOOP (Data Sources → WHOOP Export) on any Mac, iPhone, or Android device.")
+                backupAlertMessage = ScoreVocabulary.pick(classic: String(localized: "Saved to \(url.lastPathComponent). The zip re-imports into NOOP (Data Sources → WHOOP Export) on any Mac, iPhone, or Android device."),
+                                                          pulse: String(localized: "Saved to \(url.lastPathComponent). The zip re-imports into ZENO (Data Sources → WHOOP Export), or into NOOP on any Mac, iPhone, or Android device."))
                 showBackupAlert = true
             case .failure(let message):
                 backupAlertTitle = String(localized: "Export problem")
@@ -2303,15 +2347,18 @@ struct SettingsView: View {
             let size = ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file)
             let cap = ByteCountFormatter.string(fromByteCount: limit, countStyle: .file)
             backupAlertTitle = String(localized: "Backup exported")
-            backupAlertMessage = String(localized: "Saved to \(url.lastPathComponent). Your database is \(size), over the \(cap) NOOP restores without asking — the backup is complete and valid, and restoring it will ask you to confirm once.")
+            backupAlertMessage = ScoreVocabulary.pick(classic: String(localized: "Saved to \(url.lastPathComponent). Your database is \(size), over the \(cap) NOOP restores without asking — the backup is complete and valid, and restoring it will ask you to confirm once."),
+                                                      pulse: String(localized: "Saved to \(url.lastPathComponent). Your database is \(size), over the \(cap) ZENO restores without asking — the backup is complete and valid, and restoring it will ask you to confirm once."))
             showBackupAlert = true
         case .restoreTooLarge(let name, let limit):
             let cap = ByteCountFormatter.string(fromByteCount: limit, countStyle: .file)
-            oversizeRestoreMessage = String(localized: "\(name) is larger than the \(cap) NOOP restores without asking. That limit guards against a malicious archive expanding to fill this \(Platform.deviceNoun) — a backup you exported yourself is not that. Restoring it needs the space the database will take. You'll be asked to choose the file again.")
+            oversizeRestoreMessage = ScoreVocabulary.pick(classic: String(localized: "\(name) is larger than the \(cap) NOOP restores without asking. That limit guards against a malicious archive expanding to fill this \(Platform.deviceNoun) — a backup you exported yourself is not that. Restoring it needs the space the database will take. You'll be asked to choose the file again."),
+                                                          pulse: String(localized: "\(name) is larger than the \(cap) ZENO restores without asking. That limit guards against a malicious archive expanding to fill this \(Platform.deviceNoun) — a backup you exported yourself is not that. Restoring it needs the space the database will take. You'll be asked to choose the file again."))
             showOversizeRestoreConfirm = true
         case .imported:
             backupAlertTitle = String(localized: "Backup imported")
-            backupAlertMessage = String(localized: "Your data has been restored. Quit and reopen NOOP for it to take effect.")
+            backupAlertMessage = ScoreVocabulary.pick(classic: String(localized: "Your data has been restored. Quit and reopen NOOP for it to take effect."),
+                                                      pulse: String(localized: "Your data has been restored. Quit and reopen ZENO for it to take effect."))
             showBackupAlert = true
         case .failure(let message):
             backupAlertTitle = String(localized: "Backup problem")
@@ -2332,11 +2379,12 @@ struct SettingsView: View {
         SettingsSection(
             icon: "info.circle.fill",
             title: "About",
-            blurb: "NOOP: all your data, none of the cloud."
+            blurb: ScoreVocabulary.pick(classic: LocalizedStringKey("NOOP: all your data, none of the cloud."),
+                                        pulse: LocalizedStringKey("ZENO: all your data, none of the cloud."))
         ) {
             VStack(alignment: .leading, spacing: 16) {
                 HStack(spacing: 10) {
-                    Text("NOOP")
+                    Text(ScoreVocabulary.pick(classic: LocalizedStringKey("NOOP"), pulse: LocalizedStringKey("ZENO")))
                         .font(StrandFont.title2)
                         .foregroundStyle(StrandPalette.textPrimary)
                     StatePill("v\(bundleVersionString)", tone: .neutral, showsDot: false)
@@ -2357,7 +2405,8 @@ struct SettingsView: View {
                             .foregroundStyle(StrandPalette.accent)
                             .accessibilityHidden(true)
                         VStack(alignment: .leading, spacing: 1) {
-                            Text("How NOOP works")
+                            Text(ScoreVocabulary.pick(classic: LocalizedStringKey("How NOOP works"),
+                                                      pulse: LocalizedStringKey("How ZENO works")))
                                 .font(StrandFont.body)
                                 .foregroundStyle(StrandPalette.textPrimary)
                             Text("Sleep sorting, scores, recording, and where your numbers come from.")
@@ -2374,7 +2423,8 @@ struct SettingsView: View {
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(LiquidPressStyle())
-                .accessibilityLabel("How NOOP works")
+                .accessibilityLabel(ScoreVocabulary.pick(classic: LocalizedStringKey("How NOOP works"),
+                                                         pulse: LocalizedStringKey("How ZENO works")))
 
                 // How your scores work — the honest explainer for Charge / Effort / Rest and the
                 // confidence labels. Always reachable here, mirroring the "What's new" affordance.
@@ -2389,7 +2439,8 @@ struct SettingsView: View {
                             Text("How your scores work")
                                 .font(StrandFont.body)
                                 .foregroundStyle(StrandPalette.textPrimary)
-                            Text("Charge, Effort and Rest (and how they differ from WHOOP).")
+                            Text(ScoreVocabulary.pick(classic: LocalizedStringKey("Charge, Effort and Rest (and how they differ from WHOOP)."),
+                                                      pulse: LocalizedStringKey("Recovery, Strain and Sleep, and how ZENO estimates them on your device.")))
                                 .font(StrandFont.footnote)
                                 .foregroundStyle(StrandPalette.textTertiary)
                                 .fixedSize(horizontal: false, vertical: true)
@@ -2421,7 +2472,8 @@ struct SettingsView: View {
                             Text("About Apple Watch data")
                                 .font(StrandFont.body)
                                 .foregroundStyle(StrandPalette.textPrimary)
-                            Text("Use NOOP with just an Apple Watch. What it's great at, and where it's lighter than a strap.")
+                            Text(ScoreVocabulary.pick(classic: LocalizedStringKey("Use NOOP with just an Apple Watch. What it's great at, and where it's lighter than a strap."),
+                                                      pulse: LocalizedStringKey("Use ZENO with just an Apple Watch. What it's great at, and where it's lighter than a strap.")))
                                 .font(StrandFont.footnote)
                                 .foregroundStyle(StrandPalette.textTertiary)
                                 .fixedSize(horizontal: false, vertical: true)
@@ -2451,7 +2503,8 @@ struct SettingsView: View {
                             Text("Storage")
                                 .font(StrandFont.body)
                                 .foregroundStyle(StrandPalette.textPrimary)
-                            Text("Where NOOP's on-device space is going, and a one-tap clean-up.")
+                            Text(ScoreVocabulary.pick(classic: LocalizedStringKey("Where NOOP's on-device space is going, and a one-tap clean-up."),
+                                                      pulse: LocalizedStringKey("Where ZENO's on-device space is going, and a one-tap clean-up.")))
                                 .font(StrandFont.footnote)
                                 .foregroundStyle(StrandPalette.textTertiary)
                                 .fixedSize(horizontal: false, vertical: true)
@@ -2519,7 +2572,8 @@ struct SettingsView: View {
                             Text("Check automatically")
                                 .font(StrandFont.subhead)
                                 .foregroundStyle(StrandPalette.textPrimary)
-                            Text("Once a day, NOOP asks GitHub for the latest version number and puts a note in Updates if there's a newer one. Nothing about you is sent, and it never installs anything.")
+                            Text(ScoreVocabulary.pick(classic: LocalizedStringKey("Once a day, NOOP asks GitHub for the latest version number and puts a note in Updates if there's a newer one. Nothing about you is sent, and it never installs anything."),
+                                                      pulse: LocalizedStringKey("Once a day, ZENO asks GitHub for the latest version number and puts a note in Updates if there's a newer one. Nothing about you is sent, and it never installs anything.")))
                                 .font(StrandFont.footnote)
                                 .foregroundStyle(StrandPalette.textSecondary)
                         }
@@ -2592,7 +2646,8 @@ struct SettingsView: View {
                 }
                 .accessibilityLabel("Project home and source code on GitHub")
 
-                Text("A standalone companion for your WHOOP. Everything stays on this device: your history, your live stream, your numbers. Nothing is uploaded. NOOP is an independent, experimental project, not the WHOOP app.")
+                Text(ScoreVocabulary.pick(classic: LocalizedStringKey("A standalone companion for your WHOOP. Everything stays on this device: your history, your live stream, your numbers. Nothing is uploaded. NOOP is an independent, experimental project, not the WHOOP app."),
+                                          pulse: LocalizedStringKey("A standalone companion for your WHOOP. Everything stays on this device: your history, your live stream, your numbers. Nothing is uploaded. ZENO is an independent, experimental project built on NOOP, not the WHOOP app.")))
                     .font(StrandFont.subhead)
                     .foregroundStyle(StrandPalette.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -2603,7 +2658,8 @@ struct SettingsView: View {
                         .foregroundStyle(StrandPalette.statusWarning)
                         .font(.system(size: 13))
                         .accessibilityHidden(true)
-                    Text("NOOP is not a medical device. It is for informational and personal-insight purposes only and is not intended to diagnose, treat, cure or prevent any condition. Talk to a clinician for medical advice.")
+                    Text(ScoreVocabulary.pick(classic: LocalizedStringKey("NOOP is not a medical device. It is for informational and personal-insight purposes only and is not intended to diagnose, treat, cure or prevent any condition. Talk to a clinician for medical advice."),
+                                              pulse: LocalizedStringKey("ZENO is not a medical device. It is for informational and personal-insight purposes only and is not intended to diagnose, treat, cure or prevent any condition. Talk to a clinician for medical advice.")))
                         .font(StrandFont.footnote)
                         .foregroundStyle(StrandPalette.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -2692,14 +2748,17 @@ struct SettingsView: View {
                 Image(systemName: "iphone.gen3")
                     .foregroundStyle(StrandPalette.accent)
                     .accessibilityHidden(true)
-                Text("Using NOOP on iPhone")
+                Text(ScoreVocabulary.pick(classic: LocalizedStringKey("Using NOOP on iPhone"),
+                                          pulse: LocalizedStringKey("Using ZENO on iPhone")))
                     .font(StrandFont.subhead.weight(.semibold))
                     .foregroundStyle(StrandPalette.textPrimary)
             }
 
             iphoneExpectationLine(String(localized: "This is a sideloaded build, installed outside the App Store. It needs re-signing periodically: roughly every 7 days on a free Apple ID, about a year on a paid developer account."))
-            iphoneExpectationLine(String(localized: "After your iPhone reboots, unlock it once. Until you do, iOS keeps NOOP's files locked (Data Protection), so new history can't be written or synced."))
-            iphoneExpectationLine(String(localized: "Background Bluetooth has OS limits: iOS may pause NOOP when it's not in the foreground, so keep it open while syncing a fresh strap."))
+            iphoneExpectationLine(ScoreVocabulary.pick(classic: String(localized: "After your iPhone reboots, unlock it once. Until you do, iOS keeps NOOP's files locked (Data Protection), so new history can't be written or synced."),
+                                                       pulse: String(localized: "After your iPhone reboots, unlock it once. Until you do, iOS keeps ZENO's files locked (Data Protection), so new history can't be written or synced.")))
+            iphoneExpectationLine(ScoreVocabulary.pick(classic: String(localized: "Background Bluetooth has OS limits: iOS may pause NOOP when it's not in the foreground, so keep it open while syncing a fresh strap."),
+                                                       pulse: String(localized: "Background Bluetooth has OS limits: iOS may pause ZENO when it's not in the foreground, so keep it open while syncing a fresh strap.")))
             iphoneExpectationLine(String(localized: "On a beta version of iOS, things can break that work on the release build."))
 
             if let days = expiry {
@@ -3088,12 +3147,15 @@ struct StepsCalibrationSheet: View {
                     .font(StrandFont.headline)
                     .foregroundStyle(StrandPalette.textPrimary)
                 Text(is5MG
-                     ? String(localized: "NOOP estimates your steps from your WHOOP's stored motion, calibrated to your phone's step count. It's an estimate, not a hardware step counter; normal WHOOP 5/MG history sync supplies the motion data.")
-                     : String(localized: "NOOP estimates your steps from your WHOOP's motion, calibrated to your phone's step count. It's an estimate, not a step counter. A WHOOP 4.0 doesn't transmit steps."))
+                     ? ScoreVocabulary.pick(classic: String(localized: "NOOP estimates your steps from your WHOOP's stored motion, calibrated to your phone's step count. It's an estimate, not a hardware step counter; normal WHOOP 5/MG history sync supplies the motion data."),
+                                            pulse: String(localized: "ZENO estimates your steps from your WHOOP's stored motion, calibrated to your phone's step count. It's an estimate, not a hardware step counter; normal WHOOP 5/MG history sync supplies the motion data."))
+                     : ScoreVocabulary.pick(classic: String(localized: "NOOP estimates your steps from your WHOOP's motion, calibrated to your phone's step count. It's an estimate, not a step counter. A WHOOP 4.0 doesn't transmit steps."),
+                                            pulse: String(localized: "ZENO estimates your steps from your WHOOP's motion, calibrated to your phone's step count. It's an estimate, not a step counter. A WHOOP 4.0 doesn't transmit steps.")))
                     .font(StrandFont.subhead)
                     .foregroundStyle(StrandPalette.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
-                Text("On the days your phone also counted steps, NOOP learns how much your motion maps to steps, then applies that to the strap-only days. The more matching days it has, the more it trusts the estimate.")
+                Text(ScoreVocabulary.pick(classic: LocalizedStringKey("On the days your phone also counted steps, NOOP learns how much your motion maps to steps, then applies that to the strap-only days. The more matching days it has, the more it trusts the estimate."),
+                                          pulse: LocalizedStringKey("On the days your phone also counted steps, ZENO learns how much your motion maps to steps, then applies that to the strap-only days. The more matching days it has, the more it trusts the estimate.")))
                     .font(StrandFont.footnote)
                     .foregroundStyle(StrandPalette.textTertiary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -3129,20 +3191,25 @@ struct StepsCalibrationSheet: View {
     /// The "why it's empty" line — a 5/MG needs the deep-data unlock before it streams motion at all.
     private var noMotionLead: String {
         if is5MG {
-            return String(localized: "We're not seeing motion from your WHOOP 5.0 / MG yet. Keep NOOP connected and let strap history finish syncing; the experimental R22 flags are not required. Account or Apple Health imports do not contain the raw strap motion this estimate needs.")
+            return ScoreVocabulary.pick(classic: String(localized: "We're not seeing motion from your WHOOP 5.0 / MG yet. Keep NOOP connected and let strap history finish syncing; the experimental R22 flags are not required. Account or Apple Health imports do not contain the raw strap motion this estimate needs."),
+                                        pulse: String(localized: "We're not seeing motion from your WHOOP 5.0 / MG yet. Keep ZENO connected and let strap history finish syncing; the experimental R22 flags are not required. Account or Apple Health imports do not contain the raw strap motion this estimate needs."))
         }
-        return String(localized: "We're not seeing any motion from your strap yet. Steps are estimated from your WHOOP's banked motion history, so your strap needs to sync that history before NOOP has anything to count.")
+        return ScoreVocabulary.pick(classic: String(localized: "We're not seeing any motion from your strap yet. Steps are estimated from your WHOOP's banked motion history, so your strap needs to sync that history before NOOP has anything to count."),
+                                    pulse: String(localized: "We're not seeing any motion from your strap yet. Steps are estimated from your WHOOP's banked motion history, so your strap needs to sync that history before ZENO has anything to count."))
     }
 
     /// The "what to do" line — 5/MG points at the deep-data toggle (unless it's already on, then just sync).
     private var noMotionAction: String {
         if is5MG && !deepDataEnabled {
-            return String(localized: "Open NOOP near the strap and let WHOOP 5/MG history finish syncing. The step estimate and calibration fill in once enough stored motion has arrived; the legacy R22 experiment is not required.")
+            return ScoreVocabulary.pick(classic: String(localized: "Open NOOP near the strap and let WHOOP 5/MG history finish syncing. The step estimate and calibration fill in once enough stored motion has arrived; the legacy R22 experiment is not required."),
+                                        pulse: String(localized: "Open ZENO near the strap and let WHOOP 5/MG history finish syncing. The step estimate and calibration fill in once enough stored motion has arrived; the legacy R22 experiment is not required."))
         }
         if is5MG {
-            return String(localized: "Deep data is on — open NOOP near your strap and let it sync its motion history (a full first-run sync can take a while). Once a day or two of motion lands, your step estimate and the calibration below fill in.")
+            return ScoreVocabulary.pick(classic: String(localized: "Deep data is on — open NOOP near your strap and let it sync its motion history (a full first-run sync can take a while). Once a day or two of motion lands, your step estimate and the calibration below fill in."),
+                                        pulse: String(localized: "Deep data is on — open ZENO near your strap and let it sync its motion history (a full first-run sync can take a while). Once a day or two of motion lands, your step estimate and the calibration below fill in."))
         }
-        return String(localized: "Open NOOP near your strap and let it catch up (a full history sync can take a while on first run). Once a day or two of motion lands, your step estimate and the calibration below will start to fill in.")
+        return ScoreVocabulary.pick(classic: String(localized: "Open NOOP near your strap and let it catch up (a full history sync can take a while on first run). Once a day or two of motion lands, your step estimate and the calibration below will start to fill in."),
+                                    pulse: String(localized: "Open ZENO near your strap and let it catch up (a full history sync can take a while on first run). Once a day or two of motion lands, your step estimate and the calibration below will start to fill in."))
     }
 
     /// The current calibration read-out: coefficient, sample days, and a Low/Medium/High confidence —
@@ -3200,7 +3267,8 @@ struct StepsCalibrationSheet: View {
                         .headline)
                         .font(StrandFont.bodyNumber)
                         .foregroundStyle(StrandPalette.accent)
-                    Text("These are the days where your phone also counted steps, so NOOP can learn how your motion maps to steps. Or set the coefficient manually below.")
+                    Text(ScoreVocabulary.pick(classic: LocalizedStringKey("These are the days where your phone also counted steps, so NOOP can learn how your motion maps to steps. Or set the coefficient manually below."),
+                                              pulse: LocalizedStringKey("These are the days where your phone also counted steps, so ZENO can learn how your motion maps to steps. Or set the coefficient manually below.")))
                         .font(StrandFont.footnote)
                         .foregroundStyle(StrandPalette.textTertiary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -3217,7 +3285,8 @@ struct StepsCalibrationSheet: View {
             VStack(alignment: .leading, spacing: 12) {
                 Text("Estimated vs your phone").strandOverline()
                 if comparison.isEmpty {
-                    Text("No days yet where both NOOP and your phone counted steps. Once your phone logs a few days alongside the strap, they'll appear here so you can see how close the estimate is.")
+                    Text(ScoreVocabulary.pick(classic: LocalizedStringKey("No days yet where both NOOP and your phone counted steps. Once your phone logs a few days alongside the strap, they'll appear here so you can see how close the estimate is."),
+                                              pulse: LocalizedStringKey("No days yet where both ZENO and your phone counted steps. Once your phone logs a few days alongside the strap, they'll appear here so you can see how close the estimate is.")))
                         .font(StrandFont.footnote)
                         .foregroundStyle(StrandPalette.textTertiary)
                         .fixedSize(horizontal: false, vertical: true)
