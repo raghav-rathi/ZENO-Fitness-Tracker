@@ -170,6 +170,11 @@ struct PulseStressChart: View {
     /// Four x labels already formatted in the device zone, oldest first ("3:29 PM" … "8:29 AM").
     var xLabels: [String] = []
     var height: CGFloat = 150
+    /// The now-line's foot dot in a fixed colour, small (the Sleep dive's SLEEP STRESS card ends in a white
+    /// dot, deep-dives-2026/19b). Nil keeps the level-coloured dot the Stress Monitor and Home draw.
+    var endDotColor: Color? = nil
+    /// Faint full-height rules at these instants, under the curve (the Sleep card's middle times, 19b).
+    var verticalRules: [Date] = []
 
     private var hasReadings: Bool { points.contains { $0.value != nil } }
 
@@ -202,6 +207,11 @@ struct PulseStressChart: View {
                             }
                         }
                 }
+                ForEach(verticalRules, id: \.self) { d in
+                    RuleMark(x: .value("Time", d), yStart: .value("Low", 0), yEnd: .value("High", 3))
+                        .lineStyle(StrokeStyle(lineWidth: 1))
+                        .foregroundStyle(PulseTheme.gridOnCard)
+                }
                 // One short segment per pair of readings, each in its own value's colour.
                 ForEach(Array(pairs.enumerated()), id: \.offset) { index, pair in
                     ForEach([pair.0, pair.1], id: \.date) { p in
@@ -222,8 +232,8 @@ struct PulseStressChart: View {
                         .foregroundStyle(PulseTheme.textSecondary)
                         .lineStyle(StrokeStyle(lineWidth: 1, dash: [3, 3]))
                     PointMark(x: .value("Now", now), y: .value("Foot", 0))
-                        .symbolSize(36)
-                        .foregroundStyle(PulseTheme.Stress.Level(value: level).color)
+                        .symbolSize(endDotColor == nil ? 36 : 16)
+                        .foregroundStyle(endDotColor ?? PulseTheme.Stress.Level(value: level).color)
                 }
             }
             .chartYScale(domain: 0...3)

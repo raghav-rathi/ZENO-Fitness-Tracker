@@ -443,7 +443,9 @@ struct PulseSleepStressCard: View {
             PulseStressChart(points: s.points,
                              periods: [PulseChartPeriod(id: "sleep", start: s.sleepStart, end: s.sleepEnd,
                                                         kind: .sleep, symbol: "moon.fill")],
-                             now: s.chartEnd, currentLevel: s.lastLevel, xLabels: [], height: 150)
+                             now: s.chartEnd, currentLevel: s.lastLevel, xLabels: [], height: 150,
+                             endDotColor: PulseTheme.textPrimary,
+                             verticalRules: s.xTicks.filter { $0.fraction > 0 && !$0.isEnd }.map(\.date))
             PulseSleepStressTicks(ticks: s.xTicks)
         }
         // The plot's top line ≈13.6 pt under the baseline, the moon level with it (deep-dives-2026/19b, 19c).
