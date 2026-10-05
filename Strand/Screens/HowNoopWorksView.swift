@@ -18,6 +18,10 @@ import StrandDesign
 // All copy here is the single APPROVED source of truth (the spec's COMPONENT 5 text,
 // verbatim), shared word-for-word across macOS / iOS / Android. No fabricated values,
 // no jargon, no em-dashes. Kotlin's primer composable mirrors these four sections.
+//
+// Under the iPhone's Pulse interface (`ScoreVocabulary.pulse`) each line that names the app or
+// a score carries a second form beside the classic one: ZENO, and Recovery / Strain / Sleep
+// (spec §0.3). The classic lines stay byte-identical, so the Mac and the classic shell are unchanged.
 
 struct HowNoopWorksView: View {
     let onClose: () -> Void
@@ -44,13 +48,21 @@ struct HowNoopWorksView: View {
         var body: String {
             switch self {
             case .sleepSorting:
-                return String(localized: "NOOP picks your main sleep as your longest real block, and (once it has learned your usual hours) the one nearest your normal sleep time. Everything else that day is a nap. You can always edit bed and wake times.")
+                return ScoreVocabulary.pick(
+                    classic: String(localized: "NOOP picks your main sleep as your longest real block, and (once it has learned your usual hours) the one nearest your normal sleep time. Everything else that day is a nap. You can always edit bed and wake times."),
+                    pulse: String(localized: "ZENO picks your main sleep as your longest real block, and (once it has learned your usual hours) the one nearest your normal sleep time. Everything else that day is a nap. You can always edit bed and wake times."))
             case .scores:
-                return String(localized: "Charge, Effort and Rest are scored on your own device from your strap data. Charge needs about four nights of sleep to learn your baseline (that's \"Calibrating\", counted as nights of 4 on the ring), and keeps sharpening over your first couple of weeks. On a WHOOP 5 or MG the strap banks little history, so that count can sit at 0 of 4 until you have worn it across a few nights. That's the strap's sync limit, not a fault. Before there's a number, NOOP shows what it can without faking one.")
+                return ScoreVocabulary.pick(
+                    classic: String(localized: "Charge, Effort and Rest are scored on your own device from your strap data. Charge needs about four nights of sleep to learn your baseline (that's \"Calibrating\", counted as nights of 4 on the ring), and keeps sharpening over your first couple of weeks. On a WHOOP 5 or MG the strap banks little history, so that count can sit at 0 of 4 until you have worn it across a few nights. That's the strap's sync limit, not a fault. Before there's a number, NOOP shows what it can without faking one."),
+                    pulse: String(localized: "Recovery, Strain and Sleep are scored on your own device from your strap data. Recovery needs about four nights of sleep to learn your baseline (that's \"Calibrating\", counted in nights of 4), and keeps sharpening over your first couple of weeks. On a WHOOP 5 or MG the strap banks little history, so that count can sit at 0 of 4 until you have worn it across a few nights. That's the strap's sync limit, not a fault. Before there's a number, ZENO shows what it can without faking one."))
             case .recording:
-                return String(localized: "When your strap is connected NOOP is saving data live. \"Last synced\" tells you how fresh it is. If it says \"Not recording\", reconnect.")
+                return ScoreVocabulary.pick(
+                    classic: String(localized: "When your strap is connected NOOP is saving data live. \"Last synced\" tells you how fresh it is. If it says \"Not recording\", reconnect."),
+                    pulse: String(localized: "When your strap is connected ZENO is saving data live. \"Last synced\" tells you how fresh it is. If it says \"Not recording\", reconnect."))
             case .provenance:
-                return String(localized: "A badge shows whether a number was scored on-device by NOOP, or imported from Whoop or Apple Health.")
+                return ScoreVocabulary.pick(
+                    classic: String(localized: "A badge shows whether a number was scored on-device by NOOP, or imported from Whoop or Apple Health."),
+                    pulse: String(localized: "A badge shows whether a number was scored on-device by ZENO, or imported from Whoop or Apple Health."))
             }
         }
 
@@ -130,7 +142,9 @@ struct HowNoopWorksView: View {
                 Text("THE BASICS").font(StrandFont.overline)
                     .tracking(StrandFont.overlineTracking)
                     .foregroundStyle(StrandPalette.textTertiary)
-                Text("How NOOP works").font(StrandFont.rounded(26, weight: .bold))
+                Text(ScoreVocabulary.pick(classic: LocalizedStringKey("How NOOP works"),
+                                          pulse: LocalizedStringKey("How ZENO works")))
+                    .font(StrandFont.rounded(26, weight: .bold))
                     .foregroundStyle(StrandPalette.textPrimary)
                 Text("Sleep · scores · recording · where your numbers come from")
                     .font(StrandFont.caption)
@@ -169,7 +183,9 @@ struct HowNoopWorksView: View {
                 Text("THE ONE RULE").font(StrandFont.overline)
                     .tracking(StrandFont.overlineTracking)
                     .foregroundStyle(StrandPalette.textSecondary)
-                Text("NOOP never shows you a number it had to make up. If a score isn't ready, it tells you why and what to do next. Everything here runs on your device, from your strap.")
+                Text(ScoreVocabulary.pick(
+                    classic: LocalizedStringKey("NOOP never shows you a number it had to make up. If a score isn't ready, it tells you why and what to do next. Everything here runs on your device, from your strap."),
+                    pulse: LocalizedStringKey("ZENO never shows you a number it had to make up. If a score isn't ready, it tells you why and what to do next. Everything here runs on your device, from your strap.")))
                     .font(StrandFont.subhead)
                     .foregroundStyle(StrandPalette.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -225,9 +241,12 @@ struct HowNoopWorksView: View {
 
         var name: String {
             switch self {
-            case .charge:     return String(localized: "Charge")
-            case .effort:     return String(localized: "Effort")
-            case .rest:       return String(localized: "Rest")
+            case .charge:     return ScoreVocabulary.pick(classic: String(localized: "Charge"),
+                                                          pulse: String(localized: "Recovery"))
+            case .effort:     return ScoreVocabulary.pick(classic: String(localized: "Effort"),
+                                                          pulse: String(localized: "Strain"))
+            case .rest:       return ScoreVocabulary.pick(classic: String(localized: "Rest"),
+                                                          pulse: String(localized: "Sleep"))
             case .fitnessAge: return String(localized: "Fitness Age")
             }
         }
@@ -333,7 +352,9 @@ struct HowNoopWorksView: View {
     }
 
     private var footerNote: some View {
-        Text("NOOP never makes up a number. When it can't compute one honestly it tells you what's missing and what to do, rather than showing a fake value.")
+        Text(ScoreVocabulary.pick(
+            classic: LocalizedStringKey("NOOP never makes up a number. When it can't compute one honestly it tells you what's missing and what to do, rather than showing a fake value."),
+            pulse: LocalizedStringKey("ZENO never makes up a number. When it can't compute one honestly it tells you what's missing and what to do, rather than showing a fake value.")))
             .font(StrandFont.footnote)
             .foregroundStyle(StrandPalette.textTertiary)
             .fixedSize(horizontal: false, vertical: true)
