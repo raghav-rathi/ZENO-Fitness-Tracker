@@ -9,9 +9,10 @@ import SwiftUI
 /// population category or percentile ([POP]); it compares the value with your own history instead.
 ///
 /// Locked: "Log N more sleeps to unlock" with a thin progress bar, or, once the sleeps are there and no
-/// estimate exists yet, what is missing. For the Trends group's VO₂ Max Trend View (§3.28); Healthspan shows
-/// VO₂ max as a Fitness row instead (reviews/29). The ⓘ opens what the estimate is and what it reads
-/// (onboarding/32c shows it), unless the caller handles it with `onInfo`.
+/// estimate exists yet, what is missing. The VO₂ Max Trend View draws it under its chart as YOUR CARDIO
+/// FITNESS LEVEL (§3.28, reviews/83); Healthspan shows VO₂ max as a Fitness row instead (reviews/29). The ⓘ
+/// opens what the estimate is and what it reads (onboarding/32c shows it), unless the caller handles it
+/// with `onInfo`.
 struct HealthVO2MaxCard: View {
     enum State: Equatable {
         /// The latest value (mL/kg/min), when it was estimated, and a line comparing it with your history.
@@ -23,6 +24,8 @@ struct HealthVO2MaxCard: View {
     }
 
     let state: State
+    /// The card's caps title: "VO₂ MAX", or the Trend View's "YOUR CARDIO FITNESS LEVEL".
+    var title: String = String(localized: "VO₂ Max")
     /// Handles the ⓘ itself; nil opens the card's own explainer.
     var onInfo: (() -> Void)?
     var style: PulseCardStyle = .standard
@@ -33,7 +36,7 @@ struct HealthVO2MaxCard: View {
         PulseCard(style) {
             VStack(alignment: .leading, spacing: 14) {
                 HStack(alignment: .firstTextBaseline) {
-                    PulseCardTitle(String(localized: "VO₂ Max"))
+                    PulseCardTitle(title)
                     Button {
                         if let onInfo { onInfo() } else { showsInfo = true }
                     } label: {

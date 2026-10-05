@@ -40,9 +40,45 @@ extension PulseSnapshotBuilder {
             phases = demo
         }
         #endif
-        return PulseTrendPageBuilder.page(seq: r.seq, metric: metric, series: series, today: r.day.key,
-                                          anchor: PulseTrendMath.addDays(r.day.key, -max(0, anchorOffset)),
-                                          range: range, page: page, phases: phases)
+        var snapshot = PulseTrendPageBuilder.page(seq: r.seq, metric: metric, series: series, today: r.day.key,
+                                                  anchor: PulseTrendMath.addDays(r.day.key, -max(0, anchorOffset)),
+                                                  range: range, page: page, phases: phases)
+        if metric.source == .vo2Estimate {
+            snapshot.cardioFitness = await trendCardioFitness(r, estimates: series.points)
+            guard isCurrent(r) else { return nil }
+        }
+        return snapshot
+    }
+
+    /// YOUR CARDIO FITNESS LEVEL under the VO₂ Max chart (§3.12 item 13, §3.28; reviews/83): the newest
+    /// weekly estimate of the series the chart draws, whatever window is shown, against the estimates of
+    /// the 90 days before it. ZENO has no age and sex norms ([POP]), so it names no population category or
+    /// percentile. Before the first estimate it counts the sleeps VO₂ max waits for, then says what is
+    /// missing, in Healthspan's VO₂ MAX row's own words.
+    func trendCardioFitness(_ r: PulseRequest, estimates points: [PulseTrendMath.Point]) async -> HealthVO2MaxCard.State {
+        let estimates = points.filter { $0.value.isFinite && $0.value > 0 }
+        guard let latest = estimates.last else {
+            let nights = await nightGroups(r).count
+            let needed = Self.vo2UnlockNights
+            return nights < needed ? .locked(nights: nights, needed: needed) : .missing(Self.vo2WaitingSentence)
+        }
+        var note: String?
+        let from = PulseTrendMath.addDays(latest.day, -89)
+        let before = estimates.filter { $0.day >= from && $0.day < latest.day }.map(\.value)
+        if !before.isEmpty {
+            // Judged on the whole numbers the card prints, so "Up 1" never sits between two equal figures.
+            let delta = latest.value.rounded() - (before.reduce(0, +) / Double(before.count)).rounded()
+            let amount = PulseFormat.whole(abs(delta))
+            if delta == 0 {
+                note = String(localized: "In line with your 90-day average.")
+            } else if delta > 0 {
+                note = String(localized: "Up \(amount) on your 90-day average.")
+            } else {
+                note = String(localized: "Down \(amount) on your 90-day average.")
+            }
+        }
+        let week = PulseFormat.dayLabel(latest.day, template: "MMMd")
+        return .value(latest.value, updated: String(localized: "Estimated for the week of \(week)"), note: note)
     }
 
     /// WHAT CORRELATES for one Trend View page: the other metrics whose days move with this one's over the

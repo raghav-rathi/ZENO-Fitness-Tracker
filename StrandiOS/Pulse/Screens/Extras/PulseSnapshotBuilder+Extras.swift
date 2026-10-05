@@ -251,10 +251,14 @@ extension PulseSnapshotBuilder {
         // ZENO Age: the stored weekly Body Age the Health tab reads, the last one inside the year.
         let bodyAge = await cached("extras.bodyAge") { await repo.exploreSeries(key: "body_age", source: "my-whoop") }
         guard isCurrent(r) else { return nil }
+        // The Level: Profile's rule (every scored Recovery in the history), counted up to the review's last
+        // day, so this year's review and Profile print the same Level.
+        let level = PulseLevels.progress(recoveries: PulseLevels.scoredRecoveries(
+            r.days.filter { $0.day <= through }.map(\.recovery)))
         return YearInReviewSnapshot(seq: r.seq, year: year, isPartial: through < lastOfYear, through: through,
                                     summary: summary, behaviors: behaviors,
                                     topActivitySymbol: summary.topActivity.flatMap { symbolByName[$0.name] },
-                                    zenoAge: bodyAge.last(where: { inYear($0.day) })?.value)
+                                    zenoAge: bodyAge.last(where: { inYear($0.day) })?.value, level: level)
     }
 
     /// Journal behaviours against Recovery over the year: yes-days against no-days (an unanswered day is

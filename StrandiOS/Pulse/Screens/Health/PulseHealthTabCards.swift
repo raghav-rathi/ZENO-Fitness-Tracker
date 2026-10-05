@@ -4,12 +4,13 @@ import StrandAnalytics
 
 // MARK: - The Health tab's cards (WHOOP_UI_SPEC §3.20)
 
-/// "7.2 years younger" / "0.4 years older" / "About your age", from the engine's own gap.
+/// "7.2 years younger" / "0.4 years older", from the engine's own gap, always with the figure as WHOOP
+/// prints it (help-center/113-115, reviews/r07). No gap reads "0.0 years younger": the rule Healthspan's
+/// compact header and Profile's ZENO AGE card use, so every readout of the same gap agrees.
 func healthYearsLine(_ yearsYounger: Double) -> String {
     let amount = PulseFormat.oneDecimal(abs(yearsYounger))
-    if amount == PulseFormat.oneDecimal(0) { return String(localized: "About your age") }
-    return yearsYounger > 0 ? String(localized: "\(amount) years younger")
-                            : String(localized: "\(amount) years older")
+    return yearsYounger >= 0 ? String(localized: "\(amount) years younger")
+                             : String(localized: "\(amount) years older")
 }
 
 // MARK: Orb
@@ -448,7 +449,7 @@ struct HealthMonitorCard: View {
         if judged.isEmpty { return String(localized: "Calibrating your ranges") }
         if outside.isEmpty { return String(localized: "\(judged.count)/\(judged.count) metrics within range") }
         if outside.count == 1, let one = outside.first {
-            return one.direction < 0 ? String(localized: "\(one.name) low") : String(localized: "\(one.name) high")
+            return one.direction < 0 ? String(localized: "\(one.titleName) low") : String(localized: "\(one.titleName) high")
         }
         return String(localized: "\(outside.count)/\(judged.count) metrics out of range")
     }
@@ -740,7 +741,8 @@ struct HealthStressCardView: View {
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
                         if let card, card.points.contains(where: { $0.value != nil }) {
-                            HealthStressSparkline(points: card.points, span: card.span, height: 74)
+                            HealthStressSparkline(points: card.points, span: card.span, endAt: card.readAt,
+                                                  height: 74)
                                 .frame(width: 150)
                         }
                     }
@@ -787,13 +789,10 @@ struct HealthExtras: View {
                 .padding(.bottom, 4)
             HealthIllnessSlot()
             PulseLink(.tab(stepsRoute)) {
-                PulseListRow(symbol: "figure.walk", title: String(localized: "Steps"),
+                // The row draws its own card, paddings and height (§2.6.22); the shoe is My Dashboard's.
+                PulseListRow(symbol: "shoe", title: String(localized: "Steps"),
                              subtitle: String(localized: "Today and your trend"),
                              trailing: .value(stepsToday.map { PulseFormat.grouped($0) } ?? "--"))
-                    .padding(.horizontal, 16)
-                    .frame(minHeight: PulseTheme.Row.listWithSubline)
-                    .pulseCardBackground(.rowCard)
-                    .contentShape(Rectangle())
             }
             .buttonStyle(PulsePressStyle())
         }

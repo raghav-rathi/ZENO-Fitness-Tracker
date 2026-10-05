@@ -316,24 +316,7 @@ enum PulseTrendPageBuilder {
                 }
             }
             if isWeeklyTotal { return weeklyTotalInsight(h, current: current, value: value) }
-            if range == .week {
-                // The chip already says how the week compares with the one before; the sentence sets it
-                // against the month before, as WHOOP's Recovery week does ("its prior 30-day average"),
-                // judged by the chip's own rule.
-                let monthBefore = PulseTrendMath.Window(start: PulseTrendMath.addDays(window.start, -30),
-                                                        end: PulseTrendMath.addDays(window.start, -1), page: 0,
-                                                        dayCount: 30, hasOlder: false)
-                guard let ref = PulseTrendMath.average(series.points, in: monthBefore)?.value,
-                      let relation = compare(current, ref)?.relation else {
-                    return String(localized: "Your average \(name) over this 7-day period was \(value).")
-                }
-                let r = spoken(ref)
-                switch relation {
-                case .above: return String(localized: "Over this 7-day period, your average \(name) (\(value)) was higher than its prior 30-day average (\(r)).")
-                case .below: return String(localized: "Over this 7-day period, your average \(name) (\(value)) was lower than its prior 30-day average (\(r)).")
-                case .within: return String(localized: "Over this 7-day period, your average \(name) (\(value)) was consistent with its prior 30-day average (\(r)).")
-                }
-            }
+            if range == .week { return weekInsight(h, current: current, value: value) }
             guard let previous = h.previous, let relation = compare(current, previous)?.relation else {
                 return String(localized: "Your average \(name) over this period was \(value). There is no earlier period to compare it with yet.")
             }
@@ -348,6 +331,68 @@ enum PulseTrendPageBuilder {
             case (_, .above): return String(localized: "Your average \(name) over this period (\(value)) was above your previous 12-month average of \(r).")
             case (_, .below): return String(localized: "Your average \(name) over this period (\(value)) was below your previous 12-month average of \(r).")
             case (_, .within): return String(localized: "Your average \(name) over this period (\(value)) was consistent with your previous 12-month average of \(r).")
+            }
+        }
+
+        /// W's sentence for a metric without a typical range, as WHOOP words each one, every relation judged
+        /// by the chip's own rule (`compare`). Most compare the week with the 7 days before it, the chip's own
+        /// reference, so the chip and the sentence can never disagree (deep-dives-2026/30, /52: "…this week
+        /// was above your previous 7-day average of 94%"). Recovery sets the week against the 30 days before
+        /// it (/23, /47), Sleep Performance against the 14 before it (/22), and Steps says up or down from
+        /// last week (/34). Strain's "Since Monday…" (/44) is not used: ZENO's W is a rolling 7 days.
+        private func weekInsight(_ h: Headline, current: Double, value: String) -> String {
+            let name = metric.sentenceName
+            let plain = String(localized: "Your average \(name) over this 7-day period was \(value).")
+            // The mean of the `days` days before the window, judged against the week.
+            func before(_ days: Int) -> (text: String, relation: PulseTrendMath.Relation)? {
+                let w = PulseTrendMath.Window(start: PulseTrendMath.addDays(window.start, -days),
+                                              end: PulseTrendMath.addDays(window.start, -1), page: 0,
+                                              dayCount: days, hasOlder: false)
+                guard let ref = PulseTrendMath.average(series.points, in: w)?.value,
+                      let relation = compare(current, ref)?.relation else { return nil }
+                return (spoken(ref), relation)
+            }
+            switch metric.key {
+            case "recovery":
+                guard let ref = before(30) else { return plain }
+                let r = ref.text
+                switch ref.relation {
+                case .above: return String(localized: "Over this 7-day period, your average \(name) (\(value)) was higher than its prior 30-day average (\(r)).")
+                case .below: return String(localized: "Over this 7-day period, your average \(name) (\(value)) was lower than its prior 30-day average (\(r)).")
+                case .within: return String(localized: "Over this 7-day period, your average \(name) (\(value)) was consistent with its prior 30-day average (\(r)).")
+                }
+            case "sleep_performance":
+                guard let ref = before(14) else { return plain }
+                let r = ref.text
+                switch ref.relation {
+                case .above: return String(localized: "Your Sleep Performance over this period is above your prior 14-day average (\(r)).")
+                case .below: return String(localized: "Your Sleep Performance over this period is below your prior 14-day average (\(r)).")
+                case .within: return String(localized: "Your Sleep Performance over this period is consistent with your prior 14-day average (\(r)).")
+                }
+            default:
+                break
+            }
+            guard let previous = h.previous, let relation = compare(current, previous)?.relation else { return plain }
+            if metric.key == "steps" {
+                switch relation {
+                case .above: return String(localized: "Your average steps are up from last week.")
+                case .below: return String(localized: "Your average steps are down from last week.")
+                case .within: return String(localized: "Your average steps are in line with last week.")
+                }
+            }
+            let r = spoken(previous)
+            // "This week" only for the week that ends today; an earlier week is "this 7-day period".
+            if window.end == today {
+                switch relation {
+                case .above: return String(localized: "Your average \(name) (\(value)) this week was above your previous 7-day average of \(r).")
+                case .below: return String(localized: "Your average \(name) (\(value)) this week was below your previous 7-day average of \(r).")
+                case .within: return String(localized: "Your average \(name) (\(value)) this week was consistent with your previous 7-day average of \(r).")
+                }
+            }
+            switch relation {
+            case .above: return String(localized: "Your average \(name) (\(value)) over this 7-day period was above your previous 7-day average of \(r).")
+            case .below: return String(localized: "Your average \(name) (\(value)) over this 7-day period was below your previous 7-day average of \(r).")
+            case .within: return String(localized: "Your average \(name) (\(value)) over this 7-day period was consistent with your previous 7-day average of \(r).")
             }
         }
 
@@ -450,9 +495,16 @@ enum PulseTrendPageBuilder {
                     label: isWeek ? v.map(columnLabel) : nil,
                     secondaryLabel: isWeek && mode == .dualLine ? secondary[key].map(columnLabel) : nil)
             }
-            // An M line marks and labels its newest point only (deep-dives-2026/54: "32").
-            if range == .month && mode == .line,
-               let last = columns.lastIndex(where: { $0.value != nil }), let v = columns[last].value {
+            // An M line marks and labels its newest point only (deep-dives-2026/54: "32"). VO₂ max is a weekly
+            // estimate: its M marks and labels every reading (reviews/83: "55 55 53 43"), so four or five
+            // estimates never read as a daily line.
+            let marksEvery = range == .month && mode == .line && metric.source == .vo2Estimate
+            if marksEvery {
+                for i in columns.indices {
+                    if let v = columns[i].value { columns[i].label = columnLabel(v) }
+                }
+            } else if range == .month && mode == .line,
+                      let last = columns.lastIndex(where: { $0.value != nil }), let v = columns[last].value {
                 columns[last].label = columnLabel(v)
             }
             let typical = metric.showsTypicalRange && !isLong
@@ -484,7 +536,7 @@ enum PulseTrendPageBuilder {
                 secondaryColor: mode == .dualLine ? PulseTheme.positive : nil,
                 average: showsAverage ? average : nil, typical: typical,
                 segments: segs, dimmed: isLong,
-                showsMarkers: isWeek, marksLastPointOnly: range == .month && mode == .line,
+                showsMarkers: isWeek || marksEvery, marksLastPointOnly: range == .month && mode == .line && !marksEvery,
                 phases: phaseSpans(keys, phases: phases),
                 emptyMessage: columns.contains { $0.value != nil } ? nil : emptyMessage,
                 accessibilitySummary: accessibility(columns: columns, average: average))
@@ -869,6 +921,11 @@ enum PulseTrendPageBuilder {
             if chart.mode == .stacked, !chart.dimmed, case .stacked(let parts) = metric.chart {
                 let ordered = metric.key == "restorative_min" ? parts.reversed() : parts
                 items += ordered.map { .init(id: $0.id, title: $0.title, color: $0.color) }
+            }
+            // VO₂ max's hollow markers are ZENO's weekly estimates (reviews/83's "○ WHOOP ESTIMATE").
+            if metric.source == .vo2Estimate && chart.showsMarkers {
+                items.append(.init(id: "estimate", title: String(localized: "ZENO estimate"),
+                                   color: metric.color, swatch: .ring))
             }
             let shown = Set(chart.phases.map(\.phase))
             for phase in PulseTrendCyclePhase.allCases where shown.contains(phase) {

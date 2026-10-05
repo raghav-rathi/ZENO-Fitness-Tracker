@@ -26,6 +26,7 @@ struct PulseHealthspanView: View {
     @Environment(\.pulseCoach) private var coach
     @Environment(\.pulseModalRoot) private var modalRoot
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.pulseNavigator) private var navigator
     @EnvironmentObject private var profile: ProfileStore
 
     /// The week shown; nil is the newest.
@@ -38,9 +39,6 @@ struct PulseHealthspanView: View {
     @State private var orbPassed = false
     @State private var restTop: CGFloat?
     @State private var scrolledUnder = false
-    @State private var trendSpan: TrendSpan = .sixMonths
-
-    enum TrendSpan: String, CaseIterable, Hashable { case month, sixMonths }
 
     /// The big orb (reviews/r119: ≈312 pt, its top at 186 pt).
     static let orbDiameter: CGFloat = 312
@@ -134,7 +132,22 @@ struct PulseHealthspanView: View {
         .sheet(isPresented: $showsInfo) {
             HealthInfoSheet(title: String(localized: "How ZENO Age works"), paragraphs: Self.infoParagraphs)
         }
+        #if DEBUG
+        .task(id: shown?.summary != nil) { openDebugTrendIfAsked() }
+        #endif
     }
+
+    #if DEBUG
+    @MainActor private static var openedDebugTrend = false
+
+    /// `--pulse-health-age-trend`: open ZENO AGE TREND's page once the week has drawn, for captures.
+    private func openDebugTrendIfAsked() {
+        guard shown?.summary != nil, !Self.openedDebugTrend,
+              CommandLine.arguments.contains("--pulse-health-age-trend") else { return }
+        Self.openedDebugTrend = true
+        navigator.push(HealthAgeTrendRoute().route)
+    }
+    #endif
 
     /// How far below the bar the compact header reaches (its orb's foot), for the backdrop behind it.
     private static var compactExtra: CGFloat { compactOrb - PulseTheme.Header.navBar / 2 + 8 }
@@ -323,32 +336,35 @@ struct PulseHealthspanView: View {
 
     // MARK: Trends
 
+    /// ZENO AGE TREND › (reviews/29) opens its own page, where M | 6M, the range pager and the scrub live
+    /// (§3.23 items 7-8); the card and PACE OF AGING TREND draw the last six months (26 weeks).
     private func trends(_ s: HealthspanSnapshot, current: HealthAgeSummary) -> some View {
         VStack(alignment: .leading, spacing: PulseTheme.Layout.headerGap) {
             HealthSectionHeader(title: String(localized: "Trend View"))
-            PulseCard {
-                VStack(alignment: .leading, spacing: 16) {
-                    PulseCardTitle(String(localized: "ZENO Age trend"))
-                    PulseSegmentedControl(options: TrendSpan.allCases, selection: $trendSpan) {
-                        $0 == .month ? "M" : "6M"
+            PulseLink(HealthAgeTrendRoute().route) {
+                PulseCard {
+                    VStack(alignment: .leading, spacing: 16) {
+                        PulseCardTitle(String(localized: "ZENO Age trend"), accessory: .trailingChevron)
+                        HealthAgeTrendChart(weeks: Array(s.weeks.suffix(Self.trendWeeks)), hue: current.week.hue)
                     }
-                    HealthAgeTrendChart(weeks: trendWeeks(s), hue: current.week.hue)
                 }
+                .contentShape(Rectangle())
             }
+            .buttonStyle(PulsePressStyle())
+            .accessibilityHint(String(localized: "Opens the ZENO Age trend"))
             if s.paceSeries.count >= 2 {
                 PulseCard {
                     VStack(alignment: .leading, spacing: 16) {
                         PulseCardTitle(String(localized: "Pace of Aging trend"))
-                        HealthPaceTrendChart(points: Array(s.paceSeries.suffix(trendSpan == .month ? 5 : 26)))
+                        HealthPaceTrendChart(points: Array(s.paceSeries.suffix(Self.trendWeeks)))
                     }
                 }
             }
         }
     }
 
-    private func trendWeeks(_ s: HealthspanSnapshot) -> [HealthAgeWeek] {
-        Array(s.weeks.suffix(trendSpan == .month ? 5 : 26))
-    }
+    /// The weeks the trend cards draw: six months.
+    static let trendWeeks = 26
 
     private func weekTitle(_ key: String) -> String {
         let end = PulseDisplay.dayKey(key, offsetBy: 6) ?? key
@@ -586,11 +602,17 @@ struct HealthspanRangeBar: View {
 }
 
 /// ZENO AGE TREND (§2.7 "Healthspan age trend"): ZENO Age as a step line in the orb's hue against the
-/// chronological age (white), a legend, 5-year gridlines, and the latest values beside the line ends, with
-/// room kept at the right so neither label sits on the last step (reviews/29).
+/// chronological age (white), a legend with two filled squares, 5-year gridlines labelled to one decimal
+/// ("37.0", reviews/29), and the latest values beside the line ends, with room kept at the right so neither
+/// label sits on the last step. On its own page a scrub picks a week: a dashed line with a dot on each line
+/// (help-center/112).
 struct HealthAgeTrendChart: View {
     let weeks: [HealthAgeWeek]
     let hue: HealthAgeHue
+    /// The scrubbed week, an index into `weeks`; nil draws no cursor.
+    var selected: Int? = nil
+    /// Called with the week under a finger on the plot; nil leaves the chart without a scrub.
+    var onSelect: ((Int) -> Void)? = nil
 
     /// The share of the x axis kept clear after the last week for the end labels.
     private static let endRoom = 0.16
@@ -604,7 +626,7 @@ struct HealthAgeTrendChart: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 16) {
                 legend(colour, String(localized: "ZENO Age"), filled: true)
-                legend(Color.white, String(localized: "Chronological age"), filled: false)
+                legend(Color.white, String(localized: "Chronological age"), filled: true)
             }
             Chart {
                 ForEach(Array(weeks.enumerated()), id: \.element.id) { i, w in
@@ -638,6 +660,16 @@ struct HealthAgeTrendChart: View {
                                 .padding(.leading, 6)
                         }
                 }
+                if let i = selected, weeks.indices.contains(i) {
+                    let week = weeks[i]
+                    RuleMark(x: .value("Week", Double(i)))
+                        .foregroundStyle(PulseTheme.textSecondary)
+                        .lineStyle(StrokeStyle(lineWidth: 1, dash: [3, 3]))
+                    PointMark(x: .value("Week", Double(i)), y: .value("Age", week.zenoAge))
+                        .symbol { selectedDot(HealthPalette.orb(week.hue).particles) }
+                    PointMark(x: .value("Week", Double(i)), y: .value("Age", week.chronoAge))
+                        .symbol { selectedDot(Color.white) }
+                }
             }
             .chartYScale(domain: lo...hi)
             .chartXScale(domain: 0...(lastIndex * (1 + Self.endRoom)))
@@ -658,8 +690,23 @@ struct HealthAgeTrendChart: View {
                     AxisGridLine(stroke: StrokeStyle(lineWidth: 1)).foregroundStyle(PulseTheme.gridOnCard)
                     AxisValueLabel {
                         if let v = value.as(Double.self) {
-                            Text(PulseFormat.whole(v)).font(PulseType.font(.axis)).foregroundStyle(PulseTheme.textTertiary)
+                            Text(PulseFormat.oneDecimal(v)).font(PulseType.font(.axis)).foregroundStyle(PulseTheme.textTertiary)
                         }
+                    }
+                }
+            }
+            .chartOverlay { proxy in
+                if let onSelect {
+                    GeometryReader { geo in
+                        Rectangle()
+                            .fill(Color.clear)
+                            .contentShape(Rectangle())
+                            .gesture(DragGesture(minimumDistance: 0).onChanged { drag in
+                                guard let anchor = proxy.plotFrame, !weeks.isEmpty,
+                                      let x: Double = proxy.value(atX: drag.location.x - geo[anchor].minX) else { return }
+                                let i = min(max(Int(x.rounded()), 0), weeks.count - 1)
+                                if i != selected { onSelect(i) }
+                            })
                     }
                 }
             }
@@ -676,6 +723,12 @@ struct HealthAgeTrendChart: View {
         return Array(stride(from: domain.lowerBound, through: domain.upperBound, by: step))
     }
 
+    private func selectedDot(_ colour: Color) -> some View {
+        Circle()
+            .fill(colour)
+            .frame(width: 11, height: 11)
+    }
+
     private func endDot(_ colour: Color) -> some View {
         Circle()
             .strokeBorder(colour, lineWidth: 2)
@@ -690,7 +743,12 @@ struct HealthAgeTrendChart: View {
 
     private var summary: String {
         guard let first = weeks.first, let last = weeks.last else { return String(localized: "No data") }
-        return String(localized: "From \(PulseFormat.oneDecimal(first.zenoAge)) to \(PulseFormat.oneDecimal(last.zenoAge)); chronological age \(PulseFormat.oneDecimal(last.chronoAge))")
+        var text = String(localized: "From \(PulseFormat.oneDecimal(first.zenoAge)) to \(PulseFormat.oneDecimal(last.zenoAge)); chronological age \(PulseFormat.oneDecimal(last.chronoAge))")
+        if let i = selected, weeks.indices.contains(i) {
+            let week = weeks[i]
+            text += ". " + String(localized: "Selected: the week of \(PulseFormat.dayLabel(week.id, template: "MMMd")), ZENO Age \(PulseFormat.oneDecimal(week.zenoAge))")
+        }
+        return text
     }
 
     private func legend(_ colour: Color, _ title: String, filled: Bool) -> some View {

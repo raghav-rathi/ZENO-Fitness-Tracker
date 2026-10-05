@@ -112,14 +112,17 @@ enum HealthPalette {
 
     // MARK: Stress
 
-    /// TOTAL DAY's bars as the 2026 device draws them (completeness-critic/14), softer than the gauge's
-    /// scale: today LOW / MEDIUM / HIGH, and the typical day under it.
-    static let totalLow = Color(hex: "#77ACE0")
-    static let totalMedium = Color(hex: "#6EEEA4")
-    static let totalHigh = Color(hex: "#F3AB45")
-    static let typicalLow = Color(hex: "#4A6582")
-    static let typicalMedium = Color(hex: "#3E8563")
-    static let typicalHigh = Color(hex: "#86652F")
+    /// TOTAL DAY's bars: today LOW / MEDIUM / HIGH in the stress level colours the gauge and the chart use,
+    /// so the screen has one "medium" green, and the typical day under it in the same hues at 50% (§3.22
+    /// item 6). completeness-critic/14's softer-looking tints are those same colours in a Display P3
+    /// screenshot read as sRGB (#67AEE6 / #00F19F / #FFA722 encode as 119,172,224 / 110,238,164 /
+    /// 243,171,69 in P3), not different hues.
+    static let totalLow = PulseTheme.Stress.low
+    static let totalMedium = PulseTheme.Stress.medium
+    static let totalHigh = PulseTheme.Stress.high
+    static let typicalLow = Color(hex: "#426885")
+    static let typicalMedium = Color(hex: "#0E8962")
+    static let typicalHigh = Color(hex: "#8D6423")
     /// The stress chart's zoom button (a black rounded square, §2.7 "Stress 24 h").
     static let zoomButton = Color.black.opacity(0.85)
 

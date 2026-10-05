@@ -6,9 +6,9 @@ import StrandAnalytics
 /// load), fatigue (ATL, the 7-day load) and form (TSB, the gap between them), laid out like a Trend View:
 /// the FORM headline with its range control, a sentence, the two lines and the latest figures.
 ///
-/// The model is the classic Training Load card's (`TrainingLoadEngine` over each day's Strain load), so
-/// the two screens cannot disagree, and like the card it is descriptive only: it never changes Recovery.
-/// Owned by group "trends".
+/// The model is the classic Training Load card's (`TrainingLoadEngine` over each day's training load, the
+/// heart-rate load Strain is scored from, not the 0–21 Strain), so the two screens cannot disagree, and like
+/// the card it is descriptive only: it never changes Recovery. Owned by group "trends".
 struct PulseTrainingLoadView: View {
     /// Existing entry points (Trends › TRAINING LOAD) open this screen instead of the classic Trends
     /// screen once it is true (see `PulseRoute.forExistingEntryPoint`).
@@ -102,7 +102,7 @@ struct PulseTrainingLoadView: View {
             if let status = s.status, s.isAvailable {
                 footnote(status).padding(.top, 14)
             }
-            footnote(String(localized: "Fitness and fatigue are 42- and 7-day weighted averages of each day's Strain load, and form is the gap between them. They describe your training; they never change your Recovery."))
+            footnote(String(localized: "Fitness and fatigue are 42- and 7-day weighted averages of each day's training load (the heart-rate load your Strain is scored from, not the 0–21 Strain), and form is the gap between them. They describe your training; they never change your Recovery."))
                 .padding(.top, 14)
         }
     }

@@ -426,7 +426,7 @@ extension PulseTrendMetric {
 
     static let rhr = PulseTrendMetric(
         key: "rhr", title: String(localized: "Resting Heart Rate"), sentenceName: String(localized: "RHR"),
-        symbol: "heart", pillar: .recovery, unit: "bpm", format: .whole, scale: .dynamic, chart: .line,
+        symbol: "arrow.down.heart", pillar: .recovery, unit: "bpm", format: .whole, scale: .dynamic, chart: .line,
         color: PulseTheme.recoveryBlue, polarity: .lowerIsBetter, chipPolarity: .lowerIsBetter,
         aggregation: .average, isRunningTotal: false, showsTypicalRange: true, cta: nil, breakdown: nil,
         note: nil, explainer: nil, ranges: allRanges, source: .daily(.rhr))
@@ -458,7 +458,7 @@ extension PulseTrendMetric {
 
     static let dayStrain = PulseTrendMetric(
         key: "strain", title: String(localized: "Day Strain"), sentenceName: String(localized: "Day Strain"),
-        symbol: "speedometer", pillar: .strain, unit: "", format: .oneDecimal, scale: .strain, chart: .bars,
+        symbol: "dumbbell", pillar: .strain, unit: "", format: .oneDecimal, scale: .strain, chart: .bars,
         color: PulseTheme.strain, polarity: .neutral, chipPolarity: .neutral, aggregation: .average,
         isRunningTotal: true, showsTypicalRange: false, cta: nil,
         breakdown: PulseTrendBreakdownSpec(
@@ -471,7 +471,7 @@ extension PulseTrendMetric {
 
     static let steps = PulseTrendMetric(
         key: "steps", title: String(localized: "Steps"), sentenceName: String(localized: "step count"),
-        symbol: "figure.walk", pillar: .strain, unit: "", format: .grouped, scale: .zeroBased, chart: .bars,
+        symbol: "shoe", pillar: .strain, unit: "", format: .grouped, scale: .zeroBased, chart: .bars,
         color: PulseTheme.strain, polarity: .higherIsBetter, chipPolarity: .higherIsBetter, aggregation: .average,
         isRunningTotal: true, showsTypicalRange: false, cta: .stepsGoal, breakdown: nil, note: nil,
         explainer: nil, ranges: allRanges, source: .steps)
@@ -509,10 +509,10 @@ extension PulseTrendMetric {
 
     static let strengthTime = PulseTrendMetric(
         key: "strength_min", title: String(localized: "Strength Activity Time"),
-        sentenceName: String(localized: "strength activity time"), symbol: "dumbbell", pillar: .strain,
-        unit: String(localized: "hr"), format: .duration, scale: .zeroBased, chart: .bars, color: PulseTheme.strain,
-        polarity: .higherIsBetter, chipPolarity: .higherIsBetter, aggregation: .weeklyTotal,
-        isRunningTotal: false, showsTypicalRange: false, cta: .addActivity, breakdown: nil,
+        sentenceName: String(localized: "strength activity time"), symbol: "figure.strengthtraining.traditional",
+        pillar: .strain, unit: String(localized: "hr"), format: .duration, scale: .zeroBased, chart: .bars,
+        color: PulseTheme.strain, polarity: .higherIsBetter, chipPolarity: .higherIsBetter,
+        aggregation: .weeklyTotal, isRunningTotal: false, showsTypicalRange: false, cta: .addActivity, breakdown: nil,
         note: String(localized: "Strength time is derived from logged activities"),
         explainer: [String(localized: "What is Strength Activity Time?"),
                     String(localized: "The time you spend in strength activities you log, such as weightlifting or strength training, counted from each activity's start to its end.")],
@@ -520,7 +520,7 @@ extension PulseTrendMetric {
 
     static let vo2Max = PulseTrendMetric(
         key: "vo2max_est", title: String(localized: "VO₂ Max"), sentenceName: String(localized: "VO₂ max"),
-        symbol: "lungs.fill", pillar: .strain, unit: "mL/kg/min", format: .oneDecimal, scale: .dynamic,
+        symbol: "lungs", pillar: .strain, unit: "mL/kg/min", format: .whole, scale: .dynamic,
         chart: .line, color: PulseTheme.recoveryBlue, polarity: .higherIsBetter, chipPolarity: .higherIsBetter,
         aggregation: .average, isRunningTotal: false, showsTypicalRange: false, cta: nil, breakdown: nil,
         note: nil, explainer: nil, ranges: [.month, .sixMonths, .year, .all], source: .vo2Estimate)

@@ -254,6 +254,9 @@ struct TrendViewSnapshot: Equatable {
     let hasData: Bool
     /// The menstrual-cycle overlay is on the chart (its info card shows under it).
     let showsCycleNote: Bool
+    /// YOUR CARDIO FITNESS LEVEL under the VO₂ Max chart (§3.28, reviews/83), from the series' newest
+    /// estimate whatever window is shown; nil for every other metric.
+    var cardioFitness: HealthVO2MaxCard.State? = nil
 }
 
 /// A metric that moves with (or against) the Trend View's metric over its period (the WHAT CORRELATES

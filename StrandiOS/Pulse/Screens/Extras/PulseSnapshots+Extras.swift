@@ -105,6 +105,9 @@ struct YearInReviewSnapshot: Equatable {
     /// ZENO Age: the year's last weekly Body Age (`VitalityEngine`, the value the Health tab shows), or nil
     /// when none was computed in the year.
     let zenoAge: Double?
+    /// The Level every scored Recovery up to `through` reaches (Profile's rule, so this year's review prints
+    /// Profile's Level; a past year's, the Level that year ended on).
+    let level: PulseLevels.Progress
 }
 
 /// One behaviour on the "Behavior impacts on Recovery" slide.

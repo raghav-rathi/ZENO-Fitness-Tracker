@@ -153,7 +153,8 @@ private struct YearReviewSentence: View {
 
 // MARK: - Intro
 
-/// How many days the strap scored this year, and over what span.
+/// How many days the strap scored this year, and over what span, with the Level, the year's Recoveries and
+/// its activities under them.
 private struct YearReviewIntroSlide: View {
     let snapshot: YearInReviewSnapshot
 
@@ -178,8 +179,9 @@ private struct YearReviewIntroSlide: View {
                 .pulseText(.rowSubline)
                 .foregroundStyle(PulseTheme.textTertiary)
                 .padding(.top, 6)
+            // The Level leads, as WHOOP's story and share card do (§3.39 [Z]: "days worn and level").
             HStack(alignment: .top, spacing: 0) {
-                stat(String(localized: "Nights"), sum.nights)
+                stat(String(localized: "Level"), snapshot.level.level)
                 stat(String(localized: "Recoveries"), sum.recoveries)
                 stat(String(localized: "Activities"), sum.activities)
             }
@@ -934,9 +936,9 @@ private struct YearReviewSummarySlide: View {
     }
 }
 
-/// The card WHOOP members share: the lock-up with ZENO Age at its right, days tracked and the longest
-/// streak, the three best days as rings with their dates, and the longest sleep, lowest Recovery and top
-/// activity.
+/// The card WHOOP members share: the lock-up with ZENO Age at its right, the Level over its Recoveries and
+/// the longest streak, the three best days as rings with their dates, and the longest sleep, lowest
+/// Recovery and top activity.
 struct YearReviewSummaryCard: View {
     let snapshot: YearInReviewSnapshot
     /// The wearer's age in years, to say how far ZENO Age sits from it.
@@ -960,9 +962,12 @@ struct YearReviewSummaryCard: View {
                     YearReviewAgeBadge(zenoAge: age, chronologicalAge: chronologicalAge)
                 }
             }
+            // "LEVEL 25 / 1907 Recoveries · DAY STREAK" (completeness-critic/09): the Level over the scored
+            // Recoveries it counts, then the longest streak.
             HStack(spacing: 0) {
-                headline(symbol: "calendar", title: String(localized: "Days tracked"),
-                         value: PulseChallengeText.inflected("^[\(s.trackedDays) day](inflect: true)"))
+                headline(symbol: "rosette", title: String(localized: "Level \(snapshot.level.level)"),
+                         value: snapshot.level.recoveries == 1 ? String(localized: "1 Recovery")
+                             : String(localized: "\(PulseFormat.grouped(Double(snapshot.level.recoveries))) Recoveries"))
                 Rectangle().fill(PulseTheme.divider).frame(width: 1, height: 36)
                 headline(symbol: "flame.fill", title: String(localized: "Longest streak"),
                          value: PulseChallengeText.inflected("^[\(s.longestStreak) day](inflect: true)"))
