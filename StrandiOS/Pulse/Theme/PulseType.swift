@@ -83,7 +83,7 @@ enum PulseTextStyle: CaseIterable {
     case sleepTime
 
     // NEW sizes (§2.2 table)
-    /// 34 Bold condensed: Health Monitor tile and Sleep detail-card values, Trend View "AVERAGE", live stats.
+    /// 34 Bold condensed: Health Monitor tile values, Trend View "AVERAGE", live stats.
     case largeValue
     /// 40 Bold condensed: an activity's Strain on Activity Details; ZENO Age in the Healthspan orb.
     case activityStrain

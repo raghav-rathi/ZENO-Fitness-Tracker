@@ -78,7 +78,7 @@ component that does not exist, it asks the foundation owner.
 | recovery-strain | `Screens/Recovery/`, `Screens/Strain/`, `Components/RecoveryStrainDive.swift` | `PulseRecoveryDiveView` (`.recoveryDive`), `PulseStrainDiveView` (`.strainDive`) |
 | trends | `Screens/Trends/` | `PulseTrendView` (`.trendView(metric:)`), `PulseTrendsTabView` (Trends tab root), `PulseWeeklyDigestView` (`.weeklyDigest`), `PulseTrainingLoadView` (`.trainingLoad`) |
 | activity | `Screens/Activity/` | `PulseActivityDetailView` (`.activityDetail(_:)`), `PulseStartActivityView` (`.startActivity`), `PulseAddActivityView` (`.addActivity`), `PulseActivityPickerView` (`.activityPicker`) |
-| health | `Screens/Health/`, `Components/Health*.swift` | `PulseHealthTabView` (Health tab root), `PulseHealthspanView` (`.healthspan`), `PulseHealthMonitorView` (`.healthMonitor`), `PulseStressMonitorView` (`.stressMonitor`) |
+| health | `Screens/Health/`, `Components/Health*.swift` | `PulseHealthTabView` (Health tab root), `PulseHealthspanView` (`.healthspan`), `PulseHealthMonitorView` (`.healthMonitor`), `PulseStressMonitorView` (`.stressMonitor`); own destinations `PulseStressSettingsView` (`HealthStressSettingsRoute`), `PulseHealthAgeTrendView` (`HealthAgeTrendRoute`) |
 | more-profile | `Screens/More/`, `Screens/Profile/`, `Components/MoreProfile*.swift` | `PulseMoreView` (More tab root), `PulseAppSettingsView` (`.appSettings`), `PulseDeviceSettingsView` (`.deviceSettings`), `PulsePrivacyDataView` (`.privacyData`), `PulseReportProblemView` (`.reportProblem`), `PulseFirstWeekView` (`.firstWeek`), `PulseProfileView` (`.profile`), `PulseLevelsView` (`.levels`), `PulseAchievementsView` (`.achievements`), `PulseStreakView` (`.dayStreak`) |
 | journal-plan | `Screens/Journal/`, `Screens/Plan/`, `Components/JournalPlan*.swift` | `PulseJournalView` (`.journal(dayOffset:)`), `PulseBehaviorInsightsView` (`.behaviorInsights`), `PulseWeeklyPlanView` (`.weeklyPlan(editing:)`), `PulsePlanHomeCard` (Home's My Plan card) |
 | cycle-coach | `Screens/Cycle/`, `Screens/Coach/` | `PulseCycleInsightsView` (`.cycleInsights`), `PulseCoachSheet` (`.coach(seed:)`, the Coach button), `PulseMemoryView` (`.memory`), `PulseAISettingsView` (`PulseAISettingsRoute`), Hormonal Insights (`PulseCycleSettingsRoute`) |
@@ -559,6 +559,8 @@ DEBUG builds read these launch arguments; nothing ships in Release. The shell's 
 | `--pulse-health-calibrating` | health | The Health tab's calibrating note on a settled history |
 | `--pulse-health-expand` | health | Every Healthspan pillar row open |
 | `--pulse-health-log-cycle` | health | Open the Health tab's LOG CYCLE sheet once |
+| `--pulse-stress-settings` | health | Stress Monitor: push its ⚙ page once the day draws |
+| `--pulse-health-age-trend` | health | Healthspan: push the ZENO AGE TREND page once the week draws |
 | `--more-open <page>` | more-profile | Open a sub-screen from the screen that owns it: with `--pulse-route app-settings`, `activity-settings`, `heart-rate-settings`, `ai-settings`, `data-export`, `units`, `integrations`, `apple-health`, `journal-settings`, `notifications`, `hormonal-insights` or `hide-metrics`; with `device-settings`, `device-advanced`; with `profile`, `edit-profile`; with `achievements`, `badge:<id>` |
 | `--more-first-week` | more-profile | More's FIRST WEEK card, as for a new member |
 | `--more-unlock` | more-profile | An unlock modal (the first unlocked badge) where the unlock presenter is attached; under `--demo-seed` Home presents none without it |
@@ -610,6 +612,23 @@ Tools/zeno/shoot.sh 3F6D8EB8-27A5-4842-BAA1-AB85CCDF7242 /tmp/shots \
 ## 9. Deviations from the spec, and housekeeping
 
 Measured on the reference captures, where they disagree with the spec's numbers:
+
+- **Sleep Planner wake.** A wake time the wearer set (BehaviorStore's stored alarm time, or My Schedule's for
+  that morning) is planned for with the alarm on or off (reviews/r135). USUAL / TYPICAL WAKE appear only
+  while no wake time was ever set, and WAKE TIME SET TO always shows the plan's wake.
+- **Sleep Planner panel** (reviews/r134): My Schedule's chip is white 10%, about 21 pt tall, 11 pt under the
+  circle (spec white 20%). TIME IN BED is a 28 pt strip with a 20 pt hatched bar and flush ticks (spec 24).
+  The upper zone is an opaque top-lit slate sampled on r134 (spec about white 6%).
+- **Sleep dive sizes** (deep-dives-2026/14, 15, 18, 19, 19b, 19c): every detail card's value is 24 pt over a
+  12 pt baseline (cap about 17 pt), not the spec's 34 (§2.2, §3.3 7a); title caps to value caps 24 pt; row
+  figures 15 pt; stage radios 26 pt (spec 22); consistency pills 13 pt (spec 15).
+- **Stress TOTAL DAY counts waking hours only.** WHOOP's footnote reads "Stress experienced throughout the
+  day including sleep and activities". ZENO's TOTAL DAY, the hours, the gauge and the high-stress run count
+  DaytimeStress waking hours (6 AM-10 PM, by the hour), because a typical weekday would need six more nights
+  scored. The night is charted (each night scored as the Sleep dive scores it, SleepStress five-minute
+  windows against the waking hours before it, from 45 min before onset) but not counted.
+- **More list rows** are 56 pt with or without a sub-line (help-center/94, health-more-2026/06b, 08c), where
+  the spec allows 64 for a two-line row.
 
 - **Tab capsule height above the screen edge.** The spec says ≈21 pt; the 2026 captures (reviews/r02,
   completeness-critic/13) show 28 pt, 6 pt below the bottom safe-area edge (the Oct 2025 reviews/02 shows
