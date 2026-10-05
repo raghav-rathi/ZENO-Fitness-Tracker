@@ -220,9 +220,12 @@ enum BatteryNotifier {
             alertedForTs: d.object(forKey: staleAlertedTsKey) as? Int)
         guard decision.fire, let lastSocPct, let lastTsSec else { return }
         let age = StaleBatteryAlertPolicy.ageLabel(decision.ageSeconds)
+        // The app names itself as the running interface does: ZENO under the iPhone's Pulse interface.
         post(identifier: "battery-stale",
              title: String(localized: "WHOOP last seen low"),
-             body: String(localized: "\(lastSocPct)% when NOOP last heard from it, \(age) ago. Charge it before tonight."),
+             body: ScoreVocabulary.current.pick(
+                classic: String(localized: "\(lastSocPct)% when NOOP last heard from it, \(age) ago. Charge it before tonight."),
+                pulse: String(localized: "\(lastSocPct)% when ZENO last heard from it, \(age) ago. Charge it before tonight.")),
              interruptionLevel: .timeSensitive)
         // Persisted AFTER posting, keyed on the reading, so a failed post retries on the next wake.
         d.set(lastTsSec, forKey: staleAlertedTsKey)

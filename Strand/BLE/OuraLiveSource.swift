@@ -2822,12 +2822,16 @@ public final class OuraLiveSource: NSObject, ObservableObject {
         guard needsPairing == nil else { return }
         let detail: String
         switch reason {
+        // The add-device wizard shows this message, so it names the app as the running interface does.
         case .factoryResetOrNoKey:
-            detail = "NOOP needs the ring's install key to read it live, and that pairing handshake isn't set up yet."
+            detail = ScoreVocabulary.current.pick(
+                classic: "NOOP needs the ring's install key to read it live, and that pairing handshake isn't set up yet.",
+                pulse: "ZENO needs the ring's install key to read it live, and that pairing handshake isn't set up yet.")
         case .authFailed(let status):
             detail = "The ring rejected the pairing handshake (status \(status.rawValue))."
         case .installFailed(let why):
-            detail = "NOOP couldn't take over this ring (\(why))."
+            detail = ScoreVocabulary.current.pick(classic: "NOOP couldn't take over this ring (\(why)).",
+                                                  pulse: "ZENO couldn't take over this ring (\(why)).")
         }
         let recovery = " The ring isn't bricked: re-pair it in the Oura app to recover it."
         let msg = detail + " Live data isn't available - export from the Oura app and import the file instead." + recovery

@@ -190,9 +190,12 @@ struct BondRefusalGiveUp {
     }
 
     /// #747: the honest user-facing hint shown when auto-reconnect pauses. Tells them WHY it stopped and how
-    /// to get going again. Pure; no em-dash. Byte-identical to the Android twin.
+    /// to get going again. Pure; no em-dash. The classic form is byte-identical to the Android twin; under the
+    /// iPhone's Pulse interface it names the app ZENO (`ScoreVocabulary`), as Pulse's pairing screens show it.
     static func pausedHint() -> String {
-        "NOOP stopped retrying because your strap keeps refusing to pair. It is likely still held by the official WHOOP app, or your phone is holding an old pairing. Close the WHOOP app, put the strap in pairing mode (tap until the LEDs flash blue), and if it is listed in your Bluetooth settings choose Forget This Device. Then tap Connect to try again."
+        ScoreVocabulary.current.pick(
+            classic: "NOOP stopped retrying because your strap keeps refusing to pair. It is likely still held by the official WHOOP app, or your phone is holding an old pairing. Close the WHOOP app, put the strap in pairing mode (tap until the LEDs flash blue), and if it is listed in your Bluetooth settings choose Forget This Device. Then tap Connect to try again.",
+            pulse: "ZENO stopped retrying because your strap keeps refusing to pair. It is likely still held by the official WHOOP app, or your phone is holding an old pairing. Close the WHOOP app, put the strap in pairing mode (tap until the LEDs flash blue), and if it is listed in your Bluetooth settings choose Forget This Device. Then tap Connect to try again.")
     }
 
     /// #1635: the log epitaph for the SUPPRESSION path.
@@ -218,9 +221,12 @@ struct BondRefusalGiveUp {
     /// hedged accordingly) and keeps Connect as the follow-up. It also no longer claims HRV and resting
     /// heart rate are unavailable: since #1884 an HR-only night reports both.
     ///
-    /// Pure. Byte-identical to the Kotlin `BondRefusalGiveUp.helloSuppressedHint`.
+    /// Pure. The classic form is byte-identical to the Kotlin `BondRefusalGiveUp.helloSuppressedHint`; the
+    /// Pulse form names the app ZENO (see `pausedHint`).
     static func helloSuppressedHint() -> String {
-        "The secure handshake with your strap never completes, and the attempt itself is what drops the link. NOOP has switched it off for this strap so live heart rate keeps streaming. History sync stays unavailable until it pairs, and so do motion, skin temperature, SpO₂ and respiratory rate, so sleep is staged from heart rate alone. Some straps have paired again after being put in pairing mode. Tap until the LEDs flash blue, then tap Connect."
+        ScoreVocabulary.current.pick(
+            classic: "The secure handshake with your strap never completes, and the attempt itself is what drops the link. NOOP has switched it off for this strap so live heart rate keeps streaming. History sync stays unavailable until it pairs, and so do motion, skin temperature, SpO₂ and respiratory rate, so sleep is staged from heart rate alone. Some straps have paired again after being put in pairing mode. Tap until the LEDs flash blue, then tap Connect.",
+            pulse: "The secure handshake with your strap never completes, and the attempt itself is what drops the link. ZENO has switched it off for this strap so live heart rate keeps streaming. History sync stays unavailable until it pairs, and so do motion, skin temperature, SpO₂ and respiratory rate, so sleep is staged from heart rate alone. Some straps have paired again after being put in pairing mode. Tap until the LEDs flash blue, then tap Connect.")
     }
 
     /// The paused hint for a bond that failed WITHOUT the strap ever answering (#1635).
@@ -232,9 +238,12 @@ struct BondRefusalGiveUp {
     /// possible causes. Telling that user to close the WHOOP app would be a guess dressed as instruction,
     /// and if it is wrong they have no way to know.
     ///
-    /// Pure. Byte-identical to the Kotlin `BondRefusalGiveUp.pausedHintHandshakeUnanswered`.
+    /// Pure. The classic form is byte-identical to the Kotlin `BondRefusalGiveUp.pausedHintHandshakeUnanswered`;
+    /// the Pulse form names the app ZENO (see `pausedHint`).
     static func pausedHintHandshakeUnanswered() -> String {
-        "NOOP stopped retrying because the secure handshake with your strap never completes: the strap does not answer, and the link drops a few seconds later. Auto-reconnect is paused so it stops draining both batteries. Tap Connect to try again, and if it keeps happening please share your strap log."
+        ScoreVocabulary.current.pick(
+            classic: "NOOP stopped retrying because the secure handshake with your strap never completes: the strap does not answer, and the link drops a few seconds later. Auto-reconnect is paused so it stops draining both batteries. Tap Connect to try again, and if it keeps happening please share your strap log.",
+            pulse: "ZENO stopped retrying because the secure handshake with your strap never completes: the strap does not answer, and the link drops a few seconds later. Auto-reconnect is paused so it stops draining both batteries. Tap Connect to try again, and if it keeps happening please share your strap log.")
     }
 
     /// #750: a short OPAQUE token from a CoreBluetooth-local peripheral UUID for the epitaph. The CB UUID is
@@ -3253,13 +3262,20 @@ public final class BLEManager: NSObject, ObservableObject {
     /// (#324). Returns the user-facing string when the strap-reported newest record is future-dated
     /// beyond the 48 h skew allowance (`BackfillContinuation.isFutureDatedNewest`), else nil. Pure and
     /// deterministic — one detection is decisive (nothing legitimate banks 48 h ahead), so no streak
-    /// gate is needed. Mirrors Android `futureDatedStrapBanner`.
+    /// gate is needed. Mirrors Android `futureDatedStrapBanner` (the classic form; the Pulse form names the app
+    /// ZENO, `ScoreVocabulary`).
     nonisolated static func futureDatedStrapBanner(strapNewestTs: Int?, wallNowUnix: Int) -> String? {
         guard BackfillContinuation.isFutureDatedNewest(strapNewestTs, wallNowUnix: wallNowUnix) else { return nil }
-        return "Synced, but your strap's clock is set in the future - its banked history is dated ahead of "
-            + "today, so NOOP can't trust those timestamps and didn't import them (importing them would "
-            + "misfile your data days or years ahead). Fully charge the strap to 100% and power-cycle it so "
-            + "its clock re-syncs, then reconnect."
+        let banner: String = ScoreVocabulary.current.pick(
+            classic: "Synced, but your strap's clock is set in the future - its banked history is dated ahead of "
+                + "today, so NOOP can't trust those timestamps and didn't import them (importing them would "
+                + "misfile your data days or years ahead). Fully charge the strap to 100% and power-cycle it so "
+                + "its clock re-syncs, then reconnect.",
+            pulse: "Synced, but your strap's clock is set in the future - its banked history is dated ahead of "
+                + "today, so ZENO can't trust those timestamps and didn't import them (importing them would "
+                + "misfile your data days or years ahead). Fully charge the strap to 100% and power-cycle it so "
+                + "its clock re-syncs, then reconnect.")
+        return banner
     }
 
     /// Start (or restart) the periodic backfill timer. Each tick re-runs the type-47 historical
@@ -5705,7 +5721,9 @@ extension BLEManager: @preconcurrency CBCentralManagerDelegate {
         #if os(macOS)
         state.lastSyncError = "NOOP isn't allowed to use Bluetooth. Open System Settings → Privacy & Security → Bluetooth — if NOOP is already listed there, toggle it off and back on (a new NOOP build needs a fresh grant), then quit and reopen NOOP."
         #else
-        state.lastSyncError = "NOOP isn't allowed to use Bluetooth. Open iPhone Settings → NOOP → Bluetooth — if it's already on, toggle it off and back on, then quit and reopen NOOP."
+        state.lastSyncError = ScoreVocabulary.current.pick(
+            classic: "NOOP isn't allowed to use Bluetooth. Open iPhone Settings → NOOP → Bluetooth — if it's already on, toggle it off and back on, then quit and reopen NOOP.",
+            pulse: "ZENO isn't allowed to use Bluetooth. Open iPhone Settings → ZENO → Bluetooth — if it's already on, toggle it off and back on, then quit and reopen ZENO.")
         #endif
         log("Bluetooth permission not granted (unauthorized) — cannot scan or connect")
         radioStateErrorShown = true
@@ -6172,14 +6190,23 @@ extension BLEManager: @preconcurrency CBCentralManagerDelegate {
                 state.append(log: "reconnect paused=bondLoop (#617: \(postBondLoop.consecutiveBondTimeouts) bond-then-timeout cycles)", domain: .connection)
             }
             if state.reconnectGuide == nil {
-                state.reconnectGuide = """
+                // Pulse's form names the app ZENO, and, since it only ever shows on an iPhone, the iPhone's
+                // Settings app rather than the Mac's System Settings.
+                state.reconnectGuide = ScoreVocabulary.current.pick(classic: """
                 Your strap keeps connecting and then dropping a second later. This is almost always a stale Bluetooth pairing - usually after a WHOOP firmware update, or the official WHOOP app holding the strap. NOOP works fine once it's re-paired:
 
                 1. Quit the official WHOOP app (or turn off Bluetooth on that phone).
                 2. Open System Settings → Bluetooth and Forget your WHOOP if it's listed.
                 3. Tap the strap repeatedly until its LEDs flash blue (pairing mode).
                 4. Come back here and reconnect.
-                """
+                """, pulse: """
+                Your strap keeps connecting and then dropping a second later. This is almost always a stale Bluetooth pairing - usually after a WHOOP firmware update, or the official WHOOP app holding the strap. ZENO works fine once it's re-paired:
+
+                1. Quit the official WHOOP app (or turn off Bluetooth on that phone).
+                2. Open Settings → Bluetooth and Forget your WHOOP if it's listed.
+                3. Tap the strap repeatedly until its LEDs flash blue (pairing mode).
+                4. Come back here and reconnect.
+                """)
             }
         }
         bondedAt = nil   // cleared after the bond-loop detector above read it (#617)
@@ -6394,14 +6421,22 @@ extension BLEManager: @preconcurrency CBCentralManagerDelegate {
         // So both platforms detect this and both give the same advice; only Android can act on it. Do not
         // close the gap with a name match. Kotlin twin: `StaleBondRemoval.kt`.
         if let cbErr = error as? CBError, cbErr.code == .peerRemovedPairingInformation {
-            state.reconnectGuide = """
+            // Pulse's form: ZENO, and the iPhone's Settings app (see the bond-loop guide).
+            state.reconnectGuide = ScoreVocabulary.current.pick(classic: """
             Your strap's Bluetooth pairing was reset - usually by a WHOOP firmware update, or the official WHOOP app reconnecting. NOOP works fine on the new firmware; you just need to re-pair:
 
             1. Quit the official WHOOP app (or turn off Bluetooth on that phone).
             2. Open System Settings → Bluetooth and Forget “WHOOP MG” if it's listed.
             3. Tap the strap repeatedly until its LEDs flash blue (pairing mode).
             4. Come back here and reconnect.
-            """
+            """, pulse: """
+            Your strap's Bluetooth pairing was reset - usually by a WHOOP firmware update, or the official WHOOP app reconnecting. ZENO works fine on the new firmware; you just need to re-pair:
+
+            1. Quit the official WHOOP app (or turn off Bluetooth on that phone).
+            2. Open Settings → Bluetooth and Forget “WHOOP MG” if it's listed.
+            3. Tap the strap repeatedly until its LEDs flash blue (pairing mode).
+            4. Come back here and reconnect.
+            """)
             return
         }
         // Any other connect failure (e.g. a weak-signal encrypted-handshake timeout on a 5/MG at the
@@ -6758,7 +6793,9 @@ extension BLEManager: @preconcurrency CBPeripheralDelegate {
                     // counting silently; recordRefusal() below stays false (latched), so no epitaph spam.
                     log("WHOOP 5/MG: bond still refused during a paused-state probe (streak \(bondRefusalStreak)) - the give-up stays latched")
                 } else if bondRefusalStreak >= 2 {
-                    state.pairingHint = "NOOP can see your strap but it's refusing to pair - it's likely still bonded to the official WHOOP app, or your phone is holding an old pairing. To fix it: (1) fully close the WHOOP app, (2) on a 5.0/MG, tap the band repeatedly until the LEDs flash blue (pairing mode), (3) if your strap is listed under iPhone Settings → Bluetooth, tap it and choose Forget This Device, then reconnect in NOOP."
+                    state.pairingHint = ScoreVocabulary.current.pick(
+                        classic: "NOOP can see your strap but it's refusing to pair - it's likely still bonded to the official WHOOP app, or your phone is holding an old pairing. To fix it: (1) fully close the WHOOP app, (2) on a 5.0/MG, tap the band repeatedly until the LEDs flash blue (pairing mode), (3) if your strap is listed under iPhone Settings → Bluetooth, tap it and choose Forget This Device, then reconnect in NOOP.",
+                        pulse: "ZENO can see your strap but it's refusing to pair - it's likely still bonded to the official WHOOP app, or your phone is holding an old pairing. To fix it: (1) fully close the WHOOP app, (2) on a 5.0/MG, tap the band repeatedly until the LEDs flash blue (pairing mode), (3) if your strap is listed under iPhone Settings → Bluetooth, tap it and choose Forget This Device, then reconnect in ZENO.")
                     log("WHOOP 5/MG: bond refused \(bondRefusalStreak)× with no successful bond — the strap is refusing the encrypted link (WHOOP app holds it, or a stale iOS pairing). Surfacing pairing-mode + forget-device guidance (#78).")
                 } else {
                     log("WHOOP 5/MG: bond write refused (insufficient) — retrying once; will surface pairing-mode guidance if it persists (#78).")
