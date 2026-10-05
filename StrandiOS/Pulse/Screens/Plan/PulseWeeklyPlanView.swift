@@ -4,7 +4,8 @@ import StrandAnalytics
 
 /// My Plan (WHOOP_UI_SPEC §3.19): Plan Overview, pushed, or Edit Plan as a sheet (`editing`).
 ///
-/// With no plan, the pushed page is the plan chooser (Home's "EXPLORE PLANS →").
+/// Home's "EXPLORE PLANS →" opens the Edit Plan sheet, as the Sleep Planner and Trend View do. With no plan,
+/// the pushed page falls back to the plan chooser, which only the `weekly-plan` deep link reaches.
 struct PulseWeeklyPlanView: View {
     /// The rebuilt plan screens: Home's My Plan card and its EXPLORE PLANS open them.
     static let isRebuilt = true

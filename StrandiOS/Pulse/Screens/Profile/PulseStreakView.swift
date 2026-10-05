@@ -4,11 +4,11 @@ import StrandAnalytics
 
 /// Day Streak (WHOOP_UI_SPEC §3.30, reviews/r48, profile-community-2026/15, 37, 38, 60–64), pushed from
 /// the Home flame and Profile's DAY STREAK row, on WHOOP's flat #101518: the flame in its tier's colour
-/// and the count, "Day Streak / Wear your strap daily", when the streak started and the longest one,
+/// and the count, "Day Streak / Wear your strap daily", when the streak started and the max streak,
 /// THIS WEEK, the milestone card and the tier's message.
 ///
 /// The count is `StreakCalculator`'s current run, the rule the Home pill reads, so the two always agree.
-/// WHOOP's "Top 2%" column is [POP]: ZENO shows the start and the longest streak only (as WHOOP's own
+/// WHOOP's "Top 2%" column is [POP]: ZENO shows "Streak started" and "Max streak" only (as WHOOP's own
 /// two-column variant does, /60).
 struct PulseStreakView: View {
     static let isRebuilt = true
@@ -75,14 +75,15 @@ struct PulseStreakView: View {
         HStack(spacing: 0) {
             stat(value: s.startKey.map(ProfileFormat.day) ?? "--", caption: String(localized: "Streak started"))
             Rectangle().fill(PulseTheme.divider).frame(width: 1, height: 44)
-            stat(value: PulseFormat.grouped(Double(s.longest)), caption: String(localized: "Longest streak"))
+            stat(value: PulseFormat.grouped(Double(s.longest)), caption: String(localized: "Max streak"))
         }
     }
 
+    /// reviews/r48: the value's digits stand ≈10.7 pt ("Feb. 5, 2022" 78 pt wide at 390 pt), so 15 pt Bold.
     private func stat(value: String, caption: String) -> some View {
         VStack(spacing: 5) {
             Text(value)
-                .profileFont(18, weight: .bold, relativeTo: .headline)
+                .profileFont(15, weight: .bold, relativeTo: .subheadline)
                 .foregroundStyle(PulseTheme.textPrimary)
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
@@ -146,14 +147,15 @@ struct PulseStreakView: View {
     // MARK: Milestone
 
     /// "N more days to unlock your next milestone." between the last milestone's flame and the next one's,
-    /// greyed, with an orange bar from one to the other.
+    /// greyed, with an orange bar from one to the other. The copy is small beside the badges (reviews/r48,
+    /// profile-community-2026/15, 61): "N more days" 12 pt Semibold, the caption 11 pt on one line.
     private func milestoneCard(_ s: ProfileStreak) -> some View {
         let m = s.milestone
         return HStack(spacing: 14) {
             milestoneBadge(value: m.last ?? 0, days: s.current, reached: m.last != nil)
             VStack(spacing: 10) {
                 Text(m.remaining == 1 ? String(localized: "1 more day") : String(localized: "\(m.remaining) more days"))
-                    .pulseText(.coachingTitle)
+                    .pulseText(.secondary)
                     .foregroundStyle(PulseTheme.textPrimary)
                 GeometryReader { geo in
                     ZStack(alignment: .leading) {
@@ -164,7 +166,7 @@ struct PulseStreakView: View {
                 }
                 .frame(height: 6)
                 Text(String(localized: "to unlock your next milestone."))
-                    .pulseText(.rowSubline)
+                    .profileFont(11, weight: .regular, relativeTo: .caption2)
                     .foregroundStyle(PulseTheme.textSecondary)
                     .multilineTextAlignment(.center)
             }
@@ -280,7 +282,7 @@ private struct StreakInfoSheet: View {
                     .pulseText(.subtitle)
                     .foregroundStyle(PulseTheme.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
-                Text(String(localized: "Miss a whole day and the streak starts again; your longest streak is kept."))
+                Text(String(localized: "Miss a whole day and the streak starts again; your max streak is kept."))
                     .pulseText(.subtitle)
                     .foregroundStyle(PulseTheme.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)

@@ -3,8 +3,9 @@ import SwiftUI
 
 /// EDIT PLAN (WHOOP_UI_SPEC §3.19, reviews/r11): "Edit your Weekly Plan", the CURRENT PLAN, CHOOSE A PLAN's
 /// three templates (Boost Fitness orange, Feel Better green, Sleep Deeper blue-grey), CUSTOM, and END PLAN
-/// while one runs. A template or Custom opens its goals, adjustable before START PLAN. As a sheet it shows
-/// "✕"; pushed (no plan yet) "‹".
+/// while one runs. A template or Custom opens its goals, adjustable before START PLAN. It is a "✕" sheet
+/// (spec §1.6); the pushed "‹" form is only Plan Overview's fallback for the `weekly-plan` deep link with
+/// no plan.
 struct PulseEditPlanView: View {
     @State private var plans = PulsePlanStore.shared
     @Environment(\.dismiss) private var dismiss
@@ -19,7 +20,9 @@ struct PulseEditPlanView: View {
                     .pulseText(.pageTitle)
                     .foregroundStyle(PulseTheme.textPrimary)
                     .accessibilityAddTraits(.isHeader)
-                Text(String(localized: "Choose from the plans below or create your own. A plan sets weekly goals for your sleep, strain, activities and behaviors, and ZENO tracks them from your data."))
+                // WHOOP's two sentences (§3.19) without the claims ZENO cannot keep: its templates are fixed,
+                // not "personalized", and a plan sets goals rather than daily recommendations.
+                Text(String(localized: "Choose from the list of plans below or create your own. Starting a plan sets your goals for the week ahead."))
                     .pulseText(.subtitle)
                     .foregroundStyle(PulseTheme.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)

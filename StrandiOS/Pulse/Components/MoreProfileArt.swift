@@ -104,8 +104,11 @@ enum ProfileArtPalette {
         Self.family(family)[1].opacity(0.42)
     }
 
-    /// Profile's "Tracking since" pill (spec §3.30 "Member since", `#292E32`).
-    static let trackingPill = Color(hex: "#292E32")
+    /// Profile's "Tracking since" pill (spec §3.30 "Member since"): a well about 20% darker than whatever is
+    /// behind it, as WHOOP's reads on both captures (profile-community-2026/21: #152729 on a #1D2A30 page;
+    /// /10: #22272B–#292E32 on #2B323A). The spec's flat #292E32, sampled on /10's lighter page, sits
+    /// lighter than ZENO's darker page and reads as a raised bar there.
+    static let trackingPill = Color.black.opacity(0.2)
     /// NOTABLE STATS' gold scalloped icon: its rim and its glyph (profile-community-2026/22).
     static let notableRim = Color(hex: "#C9A15A")
     static let notableGlyph = Color(hex: "#E8C27A")

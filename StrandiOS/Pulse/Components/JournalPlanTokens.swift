@@ -137,6 +137,9 @@ extension PulseTheme {
         static let legendGlyph = Font.system(size: 8, weight: .bold)
         static let autoChip = Color(hex: "#344048")
         static let autoChipGlyph = Color(hex: "#8CC4F2")
+        /// The chip's sparkle cluster: ≈9 pt in an 18 pt square (journal-plan-2026/20, completeness-critic/21).
+        static let autoChipGlyphFont = Font.system(size: 9, weight: .regular)
+        static let autoChipSize: CGFloat = 18
         /// Behavior Details: the page under the hero (#101418), the impact card over it, the expanded
         /// breakdown's inner card (#14181C), the grey body copy and the RECOMMENDATION box.
         static let detailsPage = Color(hex: "#101418")

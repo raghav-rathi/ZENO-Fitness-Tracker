@@ -173,12 +173,13 @@ struct PulseBehaviorInsightsView: View {
         .accessibilityHint(String(localized: "Opens Behavior Details"))
     }
 
-    /// The ✧ chip after an auto-tracked behaviour's name.
+    /// The ✧ chip after an auto-tracked behaviour's name: a small light-blue sparkle cluster in an 18 pt
+    /// square, lighter than the name (journal-plan-2026/20).
     private var autoChip: some View {
-        Image(systemName: "sparkle")
-            .font(PulseTheme.JournalPlan.smallGlyph)
+        Image(systemName: "sparkles")
+            .font(PulseTheme.JournalPlan.autoChipGlyphFont)
             .foregroundStyle(PulseTheme.JournalPlan.autoChipGlyph)
-            .frame(width: 20, height: 18)
+            .frame(width: PulseTheme.JournalPlan.autoChipSize, height: PulseTheme.JournalPlan.autoChipSize)
             .background(RoundedRectangle(cornerRadius: PulseTheme.Radius.badge, style: .circular)
                 .fill(PulseTheme.JournalPlan.autoChip))
             .accessibilityLabel(String(localized: "Tracked automatically"))

@@ -67,7 +67,7 @@ struct PulseMoreView: View {
             MoreLinkRow(.classic(.breathe), symbol: "wind", title: String(localized: "Breathe"))
             if liveSessionsBeta {
                 // Moved here from the ＋ menu (§1.3: the guided session goes to More › Tools).
-                MoreButtonRow(symbol: "shield.lefthalf.filled", title: String(localized: "Guided session (beta)"),
+                MoreButtonRow(symbol: "shield", title: String(localized: "Guided session (beta)"),
                               subtitle: String(localized: "Strap coaching against today's Recovery")) {
                     navigator.present(.guidedSession)
                 }

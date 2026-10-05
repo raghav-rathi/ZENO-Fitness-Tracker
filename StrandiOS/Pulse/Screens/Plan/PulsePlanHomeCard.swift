@@ -8,7 +8,8 @@ import StrandAnalytics
 ///     PulseSectionHeader(String(localized: "My Plan"))
 ///     PulsePlanHomeCard()
 ///
-/// With no plan: "Build Your Best Self", one line, "EXPLORE PLANS →" and ZENO's three dashed rings.
+/// With no plan: "Build Your Best Self", one line, "EXPLORE PLANS →" and ZENO's three dashed rings; the card
+/// opens EDIT PLAN as the "✕" sheet every other entry opens (spec §1.6, §1.8).
 /// With a plan, collapsed: "BOOST FITNESS PLAN" with ⌄, "2 days left", "93% ACCOMPLISHED" over its green
 /// bar. Expanded (⌃): the goals, unfinished first in white, a hairline, then finished in green, each with
 /// its ring, and VIEW MY PLAN. A week recap waiting, or the Friday check-in, adds one row at the top.
@@ -140,12 +141,14 @@ struct PulsePlanHomeCard: View {
 
     // MARK: No plan (§3.1 item 9 "Empty state")
 
+    /// The title sits a size below the "My Plan" header over the card (WHOOP's caps measure 0.70 of the
+    /// header's on reviews/r113 and completeness-critic/16): 17 pt Semibold, the bottom of the spec's range.
     private var emptyCard: some View {
-        PulseLink(.weeklyPlan(editing: false)) {
+        PulseLink(.weeklyPlan(editing: true)) {
             HStack(alignment: .center, spacing: 12) {
                 VStack(alignment: .leading, spacing: 8) {
                     Text(String(localized: "Build Your Best Self"))
-                        .pulseText(.cardHeadline)
+                        .pulseText(.subsectionTitle)
                         .foregroundStyle(PulseTheme.textPrimary)
                     Text(String(localized: "Set goals, track progress, and turn small actions into long-term wins."))
                         .pulseText(.body)
