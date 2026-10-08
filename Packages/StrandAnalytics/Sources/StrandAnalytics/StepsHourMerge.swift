@@ -1,61 +1,93 @@
 import Foundation
 import WhoopProtocol
 
-/// Steps hour by hour: the phone's count where the phone was carried, the band's motion estimate where it
+/// Steps hour by hour: the phone's count where the phone was carried, the strap's walking estimate where it
 /// clearly was not.
 ///
 /// WHY HOURS. `StepsResolver` picks one source for a whole day, so a day the phone counted anything at all
 /// shows only the phone's number, and every step walked with the phone left behind is lost. The phone and
-/// Apple Health already bank clock-hour buckets (`appleStepHour`), and the band's stored motion splits the same
-/// way, so the choice can be made per hour instead.
+/// Apple Health already bank clock-hour buckets (`appleStepHour`), and the strap's stored motion splits the
+/// same way, so the choice can be made per hour instead.
 ///
-/// THE RULE. An hour takes the band's estimate only when it beats the phone's count by at least
+/// THE RULE. An hour takes the strap's estimate only when it beats the phone's count by at least
 /// `minExtraSteps` AND by at least `minExtraFraction` of the phone's count; otherwise the phone's count stands.
 /// "The phone's count" is the larger of Apple Health's hour and the iPhone pedometer's hour: Health already
 /// contains the phone's own steps, so the two are never added. Only hours the phone side has finished banking
-/// are eligible (`settledHours`), so the band never tops up an hour the phone is still counting.
+/// are eligible (`settledHours`), so the strap never tops up an hour the phone is still counting.
 ///
-/// THE CALIBRATION. The band's estimate for an hour is `k * motion`, the model `StepsEstimateEngine` fits per
-/// day, but `k` is learned from CARRIED hours only (`isCarried`): the phone counted at least `carriedMinSteps`,
-/// the band banked its usual amount of motion, and the wearer was neither asleep nor in a no-footfall workout.
-/// A whole day mixes in the hours the phone sat at home, which pulls a day-level `k` low; a carried hour has no
-/// such gap. `hourlyMotion` is the daily fold split by clock hour, so a day's hours sum to
-/// `StepsEstimateEngine.dayMotionIntensity` and a manual `k` means the same thing in both models.
+/// WALKING MINUTES, NOT MOTION VOLUME. A WHOOP 4.0 banks one heavily smoothed gravity vector a second. Summed
+/// over an hour, its changes measure arm movement of every kind, and on a real wearer's data an hour of typing
+/// and phone use summed to as much as an hour that walked 1,700 steps, so a motion-volume estimate added
+/// thousands of steps a day that were never walked. Walking looks different minute by minute: the vector moves
+/// clearly almost every second for minutes on end, with the heart rate up. `walkingByHour` counts those minutes
+/// (`isWalkingMinute`, in runs of at least `minBoutMinutes`), and the estimate is walking minutes times the
+/// wearer's own steps per walking minute.
+///
+/// THE CALIBRATION. Steps per walking minute is learned from CARRIED hours only (`isCarried`): the phone
+/// counted at least `carriedMinSteps`, the strap recorded the hour as usual and saw some walking, and the
+/// wearer was neither asleep nor in a no-footfall workout. On that first real wearer it came out at about 100,
+/// an ordinary walking cadence, and the estimate put a hidden carried hour back to within a median 2-3% of the
+/// day's total (`Tools/zeno/steps-replay`).
 ///
 /// Pure value code, unit-tested. The Android twin keeps the daily resolver: this fork does not keep Android
 /// parity for ZENO-only changes.
 public enum StepsHourMerge {
 
-    // MARK: - Tunables
+    // MARK: - Tunables: the merge
 
-    /// The band takes an hour over only when its estimate is at least this many steps above the phone's count...
+    /// The strap takes an hour over only when its estimate is at least this many steps above the phone's count...
     public static let minExtraSteps = 150
     /// ...and at least this fraction of the phone's count above it.
     public static let minExtraFraction = 0.5
-    /// No hour's band estimate goes above this: 150 steps a minute for the whole hour.
+    /// No hour's strap estimate goes above this: 150 steps a minute for the whole hour.
     public static let maxHourSteps = 9_000
-    /// A carried hour: the phone counted at least this many steps in it.
+
+    // MARK: - Tunables: the walking detector
+
+    /// Consecutive gravity rows further apart than this are not compared (a gap is not a movement).
+    public static let maxRowGap = 5
+    /// A minute needs at least this many second-to-second changes to be judged.
+    public static let minuteMinChanges = 40
+    /// A second-to-second change of the gravity vector above this (in g) is movement.
+    public static let movingChange = 0.02
+    /// A walking minute moves in at least this share of its seconds...
+    public static let walkingMovingShare = 0.95
+    /// ...with a median change of at least this...
+    public static let walkingMedianChange = 0.03
+    /// ...and, when the strap has heart rate for it, a mean at least this far above the day's resting level.
+    public static let walkingHeartRateAboveRest = 15.0
+    /// The day's resting level: this percentile of its heart-rate samples.
+    public static let restingPercentile = 0.10
+    /// Only runs of at least this many consecutive walking minutes count: a single busy minute of arm movement
+    /// can look like walking, a sustained run rarely does.
+    public static let minBoutMinutes = 2
+
+    // MARK: - Tunables: the calibration
+
+    /// A carried hour: the phone counted at least this many steps in it...
     public static let carriedMinSteps = 300
-    /// Fewest carried hours before the hourly fit is trusted (about three days of normal use).
+    /// ...and the strap saw at least this many walking minutes.
+    public static let carriedMinWalkingMinutes = 3
+    /// Fewest carried hours before the hourly fit is trusted (a few days of normal use).
     public static let minCalibrationHours = 24
     /// Carried hours at which the sample-size half of the confidence saturates.
     public static let goodCalibrationHours = 120
-    /// An hour must move at least this much to enter the fit: guards the `steps / motion` ratio of a band that
-    /// barely recorded the hour.
-    public static let minMotionForFit = 0.01
     /// A carried hour may be at most this much asleep or in a no-footfall workout.
     public static let maxBlockedFractionForFit = 0.25
-    /// Floor on the row count a carried hour needs, whatever the band's usual density.
+    /// Floor on the rows a carried hour needs, whatever the strap's usual density.
     public static let minRowsFloor = 30
+    /// A fitted pace outside this range (steps per walking minute) means the detector is not seeing walking on
+    /// this strap, so nothing is filled.
+    public static let plausibleStepsPerMinute: ClosedRange<Double> = 50...200
 
-    // MARK: - Band motion per clock hour
+    // MARK: - The strap's walking per clock hour
 
-    /// The band's motion in one clock hour: the summed gravity change, and how many rows it banked.
-    public struct HourMotion: Equatable, Sendable {
-        public var motion: Double
+    /// The strap's walking in one clock hour: the minutes the detector accepted, and the gravity rows it banked.
+    public struct HourWalk: Equatable, Sendable {
+        public var walkingMinutes: Int
         public var rows: Int
-        public init(motion: Double, rows: Int) {
-            self.motion = motion
+        public init(walkingMinutes: Int, rows: Int) {
+            self.walkingMinutes = walkingMinutes
             self.rows = rows
         }
     }
@@ -65,112 +97,177 @@ public enum StepsHourMerge {
         ts - floorMod(ts + offsetSec, 3_600)
     }
 
-    /// One day's gravity stream split by clock hour, keyed by hour start. Each sample-to-sample change is
-    /// credited to the hour of the later sample, so the hours sum to `StepsEstimateEngine.dayMotionIntensity`
-    /// over the same samples. Samples must be in time order, as the store returns them.
-    public static func hourlyMotion(_ grav: [GravitySample], offsetSec: Int) -> [Int: HourMotion] {
-        var out: [Int: HourMotion] = [:]
+    /// Start of the clock minute `ts` falls in.
+    public static func minuteStart(_ ts: Int, offsetSec: Int) -> Int {
+        ts - floorMod(ts + offsetSec, 60)
+    }
+
+    /// Whether one minute walked: `changes` are its second-to-second changes of the gravity vector, `heartRate`
+    /// its mean heart rate (nil when the strap has none for it), `restingRate` the day's resting level (nil when
+    /// the day has no heart rate at all).
+    public static func isWalkingMinute(changes: [Double], heartRate: Double?, restingRate: Double?) -> Bool {
+        guard changes.count >= minuteMinChanges else { return false }
+        let moving = changes.filter { $0 > movingChange }.count
+        guard Double(moving) >= walkingMovingShare * Double(changes.count) else { return false }
+        let sorted = changes.sorted()
+        guard sorted[sorted.count / 2] >= walkingMedianChange else { return false }
+        if let heartRate, let restingRate, heartRate < restingRate + walkingHeartRateAboveRest { return false }
+        return true
+    }
+
+    /// One day's strap streams split by clock hour (keyed by hour start): every hour the strap banked rows in,
+    /// with the minutes it walked. Gravity must be in time order, as the store returns it; heart rate may be in
+    /// any order.
+    public static func walkingByHour(_ grav: [GravitySample], heartRate: [HRSample], offsetSec: Int) -> [Int: HourWalk] {
+        var rows: [Int: Int] = [:]
+        var changes: [Int: [Double]] = [:]
         var prev: GravitySample?
         for r in grav {
-            let hour = hourStart(r.ts, offsetSec: offsetSec)
-            var cell = out[hour] ?? HourMotion(motion: 0, rows: 0)
-            cell.rows += 1
-            if let p = prev {
+            rows[hourStart(r.ts, offsetSec: offsetSec), default: 0] += 1
+            if let p = prev, r.ts - p.ts <= maxRowGap {
                 let dx = p.x - r.x, dy = p.y - r.y, dz = p.z - r.z
-                cell.motion += (dx * dx + dy * dy + dz * dz).squareRoot()
+                changes[minuteStart(r.ts, offsetSec: offsetSec), default: []].append((dx * dx + dy * dy + dz * dz).squareRoot())
             }
-            out[hour] = cell
             prev = r
+        }
+        var hrSum: [Int: (total: Int, count: Int)] = [:]
+        for s in heartRate where s.bpm > 0 {
+            let m = minuteStart(s.ts, offsetSec: offsetSec)
+            let cur = hrSum[m] ?? (0, 0)
+            hrSum[m] = (cur.total + s.bpm, cur.count + 1)
+        }
+        let resting = restingRate(heartRate.map(\.bpm).filter { $0 > 0 })
+        var walking: [Int] = []
+        for (minute, deltas) in changes {
+            let hr = hrSum[minute].map { Double($0.total) / Double($0.count) }
+            if isWalkingMinute(changes: deltas, heartRate: hr, restingRate: resting) { walking.append(minute) }
+        }
+        var out: [Int: HourWalk] = [:]
+        for (hour, n) in rows { out[hour] = HourWalk(walkingMinutes: 0, rows: n) }
+        for minute in boutMinutes(walking.sorted()) {
+            out[hourStart(minute, offsetSec: offsetSec), default: HourWalk(walkingMinutes: 0, rows: 0)].walkingMinutes += 1
         }
         return out
     }
 
-    /// The row count a band banks in a typical recorded hour: the median over hours with any rows. A WHOOP 4.0
+    /// The minutes (sorted minute starts) that sit in a run of at least `minBoutMinutes` consecutive minutes.
+    public static func boutMinutes(_ minutes: [Int]) -> [Int] {
+        var out: [Int] = []
+        var run: [Int] = []
+        func flush() {
+            if run.count >= minBoutMinutes { out += run }
+            run.removeAll()
+        }
+        for m in minutes {
+            if let last = run.last, m - last != 60 { flush() }
+            run.append(m)
+        }
+        flush()
+        return out
+    }
+
+    /// The day's resting level: the `restingPercentile` of its heart-rate samples, nil without any.
+    public static func restingRate(_ bpm: [Int]) -> Double? {
+        guard !bpm.isEmpty else { return nil }
+        let sorted = bpm.sorted()
+        return Double(sorted[Int(Double(sorted.count) * restingPercentile)])
+    }
+
+    /// The row count a strap banks in a typical recorded hour: the median over hours with any rows. A WHOOP 4.0
     /// that stores motion every second banks about 3,600; one that stores bursts banks far fewer, so the carried
     /// test scales with this rather than assuming either. 0 when nothing was recorded.
-    public static func usualRows(_ hours: [HourMotion]) -> Int {
+    public static func usualRows(_ hours: [HourWalk]) -> Int {
         let rows = hours.map(\.rows).filter { $0 > 0 }.sorted()
         guard !rows.isEmpty else { return 0 }
         return rows[rows.count / 2]
     }
 
-    /// The fewest rows a carried hour needs: half the band's usual hour, never below `minRowsFloor`.
+    /// The fewest rows a carried hour needs: half the strap's usual hour, never below `minRowsFloor`.
     public static func minCarriedRows(usualRows: Int) -> Int {
         max(minRowsFloor, usualRows / 2)
     }
 
     // MARK: - Calibration
 
-    /// One carried hour: the band's motion and the phone's count for the same clock hour.
+    /// One carried hour: the strap's walking minutes and the phone's count for the same clock hour.
     public struct CalibrationHour: Equatable, Sendable {
-        public let motion: Double
+        public let walkingMinutes: Int
         public let steps: Double
-        public init(motion: Double, steps: Double) {
-            self.motion = motion
+        public init(walkingMinutes: Int, steps: Double) {
+            self.walkingMinutes = walkingMinutes
             self.steps = steps
         }
     }
 
     /// The hourly model.
     public struct Calibration: Equatable, Sendable {
-        /// Steps per unit of motion, the same unit as `StepsEstimateEngine.Calibration.coefficient`.
-        public let coefficient: Double
+        /// The wearer's steps per walking minute.
+        public let stepsPerMinute: Double
         /// Carried hours the fit rests on.
         public let sampleHours: Int
-        /// 0-1, from sample size and spread. 1 for a manual coefficient.
+        /// 0-1, from sample size and spread.
         public let confidence: Double
-        /// True when the wearer set the coefficient by hand.
-        public let manual: Bool
-        public init(coefficient: Double, sampleHours: Int, confidence: Double, manual: Bool) {
-            self.coefficient = coefficient
+        public init(stepsPerMinute: Double, sampleHours: Int, confidence: Double) {
+            self.stepsPerMinute = stepsPerMinute
             self.sampleHours = sampleHours
             self.confidence = confidence
-            self.manual = manual
         }
     }
 
-    /// Whether an hour counts as carried: the phone counted a real walk in it, the band recorded it as usual,
-    /// it moved, and the wearer was awake and not in a no-footfall workout for most of it.
-    public static func isCarried(phoneSteps: Int, motion: HourMotion, minRows: Int, blockedFraction: Double) -> Bool {
+    /// Whether an hour counts as carried: the phone counted a real walk in it, the strap recorded it as usual and
+    /// saw some walking, and the wearer was awake and not in a no-footfall workout for most of it.
+    public static func isCarried(phoneSteps: Int, walk: HourWalk, minRows: Int, blockedFraction: Double) -> Bool {
         phoneSteps >= carriedMinSteps
-            && motion.rows >= minRows
-            && motion.motion >= minMotionForFit
+            && walk.rows >= minRows
+            && walk.walkingMinutes >= carriedMinWalkingMinutes
             && blockedFraction <= maxBlockedFractionForFit
     }
 
-    /// Fit `k` from carried hours: the motion-weighted median of each hour's `steps / motion`, as
-    /// `StepsEstimateEngine.calibrate` does per day. A manual coefficient wins. nil below `minCalibrationHours`.
-    public static func calibrate(_ hours: [CalibrationHour], manualOverride: Double? = nil) -> Calibration? {
-        let usable = hours.filter { $0.motion >= minMotionForFit && $0.steps > 0 }
-        if let k = manualOverride, k > 0 {
-            return Calibration(coefficient: k, sampleHours: usable.count, confidence: 1, manual: true)
-        }
-        guard usable.count >= minCalibrationHours else { return nil }
-        let ratios = usable.map { $0.steps / $0.motion }
-        let weights = usable.map(\.motion)
-        let k = StepsEstimateEngine.weightedMedian(ratios, weights: weights)
-        guard k > 0, k.isFinite else { return nil }
+    /// Fit steps per walking minute from carried hours: the median of each hour's `steps / walkingMinutes`,
+    /// weighted by its walking minutes. nil below `minCalibrationHours` or outside `plausibleStepsPerMinute`.
+    public static func calibrate(_ hours: [CalibrationHour]) -> Calibration? {
+        let usable = usableCalibrationHours(hours)
+        guard usable.count >= minCalibrationHours, let pace = pace(usable) else { return nil }
+        let ratios = usable.map { $0.steps / Double($0.walkingMinutes) }
+        let weights = usable.map { Double($0.walkingMinutes) }
         let sizeTerm = min(1, Double(usable.count) / Double(goodCalibrationHours))
-        let mad = StepsEstimateEngine.weightedMedian(ratios.map { abs($0 - k) }, weights: weights)
-        let tightness = max(0, 1 - mad / k)
+        let mad = StepsEstimateEngine.weightedMedian(ratios.map { abs($0 - pace) }, weights: weights)
+        let tightness = max(0, 1 - mad / pace)
         let confidence = max(0, min(1, 0.5 * sizeTerm + 0.5 * tightness))
-        return Calibration(coefficient: k, sampleHours: usable.count, confidence: confidence, manual: false)
+        return Calibration(stepsPerMinute: pace, sampleHours: usable.count, confidence: confidence)
+    }
+
+    /// The pace alone, for any number of hours: the walking-minute-weighted median of `steps / walkingMinutes`
+    /// over the usable ones, nil when there are none or it falls outside `plausibleStepsPerMinute`. `calibrate`
+    /// adds the minimum and the confidence; the replay tool's leave-one-day-out test uses this directly.
+    public static func pace(_ hours: [CalibrationHour]) -> Double? {
+        let usable = usableCalibrationHours(hours)
+        guard !usable.isEmpty else { return nil }
+        let pace = StepsEstimateEngine.weightedMedian(usable.map { $0.steps / Double($0.walkingMinutes) },
+                                                      weights: usable.map { Double($0.walkingMinutes) })
+        guard pace.isFinite, plausibleStepsPerMinute.contains(pace) else { return nil }
+        return pace
+    }
+
+    private static func usableCalibrationHours(_ hours: [CalibrationHour]) -> [CalibrationHour] {
+        hours.filter { $0.walkingMinutes >= carriedMinWalkingMinutes && $0.steps > 0 }
     }
 
     // MARK: - Estimate
 
-    /// The band's step estimate for one hour. `openFraction` is the part of the hour the wearer was awake and
-    /// not in a no-footfall workout; the rest contributes nothing. Clamped to `maxHourSteps`.
-    public static func estimate(motion: Double, coefficient: Double, openFraction: Double) -> Int {
-        guard coefficient > 0, motion > 0, openFraction > 0 else { return 0 }
-        let raw = motion * coefficient * min(1, openFraction)
+    /// The strap's step estimate for one hour: its walking minutes at the wearer's pace. `openFraction` is the
+    /// part of the hour the wearer was awake and not in a no-footfall workout; the rest contributes nothing.
+    /// Clamped to `maxHourSteps`.
+    public static func estimate(walkingMinutes: Int, stepsPerMinute: Double, openFraction: Double) -> Int {
+        guard walkingMinutes > 0, stepsPerMinute > 0, openFraction > 0 else { return 0 }
+        let raw = Double(walkingMinutes) * stepsPerMinute * min(1, openFraction)
         guard raw.isFinite else { return 0 }
         return max(0, min(maxHourSteps, Int(raw.rounded())))
     }
 
     // MARK: - The merge
 
-    /// Steps the band adds to one hour: its estimate minus the phone's count when it beats the phone clearly,
+    /// Steps the strap adds to one hour: its estimate minus the phone's count when it beats the phone clearly,
     /// otherwise 0.
     public static func added(phone: Int, band: Int) -> Int {
         let p = max(0, phone), b = max(0, band)
@@ -185,7 +282,7 @@ public enum StepsHourMerge {
         return min(StepsHourly.hoursPerDay, (settledUntil - dayStart) / 3_600)
     }
 
-    /// What the band adds to each clock hour of a day. The arrays are `StepsHourly.hoursPerDay` buckets (nil
+    /// What the strap adds to each clock hour of a day. The arrays are `StepsHourly.hoursPerDay` buckets (nil
     /// when a source banked nothing that day); hours from `settledHours` on get nothing.
     public static func addedByHour(phone: [Int]?, health: [Int]?, band: [Int]?, settledHours: Int) -> [Int] {
         let n = StepsHourly.hoursPerDay
@@ -200,9 +297,9 @@ public enum StepsHourMerge {
         return out
     }
 
-    /// The band's additions for every day it has hours for, keyed by "yyyy-MM-dd", as 24 per-hour values. Rows
+    /// The strap's additions for every day it has hours for, keyed by "yyyy-MM-dd", as 24 per-hour values. Rows
     /// are hour buckets from `appleStepHour` (any order); days are local calendar days of `calendar`, the
-    /// boundary `StepsHourly` and the phone use. Days the band adds nothing to are left out.
+    /// boundary `StepsHourly` and the phone use. Days the strap adds nothing to are left out.
     public static func fillByDay(phoneRows: [(ts: Int, steps: Int)], healthRows: [(ts: Int, steps: Int)],
                                  bandRows: [(ts: Int, steps: Int)], calendar: Calendar,
                                  settledUntil: Int) -> [String: [Int]] {
@@ -260,7 +357,7 @@ public enum StepsHourMerge {
     }
 
     /// Sports whose arm or body motion is not footfalls: cycling, strength work, rowing and paddling, and
-    /// swimming. During them the band's estimate adds nothing. Matched on words in the stored sport name,
+    /// swimming. During them the strap's estimate adds nothing. Matched on words in the stored sport name,
     /// case-insensitively, so catalogue names, WHOOP names ("TraditionalStrengthTraining") and free text all work.
     public static func isNoFootfallSport(_ sport: String) -> Bool {
         let s = sport.lowercased()

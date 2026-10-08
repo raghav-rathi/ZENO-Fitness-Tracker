@@ -4,17 +4,19 @@ import StrandAnalytics
 import WhoopProtocol
 
 // steps-replay: replay ZENO's hour-by-hour step merge (StepsHourMerge) over a COPY of the app's database, with
-// no phone, band or app involved. It prints three reports:
+// no phone, strap or app involved. It prints four reports:
 //
-//   1. How the band stores motion: rows per recorded hour, seconds covered, how often the reading changes.
-//   2. The merge day by day: what each day shows today, what the band would add, and in which hours.
-//   3. A hide-the-phone test: on days the phone was carried, hide its count for one to three walking hours, let
-//      the band fill them with a factor learned without that day, and compare with what the phone counted.
+//   1. How the strap stores motion: rows per recorded hour, seconds covered, walking minutes, the usual gap.
+//   2. Calibration: the carried hours and the pace (steps per walking minute) learned from them.
+//   3. The merge day by day: what each day shows without it, what the strap adds, and in which hours.
+//   4. A hide-the-phone test: hide the phone's count for each carried hour in turn, let the strap fill it with a
+//      pace learned without that day, and compare with what the phone counted.
 //
 // Usage: steps-replay <copy of whoop.sqlite> [--days 60] [--tz America/New_York]
 //
-// It uses the app's own StrandAnalytics functions for the hourly split, the calibration, the estimate and the
-// merge rule, so its numbers are the app's. Open a copy: SQLite folds the -wal file into the database it opens.
+// It uses the app's own StrandAnalytics functions for the walking detector, the calibration, the estimate and
+// the merge rule, so its numbers are the app's. Open a copy: SQLite folds the -wal file into the database it
+// opens.
 
 struct Failure: Error, CustomStringConvertible {
     let description: String
@@ -132,21 +134,22 @@ do {
     guard let firstDay = days.first, let windowStart = StepsHourly.dayBounds(day: firstDay, calendar: calendar)?.start
     else { throw Failure("Could not build the day window.") }
 
-    // The band: the device with the most gravity rows in the window.
+    // The strap: the device with the most gravity rows in the window.
     let owners = try db.query("""
         SELECT deviceId, COUNT(*) FROM gravitySample WHERE ts >= ? AND ts <= ? GROUP BY deviceId ORDER BY 2 DESC
         """, [windowStart, now])
     guard let owner = owners.first?[0] as? String else { throw Failure("No gravity rows in the last \(windowDays) days.") }
 
     print("ZENO steps replay · \(URL(fileURLWithPath: dbPath).lastPathComponent) · \(windowDays) days to \(dayKey(now)) · \(zone.identifier)")
-    print("Band motion from \(owner): \(fmt((owners.first?[1] as? Int) ?? 0)) rows"
+    print("Strap motion from \(owner): \(fmt((owners.first?[1] as? Int) ?? 0)) rows"
         + (owners.count > 1 ? " (also: \(owners.dropFirst().compactMap { $0[0] as? String }.joined(separator: ", ")))" : ""))
 
-    // MARK: 1. How the band stores motion
+    // MARK: 1. How the strap stores motion
 
-    var motionByHour: [Int: StepsHourMerge.HourMotion] = [:]
-    struct DayDensity { let day: String; let rows: Int; let hours: Int; let rowsPerHour: Int; let covered: Double; let changes: Double; let medianGap: Int }
+    var walkByHour: [Int: StepsHourMerge.HourWalk] = [:]
+    struct DayDensity { let day: String; let rows: Int; let hours: Int; let rowsPerHour: Int; let covered: Double; let walking: Int; let medianGap: Int }
     var density: [DayDensity] = []
+    var strapDays: Set<String> = []
     for day in days {
         guard let b = StepsHourly.dayBounds(day: day, calendar: calendar) else { continue }
         let rows = try db.query("SELECT ts, x, y, z FROM gravitySample WHERE deviceId = ? AND ts >= ? AND ts < ? ORDER BY ts",
@@ -156,33 +159,35 @@ do {
             else { return nil }
             return GravitySample(ts: ts, x: x, y: y, z: z)
         }
-        let hours = StepsHourMerge.hourlyMotion(grav, offsetSec: offset(at: b.start))
-        for (h, m) in hours { motionByHour[h] = m }
-        var changes = 0, gaps: [Double] = []
-        for i in 1..<max(1, grav.count) {
-            let a = grav[i - 1], c = grav[i]
-            if a.x != c.x || a.y != c.y || a.z != c.z { changes += 1 }
-            gaps.append(Double(c.ts - a.ts))
+        guard !grav.isEmpty else { continue }
+        let heart = try db.query("SELECT ts, bpm FROM hrSample WHERE deviceId = ? AND ts >= ? AND ts < ?",
+                                 [owner, b.start, b.end]).compactMap { r -> HRSample? in
+            guard let ts = r[0] as? Int, let bpm = r[1] as? Int else { return nil }
+            return HRSample(ts: ts, bpm: bpm)
         }
-        let recorded = hours.values.filter { $0.rows > 0 }
-        density.append(DayDensity(day: day, rows: grav.count, hours: recorded.count,
+        let hours = StepsHourMerge.walkingByHour(grav, heartRate: heart, offsetSec: offset(at: b.start))
+        for (h, w) in hours { walkByHour[h] = w }
+        strapDays.insert(day)
+        var gaps: [Double] = []
+        for i in 1..<max(1, grav.count) { gaps.append(Double(grav[i].ts - grav[i - 1].ts)) }
+        density.append(DayDensity(day: day, rows: grav.count, hours: hours.values.filter { $0.rows > 0 }.count,
                                   rowsPerHour: StepsHourMerge.usualRows(Array(hours.values)),
                                   covered: Double(grav.count) / Double(b.end - b.start),
-                                  changes: grav.count > 1 ? Double(changes) / Double(grav.count - 1) : 0,
+                                  walking: hours.values.reduce(0) { $0 + $1.walkingMinutes },
                                   medianGap: Int(median(gaps) ?? 0)))
     }
-    let usualRows = StepsHourMerge.usualRows(Array(motionByHour.values))
+    let usualRows = StepsHourMerge.usualRows(Array(walkByHour.values))
     let minRows = StepsHourMerge.minCarriedRows(usualRows: usualRows)
-    print("\n1. How your band stores motion")
+    print("\n1. How your strap stores motion")
     let verdict = usualRows >= 2_400 ? "dense: about one reading every second while worn"
         : (usualRows >= 600 ? "partly dense: readings in long stretches with gaps" : "sparse: short bursts, far from every second")
     print("   Usual recorded hour: \(fmt(usualRows)) rows (\(verdict))")
     print("   A carried hour needs at least \(fmt(minRows)) rows.")
     print("   " + pad("day", 10, left: true) + pad("rows", 9) + pad("hours", 7) + pad("rows/hour", 11)
-        + pad("covered", 9) + pad("changes", 9) + pad("gap", 6))
-    for d in density where d.rows > 0 {
+        + pad("covered", 9) + pad("walking", 9) + pad("gap", 6))
+    for d in density {
         print("   " + pad(d.day, 10, left: true) + pad(fmt(d.rows), 9) + pad(String(d.hours), 7)
-            + pad(fmt(d.rowsPerHour), 11) + pad(pct(d.covered), 9) + pad(pct(d.changes), 9) + pad("\(d.medianGap)s", 6))
+            + pad(fmt(d.rowsPerHour), 11) + pad(pct(d.covered), 9) + pad("\(d.walking) min", 9) + pad("\(d.medianGap)s", 6))
     }
 
     // MARK: Inputs for the merge
@@ -218,35 +223,35 @@ do {
         noFootWorkouts += 1
     }
     var openByHour: [Int: Double] = [:]
-    for h in motionByHour.keys { openByHour[h] = 1 - StepsHourMerge.coveredFraction(hourStart: h, intervals: blocked) }
+    for h in walkByHour.keys { openByHour[h] = 1 - StepsHourMerge.coveredFraction(hourStart: h, intervals: blocked) }
 
     // The phone side has finished counting everything but the newest hour of the copy.
     let settledUntil = now - 3_600
-    func carriedHours(excluding excludedDay: String? = nil) -> [StepsHourMerge.CalibrationHour] {
-        motionByHour.compactMap { h, m in
+    func carriedHours(excluding excludedDay: String? = nil) -> [(hour: Int, cal: StepsHourMerge.CalibrationHour)] {
+        walkByHour.compactMap { h, w in
             guard h + 3_600 <= settledUntil, excludedDay == nil || dayKey(h) != excludedDay else { return nil }
             let p = phoneByHour[h] ?? 0
-            guard StepsHourMerge.isCarried(phoneSteps: p, motion: m, minRows: minRows,
+            guard StepsHourMerge.isCarried(phoneSteps: p, walk: w, minRows: minRows,
                                            blockedFraction: 1 - (openByHour[h] ?? 1)) else { return nil }
-            return StepsHourMerge.CalibrationHour(motion: m.motion, steps: Double(p))
+            return (hour: h, cal: StepsHourMerge.CalibrationHour(walkingMinutes: w.walkingMinutes, steps: Double(p)))
         }
     }
 
     // MARK: 2. Calibration
 
-    // A manual coefficient lives in the app's settings, not in the database, so the replay always fits.
     let carried = carriedHours()
-    let cal = StepsHourMerge.calibrate(carried)
+    let cal = StepsHourMerge.calibrate(carried.map(\.cal))
     print("\n2. Calibration")
-    print("   Carried hours: \(carried.count) (phone at least \(StepsHourMerge.carriedMinSteps) steps, band recording, awake)")
+    print("   Carried hours: \(carried.count) (phone at least \(StepsHourMerge.carriedMinSteps) steps, strap saw walking, awake)")
     print("   Sleep sessions and no-footfall workouts set aside: \(blocked.count - noFootWorkouts) and \(noFootWorkouts)")
     if let cal {
-        print(String(format: "   Hourly factor: %.2f steps per motion unit, confidence %.2f", cal.coefficient, cal.confidence))
+        print(String(format: "   Your pace: %.1f steps per walking minute, confidence %.2f", cal.stepsPerMinute, cal.confidence))
     } else {
-        print("   Hourly factor: not yet (needs \(StepsHourMerge.minCalibrationHours) carried hours). Nothing would be filled.")
+        print("   Pace: not yet (needs \(StepsHourMerge.minCalibrationHours) carried hours and a walking pace). Nothing would be filled.")
     }
-    // Today's method for comparison: whole days, Health first then the iPhone.
-    var dailyPoints: [StepsEstimateEngine.CalibrationPoint] = []
+
+    // MARK: 3. Day by day
+
     var phoneDayTotal: [String: (steps: Int, source: String)] = [:]
     for r in try db.query("SELECT day, steps FROM appleDaily WHERE deviceId = ? AND steps > 0", [healthId]) {
         if let d = r[0] as? String, let s = r[1] as? Int { phoneDayTotal[d] = (s, "Apple Health") }
@@ -254,25 +259,14 @@ do {
     for r in try db.query("SELECT day, value FROM metricSeries WHERE deviceId = ? AND key = 'steps' AND value > 0", [phoneId]) {
         if let d = r[0] as? String, let v = r[1] as? Double, phoneDayTotal[d] == nil { phoneDayTotal[d] = (Int(v.rounded()), "iPhone") }
     }
-    var dayMotion: [String: Double] = [:]
-    for (h, m) in motionByHour { dayMotion[dayKey(h), default: 0] += m.motion }
-    for day in days {
-        if let p = phoneDayTotal[day], let m = dayMotion[day] { dailyPoints.append(.init(motion: m, steps: Double(p.steps))) }
-    }
-    if let daily = StepsEstimateEngine.calibrate(dailyPoints) {
-        print(String(format: "   Today's day-level factor: %.2f from %d days (confidence %.2f)", daily.coefficient,
-                     daily.sampleDays, daily.confidence))
-    }
-
-    // MARK: 3. Day by day
-
-    func bandBuckets(_ day: String, k: Double) -> [Int] {
+    func strapBuckets(_ day: String, pace: Double) -> [Int] {
         guard let b = StepsHourly.dayBounds(day: day, calendar: calendar) else { return Array(repeating: 0, count: 24) }
         var rows: [(ts: Int, steps: Int)] = []
         var h = b.start
         while h < b.end {
-            if let m = motionByHour[h] {
-                rows.append((ts: h, steps: StepsHourMerge.estimate(motion: m.motion, coefficient: k, openFraction: openByHour[h] ?? 1)))
+            if let w = walkByHour[h] {
+                rows.append((ts: h, steps: StepsHourMerge.estimate(walkingMinutes: w.walkingMinutes, stepsPerMinute: pace,
+                                                                   openFraction: openByHour[h] ?? 1)))
             }
             h += 3_600
         }
@@ -283,87 +277,71 @@ do {
         return StepsHourMerge.settledHours(dayStart: start, settledUntil: settledUntil)
     }
 
-    print("\n3. Day by day")
+    print("\n3. Day by day (days your strap recorded)")
     if let cal {
         print("   " + pad("day", 10, left: true) + pad("today", 9) + "  " + pad("source", 13, left: true)
-            + pad("band adds", 10) + pad("new total", 11) + "  filled hours")
-        var addedShares: [Double] = []
-        for day in days {
-            guard let base = phoneDayTotal[day] else { continue }
+            + pad("strap adds", 11) + pad("new total", 11) + "  filled hours")
+        var adds: [Double] = []
+        for day in days where strapDays.contains(day) {
+            let base = phoneDayTotal[day] ?? (steps: 0, source: "nothing")
             let added = StepsHourMerge.addedByHour(phone: phoneByDay[day], health: healthByDay[day],
-                                                   band: bandBuckets(day, k: cal.coefficient), settledHours: settled(day))
+                                                   band: strapBuckets(day, pace: cal.stepsPerMinute), settledHours: settled(day))
             let total = added.reduce(0, +)
             let hoursText = added.enumerated().filter { $0.element > 0 }
                 .map { "\($0.offset)h +\(fmt($0.element))" }.joined(separator: ", ")
             print("   " + pad(day, 10, left: true) + pad(fmt(base.steps), 9) + "  " + pad(base.source, 13, left: true)
-                + pad(total > 0 ? "+" + fmt(total) : "-", 10) + pad(fmt(base.steps + total), 11) + "  " + hoursText)
-            if base.steps >= 3_000 { addedShares.append(Double(total) / Double(base.steps)) }
+                + pad(total > 0 ? "+" + fmt(total) : "-", 11) + pad(fmt(base.steps + total), 11) + "  " + hoursText)
+            adds.append(Double(total))
         }
-        if let m = median(addedShares) {
-            let sorted = addedShares.sorted()
-            let p90 = sorted[min(sorted.count - 1, Int(Double(sorted.count) * 0.9))]
-            print("   On days with at least 3,000 phone steps the band adds a median \(pct(m)) (90th percentile \(pct(p90))).")
-        }
+        if let m = median(adds) { print("   The strap adds a median \(fmt(Int(m.rounded()))) steps a day.") }
     } else {
-        print("   Skipped: no hourly factor yet.")
+        print("   Skipped: no pace yet.")
     }
 
     // MARK: 4. Hide-the-phone test
 
-    // Each tested day hides the phone's count for one to three hours that start with a walk, refits the factor
-    // without that day, and lets the band fill. The score is what the band put back in the hidden hours against
-    // what the phone had counted there, as a share of the day. Fills in other hours are left out of it: on real
-    // data they are either walks the phone really missed or false steps, and section 3 lists them.
-    print("\n4. Hide-the-phone test")
-    var fillErrors: [Double] = [], noFillErrors: [Double] = [], walkHourErrors: [Double] = []
+    // Each carried hour in turn: hide the phone's count for it, refit the pace without that day, and let the strap
+    // fill. The score is what the strap put back against what the phone had counted, as a share of that day.
+    print("\n4. Hide-the-phone test (each carried hour hidden in turn)")
+    var dayErrors: [Double] = [], noFill: [Double] = [], hourErrors: [Double] = []
     var lines: [String] = []
-    for day in days.dropLast() {
+    for (h, _) in carried.sorted(by: { $0.hour < $1.hour }) {
+        let day = dayKey(h)
+        guard let pace = StepsHourMerge.pace(carriedHours(excluding: day).map(\.cal)),
+              let start = StepsHourly.dayBounds(day: day, calendar: calendar)?.start else { continue }
+        let index = (h - start) / 3_600
+        guard (0..<24).contains(index) else { continue }
         var phone = phoneByDay[day] ?? Array(repeating: 0, count: 24)
         var health = healthByDay[day] ?? Array(repeating: 0, count: 24)
-        let sideBySide = (0..<24).map { max(phone[$0], health[$0]) }
-        let truth = sideBySide.reduce(0, +)
-        let walking = (0..<24).filter { sideBySide[$0] >= StepsHourMerge.carriedMinSteps }
-        guard truth >= 3_000, walking.count >= 2 else { continue }
-        // A fixed, day-seeded choice of 1-3 consecutive hours starting at a walking hour.
-        var seed: UInt64 = 0x9E37_79B9_7F4A_7C15
-        for c in day.unicodeScalars { seed = seed &* 6_364_136_223_846_793_005 &+ UInt64(c.value) }
-        seed ^= seed >> 29
-        let start = walking[Int(seed % UInt64(walking.count))]
-        let length = 1 + Int((seed >> 17) % 3)
-        let stretch = Array(start..<min(24, start + length))
-        let hidden = stretch.reduce(0) { $0 + sideBySide[$1] }
-        for h in stretch { phone[h] = 0; health[h] = 0 }
-        guard let k = StepsHourMerge.calibrate(carriedHours(excluding: day))?.coefficient else { continue }
-        let band = bandBuckets(day, k: k)
-        let added = StepsHourMerge.addedByHour(phone: phone, health: health, band: band, settledHours: 24)
-        let putBack = stretch.reduce(0) { $0 + added[$1] }
+        let truth = (0..<24).reduce(0) { $0 + max(phone[$1], health[$1]) }
+        let hidden = max(phone[index], health[index])
+        guard truth > 0, hidden > 0 else { continue }
+        phone[index] = 0; health[index] = 0
+        let strap = strapBuckets(day, pace: pace)
+        let putBack = StepsHourMerge.addedByHour(phone: phone, health: health, band: strap, settledHours: 24)[index]
         let err = Double(putBack - hidden) / Double(truth)
-        fillErrors.append(err)
-        noFillErrors.append(Double(-hidden) / Double(truth))
-        for h in stretch where sideBySide[h] >= StepsHourMerge.carriedMinSteps {
-            walkHourErrors.append(Double(band[h] - sideBySide[h]) / Double(sideBySide[h]))
-        }
-        lines.append("   " + pad(day, 10, left: true) + pad("\(stretch.first ?? 0)-\((stretch.last ?? 0) + 1)h", 8)
-            + pad(fmt(hidden), 8) + pad(fmt(putBack), 10) + pad(fmt(truth), 9) + pad(signedPct(err), 9))
+        dayErrors.append(err)
+        noFill.append(Double(-hidden) / Double(truth))
+        hourErrors.append(Double(strap[index] - hidden) / Double(hidden))
+        lines.append("   " + pad(day, 10, left: true) + pad("\(index)h", 5) + pad(fmt(hidden), 8) + pad(fmt(putBack), 10)
+            + pad(fmt(truth), 9) + pad(signedPct(err), 9))
     }
-    if fillErrors.isEmpty {
-        print("   No day had enough phone-carried walking to test (needs 3,000 steps and two walking hours).")
+    if dayErrors.isEmpty {
+        print("   No carried hours to test yet.")
     } else {
-        print("   " + pad("day", 10, left: true) + pad("hidden", 8) + pad("steps", 8) + pad("band", 10)
-            + pad("phone", 9) + pad("day", 9))
-        print("   " + pad("", 10, left: true) + pad("hours", 8) + pad("hidden", 8) + pad("put back", 10)
+        print("   " + pad("day", 10, left: true) + pad("hour", 5) + pad("hidden", 8) + pad("put back", 10)
             + pad("day", 9) + pad("error", 9))
         lines.forEach { print($0) }
-        let absFill = fillErrors.map { abs($0) }, absNo = noFillErrors.map { abs($0) }
-        let within = Double(absFill.filter { $0 <= 0.10 }.count) / Double(absFill.count)
-        print("\n   \(fillErrors.count) days tested. With the band filling the hidden hours, the day total:")
-        print("     median miss \(pct(median(absFill) ?? 0)), lean \(signedPct(fillErrors.reduce(0, +) / Double(fillErrors.count))), within 10% on \(pct(within)) of days")
-        print("   Without it (what ZENO shows today when the phone misses those hours):")
-        print("     median miss \(pct(median(absNo) ?? 0)), lean \(signedPct(noFillErrors.reduce(0, +) / Double(noFillErrors.count)))")
-        if let m = median(walkHourErrors.map { abs($0) }), let lean = median(walkHourErrors) {
-            print("   The band's estimate for the hidden walking hours themselves: median miss \(pct(m)), median lean \(signedPct(lean))")
+        let absDay = dayErrors.map { abs($0) }
+        let within = Double(absDay.filter { $0 <= 0.10 }.count) / Double(absDay.count)
+        print("\n   \(dayErrors.count) hours tested. With the strap filling the hidden hour, the day total:")
+        print("     median miss \(pct(median(absDay) ?? 0)), lean \(signedPct(dayErrors.reduce(0, +) / Double(dayErrors.count))), within 10% on \(pct(within)) of tests")
+        print("   Without it (what ZENO showed before when the phone missed that hour):")
+        print("     median miss \(pct(median(noFill.map { abs($0) }) ?? 0)), lean \(signedPct(noFill.reduce(0, +) / Double(noFill.count)))")
+        if let m = median(hourErrors.map { abs($0) }), let lean = median(hourErrors) {
+            print("   The strap's estimate for the hidden hours themselves: median miss \(pct(m)), median lean \(signedPct(lean))")
         }
-        print("   Targets from the plan: median miss within 10%, lean within 5%.")
+        print("   Targets from the plan: median miss within 10% of the day, lean within 5%.")
     }
 } catch {
     FileHandle.standardError.write(Data("steps-replay: \(error)\n".utf8))

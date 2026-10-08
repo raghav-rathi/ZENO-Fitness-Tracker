@@ -11,8 +11,8 @@ NOOP's offline, on-device engine (no account, no cloud) and adds:
   Challenges and ZENO Live are built on the same design. Recovery, Strain (on 0-21) and Sleep keep the same names on
   every screen, including the older NOOP screens the interface still links to.
 - **A Steps tracker**, from the iPhone's motion sensor and the strap, with a Steps screen and a Home card. Hours
-  the phone missed are filled from the strap's motion, calibrated on the hours you carried the phone
-  ([docs/zeno/STEPS.md](docs/zeno/STEPS.md)).
+  the phone missed are filled from the walking the strap records, at your own pace learned from the hours you
+  carried the phone ([docs/zeno/STEPS.md](docs/zeno/STEPS.md)).
 - **Steadier scores**: one sleep-need model on every screen, WHOOP-style sleep consistency, stress against your own
   baseline, and figures that agree wherever they appear.
 

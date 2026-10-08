@@ -20,10 +20,10 @@ enum StepsPrefs {
 
     /// Fill the hours the phone missed with the band's estimate (`StepsHourMerge`). Default on.
     static let bandFillKey = "steps.bandFill"
-    /// The band's hourly calibration, mirrored by the analysis pass for the Steps calibration sheet: the
-    /// coefficient (0 until there is one), the carried hours it rests on (or has collected so far), and its
+    /// The strap's hourly calibration, mirrored by the analysis pass for the Steps calibration sheet: steps per
+    /// walking minute (0 until there is one), the carried hours it rests on (or has collected so far), and its
     /// 0-1 confidence.
-    static let bandHourCoefficientKey = "steps.bandHour.coefficient"
+    static let bandHourPaceKey = "steps.bandHour.stepsPerMinute"
     static let bandHourSampleHoursKey = "steps.bandHour.sampleHours"
     static let bandHourConfidenceKey = "steps.bandHour.confidence"
 

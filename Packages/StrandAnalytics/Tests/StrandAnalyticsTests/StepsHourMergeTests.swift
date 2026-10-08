@@ -2,8 +2,9 @@ import XCTest
 import WhoopProtocol
 @testable import StrandAnalytics
 
-/// The hour-by-hour merge of phone and band steps: the band's motion split by clock hour, the factor learned
-/// from carried hours, the band's estimate per hour, the merge rule, and the per-day fill the resolver adds.
+/// The hour-by-hour merge of phone and strap steps: the walking detector on the strap's 1 Hz gravity and heart
+/// rate, the pace learned from carried hours, the strap's estimate per hour, the merge rule, and the per-day
+/// fill the resolver adds.
 final class StepsHourMergeTests: XCTestCase {
 
     private let newYork: Calendar = {
@@ -22,9 +23,9 @@ final class StepsHourMergeTests: XCTestCase {
         GravitySample(ts: ts, x: x, y: y, z: z)
     }
 
-    // MARK: - Band motion per clock hour
+    // MARK: - The walking detector
 
-    func testHourStartFloorsToTheLocalClockHour() {
+    func testHourAndMinuteStartsFloorToTheLocalClock() {
         XCTAssertEqual(StepsHourMerge.hourStart(ts("2026-09-29T08:59:59-04:00"), offsetSec: edt),
                        ts("2026-09-29T08:00:00-04:00"))
         XCTAssertEqual(StepsHourMerge.hourStart(ts("2026-09-29T09:00:00-04:00"), offsetSec: edt),
@@ -32,93 +33,131 @@ final class StepsHourMergeTests: XCTestCase {
         // A half-hour zone (India, UTC+5:30): its clock hours start at :30 past the UTC hour.
         XCTAssertEqual(StepsHourMerge.hourStart(ts("2026-09-29T10:45:00+05:30"), offsetSec: 19_800),
                        ts("2026-09-29T10:00:00+05:30"))
+        XCTAssertEqual(StepsHourMerge.minuteStart(ts("2026-09-29T08:41:59-04:00"), offsetSec: edt),
+                       ts("2026-09-29T08:41:00-04:00"))
     }
 
-    func testHourlyMotionCreditsEachChangeToTheLaterSamplesHour() {
-        let t0 = ts("2026-09-29T08:59:58-04:00")
-        let samples = [g(t0, 0.0), g(t0 + 1, 0.3), g(t0 + 2, 0.3), g(t0 + 3, 0.7)]
-        let hours = StepsHourMerge.hourlyMotion(samples, offsetSec: edt)
-        let eight = ts("2026-09-29T08:00:00-04:00"), nine = ts("2026-09-29T09:00:00-04:00")
-        XCTAssertEqual(hours.count, 2)
-        XCTAssertEqual(hours[eight]?.rows, 2)
-        XCTAssertEqual(hours[eight]?.motion ?? -1, 0.3, accuracy: 1e-12)
-        // 09:00:00 changes nothing from 08:59:59; 09:00:01 moves 0.4.
-        XCTAssertEqual(hours[nine]?.rows, 2)
-        XCTAssertEqual(hours[nine]?.motion ?? -1, 0.4, accuracy: 1e-12)
-        XCTAssertTrue(StepsHourMerge.hourlyMotion([], offsetSec: edt).isEmpty)
+    func testAWalkingMinuteMovesClearlyAlmostEverySecondWithTheHeartRateUp() {
+        let walk = Array(repeating: 0.1, count: 59)
+        XCTAssertTrue(StepsHourMerge.isWalkingMinute(changes: walk, heartRate: 100, restingRate: 61))
+        // Arm movement: busy half the minute, still the rest.
+        let arms = Array(repeating: 0.1, count: 30) + Array(repeating: 0.005, count: 29)
+        XCTAssertFalse(StepsHourMerge.isWalkingMinute(changes: arms, heartRate: 100, restingRate: 61))
+        // Moving every second, but barely: the median is under the walking level.
+        XCTAssertFalse(StepsHourMerge.isWalkingMinute(changes: Array(repeating: 0.025, count: 59),
+                                                      heartRate: 100, restingRate: 61))
+        // A gap in the record leaves too little of the minute to judge.
+        XCTAssertFalse(StepsHourMerge.isWalkingMinute(changes: Array(repeating: 0.1, count: 39),
+                                                      heartRate: 100, restingRate: 61))
+        // The heart rate is not up (gesturing while seated, steering a car).
+        XCTAssertFalse(StepsHourMerge.isWalkingMinute(changes: walk, heartRate: 70, restingRate: 61))
+        XCTAssertTrue(StepsHourMerge.isWalkingMinute(changes: walk, heartRate: 76, restingRate: 61))
+        // No heart rate for the minute, or none for the day: the movement alone decides.
+        XCTAssertTrue(StepsHourMerge.isWalkingMinute(changes: walk, heartRate: nil, restingRate: 61))
+        XCTAssertTrue(StepsHourMerge.isWalkingMinute(changes: walk, heartRate: 70, restingRate: nil))
     }
 
-    func testHoursOfADaySumToTheDailyFold() {
-        let start = ts("2026-09-29T00:00:00-04:00")
-        var samples: [GravitySample] = []
-        for i in 0..<5_000 {
-            let t = start + i * 17
-            samples.append(g(t, sin(Double(i) * 0.37) * 0.2, cos(Double(i) * 0.11) * 0.1, 0.97))
+    func testOnlyRunsOfTwoOrMoreWalkingMinutesCount() {
+        XCTAssertEqual(StepsHourMerge.boutMinutes([0, 60, 180, 300, 360, 420]), [0, 60, 300, 360, 420])
+        XCTAssertEqual(StepsHourMerge.boutMinutes([120]), [])
+        XCTAssertEqual(StepsHourMerge.boutMinutes([]), [])
+    }
+
+    func testRestingRateIsALowPercentileOfTheDay() {
+        XCTAssertNil(StepsHourMerge.restingRate([]))
+        XCTAssertEqual(StepsHourMerge.restingRate(Array(50...149)), 60)
+    }
+
+    func testWalkingByHourCountsWalkedMinutesInBoutsAndEveryRow() {
+        let eight = ts("2026-09-29T08:00:00-04:00")
+        var grav: [GravitySample] = []
+        var heart: [HRSample] = []
+        for t in (eight - 600)..<(eight + 3_600) {
+            let offset = t - eight
+            let walking = (0..<600).contains(offset) || (1_800..<1_860).contains(offset)  // 08:00-08:09, 08:30
+            let x = walking ? (t % 2 == 0 ? 0.05 : -0.05) : 0.0005 * Double(t % 3)
+            grav.append(g(t, x))
+            heart.append(HRSample(ts: t, bpm: walking ? 105 : 64))
         }
-        let hours = StepsHourMerge.hourlyMotion(samples, offsetSec: edt)
-        let total = hours.values.reduce(0) { $0 + $1.motion }
-        XCTAssertEqual(total, StepsEstimateEngine.dayMotionIntensity(samples), accuracy: 1e-9)
-        XCTAssertEqual(hours.values.reduce(0) { $0 + $1.rows }, samples.count)
+        let hours = StepsHourMerge.walkingByHour(grav, heartRate: heart, offsetSec: edt)
+        // Ten minutes walked from 08:00; the lone minute at 08:30 is not a bout.
+        XCTAssertEqual(hours[eight], StepsHourMerge.HourWalk(walkingMinutes: 10, rows: 3_600))
+        XCTAssertEqual(hours[eight - 3_600], StepsHourMerge.HourWalk(walkingMinutes: 0, rows: 600))
+        XCTAssertTrue(StepsHourMerge.walkingByHour([], heartRate: [], offsetSec: edt).isEmpty)
     }
 
     func testUsualRowsIsTheMedianRecordedHour() {
-        let hours = [3_600, 3_590, 0, 1_200, 3_500].map { StepsHourMerge.HourMotion(motion: 1, rows: $0) }
+        let hours = [3_600, 3_590, 0, 1_200, 3_500].map { StepsHourMerge.HourWalk(walkingMinutes: 0, rows: $0) }
         XCTAssertEqual(StepsHourMerge.usualRows(hours), 3_590)
         XCTAssertEqual(StepsHourMerge.usualRows([]), 0)
         XCTAssertEqual(StepsHourMerge.minCarriedRows(usualRows: 3_600), 1_800)
-        // A band that stores bursts still gets a usable floor.
+        // A strap that stores bursts still gets a usable floor.
         XCTAssertEqual(StepsHourMerge.minCarriedRows(usualRows: 40), StepsHourMerge.minRowsFloor)
     }
 
     // MARK: - Calibration
 
-    func testCarriedHourNeedsAWalkUsualRowsMotionAndAnAwakeWearer() {
-        let walk = StepsHourMerge.HourMotion(motion: 30, rows: 3_500)
-        XCTAssertTrue(StepsHourMerge.isCarried(phoneSteps: 300, motion: walk, minRows: 1_800, blockedFraction: 0))
-        XCTAssertFalse(StepsHourMerge.isCarried(phoneSteps: 299, motion: walk, minRows: 1_800, blockedFraction: 0))
-        XCTAssertFalse(StepsHourMerge.isCarried(phoneSteps: 900, motion: .init(motion: 30, rows: 1_000),
+    func testCarriedHourNeedsAWalkUsualRowsSomeStrapWalkingAndAnAwakeWearer() {
+        let walk = StepsHourMerge.HourWalk(walkingMinutes: 12, rows: 3_500)
+        XCTAssertTrue(StepsHourMerge.isCarried(phoneSteps: 300, walk: walk, minRows: 1_800, blockedFraction: 0))
+        XCTAssertFalse(StepsHourMerge.isCarried(phoneSteps: 299, walk: walk, minRows: 1_800, blockedFraction: 0))
+        XCTAssertFalse(StepsHourMerge.isCarried(phoneSteps: 900, walk: .init(walkingMinutes: 12, rows: 1_000),
                                                 minRows: 1_800, blockedFraction: 0))
-        XCTAssertFalse(StepsHourMerge.isCarried(phoneSteps: 900, motion: .init(motion: 0.001, rows: 3_500),
+        // The phone walked but the strap saw no walking (hands on a trolley): no ratio to learn from.
+        XCTAssertFalse(StepsHourMerge.isCarried(phoneSteps: 900, walk: .init(walkingMinutes: 2, rows: 3_500),
                                                 minRows: 1_800, blockedFraction: 0))
-        XCTAssertTrue(StepsHourMerge.isCarried(phoneSteps: 900, motion: walk, minRows: 1_800, blockedFraction: 0.25))
-        XCTAssertFalse(StepsHourMerge.isCarried(phoneSteps: 900, motion: walk, minRows: 1_800, blockedFraction: 0.5))
+        XCTAssertTrue(StepsHourMerge.isCarried(phoneSteps: 900, walk: walk, minRows: 1_800, blockedFraction: 0.25))
+        XCTAssertFalse(StepsHourMerge.isCarried(phoneSteps: 900, walk: walk, minRows: 1_800, blockedFraction: 0.5))
     }
 
     func testCalibrationWaitsForEnoughCarriedHours() {
-        let hours = Array(repeating: StepsHourMerge.CalibrationHour(motion: 20, steps: 1_000), count: 23)
+        let hours = Array(repeating: StepsHourMerge.CalibrationHour(walkingMinutes: 10, steps: 1_000), count: 23)
         XCTAssertNil(StepsHourMerge.calibrate(hours))
-        let manual = StepsHourMerge.calibrate(hours, manualOverride: 42)
-        XCTAssertEqual(manual, StepsHourMerge.Calibration(coefficient: 42, sampleHours: 23, confidence: 1, manual: true))
+        XCTAssertNotNil(StepsHourMerge.calibrate(hours + [.init(walkingMinutes: 10, steps: 1_000)]))
     }
 
-    func testCalibrationIsTheMotionWeightedMedianRatio() {
-        var hours = Array(repeating: StepsHourMerge.CalibrationHour(motion: 20, steps: 1_000), count: 24)  // 50/unit
+    func testCalibrationIsTheMedianPaceWeightedByWalkingMinutes() {
+        var hours = Array(repeating: StepsHourMerge.CalibrationHour(walkingMinutes: 10, steps: 1_000), count: 24)
         let tight = StepsHourMerge.calibrate(hours)
-        XCTAssertEqual(tight?.coefficient ?? 0, 50, accuracy: 1e-9)
+        XCTAssertEqual(tight?.stepsPerMinute ?? 0, 100, accuracy: 1e-9)
         XCTAssertEqual(tight?.sampleHours, 24)
         // 24 of 120 hours, no spread: 0.5 * 0.2 + 0.5 * 1.
         XCTAssertEqual(tight?.confidence ?? 0, 0.6, accuracy: 1e-9)
-        XCTAssertEqual(tight?.manual, false)
 
         // Hours the phone was only carried for part of read low; a minority of them cannot drag the median.
-        hours += Array(repeating: StepsHourMerge.CalibrationHour(motion: 20, steps: 300), count: 10)
-        XCTAssertEqual(StepsHourMerge.calibrate(hours)?.coefficient ?? 0, 50, accuracy: 1e-9)
-        // Hours that barely moved are left out rather than producing huge ratios.
-        let still = hours + Array(repeating: StepsHourMerge.CalibrationHour(motion: 0.001, steps: 900), count: 40)
-        XCTAssertEqual(StepsHourMerge.calibrate(still)?.coefficient ?? 0, 50, accuracy: 1e-9)
+        hours += Array(repeating: StepsHourMerge.CalibrationHour(walkingMinutes: 10, steps: 300), count: 10)
+        XCTAssertEqual(StepsHourMerge.calibrate(hours)?.stepsPerMinute ?? 0, 100, accuracy: 1e-9)
+        // Hours with almost no strap walking are left out rather than producing huge ratios.
+        let barely = hours + Array(repeating: StepsHourMerge.CalibrationHour(walkingMinutes: 1, steps: 900), count: 40)
+        XCTAssertEqual(StepsHourMerge.calibrate(barely)?.stepsPerMinute ?? 0, 100, accuracy: 1e-9)
+    }
+
+    func testThePaceAloneNeedsNoMinimumButStaysPlausible() {
+        let few = Array(repeating: StepsHourMerge.CalibrationHour(walkingMinutes: 10, steps: 1_050), count: 3)
+        XCTAssertEqual(StepsHourMerge.pace(few) ?? 0, 105, accuracy: 1e-9)
+        XCTAssertNil(StepsHourMerge.calibrate(few), "the calibration still waits for enough hours")
+        XCTAssertNil(StepsHourMerge.pace([]))
+        XCTAssertNil(StepsHourMerge.pace([.init(walkingMinutes: 2, steps: 900)]), "too little strap walking to use")
+        XCTAssertNil(StepsHourMerge.pace([.init(walkingMinutes: 50, steps: 1_000)]), "20 steps a minute")
+    }
+
+    func testAPaceNoWalkerHasMeansTheDetectorIsNotSeeingWalking() {
+        let slow = Array(repeating: StepsHourMerge.CalibrationHour(walkingMinutes: 50, steps: 1_000), count: 30)
+        XCTAssertNil(StepsHourMerge.calibrate(slow), "20 steps a minute")
+        let fast = Array(repeating: StepsHourMerge.CalibrationHour(walkingMinutes: 3, steps: 1_500), count: 30)
+        XCTAssertNil(StepsHourMerge.calibrate(fast), "500 steps a minute")
     }
 
     // MARK: - Estimate
 
-    func testEstimateScalesByTheOpenPartOfTheHourAndIsCapped() {
-        XCTAssertEqual(StepsHourMerge.estimate(motion: 20, coefficient: 50, openFraction: 1), 1_000)
-        XCTAssertEqual(StepsHourMerge.estimate(motion: 20, coefficient: 50, openFraction: 0.25), 250)
-        XCTAssertEqual(StepsHourMerge.estimate(motion: 20, coefficient: 50, openFraction: 0), 0)
-        XCTAssertEqual(StepsHourMerge.estimate(motion: 0, coefficient: 50, openFraction: 1), 0)
-        XCTAssertEqual(StepsHourMerge.estimate(motion: 20, coefficient: 0, openFraction: 1), 0)
-        XCTAssertEqual(StepsHourMerge.estimate(motion: 1_000, coefficient: 50, openFraction: 1),
+    func testEstimateIsWalkingMinutesAtTheWearersPaceAndIsCapped() {
+        XCTAssertEqual(StepsHourMerge.estimate(walkingMinutes: 12, stepsPerMinute: 101.5, openFraction: 1), 1_218)
+        XCTAssertEqual(StepsHourMerge.estimate(walkingMinutes: 12, stepsPerMinute: 100, openFraction: 0.25), 300)
+        XCTAssertEqual(StepsHourMerge.estimate(walkingMinutes: 12, stepsPerMinute: 100, openFraction: 0), 0)
+        XCTAssertEqual(StepsHourMerge.estimate(walkingMinutes: 0, stepsPerMinute: 100, openFraction: 1), 0)
+        XCTAssertEqual(StepsHourMerge.estimate(walkingMinutes: 12, stepsPerMinute: 0, openFraction: 1), 0)
+        XCTAssertEqual(StepsHourMerge.estimate(walkingMinutes: 120, stepsPerMinute: 100, openFraction: 1),
                        StepsHourMerge.maxHourSteps)
-        XCTAssertEqual(StepsHourMerge.estimate(motion: .infinity, coefficient: 50, openFraction: 1), 0)
     }
 
     // MARK: - The merge rule
@@ -226,42 +265,42 @@ final class StepsHourMergeTests: XCTestCase {
         }
     }
 
-    // MARK: - Hourly motion cache
+    // MARK: - Hourly walking cache
 
     func testCacheRoundTripsExactly() {
-        let entries: [String: StepsHourMotionCache.Entry] = [
+        let entries: [String: StepsHourWalkCache.Entry] = [
             "2026-09-29": (key: "whoop-abc|3600|1790000000",
-                           hours: [1_790_000_000: .init(motion: 0.1 + 0.2, rows: 3_600),
-                                   1_790_003_600: .init(motion: 12.345678901234, rows: 1_201)]),
+                           hours: [1_790_000_000: .init(walkingMinutes: 12, rows: 3_600),
+                                   1_790_003_600: .init(walkingMinutes: 0, rows: 1_201)]),
             "2026-09-30": (key: "whoop-abc|0|0", hours: [:]),
         ]
-        let raw = StepsHourMotionCache.serialize(entries)
-        let back = StepsHourMotionCache.deserialize(raw)
+        let raw = StepsHourWalkCache.serialize(entries)
+        let back = StepsHourWalkCache.deserialize(raw)
         XCTAssertEqual(back.count, 2)
         XCTAssertEqual(back["2026-09-29"]?.key, "whoop-abc|3600|1790000000")
         XCTAssertEqual(back["2026-09-29"]?.hours, entries["2026-09-29"]?.hours)
         XCTAssertEqual(back["2026-09-30"]?.hours, [:])
-        XCTAssertEqual(StepsHourMotionCache.serialize(back), raw, "an unchanged cache renders identically")
+        XCTAssertEqual(StepsHourWalkCache.serialize(back), raw, "an unchanged cache renders identically")
     }
 
     func testCacheDiscardsWhatItCannotVouchFor() {
-        XCTAssertTrue(StepsHourMotionCache.deserialize("").isEmpty)
-        XCTAssertTrue(StepsHourMotionCache.deserialize("stepsHourMotion v0\n2026-09-29\tk|1|2\t").isEmpty)
-        let raw = "stepsHourMotion v\(StepsHourMotionCache.foldVersion)\n"
-            + "2026-09-29\tk|1|2\t100:notbits:5\n"
-            + "2026-09-30\tk|1|2\t100:\(Double(1).bitPattern):5"
-        let parsed = StepsHourMotionCache.deserialize(raw)
+        XCTAssertTrue(StepsHourWalkCache.deserialize("").isEmpty)
+        XCTAssertTrue(StepsHourWalkCache.deserialize("stepsHourWalk v0\n2026-09-29\tk|1|2\t").isEmpty)
+        let raw = "stepsHourWalk v\(StepsHourWalkCache.foldVersion)\n"
+            + "2026-09-29\tk|1|2\t100:x:5\n"
+            + "2026-09-30\tk|1|2\t100:7:3600"
+        let parsed = StepsHourWalkCache.deserialize(raw)
         XCTAssertNil(parsed["2026-09-29"], "a malformed day is dropped and re-split")
-        XCTAssertEqual(parsed["2026-09-30"]?.hours[100], .init(motion: 1, rows: 5))
+        XCTAssertEqual(parsed["2026-09-30"]?.hours[100], .init(walkingMinutes: 7, rows: 3_600))
     }
 
     func testOwnerComesBackFromTheDailyFoldKey() {
         let key = StepsMotionCache.cacheKey(owner: "whoop-1234", gravityCount: 86_000, gravityMaxTs: 1_790_000_000)
-        XCTAssertEqual(StepsHourMotionCache.owner(fromCacheKey: key), "whoop-1234")
-        XCTAssertEqual(StepsHourMotionCache.owner(fromCacheKey: "odd|id|5|6"), "odd|id")
-        XCTAssertNil(StepsHourMotionCache.owner(fromCacheKey: "|5|6"))
-        XCTAssertNil(StepsHourMotionCache.owner(fromCacheKey: "whoop|x|6"))
-        XCTAssertNil(StepsHourMotionCache.owner(fromCacheKey: "nothing"))
+        XCTAssertEqual(StepsHourWalkCache.owner(fromCacheKey: key), "whoop-1234")
+        XCTAssertEqual(StepsHourWalkCache.owner(fromCacheKey: "odd|id|5|6"), "odd|id")
+        XCTAssertNil(StepsHourWalkCache.owner(fromCacheKey: "|5|6"))
+        XCTAssertNil(StepsHourWalkCache.owner(fromCacheKey: "whoop|x|6"))
+        XCTAssertNil(StepsHourWalkCache.owner(fromCacheKey: "nothing"))
     }
 
     // MARK: - The resolver and the chart

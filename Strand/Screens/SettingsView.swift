@@ -3062,9 +3062,9 @@ struct StepsCalibrationSheet: View {
     @State private var didLoad = false
 
     /// The hour-by-hour fill (`StepsHourMerge`): its switch, and the hourly calibration the analysis pass
-    /// mirrors (coefficient 0 until there is one).
+    /// mirrors (steps per walking minute, 0 until there is one).
     @AppStorage(StepsPrefs.bandFillKey) private var bandFill = true
-    @AppStorage(StepsPrefs.bandHourCoefficientKey) private var bandHourCoefficient = 0.0
+    @AppStorage(StepsPrefs.bandHourPaceKey) private var bandHourPace = 0.0
     @AppStorage(StepsPrefs.bandHourSampleHoursKey) private var bandHourSampleHours = 0
     @AppStorage(StepsPrefs.bandHourConfidenceKey) private var bandHourConfidence = 0.0
 
@@ -3300,9 +3300,9 @@ struct StepsCalibrationSheet: View {
         }
     }
 
-    /// The hour-by-hour fill: on a day the phone counted, an hour where the band saw clearly more walking takes
-    /// the band's estimate. Its calibration learns from single hours the phone was carried, so it shows its own
-    /// progress beside the day-level fit above.
+    /// The hour-by-hour fill: on a day the phone counted, an hour where the strap saw clearly more walking takes
+    /// the strap's estimate (its walking minutes at the wearer's own pace). The pace is learned from single hours
+    /// the phone was carried, so the card shows its own progress beside the day-level fit above.
     private var bandFillCard: some View {
         NoopCard {
             VStack(alignment: .leading, spacing: 12) {
@@ -3322,20 +3322,29 @@ struct StepsCalibrationSheet: View {
                 .onChangeCompat(of: bandFill) { _ in
                     Task { await StepsService.shared.refreshNow() }
                 }
-                if bandHourCoefficient > 0 {
+                if bandHourPace > 0 {
+                    statLine(String(localized: "Your walking pace"),
+                             String(localized: "\(Int(bandHourPace.rounded())) steps a minute"))
                     statLine(String(localized: "Learned from"),
                              bandHourSampleHours == 1
                                  ? String(localized: "1 hour you carried your phone")
                                  : String(localized: "\(bandHourSampleHours) hours you carried your phone"))
                     statLine(String(localized: "Confidence"),
                              "\(StepsCalibrationFormat.confidenceLabel(bandHourConfidence)) · \(Int((bandHourConfidence * 100).rounded()))%")
+                } else if bandHourSampleHours >= StepsHourMerge.minCalibrationHours {
+                    // Enough carried hours, but the pace they give is not a walking pace: the strap's walking does
+                    // not line up with the phone's steps, so nothing is filled rather than something wrong.
+                    Text("Your strap's walking doesn't line up with your phone's steps yet, so nothing is filled.")
+                        .font(StrandFont.footnote)
+                        .foregroundStyle(StrandPalette.textTertiary)
+                        .fixedSize(horizontal: false, vertical: true)
                 } else {
                     let need = max(1, StepsHourMerge.minCalibrationHours - bandHourSampleHours)
                     Text(need == 1 ? String(localized: "Needs 1 more hour you carry your phone")
                                    : String(localized: "Needs \(need) more hours you carry your phone"))
                         .font(StrandFont.bodyNumber)
                         .foregroundStyle(StrandPalette.accent)
-                    Text("An hour counts when your phone counted at least \(StepsHourMerge.carriedMinSteps) steps in it while you wore your strap. Until then nothing is filled.")
+                    Text("An hour counts when your phone counted at least \(StepsHourMerge.carriedMinSteps) steps in it and your strap saw you walking. Until then nothing is filled.")
                         .font(StrandFont.footnote)
                         .foregroundStyle(StrandPalette.textTertiary)
                         .fixedSize(horizontal: false, vertical: true)
