@@ -514,10 +514,15 @@ extension PulseRoute {
         return all.map { (name: $0.0, route: $0.1) }
     }
 
-    /// The route named `name` ("trend-view:rhr" picks the Trend View's metric; "tab-metric:<key>" a metric).
+    /// The route named `name` ("trend-view:rhr" picks the Trend View's metric; "tab-metric:<key>" a metric;
+    /// "tab-steps:<n>" the Steps screen on the day n days back).
     static func debugNamed(_ name: String) -> PulseRoute? {
         if name.hasPrefix("trend-view:") { return .trendView(metric: String(name.dropFirst("trend-view:".count))) }
         if name.hasPrefix("tab-metric:") { return .tab(.metric(String(name.dropFirst("tab-metric:".count)))) }
+        if name.hasPrefix("tab-steps:"), let back = Int(name.dropFirst("tab-steps:".count)),
+           let date = Calendar.current.date(byAdding: .day, value: -back, to: Date()) {
+            return .tab(.steps(day: Repository.localDayKey(date)))
+        }
         return debugCatalog.first { $0.name == name }?.route
     }
 

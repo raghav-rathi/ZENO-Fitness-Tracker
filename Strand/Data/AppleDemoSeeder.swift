@@ -245,7 +245,9 @@ enum AppleDemoSeeder {
     ///
     /// Shaped to exercise the screen: the four days before today clear the default 10,000 goal (a visible
     /// streak), and two days the phone "stayed home" carry only a strap estimate, which the charts draw
-    /// hollow and the resolver picks only because nothing measured that day.
+    /// hollow and the resolver picks only because nothing measured that day. The band's hourly estimate
+    /// (`StepsHourMerge`) is banked for the last week too, close to the phone's hours, except two evenings the
+    /// phone stayed home during a walk: there the band fills the hour, drawn dashed on the hour chart.
     private static func seedPhoneSteps(into store: WhoopStore, calendar cal: Calendar,
                                        dayKey: (Date) -> String) async throws {
         var rng = SplitMix64(seed: 0x57E9_5D0E)
@@ -256,7 +258,12 @@ enum AppleDemoSeeder {
         let phoneLeftHome: Set<Int> = [23, 41]
         var days: [(day: String, reading: PedometerReading)] = []
         var hours: [(ts: Int, steps: Int)] = []
+        var bandHours: [(ts: Int, steps: Int)] = []
         var estimates: [MetricPoint] = []
+        // Evenings (days back) the phone stayed home during a walk at 6 PM. The band's numbers draw from their
+        // own RNG so every other demo figure stays what it was.
+        let walkedWithoutPhone: Set<Int> = [1, 3]
+        var bandRng = SplitMix64(seed: 0xBA4D_0018)
 
         for back in stride(from: PHONE_STEP_DAYS - 1, through: 0, by: -1) {
             guard let dayStart = cal.date(byAdding: .day, value: -back, to: todayStart) else { continue }
@@ -281,10 +288,22 @@ enum AppleDemoSeeder {
                     for h in perHour.indices where h > currentHour { perHour[h] = 0 }
                     perHour[currentHour] = Int(Double(perHour[currentHour]) * minuteFraction)
                 }
+                // The band saw every hour about as the phone did, and the walk the phone missed in full.
+                var band = perHour.map { Int((Double($0) * (0.88 + 0.24 * bandRng.nextDouble())).rounded()) }
+                if walkedWithoutPhone.contains(back) {
+                    band[18] = 2_400 + bandRng.nextInt(0, 600)
+                    perHour[18] = 40
+                }
                 total = perHour.reduce(0, +)
                 for (h, n) in perHour.enumerated() where n > 0 {
                     if let hourStart = cal.date(byAdding: .hour, value: h, to: dayStart) {
                         hours.append((ts: Int(hourStart.timeIntervalSince1970), steps: n))
+                    }
+                }
+                // Today's band hours reach only the last sync, a couple of hours back.
+                for (h, n) in band.enumerated() where n > 0 && (back > 0 || h < currentHour - 1) {
+                    if let hourStart = cal.date(byAdding: .hour, value: h, to: dayStart) {
+                        bandHours.append((ts: Int(hourStart.timeIntervalSince1970), steps: n))
                     }
                 }
             }
@@ -297,6 +316,7 @@ enum AppleDemoSeeder {
         try await PhoneStepsStore.save(days: days, to: store)
         try await PhoneStepsStore.save(hours: hours, to: store)
         _ = try await store.upsertMetricSeries(estimates, deviceId: whoop + "-noop")
+        _ = try await store.upsertAppleStepHours(bandHours, deviceId: whoop + "-noop")
     }
 
     // MARK: - helpers

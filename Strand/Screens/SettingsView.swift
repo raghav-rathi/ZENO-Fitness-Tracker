@@ -3061,6 +3061,13 @@ struct StepsCalibrationSheet: View {
     @State private var draftManual: Double = 0
     @State private var didLoad = false
 
+    /// The hour-by-hour fill (`StepsHourMerge`): its switch, and the hourly calibration the analysis pass
+    /// mirrors (coefficient 0 until there is one).
+    @AppStorage(StepsPrefs.bandFillKey) private var bandFill = true
+    @AppStorage(StepsPrefs.bandHourCoefficientKey) private var bandHourCoefficient = 0.0
+    @AppStorage(StepsPrefs.bandHourSampleHoursKey) private var bandHourSampleHours = 0
+    @AppStorage(StepsPrefs.bandHourConfidenceKey) private var bandHourConfidence = 0.0
+
     /// The strap has banked no motion, and we have looked.
     ///
     /// Named once because two places depend on it and they must stay exactly complementary: the
@@ -3092,6 +3099,7 @@ struct StepsCalibrationSheet: View {
                     explainerCard
                     if strapHasNoMotion { noMotionNote }
                     currentFitCard
+                    bandFillCard
                     comparisonCard
                     manualAdjustCard
                 }
@@ -3287,6 +3295,50 @@ struct StepsCalibrationSheet: View {
                         .foregroundStyle(StrandPalette.textTertiary)
                         .fixedSize(horizontal: false, vertical: true)
                     }
+                }
+            }
+        }
+    }
+
+    /// The hour-by-hour fill: on a day the phone counted, an hour where the band saw clearly more walking takes
+    /// the band's estimate. Its calibration learns from single hours the phone was carried, so it shows its own
+    /// progress beside the day-level fit above.
+    private var bandFillCard: some View {
+        NoopCard {
+            VStack(alignment: .leading, spacing: 12) {
+                Text("Hours your phone missed").strandOverline()
+                Toggle(isOn: $bandFill) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Fill them from your strap")
+                            .font(StrandFont.body)
+                            .foregroundStyle(StrandPalette.textPrimary)
+                        Text("When your strap saw clearly more walking in an hour than your phone counted, the difference is added to that day.")
+                            .font(StrandFont.footnote)
+                            .foregroundStyle(StrandPalette.textTertiary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                .tint(StrandPalette.accent)
+                .onChangeCompat(of: bandFill) { _ in
+                    Task { await StepsService.shared.refreshNow() }
+                }
+                if bandHourCoefficient > 0 {
+                    statLine(String(localized: "Learned from"),
+                             bandHourSampleHours == 1
+                                 ? String(localized: "1 hour you carried your phone")
+                                 : String(localized: "\(bandHourSampleHours) hours you carried your phone"))
+                    statLine(String(localized: "Confidence"),
+                             "\(StepsCalibrationFormat.confidenceLabel(bandHourConfidence)) · \(Int((bandHourConfidence * 100).rounded()))%")
+                } else {
+                    let need = max(1, StepsHourMerge.minCalibrationHours - bandHourSampleHours)
+                    Text(need == 1 ? String(localized: "Needs 1 more hour you carry your phone")
+                                   : String(localized: "Needs \(need) more hours you carry your phone"))
+                        .font(StrandFont.bodyNumber)
+                        .foregroundStyle(StrandPalette.accent)
+                    Text("An hour counts when your phone counted at least \(StepsHourMerge.carriedMinSteps) steps in it while you wore your strap. Until then nothing is filled.")
+                        .font(StrandFont.footnote)
+                        .foregroundStyle(StrandPalette.textTertiary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
         }

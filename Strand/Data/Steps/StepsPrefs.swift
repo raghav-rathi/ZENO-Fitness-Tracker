@@ -13,6 +13,40 @@ enum StepsPrefs {
     /// Unix second up to which the iPhone's hourly buckets are banked as final. The next backfill starts a
     /// little before it rather than re-reading the whole seven days CoreMotion keeps.
     static let phoneWatermarkKey = "steps.phone.backfilledThrough"
+    /// Unix second up to which Apple Health's hourly step buckets were last imported (the end of the Health
+    /// bridge's last successful hourly read). With `phoneWatermarkKey` it says which hours the phone side has
+    /// finished counting, so the band never tops up an hour that is still being counted.
+    static let healthHoursThroughKey = "steps.health.hoursImportedThrough"
+
+    /// Fill the hours the phone missed with the band's estimate (`StepsHourMerge`). Default on.
+    static let bandFillKey = "steps.bandFill"
+    /// The band's hourly calibration, mirrored by the analysis pass for the Steps calibration sheet: the
+    /// coefficient (0 until there is one), the carried hours it rests on (or has collected so far), and its
+    /// 0-1 confidence.
+    static let bandHourCoefficientKey = "steps.bandHour.coefficient"
+    static let bandHourSampleHoursKey = "steps.bandHour.sampleHours"
+    static let bandHourConfidenceKey = "steps.bandHour.confidence"
+
+    static var bandFillEnabled: Bool { UserDefaults.standard.object(forKey: bandFillKey) as? Bool ?? true }
+    /// Appended to a day's provenance id when the band filled hours the phone missed, so a readings table
+    /// names both ("Apple Health + strap").
+    static let bandFillSourceSuffix = "+band"
+
+    /// The instant up to which the phone side has finished counting: the later of the iPhone's banked
+    /// watermark and Apple Health's last hourly import, less `settleMargin`. Only hours that end by then can
+    /// take the band's estimate. With neither (a Mac, or no phone source at all) that is the start of today, so
+    /// only past days can be filled.
+    static func phoneSideSettledUntil(todayStart: Int) -> Int {
+        let d = UserDefaults.standard
+        let phone = d.object(forKey: phoneWatermarkKey) as? Int
+        let health = d.object(forKey: healthHoursThroughKey) as? Int
+        guard phone != nil || health != nil else { return todayStart }
+        return max(phone ?? 0, health ?? 0) - settleMargin
+    }
+
+    /// The iPhone's motion coprocessor can post an hour's steps a little late, to itself and to Apple Health,
+    /// so the newest hour before either watermark is not treated as final yet.
+    static let settleMargin = 3_600
 
     /// The deviceId the iPhone pedometer's own readings are banked under: daily totals in `metricSeries`
     /// (the generic per-device daily scalar store) and hour buckets in `appleStepHour` (the per-device
@@ -33,6 +67,13 @@ enum StepsPrefs {
     static var goal: Int {
         let stored = UserDefaults.standard.integer(forKey: goalKey)
         return stored == 0 ? StepGoal.defaultGoal : StepGoal.clamp(stored)
+    }
+}
+
+extension ResolvedStepDay {
+    /// The badge name: the source, plus the strap when its estimate added steps for hours the phone missed.
+    var sourceLabel: String {
+        bandSteps > 0 ? String(localized: "\(source.displayName) + strap") : source.displayName
     }
 }
 

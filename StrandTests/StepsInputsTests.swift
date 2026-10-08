@@ -77,6 +77,11 @@ final class StepsInputsTests: XCTestCase {
         // The readings table names the phone rather than printing its raw id.
         XCTAssertEqual(TodayView.provenanceDisplayLabel(rawSource: StepsPrefs.phoneDeviceId, deviceId: "my-whoop"),
                        "iPhone")
+        // A day the strap filled hours of names both.
+        let filled = inputs.provenanceId(for: ResolvedStepDay(day: "2026-09-30", steps: 9_000, source: .healthKit,
+                                                              bandSteps: 1_200))
+        XCTAssertEqual(filled, "apple-health+band")
+        XCTAssertEqual(TodayView.provenanceDisplayLabel(rawSource: filled, deviceId: "my-whoop"), "Apple Health + strap")
     }
 
     func testCombinedCandidatesFollowTheResolverPrecedence() {
@@ -120,5 +125,51 @@ final class StepsInputsTests: XCTestCase {
         XCTAssertEqual(StepsPrefs.goal, 30_000)
         UserDefaults.standard.set(250, forKey: StepsPrefs.goalKey)
         XCTAssertEqual(StepsPrefs.goal, 1_000)
+    }
+
+    // MARK: Band fill
+
+    func testReplacingAlsoSwapsTheBandFillHours() {
+        var window = StepsInputs()
+        window.bandFillHours = ["2026-09-01": [1], "2026-09-30": [2]]
+        var fresh = StepsInputs()
+        fresh.bandFillHours = ["2026-09-30": [3]]
+        window.replacing(from: "2026-09-29", to: "2026-09-30", with: fresh)
+        XCTAssertEqual(window.bandFillHours, ["2026-09-01": [1], "2026-09-30": [3]])
+        window.replacing(from: "2026-09-30", to: "2026-09-30", with: StepsInputs())
+        XCTAssertEqual(window.bandFillHours, ["2026-09-01": [1]], "a refreshed day the band no longer fills is dropped")
+    }
+
+    func testSourceLabelNamesTheBandWhenItAddedSteps() {
+        XCTAssertEqual(ResolvedStepDay(day: "2026-09-30", steps: 8_000, source: .phonePedometer).sourceLabel, "iPhone")
+        XCTAssertEqual(ResolvedStepDay(day: "2026-09-30", steps: 8_000, source: .healthKit, bandSteps: 900).sourceLabel,
+                       "Apple Health + strap")
+    }
+
+    /// Only hours the phone side has finished counting can take the band's estimate: the later of the iPhone's
+    /// watermark and Apple Health's last hourly import, less an hour for steps posted late. With neither, only
+    /// past days.
+    func testSettledUntilFollowsTheLaterPhoneSideWatermark() {
+        let d = UserDefaults.standard
+        let keys = [StepsPrefs.phoneWatermarkKey, StepsPrefs.healthHoursThroughKey]
+        let saved = keys.map { d.object(forKey: $0) }
+        defer { for (k, v) in zip(keys, saved) { d.set(v, forKey: k) } }
+        keys.forEach { d.removeObject(forKey: $0) }
+        XCTAssertEqual(StepsPrefs.phoneSideSettledUntil(todayStart: 1_000_000), 1_000_000)
+        d.set(1_050_000, forKey: StepsPrefs.phoneWatermarkKey)
+        XCTAssertEqual(StepsPrefs.phoneSideSettledUntil(todayStart: 1_000_000), 1_050_000 - StepsPrefs.settleMargin)
+        d.set(1_080_000, forKey: StepsPrefs.healthHoursThroughKey)
+        XCTAssertEqual(StepsPrefs.phoneSideSettledUntil(todayStart: 1_000_000), 1_080_000 - StepsPrefs.settleMargin)
+        d.removeObject(forKey: StepsPrefs.phoneWatermarkKey)
+        XCTAssertEqual(StepsPrefs.phoneSideSettledUntil(todayStart: 1_000_000), 1_080_000 - StepsPrefs.settleMargin)
+    }
+
+    func testBandFillIsOnUnlessTurnedOff() {
+        let saved = UserDefaults.standard.object(forKey: StepsPrefs.bandFillKey)
+        defer { UserDefaults.standard.set(saved, forKey: StepsPrefs.bandFillKey) }
+        UserDefaults.standard.removeObject(forKey: StepsPrefs.bandFillKey)
+        XCTAssertTrue(StepsPrefs.bandFillEnabled)
+        UserDefaults.standard.set(false, forKey: StepsPrefs.bandFillKey)
+        XCTAssertFalse(StepsPrefs.bandFillEnabled)
     }
 }

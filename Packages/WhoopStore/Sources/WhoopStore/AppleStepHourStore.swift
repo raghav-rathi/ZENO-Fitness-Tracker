@@ -42,6 +42,17 @@ extension WhoopStore {
         }
     }
 
+    /// Delete one device's hourly rows with `ts` in `[fromTs, toTs]`, returning how many went. The band's
+    /// hourly step estimate is rewritten for its calibration window this way, without touching older hours.
+    @discardableResult
+    public func deleteAppleStepHours(deviceId: String, fromTs: Int, toTs: Int) async throws -> Int {
+        try syncWrite { db in
+            try db.execute(sql: "DELETE FROM appleStepHour WHERE deviceId = ? AND ts >= ? AND ts <= ?",
+                           arguments: [deviceId, fromTs, toTs])
+            return db.changesCount
+        }
+    }
+
     /// Delete every hourly row one device holds, returning how many went. The table is partitioned by
     /// source: Apple Health's hours sit under "apple-health" and the iPhone pedometer's hours (read by
     /// the app's Steps feature) under their own id, so clearing one source never touches another's.

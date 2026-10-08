@@ -74,18 +74,30 @@ public enum StepsHourly {
         public let matchesDaySource: Bool
         /// The clock hour to highlight: the current one, on the in-progress day only.
         public let currentHour: Int?
+        /// What the band added to each hour the phone missed (`StepsHourMerge`), drawn stacked on `bars`.
+        /// All zeros on a day the phone covered.
+        public let filled: [Int]
 
-        public init(bars: [Int], source: StepSource, matchesDaySource: Bool, currentHour: Int?) {
+        public init(bars: [Int], source: StepSource, matchesDaySource: Bool, currentHour: Int?,
+                    filled: [Int] = []) {
             self.bars = bars
             self.source = source
             self.matchesDaySource = matchesDaySource
             self.currentHour = currentHour
+            self.filled = filled.count == bars.count ? filled : Array(repeating: 0, count: bars.count)
         }
 
-        /// The busiest hour, nil when every hour is empty. On a tie the earlier hour.
+        /// Each hour's full height: its bar plus what the band added.
+        public var totals: [Int] { zip(bars, filled).map { $0 + $1 } }
+
+        /// True when the band added to any hour.
+        public var hasFill: Bool { filled.contains { $0 > 0 } }
+
+        /// The busiest hour counting the band's additions, nil when every hour is empty. On a tie the earlier hour.
         public var peakHour: Int? {
-            guard let top = bars.max(), top > 0 else { return nil }
-            return bars.firstIndex(of: top)
+            let all = totals
+            guard let top = all.max(), top > 0 else { return nil }
+            return all.firstIndex(of: top)
         }
     }
 
@@ -93,9 +105,10 @@ public enum StepsHourly {
     /// (for the in-progress day) the current clock hour. The bars come from `StepsResolver.hourlySource`;
     /// when they are the day's own source on the in-progress day, the current hour absorbs whatever the
     /// headline counts that the banked hours do not yet, so the bars and the number agree while walking.
-    /// nil when no source banked any hour for the day.
+    /// `dayTotal` is the source's own count (`ResolvedStepDay.sourceSteps`); `filled` is what the band added
+    /// per hour, stacked on top. nil when no source banked any hour for the day.
     public static func chart(daySource: StepSource?, dayTotal: Int?, hours: [StepSource: [Int]],
-                             currentHour: Int?) -> Chart? {
+                             currentHour: Int?, filled: [Int]? = nil) -> Chart? {
         let withHours = Set(hours.filter { $0.value.count == hoursPerDay }.keys)
         guard let source = StepsResolver.hourlySource(daySource: daySource, sourcesWithHours: withHours),
               var bars = hours[source] else { return nil }
@@ -103,6 +116,7 @@ public enum StepsHourly {
         if matches, let currentHour, let dayTotal {
             bars = reconcilingCurrentHour(bars, dayTotal: dayTotal, currentHour: currentHour)
         }
-        return Chart(bars: bars, source: source, matchesDaySource: matches, currentHour: currentHour)
+        return Chart(bars: bars, source: source, matchesDaySource: matches, currentHour: currentHour,
+                     filled: filled ?? [])
     }
 }

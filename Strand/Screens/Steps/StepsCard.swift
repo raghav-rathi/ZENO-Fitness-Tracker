@@ -43,8 +43,9 @@ struct StepsCard: View {
         let snapshot = service.snapshot
         let today = snapshot.todayResolved
         let goal = StepGoal.clamp(goalRaw)
-        let chart = StepsHourly.chart(daySource: today?.source, dayTotal: today?.steps, hours: snapshot.todayHours,
-                                      currentHour: Calendar.current.component(.hour, from: Date()))
+        let filled = (today?.bandSteps ?? 0) > 0 ? snapshot.inputs.bandFillHours[snapshot.today] : nil
+        let chart = StepsHourly.chart(daySource: today?.source, dayTotal: today?.sourceSteps, hours: snapshot.todayHours,
+                                      currentHour: Calendar.current.component(.hour, from: Date()), filled: filled)
         let percent = today.map { StepGoal.percent(steps: $0.steps, goal: goal) }
         return HStack(spacing: 14) {
             GlowRing(fraction: today.map { StepGoal.ringFraction(steps: $0.steps, goal: goal) } ?? 0,
@@ -66,7 +67,7 @@ struct StepsCard: View {
             }
             Spacer(minLength: 8)
             if let chart {
-                StepsMiniHourlyBars(bars: chart.bars, highlightHour: chart.currentHour, tint: tint)
+                StepsMiniHourlyBars(bars: chart.bars, highlightHour: chart.currentHour, tint: tint, filled: chart.filled)
                     .frame(width: 84)
             }
             Image(systemName: "chevron.right")
@@ -89,11 +90,11 @@ struct StepsCard: View {
                 ? String(localized: "Tap to count steps with this iPhone")
                 : String(localized: "Goal \(StepsFormat.count(goal)) · nothing counted yet")
         }
-        return String(localized: "of \(StepsFormat.count(goal)) · \(today.source.displayName)")
+        return String(localized: "of \(StepsFormat.count(goal)) · \(today.sourceLabel)")
     }
 
     private func spoken(today: ResolvedStepDay?, goal: Int) -> String {
         guard let today else { return subtitle(today: nil, goal: goal) }
-        return String(localized: "\(StepsFormat.count(today.steps)) of \(StepsFormat.count(goal)) today, from \(today.source.displayName)")
+        return String(localized: "\(StepsFormat.count(today.steps)) of \(StepsFormat.count(goal)) today, from \(today.sourceLabel)")
     }
 }

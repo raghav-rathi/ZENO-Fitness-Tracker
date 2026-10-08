@@ -35,13 +35,17 @@ public struct StepDayCandidates: Equatable, Sendable {
     public var phonePedometer: Int?
     public var strapCounter: Int?
     public var strapEstimate: Int?
+    /// Steps the band's estimate adds for the hours the phone missed (`StepsHourMerge`). Not a source of its
+    /// own: it tops up a day Apple Health or the iPhone counted, and nothing else.
+    public var bandFill: Int?
 
     public init(healthKit: Int? = nil, phonePedometer: Int? = nil,
-                strapCounter: Int? = nil, strapEstimate: Int? = nil) {
+                strapCounter: Int? = nil, strapEstimate: Int? = nil, bandFill: Int? = nil) {
         self.healthKit = healthKit
         self.phonePedometer = phonePedometer
         self.strapCounter = strapCounter
         self.strapEstimate = strapEstimate
+        self.bandFill = bandFill
     }
 
     /// The (validated) count one source holds for the day.
@@ -74,14 +78,21 @@ public struct StepDayCandidates: Equatable, Sendable {
 /// The count a day resolved to, and the one source that supplied it.
 public struct ResolvedStepDay: Equatable, Sendable {
     public let day: String
+    /// The day's total, including `bandSteps`.
     public let steps: Int
     public let source: StepSource
+    /// Steps the band added for hours the phone missed, already inside `steps`. 0 on a day the phone covered.
+    public let bandSteps: Int
 
-    public init(day: String, steps: Int, source: StepSource) {
+    public init(day: String, steps: Int, source: StepSource, bandSteps: Int = 0) {
         self.day = day
         self.steps = steps
         self.source = source
+        self.bandSteps = bandSteps
     }
+
+    /// The source's own count, without the band's additions.
+    public var sourceSteps: Int { steps - bandSteps }
 }
 
 /// THE step resolver. Every surface that shows a daily step count (Today's tile and card, the Steps screen
@@ -94,6 +105,11 @@ public struct ResolvedStepDay: Equatable, Sendable {
 /// that recorded nothing all day was almost always left behind, and the strap's reading of that day is the
 /// better answer.
 ///
+/// THE BAND FILL. A day Apple Health or the iPhone counted also takes `bandFill`, the steps the band's estimate
+/// adds for the hours the phone missed (`StepsHourMerge`). The day keeps its source; `bandSteps` says how much
+/// of the total came from the band. A strap counter or a strap-estimate day takes no fill: neither depends on
+/// the phone being carried.
+///
 /// THE IN-PROGRESS DAY is the one exception. HealthKit's figure for today is an import taken at the bridge's
 /// last sync, while the pedometer can be read live, so during the day the Health total routinely trails the
 /// phone. It cannot legitimately be lower for long: Health's total already CONTAINS the phone's own steps.
@@ -105,6 +121,21 @@ public enum StepsResolver {
     /// Resolve one day, or nil when no source has a reading.
     public static func resolve(day: String, candidates: StepDayCandidates,
                                isInProgressDay: Bool) -> ResolvedStepDay? {
+        guard let base = resolveSource(day: day, candidates: candidates, isInProgressDay: isInProgressDay) else {
+            return nil
+        }
+        return addingBandFill(candidates.bandFill, to: base)
+    }
+
+    /// A phone-side day plus the band's additions for the hours the phone missed.
+    static func addingBandFill(_ fill: Int?, to base: ResolvedStepDay) -> ResolvedStepDay {
+        guard let fill, fill > 0, base.source == .healthKit || base.source == .phonePedometer else { return base }
+        return ResolvedStepDay(day: base.day, steps: base.steps + fill, source: base.source, bandSteps: fill)
+    }
+
+    /// The precedence rules alone: which source has the day, and its count.
+    static func resolveSource(day: String, candidates: StepDayCandidates,
+                              isInProgressDay: Bool) -> ResolvedStepDay? {
         if isInProgressDay,
            let phone = candidates.count(for: .phonePedometer), phone > 0,
            let health = candidates.count(for: .healthKit), phone > health {
@@ -136,8 +167,9 @@ public enum StepsResolver {
     ///
     /// The day's own source when it has hourly rows, so the bars add up to the headline. Otherwise the best
     /// measured source that does have hours (a strap-resolved day can still show the phone's shape), which
-    /// the caller must then label, since those bars will not sum to the headline. Neither strap source has
-    /// an hourly series, so a day with only strap data has no chart at all.
+    /// the caller must then label, since those bars will not sum to the headline. The strap counter has no
+    /// hourly series; the strap estimate's hours are the band's hourly estimate (`StepsHourMerge`), drawn
+    /// only for a day the estimate itself resolved.
     public static func hourlySource(daySource: StepSource?, sourcesWithHours: Set<StepSource>) -> StepSource? {
         if let daySource, sourcesWithHours.contains(daySource) { return daySource }
         return StepSource.allCases.first { $0.isMeasured && sourcesWithHours.contains($0) }

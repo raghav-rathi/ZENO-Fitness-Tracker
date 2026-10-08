@@ -930,6 +930,11 @@ struct TodayView: View {
     /// Any other real source (Mi Band, Health Connect, nutrition) keeps its `FusionSource.displayName`
     ///, still the genuine merge winner, never a blanket claim. Mirror EXACTLY in Kotlin.
     static func provenanceDisplayLabel(rawSource: String, deviceId: String) -> String {
+        // ZENO: a step day the strap's estimate filled hours of (StepsHourMerge) names its source and the strap.
+        if rawSource.hasSuffix(StepsPrefs.bandFillSourceSuffix) {
+            let base = String(rawSource.dropLast(StepsPrefs.bandFillSourceSuffix.count))
+            return String(localized: "\(provenanceDisplayLabel(rawSource: base, deviceId: deviceId)) + strap")
+        }
         if rawSource.hasPrefix(vo2MaxAttributionPrefix) {
             let raw = String(rawSource.dropFirst(vo2MaxAttributionPrefix.count))
             let method = vo2MaxEstimatorDisplayName(Vo2MaxEstimator(rawValue: raw))

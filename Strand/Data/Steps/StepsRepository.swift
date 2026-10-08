@@ -22,6 +22,10 @@ struct StepsInputs: Equatable, Sendable {
     /// computed sibling), so the combined Explore detail can still name exactly where a value came from.
     var strapCounterSourceId: [String: String] = [:]
     var strapEstimateSourceId: [String: String] = [:]
+    /// What the band adds to each clock hour of a day the phone missed hours of (24 values), the per-hour
+    /// split of that day's `StepDayCandidates.bandFill`. Kept beside it so the hour chart draws exactly the
+    /// steps the total includes.
+    var bandFillHours: [String: [Int]] = [:]
 
     /// Resolve every day through THE resolver. `inProgressDay` is the device's local today.
     func resolved(inProgressDay: String?) -> [ResolvedStepDay] {
@@ -29,16 +33,19 @@ struct StepsInputs: Equatable, Sendable {
     }
 
     /// The raw source id a resolved day came from, in the vocabulary `TodayView.provenanceDisplayLabel`
-    /// already speaks ("apple-health", a strap id, its "-noop" sibling) plus the phone's own id. Main-actor
-    /// because the canonical ids are `Repository` statics.
+    /// already speaks ("apple-health", a strap id, its "-noop" sibling) plus the phone's own id, with
+    /// `StepsPrefs.bandFillSourceSuffix` when the band filled hours the phone missed. Main-actor because the
+    /// canonical ids are `Repository` statics.
     @MainActor
     func provenanceId(for day: ResolvedStepDay) -> String {
+        let base: String
         switch day.source {
-        case .healthKit: return Repository.appleHealthSource
-        case .phonePedometer: return StepsPrefs.phoneDeviceId
-        case .strapCounter: return strapCounterSourceId[day.day] ?? Repository.whoopSource
-        case .strapEstimate: return strapEstimateSourceId[day.day] ?? Repository.whoopSource + "-noop"
+        case .healthKit: base = Repository.appleHealthSource
+        case .phonePedometer: base = StepsPrefs.phoneDeviceId
+        case .strapCounter: base = strapCounterSourceId[day.day] ?? Repository.whoopSource
+        case .strapEstimate: base = strapEstimateSourceId[day.day] ?? Repository.whoopSource + "-noop"
         }
+        return day.bandSteps > 0 ? base + StepsPrefs.bandFillSourceSuffix : base
     }
 
     /// Fold the live pedometer total into its day. The larger of the stored and live figures wins: both are
@@ -62,6 +69,8 @@ struct StepsInputs: Equatable, Sendable {
             .merging(newer.strapCounterSourceId.filter { inRange($0.key) }) { $1 }
         strapEstimateSourceId = strapEstimateSourceId.filter { !inRange($0.key) }
             .merging(newer.strapEstimateSourceId.filter { inRange($0.key) }) { $1 }
+        bandFillHours = bandFillHours.filter { !inRange($0.key) }
+            .merging(newer.bandFillHours.filter { inRange($0.key) }) { $1 }
     }
 
     /// A stored step value as a count: finite, non-negative and below a sanity ceiling no day reaches
@@ -109,6 +118,14 @@ extension Repository {
             inputs.candidates[point.day, default: StepDayCandidates()].strapEstimate = StepsInputs.count(point.value)
             inputs.strapEstimateSourceId[point.day] = point.source
         }
+        // The band's estimate for the hours the phone missed. Only a day something already counted takes it;
+        // the resolver then adds it to a phone-side day and ignores it on any other.
+        if StepsPrefs.bandFillEnabled {
+            for (day, added) in await bandFillByDay(store: store, from: from, to: to) where inputs.candidates[day] != nil {
+                inputs.candidates[day]?.bandFill = added.reduce(0, +)
+                inputs.bandFillHours[day] = added
+            }
+        }
         if let live = StepsService.shared.livePhone, live.day >= from, live.day <= to {
             inputs.foldLivePhone(live)
         }
@@ -148,7 +165,8 @@ extension Repository {
     ]
 
     /// Hour buckets for `day` from every source that banks hours (Apple Health's bridge, the iPhone
-    /// pedometer). Hours are real instants, bucketed in the device's zone: the wearer's own clock.
+    /// pedometer, and the band's hourly estimate under `.strapEstimate`). Hours are real instants, bucketed in
+    /// the device's zone: the wearer's own clock.
     func stepHours(day: String, calendar: Calendar = .current) async -> [StepSource: [Int]] {
         guard let bounds = StepsHourly.dayBounds(day: day, calendar: calendar),
               let store = await storeHandle() else { return [:] }
@@ -161,7 +179,39 @@ extension Repository {
         if !healthRows.isEmpty { out[.healthKit] = StepsHourly.buckets(rows: healthRows, day: day, calendar: calendar) }
         let phoneRows = (try? await phone) ?? []
         if !phoneRows.isEmpty { out[.phonePedometer] = StepsHourly.buckets(rows: phoneRows, day: day, calendar: calendar) }
+        let bandRows = await bandHourRows(store: store, fromTs: bounds.start, toTs: bounds.end - 1)
+        if !bandRows.isEmpty { out[.strapEstimate] = StepsHourly.buckets(rows: bandRows, day: day, calendar: calendar) }
         return out
+    }
+
+    /// What the band adds to each clock hour of every day in `from...to` it adds to (`StepsHourMerge`), from
+    /// the band's hourly estimate and the phone's and Apple Health's hours. Only hours the phone side has
+    /// finished counting take anything.
+    func bandFillByDay(store: WhoopStore, from: String, to: String,
+                       calendar: Calendar = .current) async -> [String: [Int]] {
+        guard let start = StepsHourly.dayBounds(day: from, calendar: calendar)?.start,
+              let end = StepsHourly.dayBounds(day: to, calendar: calendar)?.end else { return [:] }
+        let band = await bandHourRows(store: store, fromTs: start, toTs: end - 1)
+        guard let first = band.first?.ts, let last = band.last?.ts else { return [:] }
+        async let health = store.appleStepHours(deviceId: Self.appleHealthSource, fromTs: first, toTs: last)
+        async let phone = store.appleStepHours(deviceId: StepsPrefs.phoneDeviceId, fromTs: first, toTs: last)
+        let todayStart = Int(calendar.startOfDay(for: Date()).timeIntervalSince1970)
+        return StepsHourMerge.fillByDay(phoneRows: (try? await phone) ?? [], healthRows: (try? await health) ?? [],
+                                        bandRows: band, calendar: calendar,
+                                        settledUntil: StepsPrefs.phoneSideSettledUntil(todayStart: todayStart))
+    }
+
+    /// The band's hourly step estimate in `[fromTs, toTs]`, oldest first. The analysis pass writes it under the
+    /// computed id; both computed ids the dashboard reads are tried, the active strap's first.
+    func bandHourRows(store: WhoopStore, fromTs: Int, toTs: Int) async -> [(ts: Int, steps: Int)] {
+        var byTs: [Int: Int] = [:]
+        for id in computedReadIds {
+            for row in (try? await store.appleStepHours(deviceId: id, fromTs: fromTs, toTs: toTs)) ?? []
+            where byTs[row.ts] == nil {
+                byTs[row.ts] = row.steps
+            }
+        }
+        return byTs.keys.sorted().map { (ts: $0, steps: byTs[$0] ?? 0) }
     }
 }
 

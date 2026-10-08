@@ -73,4 +73,21 @@ final class AppleStepHourStoreTests: XCTestCase {
         let again = try await store.deleteAppleStepHours(deviceId: "iphone-pedometer")
         XCTAssertEqual(again, 0)
     }
+
+    /// The band's hourly estimate is rewritten for its calibration window only: a range delete removes that
+    /// device's hours inside the bounds (inclusive) and leaves older hours and other devices alone.
+    func testRangeDeleteRemovesOnlyThatDevicesHoursInsideTheBounds() async throws {
+        let store = try await WhoopStore.inMemory()
+        _ = try await store.upsertAppleStepHours([(ts: 3_600, steps: 1), (ts: 7_200, steps: 2),
+                                                  (ts: 10_800, steps: 3), (ts: 14_400, steps: 4)],
+                                                 deviceId: "my-whoop-noop")
+        _ = try await store.upsertAppleStepHours([(ts: 7_200, steps: 50)], deviceId: "apple-health")
+
+        let removed = try await store.deleteAppleStepHours(deviceId: "my-whoop-noop", fromTs: 7_200, toTs: 10_800)
+        XCTAssertEqual(removed, 2)
+        let band = try await store.appleStepHours(deviceId: "my-whoop-noop", fromTs: 0, toTs: 100_000)
+        XCTAssertEqual(band.map(\.ts), [3_600, 14_400])
+        let health = try await store.appleStepHours(deviceId: "apple-health", fromTs: 0, toTs: 100_000)
+        XCTAssertEqual(health.map(\.steps), [50])
+    }
 }

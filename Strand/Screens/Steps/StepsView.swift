@@ -151,9 +151,14 @@ struct StepsView: View {
                         .font(StrandFont.subhead)
                         .foregroundStyle(StrandPalette.textSecondary)
                         .multilineTextAlignment(.center)
-                    if let source = resolved?.source { StepsSourceBadge(source: source) }
+                    if let resolved { StepsSourceBadge(source: resolved.source, bandSteps: resolved.bandSteps) }
                 }
                 statStrip(steps: steps)
+                if let band = resolved?.bandSteps, band > 0 {
+                    footnote("Includes \(StepsFormat.count(band)) steps estimated from your strap, for hours your phone missed.")
+                        .multilineTextAlignment(.center)
+                        .frame(maxWidth: .infinity, alignment: .center)
+                }
                 if let note = sideFactsNote { footnote(note).frame(maxWidth: .infinity, alignment: .center) }
             }
             .frame(maxWidth: .infinity)
@@ -220,8 +225,10 @@ struct StepsView: View {
         // Re-evaluated each minute so the highlighted hour moves on even when no step arrives.
         TimelineView(.everyMinute) { context in
             let hours = isToday ? snapshot.todayHours : pastDayHours
-            let chart = StepsHourly.chart(daySource: resolved?.source, dayTotal: resolved?.steps, hours: hours,
-                                          currentHour: isToday ? Calendar.current.component(.hour, from: context.date) : nil)
+            let filled = (resolved?.bandSteps ?? 0) > 0 ? snapshot.inputs.bandFillHours[day] : nil
+            let chart = StepsHourly.chart(daySource: resolved?.source, dayTotal: resolved?.sourceSteps, hours: hours,
+                                          currentHour: isToday ? Calendar.current.component(.hour, from: context.date) : nil,
+                                          filled: filled)
             card {
                 VStack(alignment: .leading, spacing: NoopMetrics.cardInnerSpacing) {
                     HStack(alignment: .firstTextBaseline) {
@@ -234,7 +241,11 @@ struct StepsView: View {
                         }
                     }
                     if let chart {
-                        StepsHourlyBarsView(bars: chart.bars, highlightHour: chart.currentHour, tint: tint)
+                        StepsHourlyBarsView(bars: chart.bars, highlightHour: chart.currentHour, tint: tint,
+                                            filled: chart.filled)
+                        if chart.hasFill {
+                            footnote("Dashed tops are your strap's estimate for hours your phone missed.")
+                        }
                         if !chart.matchesDaySource {
                             footnote("Hourly shape from \(chart.source.displayName). The total above is from \(resolved?.source.displayName ?? String(localized: "another source")).")
                         }
@@ -401,6 +412,7 @@ struct StepsView: View {
                 bullet("Apple Health comes first when it is connected: it merges your iPhone and Apple Watch without counting a step twice.")
                 bullet("Next is this iPhone's own pedometer. It only counts while you carry the phone.")
                 bullet("Last come a strap step counter (WHOOP 5.0/MG) and an estimate from your strap's motion. The estimate is approximate, and its days are drawn hollow in the charts.")
+                bullet("On a day your phone missed some hours, your strap fills them. When it saw clearly more walking in an hour than your phone counted, the difference is added, and the hour chart draws it dashed. Turn this off in the steps estimate settings.")
             }
         }
     }

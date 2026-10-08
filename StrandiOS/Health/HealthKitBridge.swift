@@ -742,6 +742,9 @@ final class HealthKitBridge: ObservableObject {
                 if !hourlyStepsBackfilled {
                     UserDefaults.standard.set(true, forKey: Self.hourlyStepsBackfilledKey)
                 }
+                // ZENO: the hours up to `end` are now Health's final word, so the band's estimate may top
+                // them up where the phone missed steps (StepsHourMerge).
+                UserDefaults.standard.set(Int(end.timeIntervalSince1970), forKey: StepsPrefs.healthHoursThroughKey)
             }
             try await writeBack(whoopStore: store)
             lastSync = Date()

@@ -86,32 +86,52 @@ enum StepsLabels {
     }
 }
 
-/// Twenty-four clock-hour bars, the current hour drawn at full strength.
+/// Twenty-four clock-hour bars, the current hour drawn at full strength. What the band added for an hour
+/// the phone missed (`filled`) sits on top of that hour's bar, hollow with a dashed edge like an estimated day.
 struct StepsHourlyBarsView: View {
     let bars: [Int]
     let highlightHour: Int?
     let tint: Color
+    var filled: [Int] = []
     var height: CGFloat = 112
     var showsAxis = true
 
+    private func added(_ hour: Int) -> Int { hour < filled.count ? max(0, filled[hour]) : 0 }
+
     var body: some View {
-        let top = CGFloat(max(bars.max() ?? 0, 1))
+        let top = CGFloat(max(bars.indices.map { bars[$0] + added($0) }.max() ?? 0, 1))
         VStack(spacing: 6) {
             HStack(alignment: .bottom, spacing: 3) {
                 ForEach(Array(bars.enumerated()), id: \.offset) { hour, value in
-                    RoundedRectangle(cornerRadius: 2.5, style: .continuous)
-                        .fill(fill(hour: hour, value: value))
-                        .frame(height: value > 0 ? max(3, height * CGFloat(value) / top) : 2)
-                        .frame(maxWidth: .infinity)
-                        .accessibilityElement()
-                        .accessibilityLabel(StepsLabels.hourSpoken(hour))
-                        .accessibilityValue(String(localized: "\(StepsFormat.count(value)) steps"))
+                    VStack(spacing: 0) {
+                        if added(hour) > 0 {
+                            let shape = RoundedRectangle(cornerRadius: 2.5, style: .continuous)
+                            shape.fill(tint.opacity(0.16))
+                                .overlay(shape.stroke(tint.opacity(0.9), style: StrokeStyle(lineWidth: 1, dash: [3, 2])))
+                                .frame(height: max(3, height * CGFloat(added(hour)) / top))
+                        }
+                        if value > 0 || added(hour) == 0 {
+                            RoundedRectangle(cornerRadius: 2.5, style: .continuous)
+                                .fill(fill(hour: hour, value: value))
+                                .frame(height: value > 0 ? max(3, height * CGFloat(value) / top) : 2)
+                        }
+                    }
+                    .frame(maxWidth: .infinity)
+                    .accessibilityElement()
+                    .accessibilityLabel(StepsLabels.hourSpoken(hour))
+                    .accessibilityValue(spokenValue(hour: hour, value: value))
                 }
             }
             .frame(height: height, alignment: .bottom)
             if showsAxis { axis }
         }
         .accessibilityElement(children: .contain)
+    }
+
+    private func spokenValue(hour: Int, value: Int) -> String {
+        let band = added(hour)
+        guard band > 0 else { return String(localized: "\(StepsFormat.count(value)) steps") }
+        return String(localized: "\(StepsFormat.count(value + band)) steps, \(StepsFormat.count(band)) of them estimated from your strap")
     }
 
     private func fill(hour: Int, value: Int) -> Color {
@@ -270,21 +290,34 @@ struct StepsDailyBarsView: View {
     }
 }
 
-/// The compact hourly strip on the Steps card. Decorative: the card carries its own spoken summary.
+/// The compact hourly strip on the Steps card. Decorative: the card carries its own spoken summary. The
+/// band's additions (`filled`) are drawn faintly on top of each hour.
 struct StepsMiniHourlyBars: View {
     let bars: [Int]
     let highlightHour: Int?
     let tint: Color
+    var filled: [Int] = []
+
+    private func added(_ hour: Int) -> Int { hour < filled.count ? max(0, filled[hour]) : 0 }
 
     var body: some View {
-        let top = CGFloat(max(bars.max() ?? 0, 1))
+        let top = CGFloat(max(bars.indices.map { bars[$0] + added($0) }.max() ?? 0, 1))
         HStack(alignment: .bottom, spacing: 1.5) {
             ForEach(Array(bars.enumerated()), id: \.offset) { hour, value in
-                Capsule(style: .continuous)
-                    .fill(value > 0 ? (hour == highlightHour ? tint : tint.opacity(0.5))
-                                    : StrandPalette.textPrimary.opacity(0.10))
-                    .frame(height: value > 0 ? max(2, 26 * CGFloat(value) / top) : 2)
-                    .frame(maxWidth: .infinity)
+                VStack(spacing: 0) {
+                    if added(hour) > 0 {
+                        Capsule(style: .continuous)
+                            .fill(tint.opacity(0.25))
+                            .frame(height: max(2, 26 * CGFloat(added(hour)) / top))
+                    }
+                    if value > 0 || added(hour) == 0 {
+                        Capsule(style: .continuous)
+                            .fill(value > 0 ? (hour == highlightHour ? tint : tint.opacity(0.5))
+                                            : StrandPalette.textPrimary.opacity(0.10))
+                            .frame(height: value > 0 ? max(2, 26 * CGFloat(value) / top) : 2)
+                    }
+                }
+                .frame(maxWidth: .infinity)
             }
         }
         .frame(height: 26, alignment: .bottom)
@@ -292,15 +325,21 @@ struct StepsMiniHourlyBars: View {
     }
 }
 
-/// Where a count came from, as a small capsule under the number.
+/// Where a count came from, as a small capsule under the number. "+ strap" when the strap's estimate filled
+/// hours the phone missed.
 struct StepsSourceBadge: View {
     let source: StepSource
+    var bandSteps: Int = 0
+
+    private var label: String {
+        bandSteps > 0 ? String(localized: "\(source.displayName) + strap") : source.displayName
+    }
 
     var body: some View {
         HStack(spacing: 5) {
             Image(systemName: source.symbol)
                 .font(.system(size: 11, weight: .semibold))
-            Text(source.displayName)
+            Text(label)
                 .font(StrandFont.caption.weight(.semibold))
         }
         .foregroundStyle(source.isMeasured ? StrandPalette.textSecondary : StrandPalette.statusWarning)
@@ -308,7 +347,9 @@ struct StepsSourceBadge: View {
         .padding(.vertical, 5)
         .background(Capsule(style: .continuous).fill(StrandPalette.textPrimary.opacity(0.07)))
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(String(localized: "Source: \(source.displayName)"))
-        .accessibilityHint(source.explanation)
+        .accessibilityLabel(String(localized: "Source: \(label)"))
+        .accessibilityHint(bandSteps > 0
+                           ? String(localized: "\(source.explanation) Your strap's estimate filled the hours your phone missed.")
+                           : source.explanation)
     }
 }

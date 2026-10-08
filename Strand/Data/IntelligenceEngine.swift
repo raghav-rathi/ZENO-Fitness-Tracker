@@ -2912,6 +2912,15 @@ final class IntelligenceEngine: ObservableObject {
             }
         }
 
+        // ZENO: the band's hourly step estimate, calibrated on the hours the phone was carried
+        // (IntelligenceEngine+BandStepHours, StepsHourMerge). After the daily fit above, so a day the phone
+        // counted nothing takes the band's hourly sum over the day-factor value once the hourly fit exists.
+        await refreshBandStepHours(store: store, strapId: deviceId, computedId: computedId, windowDays: stepsCalDays,
+                                   nowLocalMidnight: nowLocalMidnight, tzOffset: tzOffset, now: now,
+                                   dayWitness: stepsMotionCache, passSleep: cachedSleep,
+                                   estimateDays: dailies.map(\.day).filter { refStepsByDay[$0] == nil },
+                                   manualOverride: profile.stepsManualOverride, trace: stepsTraceActive)
+
         markPostLoopPhase("steps")
         // Drop any freshly-detected session that overlaps a night the user has already hand-corrected.
         // A detected onset can drift second-to-second as more raw data arrives, so without this the
