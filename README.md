@@ -10,7 +10,9 @@ NOOP's offline, on-device engine (no account, no cloud) and adds:
   Trainer, the activity flows, Profile (Levels, Achievements, Day Streak), Menstrual Cycle Insights, Year in Review,
   Challenges and ZENO Live are built on the same design. Recovery, Strain (on 0-21) and Sleep keep the same names on
   every screen, including the older NOOP screens the interface still links to.
-- **A Steps tracker**, from the iPhone's motion sensor and the strap, with a Steps screen and a Home card.
+- **A Steps tracker**, from the iPhone's motion sensor and the strap, with a Steps screen and a Home card. Hours
+  the phone missed are filled from the strap's motion, calibrated on the hours you carried the phone
+  ([docs/zeno/STEPS.md](docs/zeno/STEPS.md)).
 - **Steadier scores**: one sleep-need model on every screen, WHOOP-style sleep consistency, stress against your own
   baseline, and figures that agree wherever they appear.
 
@@ -26,6 +28,8 @@ The classic NOOP interface is one switch away (More › Interface).
 [Tools/zeno/shoot.sh](Tools/zeno/shoot.sh) captures any screen on demo data in the simulator,
 [Tools/zeno/flows](Tools/zeno/flows) runs the end-to-end flow tests, and [Tools/zeno/resign](Tools/zeno/resign)
 re-signs the app on your iPhone automatically before a free Apple ID's 7-day signature runs out.
+[Tools/zeno/steps-replay](Tools/zeno/steps-replay) checks the step fill against a copy of your own data, and
+[Tools/zeno/steps-probe](Tools/zeno/steps-probe) looks for the strap's own step counter after a counted walk.
 [docs/zeno/](docs/zeno/) is the WHOOP interface research behind the design, and
 [StrandiOS/Pulse/ARCHITECTURE.md](StrandiOS/Pulse/ARCHITECTURE.md) explains how it is built.
 
